@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.data
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -131,6 +132,7 @@ class BloodhoundRepository(private val context: Context) {
     private val bloodhoundStore = SourceAwareCotStore(
         sourceIdOf = { item: BloodhoundItem -> sourceKey(item.bhEvent).sourceId },
         cotUidOf = BloodhoundItem::uid,
+        eventTimeOf = { item: BloodhoundItem -> item.bhEvent.mapItem.cotEvent.time },
         receivedAtOf = { item: BloodhoundItem -> item.bhEvent.receivedAt }
     )
     private val _bloodhoundMap = MutableStateFlow<Map<String, BloodhoundItem>>(emptyMap())
@@ -276,8 +278,15 @@ class BloodhoundRepository(private val context: Context) {
                 origin = BloodhoundItem.Origin(e)
             )
         }
-        bloodhoundStore.upsert(updated)
+        val result = bloodhoundStore.upsertWithResult(updated)
         publishVisibleBloodhounds()
+        Log.d(
+            TAG,
+            "Map state bloodhound upsert uid=${e.uid} sourceServerId=${e.sourceServerId} " +
+                "eventTime=${e.mapItem.cotEvent.time} receivedAt=${e.receivedAt} " +
+                "applied=${result.applied} visibleSourceId=${bloodhoundStore.visibleKey(e.uid)?.sourceId} " +
+                "channelOwnership=unavailable"
+        )
 
         val activeKey = _activeKey.value
         if (activeKey?.cotUid == e.uid && bloodhoundStore.visibleKey(e.uid) != activeKey) {
@@ -372,10 +381,10 @@ class BloodhoundRepository(private val context: Context) {
         }
     }
 
-    fun clearSource(serverId: String) = synchronized(bloodhoundStateLock) {
+    fun clearSource(serverId: String): List<BloodhoundItem> = synchronized(bloodhoundStateLock) {
         val activeKey = _activeKey.value
         val activeWasRemoved = activeKey?.sourceId == serverId
-        bloodhoundStore.removeSource(serverId)
+        val removed = bloodhoundStore.removeSource(serverId)
         publishVisibleBloodhounds()
         if (_bloodhoundEvent.value?.event?.sourceServerId == serverId) {
             _bloodhoundEvent.value = null
@@ -383,6 +392,7 @@ class BloodhoundRepository(private val context: Context) {
         if (activeWasRemoved) {
             setActiveKey(null)
         }
+        removed
     }
 
     private fun setActiveKey(key: SourceCotKey?) {

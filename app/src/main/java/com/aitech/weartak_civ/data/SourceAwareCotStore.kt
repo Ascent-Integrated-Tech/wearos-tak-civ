@@ -18,13 +18,19 @@ data class SourceCotKey(
     val cotUid: String
 )
 
+data class SourceCotUpsertResult(
+    val key: SourceCotKey,
+    val applied: Boolean
+)
+
 /**
- * Keeps every source-owned copy while exposing the newest copy of each CoT UID.
+ * Keeps every source-owned copy while exposing the newest event-time copy of each CoT UID.
  * All compound mutations and projections are serialized on [lock].
  */
 class SourceAwareCotStore<T>(
     private val sourceIdOf: (T) -> String,
     private val cotUidOf: (T) -> String,
+    private val eventTimeOf: (T) -> Long,
     private val receivedAtOf: (T) -> Long
 ) {
     private data class Stored<T>(
@@ -43,16 +49,23 @@ class SourceAwareCotStore<T>(
     private val _visibleItems = MutableStateFlow<List<T>>(emptyList())
     val visibleItems: StateFlow<List<T>> = _visibleItems.asStateFlow()
 
-    fun upsert(item: T): SourceCotKey = synchronized(lock) {
+    fun upsert(item: T): SourceCotKey = upsertWithResult(item).key
+
+    fun upsertWithResult(item: T): SourceCotUpsertResult = synchronized(lock) {
         val key = SourceCotKey(sourceIdOf(item), cotUidOf(item))
         require(key.sourceId.isNotBlank()) { "Source ID cannot be blank" }
         require(key.cotUid.isNotBlank()) { "CoT UID cannot be blank" }
 
-        sequence += 1
+        val candidate = nextStored(item)
+        val current = storedByKey[key]
+        if (current != null && !candidate.isNewerThan(current)) {
+            return@synchronized SourceCotUpsertResult(key, applied = false)
+        }
+
         uidOrder.putIfAbsent(key.cotUid, sequence)
-        storedByKey[key] = Stored(item, sequence)
+        storedByKey[key] = candidate
         publishLocked()
-        key
+        SourceCotUpsertResult(key, applied = true)
     }
 
     fun item(key: SourceCotKey): T? = synchronized(lock) {
@@ -100,6 +113,24 @@ class SourceAwareCotStore<T>(
         removed
     }
 
+    /** Applies a source-scoped removal only when it is not older than the stored event. */
+    fun removeIfNotOlder(
+        key: SourceCotKey,
+        eventTime: Long,
+        receivedAt: Long
+    ): T? = synchronized(lock) {
+        val current = storedByKey[key] ?: return@synchronized null
+        sequence += 1
+        if (!isNewer(eventTime, receivedAt, sequence, current)) {
+            return@synchronized null
+        }
+
+        storedByKey.remove(key)
+        removeUnusedUidOrderLocked(key.cotUid)
+        publishLocked()
+        current.value
+    }
+
     fun removeSource(sourceId: String): List<T> = synchronized(lock) {
         val removed = storedByKey
             .filterKeys { it.sourceId == sourceId }
@@ -140,7 +171,8 @@ class SourceAwareCotStore<T>(
             .asSequence()
             .filter { it.key.cotUid == cotUid }
             .maxWithOrNull(
-                compareBy<Map.Entry<SourceCotKey, Stored<T>>> { receivedAtOf(it.value.value) }
+                compareBy<Map.Entry<SourceCotKey, Stored<T>>> { eventTimeOf(it.value.value) }
+                    .thenBy { receivedAtOf(it.value.value) }
                     .thenBy { it.value.sequence }
             )
 
@@ -165,8 +197,30 @@ class SourceAwareCotStore<T>(
     }
 
     private fun Stored<T>.isNewerThan(other: Stored<T>): Boolean {
-        val receivedAtComparison = receivedAtOf(value).compareTo(receivedAtOf(other.value))
+        return isNewer(
+            eventTime = eventTimeOf(value),
+            receivedAt = receivedAtOf(value),
+            sequence = sequence,
+            other = other
+        )
+    }
+
+    private fun isNewer(
+        eventTime: Long,
+        receivedAt: Long,
+        sequence: Long,
+        other: Stored<T>
+    ): Boolean {
+        val eventTimeComparison = eventTime.compareTo(eventTimeOf(other.value))
+        if (eventTimeComparison != 0) return eventTimeComparison > 0
+
+        val receivedAtComparison = receivedAt.compareTo(receivedAtOf(other.value))
         return receivedAtComparison > 0 ||
             (receivedAtComparison == 0 && sequence > other.sequence)
+    }
+
+    private fun nextStored(item: T): Stored<T> {
+        sequence += 1
+        return Stored(item, sequence)
     }
 }

@@ -8,6 +8,17 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 
+/** Logging-only ownership clues; explicit channel stamps are not treated as authorization data. */
+data class CotIngressDiagnostics(
+    val uid: String?,
+    val type: String?,
+    val eventTime: Long?,
+    val teamName: String?,
+    val teamRole: String?,
+    val flowTagNames: List<String>,
+    val explicitChannelStamps: List<String>
+)
+
 object CotMessageParser {
     private const val ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD"
     private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
@@ -65,6 +76,23 @@ object CotMessageParser {
         MarkerType.entries.any { it.type == type } || type == "b-m-p-s-p-i"
 
     fun eventTypeOrNull(rawXml: String): String? = eventAttribute(rawXml, "type")
+
+    fun eventUidOrNull(rawXml: String): String? = eventAttribute(rawXml, "uid")
+
+    fun eventTimeOrNull(rawXml: String): Long? =
+        eventAttribute(rawXml, "time")
+            ?.let(::parseIsoToEpochMs)
+            ?.takeIf { it > 0L }
+
+    fun ingressDiagnostics(rawXml: String): CotIngressDiagnostics = CotIngressDiagnostics(
+        uid = eventUidOrNull(rawXml),
+        type = eventTypeOrNull(rawXml),
+        eventTime = eventTimeOrNull(rawXml),
+        teamName = extractAttribute(rawXml, "__group", "name"),
+        teamRole = extractAttribute(rawXml, "__group", "role"),
+        flowTagNames = flowTagNames(rawXml),
+        explicitChannelStamps = explicitChannelStamps(rawXml)
+    )
 
     fun isChatMessage(rawXml: String): Boolean =
         rawXml.contains("<__chat") && rawXml.contains("<remarks")
@@ -247,6 +275,25 @@ object CotMessageParser {
         return pattern.find(xml)?.groupValues?.get(1)?.trim()
     }
 
+    private fun flowTagNames(rawXml: String): List<String> {
+        val flowTag = TAG_PATTERN.findAll(rawXml)
+            .map(MatchResult::value)
+            .firstOrNull { it.startsWith("<_flow-tags_", ignoreCase = true) }
+            ?: return emptyList()
+        return ATTRIBUTE_PATTERN.findAll(flowTag)
+            .map { it.groupValues[1] }
+            .filterNot { it.equals("_flow-tags_", ignoreCase = true) }
+            .distinct()
+            .toList()
+    }
+
+    private fun explicitChannelStamps(rawXml: String): List<String> =
+        TAG_PATTERN.findAll(rawXml)
+            .flatMap { tag -> CHANNEL_ATTRIBUTE_PATTERN.findAll(tag.value) }
+            .map { match -> "${match.groupValues[1]}=${match.groupValues[3]}" }
+            .distinct()
+            .toList()
+
     private fun parseIsoToEpochMs(value: String): Long {
         try {
             return Instant.parse(value).toEpochMilli()
@@ -265,4 +312,10 @@ object CotMessageParser {
     }
 
     private const val ALL_CHAT_ROOMS = "All Chat Rooms"
+    private val TAG_PATTERN = """<[^>]+>""".toRegex()
+    private val ATTRIBUTE_PATTERN =
+        """\b([A-Za-z_][A-Za-z0-9_.:-]*)\s*=\s*(['"])(.*?)\2""".toRegex()
+    private val CHANNEL_ATTRIBUTE_PATTERN =
+        """\b(channel|channelId|channelUid|channelName|bitpos)\s*=\s*(['"])(.*?)\2"""
+            .toRegex(RegexOption.IGNORE_CASE)
 }

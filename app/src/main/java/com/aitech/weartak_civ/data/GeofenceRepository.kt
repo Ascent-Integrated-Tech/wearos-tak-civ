@@ -8,6 +8,7 @@
  */
 package com.aitech.weartak_civ.data
 
+import android.util.Log
 import com.aitech.weartak_civ.data.model.GeofenceCot
 import kotlinx.coroutines.flow.StateFlow
 
@@ -17,6 +18,7 @@ object GeofenceRepository {
     private val geofenceStore = SourceAwareCotStore(
         sourceIdOf = { geofence: GeofenceCot -> geofence.sourceServerId ?: NON_TAK_SOURCE },
         cotUidOf = GeofenceCot::uid,
+        eventTimeOf = GeofenceCot::eventTime,
         receivedAtOf = GeofenceCot::receivedAt
     )
 
@@ -31,16 +33,33 @@ object GeofenceRepository {
         applyGeofence(geofence)
     }
 
-    fun clearSource(serverId: String) {
-        geofenceStore.removeSource(serverId)
-    }
+    fun clearSource(serverId: String): List<GeofenceCot> = geofenceStore.removeSource(serverId)
 
     private fun applyGeofence(geofence: GeofenceCot) {
         val sourceId = geofence.sourceServerId ?: NON_TAK_SOURCE
         if (geofence.tracking) {
-            geofenceStore.upsert(geofence)
+            val result = geofenceStore.upsertWithResult(geofence)
+            Log.d(
+                TAG,
+                "Map state geofence upsert uid=${geofence.uid} sourceServerId=${geofence.sourceServerId} " +
+                    "eventTime=${geofence.eventTime} receivedAt=${geofence.receivedAt} " +
+                    "applied=${result.applied} visibleSourceId=${geofenceStore.visibleKey(geofence.uid)?.sourceId} " +
+                    "channelOwnership=unavailable"
+            )
         } else {
-            geofenceStore.remove(SourceCotKey(sourceId, geofence.uid))
+            val removed = geofenceStore.removeIfNotOlder(
+                key = SourceCotKey(sourceId, geofence.uid),
+                eventTime = geofence.eventTime,
+                receivedAt = geofence.receivedAt
+            )
+            Log.d(
+                TAG,
+                "Map state geofence stop uid=${geofence.uid} sourceServerId=${geofence.sourceServerId} " +
+                    "eventTime=${geofence.eventTime} receivedAt=${geofence.receivedAt} removed=${removed != null} " +
+                    "visibleSourceId=${geofenceStore.visibleKey(geofence.uid)?.sourceId} channelOwnership=unavailable"
+            )
         }
     }
+
+    private const val TAG = "WearTAK-GeofenceRepository"
 }

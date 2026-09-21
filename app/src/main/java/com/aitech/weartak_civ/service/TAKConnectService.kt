@@ -23,6 +23,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.cot.CotStreamFramer
 import com.aitech.weartak_civ.cot.TakServerCotEnvelope
 import com.aitech.weartak_civ.cot.TakServerCotIngestor
@@ -33,6 +34,7 @@ import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
+import com.aitech.weartak_civ.data.model.TakChannel
 import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.data.takserver.TakChannelApi
@@ -638,6 +640,7 @@ class TAKConnectService: Service() {
 
         @Volatile var serviceStopping: Boolean = false
         private val connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        private val channelTraceSequence = AtomicInteger(0)
 
         var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
         private val takServerDetailsById = ConcurrentHashMap<String, TakServerDetail>()
@@ -646,17 +649,25 @@ class TAKConnectService: Service() {
             TakServerId.normalizeOrNull(serverId)?.let(takServerDetailsById::get)
 
         fun refreshTakChannels(serverId: String) {
+            val traceId = nextChannelTraceId("manual-refresh", serverId)
             val detail = getTakServerDetail(serverId)
             if (detail == null) {
-                Log.e(TAG, "Cannot refresh TAK channels: connected server not found for $serverId")
+                Log.e(TAG, "Cannot refresh TAK channels trace=$traceId: connected server not found for $serverId")
                 return
             }
+            Log.i(
+                TAG,
+                "Channel refresh requested trace=$traceId serverId=${detail.serverId} " +
+                    "serverName=${detail.name} address=${detail.address} reason=user-request"
+            )
             connectionScope.launch {
                 detail.channelMutex.withLock {
                     loadTakChannels(
                         detail = detail,
                         sendLatestSa = true,
                         checkSupport = true,
+                        traceId = traceId,
+                        reason = "user-request",
                     )
                 }
             }
@@ -667,17 +678,24 @@ class TAKConnectService: Service() {
             channelBitPosition: Int,
             shouldBeActive: Boolean,
         ) {
+            val traceId = nextChannelTraceId("toggle", serverId, channelBitPosition)
             val detail = getTakServerDetail(serverId)
             if (detail == null) {
-                Log.e(TAG, "Cannot update TAK channel: connected server not found for $serverId")
+                Log.e(TAG, "Cannot update TAK channel trace=$traceId: connected server not found for $serverId")
                 return
             }
+            Log.i(
+                TAG,
+                "Channel toggle requested trace=$traceId serverId=${detail.serverId} serverName=${detail.name} " +
+                    "address=${detail.address} bitpos=$channelBitPosition desiredActive=$shouldBeActive"
+            )
             connectionScope.launch {
                 detail.channelMutex.withLock {
                     updateTakChannelLocked(
                         detail = detail,
                         channelBitPosition = channelBitPosition,
                         shouldBeActive = shouldBeActive,
+                        traceId = traceId,
                     )
                 }
             }
@@ -687,15 +705,28 @@ class TAKConnectService: Service() {
             detail: TakServerDetail,
             channelBitPosition: Int,
             shouldBeActive: Boolean,
+            traceId: String,
         ) {
             val previous = dataRepository.takChannels.value
                 .firstOrNull { it.serverId == detail.serverId }
             val previousChannel = previous?.channels
                 ?.firstOrNull { it.bitPosition == channelBitPosition }
             if (previous == null || previousChannel == null) {
-                Log.e(TAG, "Cannot update missing TAK channel bitpos=$channelBitPosition serverId=${detail.serverId}")
+                Log.e(
+                    TAG,
+                    "Cannot update missing TAK channel trace=$traceId bitpos=$channelBitPosition " +
+                        "serverId=${detail.serverId} knownChannels=${previous?.channels.orEmpty().diagnosticSummary()}"
+                )
                 return
             }
+
+            Log.i(
+                TAG,
+                "Channel toggle starting trace=$traceId serverId=${detail.serverId} serverName=${detail.name} " +
+                    "channel=${previousChannel.name} bitpos=$channelBitPosition " +
+                    "previousActive=${previousChannel.active} desiredActive=$shouldBeActive " +
+                    "allChannels=${previous.channels.diagnosticSummary()}"
+            )
 
             dataRepository.updateTakServerChannels(
                 TakChannelState.beginUpdate(
@@ -708,7 +739,7 @@ class TAKConnectService: Service() {
             val api = try {
                 channelApi(detail)
             } catch (error: Exception) {
-                publishChannelUpdateFailure(detail, previous, error)
+                publishChannelUpdateFailure(detail, previous, traceId, error)
                 return
             }
 
@@ -717,11 +748,12 @@ class TAKConnectService: Service() {
                     channelBitPosition = channelBitPosition,
                     shouldBeActive = shouldBeActive,
                     clientUid = MainActivity.device_uid,
+                    traceId = traceId,
                 )
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                publishChannelUpdateFailure(detail, previous, error)
+                publishChannelUpdateFailure(detail, previous, traceId, error)
                 return
             }
 
@@ -732,12 +764,22 @@ class TAKConnectService: Service() {
                 channels = confirmed.channels,
             )
             dataRepository.updateTakServerChannels(confirmedState)
+            Log.i(
+                TAG,
+                "Channel toggle API accepted trace=$traceId serverId=${detail.serverId} " +
+                    "confirmedChannels=${confirmed.channels.diagnosticSummary()}"
+            )
 
             try {
-                dataRepository.clearSource(detail.serverId)
+                val clearSummary = dataRepository.clearSource(detail.serverId)
+                Log.i(
+                    TAG,
+                    "Channel toggle local invalidation complete trace=$traceId ${clearSummary.diagnosticSummary()}"
+                )
                 val refreshed = api.loadGroups(
                     sendLatestSa = true,
                     checkSupport = false,
+                    traceId = traceId,
                 )
                 dataRepository.updateTakServerChannels(
                     TakServerChannels(
@@ -746,6 +788,11 @@ class TAKConnectService: Service() {
                         status = channelStatus(refreshed.channels.isEmpty()),
                         channels = refreshed.channels,
                     )
+                )
+                Log.i(
+                    TAG,
+                    "Channel toggle reconciliation complete trace=$traceId serverId=${detail.serverId} " +
+                        "refreshedChannels=${refreshed.channels.diagnosticSummary()} sendLatestSa=true"
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -756,13 +803,18 @@ class TAKConnectService: Service() {
                         message = "Channel updated, but live data refresh failed: ${channelError(error)}",
                     )
                 )
-                Log.e(TAG, "Channel refresh failed after update for serverId=${detail.serverId}", error)
+                Log.e(
+                    TAG,
+                    "Channel refresh failed after update trace=$traceId serverId=${detail.serverId}",
+                    error
+                )
             }
         }
 
         private fun publishChannelUpdateFailure(
             detail: TakServerDetail,
             previous: TakServerChannels,
+            traceId: String,
             error: Exception,
         ) {
             dataRepository.updateTakServerChannels(
@@ -771,13 +823,15 @@ class TAKConnectService: Service() {
                     message = "Channel update failed: ${channelError(error)}",
                 )
             )
-            Log.e(TAG, "Channel update failed for serverId=${detail.serverId}", error)
+            Log.e(TAG, "Channel update failed trace=$traceId serverId=${detail.serverId}", error)
         }
 
         private suspend fun loadTakChannels(
             detail: TakServerDetail,
             sendLatestSa: Boolean,
             checkSupport: Boolean,
+            traceId: String,
+            reason: String,
         ) {
             val previous = dataRepository.takChannels.value
                 .firstOrNull { it.serverId == detail.serverId }
@@ -789,8 +843,18 @@ class TAKConnectService: Service() {
                     channels = previous?.channels.orEmpty(),
                 )
             )
+            Log.i(
+                TAG,
+                "Channel load starting trace=$traceId serverId=${detail.serverId} serverName=${detail.name} " +
+                    "address=${detail.address} reason=$reason sendLatestSa=$sendLatestSa " +
+                    "checkSupport=$checkSupport previous=${previous?.channels.orEmpty().diagnosticSummary()}"
+            )
             try {
-                val snapshot = channelApi(detail).loadGroups(sendLatestSa, checkSupport)
+                val snapshot = channelApi(detail).loadGroups(
+                    sendLatestSa = sendLatestSa,
+                    checkSupport = checkSupport,
+                    traceId = traceId,
+                )
                 dataRepository.updateTakServerChannels(
                     TakServerChannels(
                         serverId = detail.serverId,
@@ -798,6 +862,11 @@ class TAKConnectService: Service() {
                         status = channelStatus(snapshot.channels.isEmpty()),
                         channels = snapshot.channels,
                     )
+                )
+                Log.i(
+                    TAG,
+                    "Channel load complete trace=$traceId serverId=${detail.serverId} reason=$reason " +
+                        "channels=${snapshot.channels.diagnosticSummary()}"
                 )
             } catch (error: CancellationException) {
                 throw error
@@ -810,6 +879,10 @@ class TAKConnectService: Service() {
                         channels = emptyList(),
                     )
                 )
+                Log.i(
+                    TAG,
+                    "Channel load unsupported trace=$traceId serverId=${detail.serverId} reason=$reason"
+                )
             } catch (error: Exception) {
                 dataRepository.updateTakServerChannels(
                     TakServerChannels(
@@ -820,13 +893,17 @@ class TAKConnectService: Service() {
                         errorMessage = channelError(error),
                     )
                 )
-                Log.e(TAG, "Failed to refresh channels for serverId=${detail.serverId}", error)
+                Log.e(
+                    TAG,
+                    "Failed to refresh channels trace=$traceId serverId=${detail.serverId} reason=$reason",
+                    error
+                )
             }
         }
 
         private fun channelApi(detail: TakServerDetail): TakChannelApi {
             check(detail.isEnabled && detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT) {
-                "TAK Server is not connected"
+                "TAK Server Xis not connected"
             }
             val sslContext = checkNotNull(detail.channelSslContext) {
                 "TAK Server channel TLS context is unavailable"
@@ -834,7 +911,13 @@ class TAKConnectService: Service() {
             val trustManager = checkNotNull(detail.channelTrustManager) {
                 "TAK Server channel trust manager is unavailable"
             }
-            return TakChannelApi(detail.address, sslContext, trustManager)
+            return TakChannelApi(
+                address = detail.address,
+                sslContext = sslContext,
+                trustManager = trustManager,
+                serverId = detail.serverId,
+                serverName = detail.name,
+            )
         }
 
         private fun channelStatus(empty: Boolean): TakChannelStatus =
@@ -844,33 +927,83 @@ class TAKConnectService: Service() {
             error.message?.takeIf(String::isNotBlank) ?: error.javaClass.simpleName
 
         private fun loadTakChannelsAfterConnect(detail: TakServerDetail) {
+            val traceId = nextChannelTraceId("post-connect-load", detail.serverId)
             connectionScope.launch {
                 detail.channelMutex.withLock {
                     loadTakChannels(
                         detail = detail,
                         sendLatestSa = false,
                         checkSupport = true,
+                        traceId = traceId,
+                        reason = "post-connect",
                     )
                 }
             }
         }
 
         private suspend fun reconcileServerChannelChange(serverId: String) {
-            val detail = getTakServerDetail(serverId) ?: return
+            val traceId = nextChannelTraceId("server-notice", serverId)
+            val detail = getTakServerDetail(serverId)
+            if (detail == null) {
+                Log.e(TAG, "Cannot reconcile server channel notice trace=$traceId: serverId=$serverId not found")
+                return
+            }
             detail.channelMutex.withLock {
+                Log.i(
+                    TAG,
+                    "Server channel-change notice reconciliation starting trace=$traceId " +
+                        "serverId=$serverId serverName=${detail.name} address=${detail.address}"
+                )
                 try {
-                    dataRepository.clearSource(serverId)
+                    val clearSummary = dataRepository.clearSource(serverId)
+                    Log.i(
+                        TAG,
+                        "Server channel-change notice local invalidation complete trace=$traceId " +
+                            clearSummary.diagnosticSummary()
+                    )
                 } catch (error: Exception) {
-                    Log.e(TAG, "Unable to invalidate live data for serverId=$serverId", error)
+                    Log.e(TAG, "Unable to invalidate live data trace=$traceId serverId=$serverId", error)
                     return@withLock
                 }
                 loadTakChannels(
                     detail = detail,
                     sendLatestSa = true,
                     checkSupport = false,
+                    traceId = traceId,
+                    reason = "inbound-t-x-g-c",
                 )
             }
         }
+
+        private fun nextChannelTraceId(
+            operation: String,
+            serverId: String,
+            bitPosition: Int? = null,
+        ): String = buildString {
+            append(operation)
+            append('-')
+            append(serverId.take(8))
+            bitPosition?.let {
+                append("-bit")
+                append(it)
+            }
+            append('-')
+            append(channelTraceSequence.incrementAndGet())
+        }
+
+        private fun List<TakChannel>.diagnosticSummary(): String = joinToString(
+            prefix = "[",
+            postfix = "]",
+        ) { channel ->
+            "${channel.name}{bitpos=${channel.bitPosition},direction=${channel.direction}," +
+                "active=${channel.active},updating=${channel.updating}}"
+        }
+
+        private fun cotPayloadFingerprint(rawXml: String): String =
+            MessageDigest.getInstance("SHA-256")
+                .digest(rawXml.toByteArray(Charsets.UTF_8))
+                .take(8)
+                .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
         var newServerAddedViaUi = false
         val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
@@ -887,10 +1020,22 @@ class TAKConnectService: Service() {
             TakServerCotIngestor(
                 sink = object : TakServerCotSink {
                     override suspend fun onChat(event: TakChatEvent) {
+                        Log.d(
+                            TAG,
+                            "Inbound chat stamped sourceServerId=${event.sourceServerId} " +
+                                "receivedAt=${event.receivedAt} roomUids=${event.parsedRooms.orEmpty().map { it.uid }} " +
+                                "channelOwnership=unavailable"
+                        )
                         EventBus.getDefault().post(event)
                     }
 
                     override suspend fun onGeofence(geofence: GeofenceCot) {
+                        Log.d(
+                            TAG,
+                            "Inbound geofence stamped uid=${geofence.uid} sourceServerId=${geofence.sourceServerId} " +
+                                "eventTime=${geofence.eventTime} receivedAt=${geofence.receivedAt} " +
+                                "channelOwnership=unavailable"
+                        )
                         GeofenceRepository.sendGeofenceCot(geofence)
                     }
 
@@ -904,8 +1049,18 @@ class TAKConnectService: Service() {
                             sourceServerId = envelope.sourceServerId,
                             receivedAt = envelope.receivedAt
                         )
+                        Log.d(
+                            TAG,
+                                "Inbound user delivered to map state uid=${event.uid} " +
+                                "sourceServerId=${envelope.sourceServerId} sourceAddress=${envelope.sourceServerAddress} " +
+                                "eventTime=${event.time} nonStale=$shouldTrack channelOwnership=unavailable"
+                        )
                         if (!shouldTrack) {
-                            Log.i(TAG, "Removed stale received user uid=${event.uid}")
+                            Log.i(
+                                TAG,
+                                "Processed stale received user uid=${event.uid} " +
+                                    "sourceServerId=${envelope.sourceServerId}"
+                            )
                         }
                     }
 
@@ -919,8 +1074,18 @@ class TAKConnectService: Service() {
                             sourceServerId = envelope.sourceServerId,
                             receivedAt = envelope.receivedAt
                         )
+                        Log.d(
+                            TAG,
+                                "Inbound marker delivered to map state uid=${event.uid} " +
+                                "sourceServerId=${envelope.sourceServerId} sourceAddress=${envelope.sourceServerAddress} " +
+                                "eventTime=${event.time} nonStale=$shouldTrack channelOwnership=unavailable"
+                        )
                         if (!shouldTrack) {
-                            Log.i(TAG, "Removed stale received marker uid=${event.uid}")
+                            Log.i(
+                                TAG,
+                                "Processed stale received marker uid=${event.uid} " +
+                                    "sourceServerId=${envelope.sourceServerId}"
+                            )
                             return
                         }
 
@@ -936,9 +1101,19 @@ class TAKConnectService: Service() {
                                 receivedAt = envelope.receivedAt
                             )
                         )
+                        Log.d(
+                            TAG,
+                            "Inbound marker delivered to Bloodhound state uid=${event.uid} " +
+                                "sourceServerId=${envelope.sourceServerId} eventTime=${event.time}"
+                        )
                     }
 
                     override suspend fun onChannelChanged(envelope: TakServerCotEnvelope) {
+                        Log.i(
+                            TAG,
+                            "Inbound t-x-g-c channel-change CoT sourceServerId=${envelope.sourceServerId} " +
+                                "sourceAddress=${envelope.sourceServerAddress} receivedAt=${envelope.receivedAt}"
+                        )
                         reconcileServerChannelChange(envelope.sourceServerId)
                     }
                 },
@@ -1969,13 +2144,37 @@ class TAKConnectService: Service() {
                             } ?: break
 
                             for (rawXml in framer.append(line)) {
-                                cotIngestor.ingest(
-                                    TakServerCotEnvelope(
-                                        sourceServerId = takServerDetail.serverId,
-                                        sourceServerAddress = takServerDetail.address,
-                                        receivedAt = System.currentTimeMillis(),
-                                        rawXml = rawXml
-                                    )
+                                val envelope = TakServerCotEnvelope(
+                                    sourceServerId = takServerDetail.serverId,
+                                    sourceServerAddress = takServerDetail.address,
+                                    receivedAt = System.currentTimeMillis(),
+                                    rawXml = rawXml
+                                )
+                                val diagnostics = CotMessageParser.ingressDiagnostics(rawXml)
+                                val activeChannels = dataRepository.takChannels.value
+                                    .firstOrNull { it.serverId == takServerDetail.serverId }
+                                    ?.channels
+                                    .orEmpty()
+                                    .filter { it.active }
+                                Log.d(
+                                    TAG,
+                                    "Inbound CoT received serverId=${takServerDetail.serverId} " +
+                                        "serverName=${takServerDetail.name} sourceAddress=${takServerDetail.address} " +
+                                        "uid=${diagnostics.uid} type=${diagnostics.type} " +
+                                        "eventTime=${diagnostics.eventTime} receivedAt=${envelope.receivedAt} " +
+                                        "team=${diagnostics.teamName} role=${diagnostics.teamRole} " +
+                                        "flowTags=${diagnostics.flowTagNames} " +
+                                        "explicitChannelStamps=${diagnostics.explicitChannelStamps} " +
+                                        "activeChannelsAtReceipt=${activeChannels.diagnosticSummary()} " +
+                                        "channelOwnership=${if (diagnostics.explicitChannelStamps.isEmpty()) "unavailable" else "explicit-stamp-present"} " +
+                                        "payloadSha256Prefix=${cotPayloadFingerprint(rawXml)} " +
+                                        "payloadBytes=${rawXml.toByteArray(Charsets.UTF_8).size}"
+                                )
+                                val result = cotIngestor.ingest(envelope)
+                                Log.d(
+                                    TAG,
+                                    "Inbound CoT routed serverId=${takServerDetail.serverId} uid=${diagnostics.uid} " +
+                                        "type=${diagnostics.type} result=$result"
                                 )
                             }
                         }

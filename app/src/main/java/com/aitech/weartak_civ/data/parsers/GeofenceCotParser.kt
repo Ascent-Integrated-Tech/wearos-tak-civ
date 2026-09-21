@@ -9,6 +9,7 @@
 package com.aitech.weartak_civ.data.parsers
 
 import android.util.Log
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.data.model.GeofenceTrigger
 import com.aitech.weartak_civ.data.model.LatLon
@@ -104,6 +105,7 @@ object GeofenceCotParser {
         val points = normalizePolygon(extractLinkLatLon(doc))
         val tracking = parseTracking(xmlStr) ?: false
         val trigger = parseTriggerFromXml(xmlStr)
+        val eventTime = CotMessageParser.eventTimeOrNull(xmlStr) ?: System.currentTimeMillis()
 
         return GeofenceCot(
             uid = uid,
@@ -111,7 +113,8 @@ object GeofenceCotParser {
             callsign = callsign,
             points = points,
             tracking = tracking,
-            trigger = trigger
+            trigger = trigger,
+            eventTime = eventTime
         )
     }
 

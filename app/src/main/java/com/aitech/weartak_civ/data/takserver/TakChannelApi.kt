@@ -9,6 +9,7 @@
 
 package com.aitech.weartak_civ.data.takserver
 
+import android.util.Log
 import com.aitech.weartak_civ.data.model.TakChannel
 import com.fasterxml.jackson.databind.JsonNode
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -117,6 +118,8 @@ internal class TakChannelApi(
     private val address: String,
     sslContext: SSLContext,
     trustManager: X509TrustManager,
+    private val serverId: String,
+    private val serverName: String,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .sslSocketFactory(sslContext.socketFactory, trustManager)
         .connectTimeout(15, TimeUnit.SECONDS)
@@ -126,21 +129,45 @@ internal class TakChannelApi(
     fun loadGroups(
         sendLatestSa: Boolean,
         checkSupport: Boolean,
+        traceId: String,
     ): TakChannelGroupSnapshot {
-        if (checkSupport && !isSupported()) throw TakChannelsUnsupportedException()
-        return TakChannelJson.parseGroupsResponse(execute(groupsRequest(sendLatestSa)))
+        if (checkSupport && !isSupported(traceId)) throw TakChannelsUnsupportedException()
+        val snapshot = TakChannelJson.parseGroupsResponse(
+            execute(
+                request = groupsRequest(sendLatestSa),
+                traceId = traceId,
+                operation = if (sendLatestSa) "load-groups-and-send-latest-sa" else "load-groups"
+            )
+        )
+        Log.i(
+            TAG,
+            "Channel API groups parsed trace=$traceId serverId=$serverId serverName=$serverName " +
+                "sendLatestSa=$sendLatestSa channels=${snapshot.channels.diagnosticSummary()}"
+        )
+        return snapshot
     }
 
     fun updateChannel(
         channelBitPosition: Int,
         shouldBeActive: Boolean,
         clientUid: String,
+        traceId: String,
     ): TakChannelGroupSnapshot {
-        val current = loadGroups(sendLatestSa = false, checkSupport = false)
+        val current = loadGroups(
+            sendLatestSa = false,
+            checkSupport = false,
+            traceId = traceId,
+        )
         val updated = TakChannelJson.updateActive(
             payload = current.payload,
             channelBitPosition = channelBitPosition,
             shouldBeActive = shouldBeActive,
+        )
+        Log.i(
+            TAG,
+            "Channel API toggle payload prepared trace=$traceId serverId=$serverId serverName=$serverName " +
+                "bitpos=$channelBitPosition desiredActive=$shouldBeActive " +
+                "before=${current.channels.diagnosticSummary()} after=${updated.channels.diagnosticSummary()}"
         )
         val request = Request.Builder()
             .url(takChannelActiveGroupsUrl(address, clientUid))
@@ -150,17 +177,29 @@ internal class TakChannelApi(
             )
             .addHeader("Accept", "*/*")
             .build()
-        execute(request)
+        execute(
+            request = request,
+            traceId = traceId,
+            operation = "update-active-groups",
+            requestBodyForLog = updated.payload.toString(),
+        )
         return updated
     }
 
-    private fun isSupported(): Boolean {
+    private fun isSupported(traceId: String): Boolean {
         val request = Request.Builder()
             .url(takChannelEndpoint(address, "Marti/api/groups/groupCacheEnabled").build())
             .get()
             .addHeader("Accept", "*/*")
             .build()
-        return TakChannelJson.parseSupportResponse(execute(request))
+        val supported = TakChannelJson.parseSupportResponse(
+            execute(request, traceId, "check-group-cache-support")
+        )
+        Log.i(
+            TAG,
+            "Channel API support parsed trace=$traceId serverId=$serverId serverName=$serverName supported=$supported"
+        )
+        return supported
     }
 
     private fun groupsRequest(sendLatestSa: Boolean): Request {
@@ -171,16 +210,79 @@ internal class TakChannelApi(
             .build()
     }
 
-    private fun execute(request: Request): String = client.newCall(request).execute().use { response ->
-        val body = response.body?.string().orEmpty()
-        if (!response.isSuccessful) {
-            throw TakChannelHttpException(
-                "TAK channel request failed: ${response.code} ${request.method} ${request.url.encodedPath}"
+    private fun execute(
+        request: Request,
+        traceId: String,
+        operation: String,
+        requestBodyForLog: String? = null,
+    ): String {
+        val safeUrl = request.url.newBuilder()
+            .apply {
+                if (request.url.queryParameter("clientUid") != null) {
+                    setQueryParameter("clientUid", "REDACTED")
+                }
+            }
+            .build()
+        Log.i(
+            TAG,
+            "Channel API request trace=$traceId operation=$operation serverId=$serverId " +
+                "serverName=$serverName method=${request.method} url=$safeUrl"
+        )
+        requestBodyForLog?.let { body ->
+            Log.d(
+                TAG,
+                "Channel API request body trace=$traceId operation=$operation " +
+                    "bytes=${body.toByteArray().size} body=${body.boundedForLog()}"
             )
         }
-        body
+        val startedAtNanos = System.nanoTime()
+        try {
+            return client.newCall(request).execute().use { response ->
+                val body = response.body?.string().orEmpty()
+                val durationMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
+                Log.i(
+                    TAG,
+                    "Channel API response trace=$traceId operation=$operation serverId=$serverId " +
+                        "code=${response.code} successful=${response.isSuccessful} durationMs=$durationMs " +
+                        "bodyBytes=${body.toByteArray().size}"
+                )
+                Log.d(
+                    TAG,
+                    "Channel API response body trace=$traceId operation=$operation body=${body.boundedForLog()}"
+                )
+                if (!response.isSuccessful) {
+                    throw TakChannelHttpException(
+                        "TAK channel request failed: ${response.code} ${request.method} ${request.url.encodedPath}"
+                    )
+                }
+                body
+            }
+        } catch (error: Exception) {
+            val durationMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
+            Log.e(
+                TAG,
+                "Channel API failure trace=$traceId operation=$operation serverId=$serverId " +
+                    "durationMs=$durationMs error=${error.javaClass.simpleName}: ${error.message}",
+                error
+            )
+            throw error
+        }
     }
 
+    private fun List<TakChannel>.diagnosticSummary(): String = joinToString(
+        prefix = "[",
+        postfix = "]",
+    ) { channel ->
+        "${channel.name}{bitpos=${channel.bitPosition},direction=${channel.direction},active=${channel.active}}"
+    }
+
+    private fun String.boundedForLog(): String =
+        if (length <= MAX_LOG_BODY_CHARS) this else take(MAX_LOG_BODY_CHARS) + "...<truncated>"
+
+    private companion object {
+        const val TAG = "WearTAK-TakChannelApi"
+        const val MAX_LOG_BODY_CHARS = 12_000
+    }
 }
 
 internal open class TakChannelApiException(message: String, cause: Throwable? = null) :

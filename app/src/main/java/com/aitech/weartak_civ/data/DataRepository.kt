@@ -1469,13 +1469,13 @@ class DataRepository(private val context: Context) {
     private val receivedUserStore = SourceAwareCotStore(
         sourceIdOf = { item: ReceivedUser -> item.sourceServerId ?: NON_TAK_COT_SOURCE_ID },
         cotUidOf = ReceivedUser::uid,
+        eventTimeOf = ReceivedUser::timeReceived,
         receivedAtOf = ReceivedUser::receivedAt
     )
     val receivedUserList: StateFlow<List<ReceivedUser>> = receivedUserStore.visibleItems
 
-    suspend fun upsertReceivedUser(item: ReceivedUser) {
-        receivedUserStore.upsert(item)
-    }
+    suspend fun upsertReceivedUser(item: ReceivedUser): SourceCotUpsertResult =
+        receivedUserStore.upsertWithResult(item)
 
     suspend fun removeReceivedUserByUid(uid: String) {
         receivedUserStore.removeUid(uid)
@@ -1493,33 +1493,50 @@ class DataRepository(private val context: Context) {
     ): Boolean {
         val sourceKey = sourceServerId ?: NON_TAK_COT_SOURCE_ID
         if (event.stale <= System.currentTimeMillis()) {
-            receivedUserStore.remove(SourceCotKey(sourceKey, event.uid))
+            val removed = receivedUserStore.removeIfNotOlder(
+                key = SourceCotKey(sourceKey, event.uid),
+                eventTime = event.time,
+                receivedAt = receivedAt
+            )
+            Log.d(
+                TAG,
+                "Map state user stale uid=${event.uid} sourceServerId=$sourceServerId eventTime=${event.time} " +
+                    "receivedAt=$receivedAt removed=${removed != null} " +
+                    "visibleSourceId=${receivedUserStore.visibleKey(event.uid)?.sourceId} " +
+                    "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
+            )
             return false
         }
 
-        upsertReceivedUser(
-            ReceivedUser(
-                uid = event.uid,
-                type = event.type,
-                team = event.team,
-                role = event.role,
-                title = event.detail.markerCallsign.orEmpty(),
-                timeReceived = event.time,
-                staleTime = event.stale,
-                location = LocationSnapshot(
-                    timeMillis = event.time,
-                    lat = event.point.lat,
-                    lon = event.point.lon,
-                    hae = event.point.hae,
-                    ce = event.point.ce.toFloat(),
-                    le = event.point.le.toFloat(),
-                    course = null,
-                    speed = null
-                ),
-                source = source,
-                sourceServerId = sourceServerId,
-                receivedAt = receivedAt
-            )
+        val item = ReceivedUser(
+            uid = event.uid,
+            type = event.type,
+            team = event.team,
+            role = event.role,
+            title = event.detail.markerCallsign.orEmpty(),
+            timeReceived = event.time,
+            staleTime = event.stale,
+            location = LocationSnapshot(
+                timeMillis = event.time,
+                lat = event.point.lat,
+                lon = event.point.lon,
+                hae = event.point.hae,
+                ce = event.point.ce.toFloat(),
+                le = event.point.le.toFloat(),
+                course = null,
+                speed = null
+            ),
+            source = source,
+            sourceServerId = sourceServerId,
+            receivedAt = receivedAt
+        )
+        val result = upsertReceivedUser(item)
+        Log.d(
+            TAG,
+            "Map state user upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
+                "eventTime=${event.time} stale=${event.stale} receivedAt=$receivedAt applied=${result.applied} " +
+                "visibleSourceId=${receivedUserStore.visibleKey(event.uid)?.sourceId} team=${event.team} " +
+                "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
         )
         return true
     }
@@ -1599,13 +1616,13 @@ class DataRepository(private val context: Context) {
     private val receivedMarkerStore = SourceAwareCotStore(
         sourceIdOf = { item: ReceivedMarker -> item.sourceServerId ?: NON_TAK_COT_SOURCE_ID },
         cotUidOf = ReceivedMarker::uid,
+        eventTimeOf = ReceivedMarker::timeReceived,
         receivedAtOf = ReceivedMarker::receivedAt
     )
     val receivedMarkerList: StateFlow<List<ReceivedMarker>> = receivedMarkerStore.visibleItems
 
-    suspend fun upsertReceivedMarker(item: ReceivedMarker) {
-        receivedMarkerStore.upsert(item)
-    }
+    suspend fun upsertReceivedMarker(item: ReceivedMarker): SourceCotUpsertResult =
+        receivedMarkerStore.upsertWithResult(item)
 
     suspend fun removeReceivedMarkerByUid(uid: String) {
         receivedMarkerStore.removeUid(uid)
@@ -1623,43 +1640,103 @@ class DataRepository(private val context: Context) {
     ): Boolean {
         val sourceKey = sourceServerId ?: NON_TAK_COT_SOURCE_ID
         if (event.stale <= System.currentTimeMillis()) {
-            receivedMarkerStore.remove(SourceCotKey(sourceKey, event.uid))
+            val removed = receivedMarkerStore.removeIfNotOlder(
+                key = SourceCotKey(sourceKey, event.uid),
+                eventTime = event.time,
+                receivedAt = receivedAt
+            )
+            Log.d(
+                TAG,
+                "Map state marker stale uid=${event.uid} sourceServerId=$sourceServerId eventTime=${event.time} " +
+                    "receivedAt=$receivedAt removed=${removed != null} " +
+                    "visibleSourceId=${receivedMarkerStore.visibleKey(event.uid)?.sourceId} " +
+                    "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
+            )
             return false
         }
 
-        upsertReceivedMarker(
-            ReceivedMarker(
-                uid = event.uid,
-                markerType = event.type,
-                title = event.detail.markerCallsign.orEmpty(),
-                timeReceived = event.time,
-                staleTime = event.stale,
-                location = LocationSnapshot(
-                    timeMillis = event.time,
-                    lat = event.point.lat,
-                    lon = event.point.lon,
-                    hae = event.point.hae,
-                    ce = event.point.ce.toFloat(),
-                    le = event.point.le.toFloat(),
-                    course = null,
-                    speed = null
-                ),
-                source = source,
-                sourceServerId = sourceServerId,
-                receivedAt = receivedAt
-            )
+        val item = ReceivedMarker(
+            uid = event.uid,
+            markerType = event.type,
+            title = event.detail.markerCallsign.orEmpty(),
+            timeReceived = event.time,
+            staleTime = event.stale,
+            location = LocationSnapshot(
+                timeMillis = event.time,
+                lat = event.point.lat,
+                lon = event.point.lon,
+                hae = event.point.hae,
+                ce = event.point.ce.toFloat(),
+                le = event.point.le.toFloat(),
+                course = null,
+                speed = null
+            ),
+            source = source,
+            sourceServerId = sourceServerId,
+            receivedAt = receivedAt
+        )
+        val result = upsertReceivedMarker(item)
+        Log.d(
+            TAG,
+            "Map state marker upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
+                "eventTime=${event.time} stale=${event.stale} receivedAt=$receivedAt applied=${result.applied} " +
+                "visibleSourceId=${receivedMarkerStore.visibleKey(event.uid)?.sourceId} " +
+                "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
         )
         return true
     }
 
+    data class SourceClearSummary(
+        val serverId: String,
+        val userUids: List<String>,
+        val markerUids: List<String>,
+        val geofenceUids: List<String>,
+        val bloodhoundUids: List<String>
+    ) {
+        fun diagnosticSummary(): String =
+            "serverId=$serverId users=${userUids.size}:${userUids.forLog()} " +
+                "markers=${markerUids.size}:${markerUids.forLog()} " +
+                "geofences=${geofenceUids.size}:${geofenceUids.forLog()} " +
+                "bloodhounds=${bloodhoundUids.size}:${bloodhoundUids.forLog()}"
+
+        private fun List<String>.forLog(): String =
+            take(MAX_LOG_UIDS).joinToString(prefix = "[", postfix = if (size > MAX_LOG_UIDS) ",...]" else "]")
+
+        private companion object {
+            const val MAX_LOG_UIDS = 20
+        }
+    }
+
     /** Clears live state owned by one TAK Server while preserving chat and all other sources. */
-    suspend fun clearSource(serverId: String) {
+    suspend fun clearSource(serverId: String): SourceClearSummary {
         val normalizedServerId = TakServerId.normalizeOrNull(serverId)
             ?: throw IllegalArgumentException("Invalid TAK server ID")
-        receivedUserStore.removeSource(normalizedServerId)
-        receivedMarkerStore.removeSource(normalizedServerId)
-        GeofenceRepository.clearSource(normalizedServerId)
-        (context.applicationContext as WearTakApplication).bhRepo.clearSource(normalizedServerId)
+        val summary = SourceClearSummary(
+            serverId = normalizedServerId,
+            userUids = receivedUserStore.removeSource(normalizedServerId).map(ReceivedUser::uid),
+            markerUids = receivedMarkerStore.removeSource(normalizedServerId).map(ReceivedMarker::uid),
+            geofenceUids = GeofenceRepository.clearSource(normalizedServerId).map { it.uid },
+            bloodhoundUids = (context.applicationContext as WearTakApplication).bhRepo
+                .clearSource(normalizedServerId)
+                .map { it.uid }
+        )
+        Log.i(
+            TAG,
+            "Cleared source-owned live state ${summary.diagnosticSummary()} " +
+                "remainingVisibleUsers=${receivedUserList.value.size} " +
+                "remainingVisibleMarkers=${receivedMarkerList.value.size} " +
+                "channelOwnership=unavailable"
+        )
+        return summary
+    }
+
+    private fun activeChannelsForLog(serverId: String?): String {
+        if (serverId == null) return "not-direct-tak"
+        val server = takChannels.value.firstOrNull { it.serverId == serverId } ?: return "unknown"
+        val active = server.channels.filter { it.active }
+        return active.joinToString(prefix = "[", postfix = "]") { channel ->
+            "${channel.name}{bitpos=${channel.bitPosition},direction=${channel.direction}}"
+        }
     }
 
     enum class MarkerType(

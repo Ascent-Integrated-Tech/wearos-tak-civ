@@ -294,7 +294,8 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
                             "title" to JsonPrimitive(m.title.ellipsizeMarkerTitle()),
                             "markerType" to JsonPrimitive(m.markerType),
                             "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent),
-                            "cotType" to JsonPrimitive(m.cotType.name))
+                            "cotType" to JsonPrimitive(m.cotType.name),
+                            "sourceServerId" to JsonPrimitive(m.sourceServerId ?: "unattributed"))
                     )
                 )
             }
@@ -318,7 +319,8 @@ data class MapMarkerItem(
     val lat: Double?,
     val lon: Double?,
     val enQueuedToBeSent: Boolean,
-    val cotType: DataRepository.MarkerCotType
+    val cotType: DataRepository.MarkerCotType,
+    val sourceServerId: String? = null
 )
 
 // Selects the gray icon used for cleared markers
@@ -603,7 +605,8 @@ fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
                             "id" to JsonPrimitive(m.uid),
                             "title" to JsonPrimitive(m.title),
                             "type" to JsonPrimitive(m.type),
-                            "team" to JsonPrimitive(m.team)),
+                            "team" to JsonPrimitive(m.team),
+                            "sourceServerId" to JsonPrimitive(m.sourceServerId ?: "unattributed")),
                     )
                 )
             }
@@ -618,7 +621,8 @@ data class MapUserItem(
     val title: String,
     val lat: Double?,
     val lon: Double?,
-    val role: String?
+    val role: String?,
+    val sourceServerId: String? = null
 )
 
 // Creates MapLibre symbol layers for connected users
@@ -1277,6 +1281,11 @@ fun LayerChannelsPopup(
                             opened = channelsVisible,
                             onToggle = {
                                 if (channelsVisible.value) {
+                                    Log.i(
+                                        TAG,
+                                        "Channel UI refresh serverId=${serverItem.serverId} " +
+                                            "serverName=${serverItem.serverName}"
+                                    )
                                     mapVm.refreshTakChannels(serverItem.serverId)
                                 }
                             }
@@ -1321,6 +1330,14 @@ fun LayerChannelsPopup(
                                         visible = channelItem.active,
                                         onToggle = {
                                             if (!channelItem.updating) {
+                                                Log.i(
+                                                    TAG,
+                                                    "Channel UI toggle serverId=${serverItem.serverId} " +
+                                                        "serverName=${serverItem.serverName} " +
+                                                        "channel=${channelItem.name} bitpos=${channelItem.bitPosition} " +
+                                                        "previousActive=${channelItem.active} " +
+                                                        "desiredActive=${!channelItem.active}"
+                                                )
                                                 mapVm.updateTakChannel(
                                                     serverId = serverItem.serverId,
                                                     channelBitPosition = channelItem.bitPosition,
@@ -1694,11 +1711,30 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
     // Convert received markers and skip markers without a location
     val receivedMapMarkers = remember(receivedMarkerListSetting) {
+        Log.i(
+            TAG,
+            "Map render marker snapshot count=${receivedMarkerListSetting.size} " +
+                "items=${receivedMarkerListSetting.take(20).map { "${it.uid}@${it.sourceServerId}" }}"
+        )
         buildList {
             addAll(
                 receivedMarkerListSetting.mapNotNull { marker ->
-                    val location = marker.location ?: return@mapNotNull null
-                    Log.d(TAG, "raw received marker lat=${location.lat}, lon=${location.lon}")
+                    val location = marker.location
+                    if (location == null) {
+                        Log.w(
+                            TAG,
+                            "Map render marker skipped reason=no-location uid=${marker.uid} " +
+                                "sourceServerId=${marker.sourceServerId}"
+                        )
+                        return@mapNotNull null
+                    }
+                    Log.d(
+                        TAG,
+                        "Map render marker created uid=${marker.uid} sourceServerId=${marker.sourceServerId} " +
+                            "sourceAddress=${marker.source} eventTime=${marker.timeReceived} " +
+                            "receivedAt=${marker.receivedAt} lat=${location.lat} lon=${location.lon} " +
+                            "channelOwnership=unavailable"
+                    )
 
                     MapMarkerItem(
                         uid = marker.uid,
@@ -1708,7 +1744,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                         lon = location.lon,
                         false,
                         //TODO: Is this okay to have here?
-                        DataRepository.MarkerCotType.DROP
+                        DataRepository.MarkerCotType.DROP,
+                        sourceServerId = marker.sourceServerId
 
                     )
                 }
@@ -1759,15 +1796,39 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
     // Convert connected users while excluding contacts already rendered as ATOS
     val receivedMapUsers = remember(receivedUserListSetting, renderedAtosUids) {
+        Log.i(
+            TAG,
+            "Map render user snapshot count=${receivedUserListSetting.size} " +
+                "items=${receivedUserListSetting.take(20).map { "${it.uid}@${it.sourceServerId}" }} " +
+                "renderedAtosUids=${renderedAtosUids.take(20)}"
+        )
         buildList {
             addAll(
                 receivedUserListSetting.mapNotNull { user ->
-                    Log.d(TAG, "raw user = $user")
                     if (user.uid in renderedAtosUids) {
-                        Log.d(TAG, "Suppressing generic user render for ATOS uid=${user.uid}")
+                        Log.d(
+                            TAG,
+                            "Map render user suppressed reason=ATOS uid=${user.uid} " +
+                                "sourceServerId=${user.sourceServerId}"
+                        )
                         return@mapNotNull null
                     }
-                    val location = user.location ?: return@mapNotNull null
+                    val location = user.location
+                    if (location == null) {
+                        Log.w(
+                            TAG,
+                            "Map render user skipped reason=no-location uid=${user.uid} " +
+                                "sourceServerId=${user.sourceServerId}"
+                        )
+                        return@mapNotNull null
+                    }
+                    Log.d(
+                        TAG,
+                        "Map render user created uid=${user.uid} sourceServerId=${user.sourceServerId} " +
+                            "sourceAddress=${user.source} eventTime=${user.timeReceived} " +
+                            "receivedAt=${user.receivedAt} team=${user.team} role=${user.role} " +
+                            "lat=${location.lat} lon=${location.lon} channelOwnership=unavailable"
+                    )
                     MapUserItem(
                         uid = user.uid,
                         type = user.type,
@@ -1775,7 +1836,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                         title = user.title,
                         lat = location.lat,
                         lon = location.lon,
-                        role = user.role
+                        role = user.role,
+                        sourceServerId = user.sourceServerId
                     )
                 }
             )
@@ -1847,8 +1909,9 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             }
     }
 
-
+/*
     Log.d(TAG, receivedMapUsers.toString())
+*/
 
     val activeBloodhound = remember(activeItem) {
         MapBhoundItem(
@@ -2675,7 +2738,7 @@ private fun MapControlsOverlay(
                 val twoHundredFeetInMeters = 200.0 / METERS_TO_FEET
                 val twoHundredFeetWidthDp =
                     twoHundredFeetInMeters / metersPerDp
-
+/*
                 Log.d(
                     TAG,
                     """
@@ -2687,6 +2750,8 @@ private fun MapControlsOverlay(
         200ft width=${twoHundredFeetWidthDp}dp
         """.trimIndent()
                 )
+                /
+ */
             }
             DynamicScaleBar(
                 metersPerDp = cameraState.metersPerDpAtTarget,

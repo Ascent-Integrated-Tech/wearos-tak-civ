@@ -16,7 +16,8 @@ data class GeofenceCot(
     val tracking: Boolean,
     val trigger: GeofenceTrigger,
     val sourceServerId: String? = null,
-    val receivedAt: Long = System.currentTimeMillis()
+    val receivedAt: Long = System.currentTimeMillis(),
+    val eventTime: Long = receivedAt
 )
 
 enum class GeofenceTrigger {
