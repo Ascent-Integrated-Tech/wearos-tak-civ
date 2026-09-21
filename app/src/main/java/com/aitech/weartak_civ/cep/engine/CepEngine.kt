@@ -194,6 +194,20 @@ class CepEngine(
         scope.launch { loadHrrProfile() }
     }
 
+    /** Reload physiological settings after the settings write has completed. */
+    suspend fun refreshPhysiologicalRuntime(reloadSustainOverrides: Boolean) {
+        loadPhysioAlertProfile()
+        loadHrProfile()
+        loadHrrProfile()
+        if (reloadSustainOverrides) {
+            updateSustainOverrides()
+        }
+        if (authoritative.get()) {
+            applyPhysioAlertHygiene()
+        }
+        Log.d("CEP", "Physiological runtime refresh complete sustainReloaded=$reloadSustainOverrides")
+    }
+
     /** Synchronous form of [updateHrrProfile] used during warm-up. */
     private suspend fun loadHrrProfile() {
         try {

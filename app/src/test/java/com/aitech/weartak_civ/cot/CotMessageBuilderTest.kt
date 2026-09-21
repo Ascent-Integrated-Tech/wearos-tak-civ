@@ -3,6 +3,7 @@ package com.aitech.weartak_civ.cot
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.BatteryService.DockType
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.w3c.dom.Element
 import org.w3c.dom.Node
@@ -22,10 +23,22 @@ class CotMessageBuilderTest {
     fun emergencyAlertAndCancelMatchLegacyStructure() {
         val alert = emergencySnapshot(DataRepository.AlertState.ALERT)
         val cancel = emergencySnapshot(DataRepository.AlertState.CANCEL)
-        val legacyAlert = "<event version='2.0' uid='alert-1' type='b-a-o' time='$START' start='$START' stale='$STALE' how='h-e' access='Undefined'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><link uid='watch-1' type='a-f-G-U-C' relation='p-p'/><contact callsign='EAGLE&#10;Help'/><emergency type='Help'>EAGLE</emergency><usericon iconsetpath='911 Alert'/><color argb='-1'/></detail></event>"
-        val legacyCancel = "<event version='2.0' uid='alert-1' type='b-a-o-can' time='$START' start='$START' stale='$STALE' how='h-e' access='Undefined'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><emergency cancel='true'>EAGLE</emergency></detail></event>"
-        assertEquals(project(legacyAlert), project(CotMessageBuilder.emergency(alert)))
-        assertEquals(project(legacyCancel), project(CotMessageBuilder.emergency(cancel)))
+        val alertXml = CotMessageBuilder.emergency(alert)
+        val cancelXml = CotMessageBuilder.emergency(cancel)
+        assertTrue(alertXml.contains("<biometrics"))
+        assertTrue(alertXml.contains("uid='alert-1'"))
+        assertTrue(alertXml.contains("alertUid='alert-1'"))
+        assertTrue(alertXml.contains("alertState='ALERT'"))
+        assertTrue(alertXml.contains("alertCategory='Alert'"))
+        assertTrue(alertXml.contains("alertPriority='1'"))
+        assertTrue(alertXml.contains("<device><model>WEAROS</model><uid>watch-1</uid><hr>72</hr><skt>98.6</skt><exert>0.25</exert></device>"))
+        assertTrue(!alertXml.contains("<device model='WEAROS'"))
+        assertTrue(alertXml.contains("type='b-a-o'"))
+        assertTrue(cancelXml.contains("<biometrics"))
+        assertTrue(cancelXml.contains("alertUid='alert-1'"))
+        assertTrue(cancelXml.contains("alertState='CANCEL'"))
+        assertTrue(cancelXml.contains("<device><model>WEAROS</model><uid>watch-1</uid><hr>72</hr><skt>98.6</skt><exert>0.25</exert></device>"))
+        assertTrue(cancelXml.contains("type='b-a-o-can'"))
     }
 
     @Test

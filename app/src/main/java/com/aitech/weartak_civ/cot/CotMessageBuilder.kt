@@ -38,14 +38,43 @@ object CotMessageBuilder {
             "<biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><skt>$skinTemp</skt><exert>$exertion</exert></device></biometrics>"
         } else ""
 
+        val status = CotXml.element(
+            "status",
+            listOf(
+                "readiness" to "true",
+                "battery" to snapshot.systemData.batteryPercent
+            )
+        )
+
         val point = listOf(
             "lat" to "%.6f".format(lat), "lon" to "%.6f".format(lon), "hae" to "%.1f".format(hae),
             "ce" to ce, "le" to le,
         )
-        val detail = "<remarks>$remarks</remarks>$batdok$biometrics" +
-            CotXml.element("contact", listOf("endpoint" to "*:-1:stcp", "callsign" to options.callsign)) +
-            CotXml.element("__group", listOf("role" to options.role, "name" to options.team)) +
-            CotXml.element("track", listOf("course" to course, "speed" to speed)) + options.hailDetail
+        val detail =
+            status +
+                    "<remarks>$remarks</remarks>$batdok$biometrics" +
+                    CotXml.element(
+                        "contact",
+                        listOf(
+                            "endpoint" to "*:-1:stcp",
+                            "callsign" to options.callsign
+                        )
+                    ) +
+                    CotXml.element(
+                        "__group",
+                        listOf(
+                            "role" to options.role,
+                            "name" to options.team
+                        )
+                    ) +
+                    CotXml.element(
+                        "track",
+                        listOf(
+                            "course" to course,
+                            "speed" to speed
+                        )
+                    ) +
+                    options.hailDetail
         return CotXml.event(listOf(
             "version" to "2.0", "uid" to uid, "type" to "a-f-G-U-C", "time" to time.startCot,
             "start" to time.startCot, "stale" to time.staleCot, "how" to "m-g",
@@ -60,14 +89,32 @@ object CotMessageBuilder {
             "lat" to (location?.lat ?: 0.0), "lon" to (location?.lon ?: 0.0), "hae" to (location?.hae ?: 0.0),
             "ce" to ce, "le" to le,
         )
+        val physio = snapshot.physio?.data
+        val alertBiometrics = CotXml.element(
+            "biometrics",
+            listOf(
+                "alertUid" to snapshot.uid,
+                "alertState" to snapshot.alertState.name,
+                "alertCategory" to snapshot.category,
+                "alertPriority" to snapshot.priority,
+                "alertDescription" to snapshot.description,
+            ),
+            CotXml.element("device", content =
+                CotXml.element("model", content = "WEAROS") +
+                        CotXml.element("uid", content = snapshot.system.deviceId) +
+                        CotXml.element("hr", content = rectifiedInt(physio?.heartRateBpm)) +
+                        CotXml.element("skt", content = rectifiedNumber(physio?.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)) +
+                        CotXml.element("exert", content = rectifiedNumber(physio?.exertion, "%.2f", zeroIsInvalid = false))
+            )
+        )
         val detail = if (snapshot.alertState == DataRepository.AlertState.CANCEL) {
-            CotXml.element("emergency", listOf("cancel" to "true"), snapshot.system.callsign)
+            alertBiometrics + CotXml.element("emergency", listOf("cancel" to "true"), snapshot.system.callsign)
         } else {
-            CotXml.element("link", listOf("uid" to snapshot.system.deviceId, "type" to "a-f-G-U-C", "relation" to "p-p")) +
-                CotXml.element("contact", listOf("callsign" to "${snapshot.system.callsign}&#10;${snapshot.description}")) +
-                CotXml.element("emergency", listOf("type" to snapshot.description), snapshot.system.callsign) +
-                CotXml.element("usericon", listOf("iconsetpath" to "911 Alert")) +
-                CotXml.element("color", listOf("argb" to "-1"))
+            alertBiometrics + CotXml.element("link", listOf("uid" to snapshot.system.deviceId, "type" to "a-f-G-U-C", "relation" to "p-p")) +
+                    CotXml.element("contact", listOf("callsign" to "${snapshot.system.callsign}&#10;${snapshot.description}")) +
+                    CotXml.element("emergency", listOf("type" to snapshot.description), snapshot.system.callsign) +
+                    CotXml.element("usericon", listOf("iconsetpath" to "911 Alert")) +
+                    CotXml.element("color", listOf("argb" to "-1"))
         }
         val type = if (snapshot.alertState == DataRepository.AlertState.CANCEL) "b-a-o-can" else "b-a-o"
         return CotXml.event(listOf(
@@ -83,13 +130,13 @@ object CotMessageBuilder {
             "ce" to normalizedError(location?.ce), "le" to normalizedError(location?.le),
         )
         val detail = CotXml.element("status", listOf("readiness" to "true", "battery" to snapshot.system.batteryPercent)) +
-            CotXml.element("precisionlocation", listOf("altsrc" to "SRTM1")) +
-            CotXml.element("link", listOf(
-                "uid" to snapshot.system.deviceId, "production_time" to snapshot.time.startCot, "type" to "a-f-G-U-C",
-                "parent_callsign" to snapshot.system.callsign, "relation" to "p-p",
-            )) + CotXml.element("color", listOf("argb" to "-1")) +
-            CotXml.element("usericon", listOf("iconsetpath" to iconSetPath)) +
-            CotXml.element("remarks", content = snapshot.remark) + CotXml.element("contact", listOf("callsign" to title))
+                CotXml.element("precisionlocation", listOf("altsrc" to "SRTM1")) +
+                CotXml.element("link", listOf(
+                    "uid" to snapshot.system.deviceId, "production_time" to snapshot.time.startCot, "type" to "a-f-G-U-C",
+                    "parent_callsign" to snapshot.system.callsign, "relation" to "p-p",
+                )) + CotXml.element("color", listOf("argb" to "-1")) +
+                CotXml.element("usericon", listOf("iconsetpath" to iconSetPath)) +
+                CotXml.element("remarks", content = snapshot.remark) + CotXml.element("contact", listOf("callsign" to title))
         return CotXml.event(listOf(
             "version" to "2.0", "uid" to snapshot.uid, "type" to snapshot.markerType.type,
             "time" to snapshot.time.startCot, "start" to snapshot.time.startCot, "stale" to snapshot.time.staleCot,
@@ -121,8 +168,8 @@ object CotMessageBuilder {
             CotXml.element("marti", content = CotXml.element("dest", listOf("callsign" to snapshot.roomTitle)))
         }
         val detail = chat +
-            CotXml.element("link", listOf("uid" to senderUid, "type" to "a-f-G-U-C", "relation" to "p-p")) +
-            CotXml.element("remarks", listOf("source" to senderUid, "to" to snapshot.roomUid, "time" to time), snapshot.message) + marti
+                CotXml.element("link", listOf("uid" to senderUid, "type" to "a-f-G-U-C", "relation" to "p-p")) +
+                CotXml.element("remarks", listOf("source" to senderUid, "to" to snapshot.roomUid, "time" to time), snapshot.message) + marti
         return CotXml.event(listOf(
             "version" to "2.0", "uid" to "GeoChat.$senderUid.${snapshot.roomUid}.$messageId", "type" to "b-t-f",
             "time" to time, "start" to time, "stale" to time, "how" to "h-g-i-g-o", "access" to "Undefined",
