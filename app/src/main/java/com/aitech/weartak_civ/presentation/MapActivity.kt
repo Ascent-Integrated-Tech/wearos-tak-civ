@@ -41,7 +41,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
@@ -176,10 +175,37 @@ import com.aitech.weartak_civ.service.BloodhoundService
 import com.aitech.weartak_civ.service.ChatService
 import org.maplibre.compose.expressions.dsl.asNumber
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.aitech.weartak_civ.data.model.TakChannelStatus
+import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
+import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
+import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
+import com.fasterxml.jackson.databind.util.CompactStringObjectMap
+import kotlinx.coroutines.flow.StateFlow
 import org.json.JSONArray
+import java.io.Serializable
 import kotlin.math.abs
 import kotlin.math.floor
 import kotlin.math.log10
@@ -211,7 +237,9 @@ class MapActivity : ComponentActivity() {
         setContent {
             WearTAKCIVTheme {
                 val context = LocalContext.current
-                MapCivApp({finishAndRemoveTask()}, context)
+                val mapVm: MapViewModel = viewModel ()
+
+                MapCivApp({finishAndRemoveTask()}, context, mapVm)
             }
         }
     }
@@ -219,7 +247,7 @@ class MapActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun MapCivApp(exitActivity: () -> Unit, context: Context) {
+fun MapCivApp(exitActivity: () -> Unit, context: Context, mapVm: MapViewModel) {
     val app = context.applicationContext as WearTakApplication
 
     val dataRepository = remember(app) { app.repo }
@@ -237,7 +265,7 @@ fun MapCivApp(exitActivity: () -> Unit, context: Context) {
         startDestination = "map_screen"
     ) {
         composable("map_screen" ) {
-            MapApp({ exitActivity() }, navController)
+            MapApp({ exitActivity() }, navController, mapVm)
         }
 
         composable(
@@ -266,7 +294,8 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
                             "title" to JsonPrimitive(m.title.ellipsizeMarkerTitle()),
                             "markerType" to JsonPrimitive(m.markerType),
                             "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent),
-                            "cotType" to JsonPrimitive(m.cotType.name))
+                            "cotType" to JsonPrimitive(m.cotType.name),
+                            "sourceServerId" to JsonPrimitive(m.sourceServerId ?: "unattributed"))
                     )
                 )
             }
@@ -290,7 +319,8 @@ data class MapMarkerItem(
     val lat: Double?,
     val lon: Double?,
     val enQueuedToBeSent: Boolean,
-    val cotType: DataRepository.MarkerCotType
+    val cotType: DataRepository.MarkerCotType,
+    val sourceServerId: String? = null
 )
 
 // Selects the gray icon used for cleared markers
@@ -575,7 +605,8 @@ fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
                             "id" to JsonPrimitive(m.uid),
                             "title" to JsonPrimitive(m.title),
                             "type" to JsonPrimitive(m.type),
-                            "team" to JsonPrimitive(m.team)),
+                            "team" to JsonPrimitive(m.team),
+                            "sourceServerId" to JsonPrimitive(m.sourceServerId ?: "unattributed")),
                     )
                 )
             }
@@ -590,7 +621,8 @@ data class MapUserItem(
     val title: String,
     val lat: Double?,
     val lon: Double?,
-    val role: String?
+    val role: String?,
+    val sourceServerId: String? = null
 )
 
 // Creates MapLibre symbol layers for connected users
@@ -899,6 +931,42 @@ fun ToggleRow(label: String, visible: Boolean, onToggle: () -> Unit) {
     }
 }
 
+@Composable
+fun ServerDropdown(label: String, opened: MutableState<Boolean>, onToggle: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+                opened.value = !opened.value
+                onToggle() }
+            .padding(vertical = 2.dp)
+    ) {
+        Image(
+            painter = painterResource(
+                R.drawable.tak_server_connected
+            ),
+            contentDescription = "Top Left Icon",
+            modifier = Modifier
+                .size(22.dp)
+                .padding(end = 2.dp),
+        )
+        Text(label, color = Color.White, fontSize = 9.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Icon(
+            imageVector =
+                if (opened.value)
+                    Icons.Filled.KeyboardArrowUp
+                else
+                    Icons.Filled.KeyboardArrowDown
+            ,
+            contentDescription = if (opened.value) "Opened" else "Closed",
+            modifier = Modifier
+                .size(14.dp)
+                .width(16.dp)
+        )
+    }
+}
+
 // LOCATION DETAIL POPUP
 // Displays coordinates and MGRS beside the user location puck
 @Composable
@@ -1164,13 +1232,140 @@ fun LayerTogglePopup(
     }
 }
 
+@Composable
+fun LayerChannelsPopup(
+    onDismiss: () -> Unit,
+    mapVm: MapViewModel,
+    takServers: List<TakServerChannels>
+) {
+    // Center the menu within the circular watch display
+    Popup(
+        alignment = Alignment.Center,
+        onDismissRequest = onDismiss
+    ) {
+        Box(
+            Modifier
+                .width(150.dp)
+                .height(165.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(
+                    Color.Black.copy(alpha = 0.9f),
+                    RoundedCornerShape(8.dp)
+                ),
+        ) {
+            // Allow every option to remain reachable on the small screen
+            val scrollState = rememberScrollState()
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .padding(12.dp)
+                    .verticalScroll(scrollState)
+            ) {
+                Text(
+                    "Channels", color = Color.White, fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                LazyColumn(
+                    modifier = Modifier
+                        .wrapContentHeight()
+                        .heightIn(max = 200.dp)
+                ) {
+                    itemsIndexed(takServers) { index, serverItem ->
+                        val channelsVisible = remember(serverItem.serverId) { mutableStateOf(false) }
+                        ServerDropdown(
+                            label = serverItem.serverName,
+                            opened = channelsVisible,
+                            onToggle = {
+                                if (channelsVisible.value) {
+                                    Log.i(
+                                        TAG,
+                                        "Channel UI refresh serverId=${serverItem.serverId} " +
+                                            "serverName=${serverItem.serverName}"
+                                    )
+                                    mapVm.refreshTakChannels(serverItem.serverId)
+                                }
+                            }
+                        )
+                        if (channelsVisible.value) {
+                            when (serverItem.status) {
+                                TakChannelStatus.LOADING -> Text(
+                                    "Loading...",
+                                    color = Color.LightGray,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.EMPTY -> Text(
+                                    "No channels assigned",
+                                    color = Color.LightGray,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.UNSUPPORTED -> Text(
+                                    "Channels unsupported",
+                                    color = Color.LightGray,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.ERROR -> Text(
+                                    serverItem.errorMessage ?: "Channel request failed",
+                                    color = Color.Red,
+                                    fontSize = 9.sp,
+                                )
+                                TakChannelStatus.READY -> Unit
+                            }
+                            LazyColumn(
+                                modifier = Modifier
+                                    .wrapContentHeight()
+                                    .heightIn(max = 200.dp)
+                                    .padding(start = 10.dp)
+                            ) {
+                                itemsIndexed(serverItem.channels) { index, channelItem ->
+                                    ToggleRow(
+                                        label = if (channelItem.updating) {
+                                            "${channelItem.name}..."
+                                        } else {
+                                            channelItem.name
+                                        },
+                                        visible = channelItem.active,
+                                        onToggle = {
+                                            if (!channelItem.updating) {
+                                                Log.i(
+                                                    TAG,
+                                                    "Channel UI toggle serverId=${serverItem.serverId} " +
+                                                        "serverName=${serverItem.serverName} " +
+                                                        "channel=${channelItem.name} bitpos=${channelItem.bitPosition} " +
+                                                        "previousActive=${channelItem.active} " +
+                                                        "desiredActive=${!channelItem.active}"
+                                                )
+                                                mapVm.updateTakChannel(
+                                                    serverId = serverItem.serverId,
+                                                    channelBitPosition = channelItem.bitPosition,
+                                                    shouldBeActive = !channelItem.active
+                                                )
+                                            }
+                                        }
+                                    )
+                                    Spacer(Modifier.height(1.dp))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 
 // MAIN MAP SCREEN
 // Connects repository data, map layers, popups, and controls
 @Composable
-fun MapApp(exitActivity: () -> Unit, navController: NavController) {
+fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapViewModel) {
     // Access the application repository used by the map
     val context = LocalContext.current
+
+    val takChannels by mapVm.takChannels.collectAsStateWithLifecycle()
 
     // Saves Layers menu settings between app sessions
     val mapPreferences = remember {
@@ -1314,6 +1509,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
 
     // Show or hide the Layers menu
     var showLayerToggle by remember { mutableStateOf(false) }
+
+    var showChannelToggle by remember {mutableStateOf(false)}
 
     // Hide zoom, snap-to-self, and the scale while keeping Layers and Back
     var hideControls by remember { mutableStateOf(mapPreferences.getBoolean(
@@ -1514,11 +1711,30 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
 
     // Convert received markers and skip markers without a location
     val receivedMapMarkers = remember(receivedMarkerListSetting) {
+        Log.i(
+            TAG,
+            "Map render marker snapshot count=${receivedMarkerListSetting.size} " +
+                "items=${receivedMarkerListSetting.take(20).map { "${it.uid}@${it.sourceServerId}" }}"
+        )
         buildList {
             addAll(
                 receivedMarkerListSetting.mapNotNull { marker ->
-                    val location = marker.location ?: return@mapNotNull null
-                    Log.d(TAG, "raw received marker lat=${location.lat}, lon=${location.lon}")
+                    val location = marker.location
+                    if (location == null) {
+                        Log.w(
+                            TAG,
+                            "Map render marker skipped reason=no-location uid=${marker.uid} " +
+                                "sourceServerId=${marker.sourceServerId}"
+                        )
+                        return@mapNotNull null
+                    }
+                    Log.d(
+                        TAG,
+                        "Map render marker created uid=${marker.uid} sourceServerId=${marker.sourceServerId} " +
+                            "sourceAddress=${marker.source} eventTime=${marker.timeReceived} " +
+                            "receivedAt=${marker.receivedAt} lat=${location.lat} lon=${location.lon} " +
+                            "channelOwnership=unavailable"
+                    )
 
                     MapMarkerItem(
                         uid = marker.uid,
@@ -1528,7 +1744,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
                         lon = location.lon,
                         false,
                         //TODO: Is this okay to have here?
-                        DataRepository.MarkerCotType.DROP
+                        DataRepository.MarkerCotType.DROP,
+                        sourceServerId = marker.sourceServerId
 
                     )
                 }
@@ -1579,15 +1796,39 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
 
     // Convert connected users while excluding contacts already rendered as ATOS
     val receivedMapUsers = remember(receivedUserListSetting, renderedAtosUids) {
+        Log.i(
+            TAG,
+            "Map render user snapshot count=${receivedUserListSetting.size} " +
+                "items=${receivedUserListSetting.take(20).map { "${it.uid}@${it.sourceServerId}" }} " +
+                "renderedAtosUids=${renderedAtosUids.take(20)}"
+        )
         buildList {
             addAll(
                 receivedUserListSetting.mapNotNull { user ->
-                    Log.d(TAG, "raw user = $user")
                     if (user.uid in renderedAtosUids) {
-                        Log.d(TAG, "Suppressing generic user render for ATOS uid=${user.uid}")
+                        Log.d(
+                            TAG,
+                            "Map render user suppressed reason=ATOS uid=${user.uid} " +
+                                "sourceServerId=${user.sourceServerId}"
+                        )
                         return@mapNotNull null
                     }
-                    val location = user.location ?: return@mapNotNull null
+                    val location = user.location
+                    if (location == null) {
+                        Log.w(
+                            TAG,
+                            "Map render user skipped reason=no-location uid=${user.uid} " +
+                                "sourceServerId=${user.sourceServerId}"
+                        )
+                        return@mapNotNull null
+                    }
+                    Log.d(
+                        TAG,
+                        "Map render user created uid=${user.uid} sourceServerId=${user.sourceServerId} " +
+                            "sourceAddress=${user.source} eventTime=${user.timeReceived} " +
+                            "receivedAt=${user.receivedAt} team=${user.team} role=${user.role} " +
+                            "lat=${location.lat} lon=${location.lon} channelOwnership=unavailable"
+                    )
                     MapUserItem(
                         uid = user.uid,
                         type = user.type,
@@ -1595,7 +1836,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
                         title = user.title,
                         lat = location.lat,
                         lon = location.lon,
-                        role = user.role
+                        role = user.role,
+                        sourceServerId = user.sourceServerId
                     )
                 }
             )
@@ -1667,8 +1909,9 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
             }
     }
 
-
+/*
     Log.d(TAG, receivedMapUsers.toString())
+*/
 
     val activeBloodhound = remember(activeItem) {
         MapBhoundItem(
@@ -1990,7 +2233,9 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
             onOpenLayers = {
                 showLayerToggle = true
             },
-
+            onOpenChannels = {
+                showChannelToggle = true
+            },
             // Exits the map screen
             onBack = {
                 exitActivity()
@@ -2172,6 +2417,17 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController) {
                 }
             )
         }
+
+        if (showChannelToggle) {
+            LayerChannelsPopup(
+                onDismiss = {
+                    showChannelToggle = false
+                },
+                mapVm,
+                takServers = takChannels
+            )
+        }
+
     }
 }
 
@@ -2407,6 +2663,7 @@ private fun MapControlsOverlay(
     onZoomOut: () -> Unit,
     onCenterOnSelf: () -> Unit,
     onOpenLayers: () -> Unit,
+    onOpenChannels: () -> Unit,
     // Determines whether the optional map controls should be hidden.
     hideControls: Boolean,
     onBack: () -> Unit
@@ -2481,7 +2738,7 @@ private fun MapControlsOverlay(
                 val twoHundredFeetInMeters = 200.0 / METERS_TO_FEET
                 val twoHundredFeetWidthDp =
                     twoHundredFeetInMeters / metersPerDp
-
+/*
                 Log.d(
                     TAG,
                     """
@@ -2493,6 +2750,8 @@ private fun MapControlsOverlay(
         200ft width=${twoHundredFeetWidthDp}dp
         """.trimIndent()
                 )
+                /
+ */
             }
             DynamicScaleBar(
                 metersPerDp = cameraState.metersPerDpAtTarget,
@@ -2534,6 +2793,22 @@ private fun MapControlsOverlay(
                 painter = painterResource(R.drawable.overlay_manager),
                 contentDescription = "Layers",
                 modifier = Modifier.size(iconSize),
+                colorFilter = ColorFilter.tint(Color.White)
+            )
+        }
+
+        CircularMapButton(
+            onClick = onOpenChannels,
+            size = buttonSize,
+            showBorder = false,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .offset(x = -26.dp, y = 20.dp)
+        ) {
+            Image(
+                painter = painterResource(R.drawable.channels),
+                contentDescription = "Layers",
+                modifier = Modifier.size(30.dp),
                 colorFilter = ColorFilter.tint(Color.White)
             )
         }
@@ -2675,7 +2950,7 @@ private fun ScaleLine(
                     0f,
                     0f
                 ),
-                end = androidx.compose.ui.geometry.Offset(
+                end = Offset(
                     size.width,
                     0f
                 ),
@@ -2685,11 +2960,11 @@ private fun ScaleLine(
             // Left tick
             drawLine(
                 color = Color.White,
-                start = androidx.compose.ui.geometry.Offset(
+                start = Offset(
                     0f,
                     0f
                 ),
-                end = androidx.compose.ui.geometry.Offset(
+                end = Offset(
                     0f,
                     size.height
                 ),
@@ -2699,11 +2974,11 @@ private fun ScaleLine(
             // Right tick
             drawLine(
                 color = Color.White,
-                start = androidx.compose.ui.geometry.Offset(
+                start = Offset(
                     size.width,
                     0f
                 ),
-                end = androidx.compose.ui.geometry.Offset(
+                end = Offset(
                     size.width,
                     size.height
                 ),
@@ -2753,3 +3028,9 @@ private const val METERS_TO_FEET = 3.280839895
 fun MyAppPreview() {
     PopupBox(showPopup = true, anchor = DpOffset.Unspecified, lat = 41.8832, lon = -87.6324, onClickOutside = {false})
 }
+
+//@Preview(widthDp = 192, heightDp = 192, showBackground = true)
+//@Composable
+//fun ChannelsPreview() {
+//    LayerChannelsPopup({} )
+//}

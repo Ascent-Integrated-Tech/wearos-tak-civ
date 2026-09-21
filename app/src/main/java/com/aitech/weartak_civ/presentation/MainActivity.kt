@@ -136,6 +136,7 @@ import com.aitech.weartak_civ.complication.ChatComplicationService.Companion.CHA
 import com.aitech.weartak_civ.complication.StatusIconsComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
+import com.aitech.weartak_civ.data.takserver.TakServerManagedReconciler
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -1313,18 +1314,26 @@ class MainActivity : ComponentActivity() {
         var changed = false
         val handler = Handler(Looper.getMainLooper())
         val uniqueManagedServers = configuredServers.distinctBy(TakServerEndpointIdentity::key)
+        val existingServers = takServerList.toList()
+        val existingMatches = TakServerManagedReconciler.matchExistingIndexes(
+            configured = uniqueManagedServers,
+            existing = existingServers
+        )
 
-        for (managedServer in uniqueManagedServers) {
+        for ((managedIndex, managedServer) in uniqueManagedServers.withIndex()) {
             val endpointKey = TakServerEndpointIdentity.key(managedServer)
-            val index = takServerList.indexOfFirst {
-                TakServerEndpointIdentity.key(it) == endpointKey
-            }
+            val matchedExistingIndex = existingMatches[managedIndex]
+            val matchedExisting = matchedExistingIndex?.let(existingServers::get)
+            val index = matchedExisting?.serverId?.let { serverId ->
+                takServerList.indexOfFirst { it.serverId == serverId }
+            } ?: matchedExistingIndex ?: -1
             if (index >= 0) {
                 val existing = takServerList[index]
-                if (managedServer != existing) {
+                val managedWithStableId = managedServer.copy(serverId = existing.serverId)
+                if (managedWithStableId != existing) {
                     changed = true
-                    dataRepository.updateTakServerItem(index, managedServer)
-                    if (takServerConnDetailsChanged(existing, managedServer)) {
+                    dataRepository.updateTakServerItem(index, managedWithStableId)
+                    if (takServerConnDetailsChanged(existing, managedWithStableId)) {
                         handler.postDelayed({
                             EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
                         }, EVENT_SEND_DELAY_MS)
