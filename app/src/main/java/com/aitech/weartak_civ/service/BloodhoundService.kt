@@ -122,6 +122,19 @@ class BloodhoundService: Service() {
         collectAckReqFlow()
         collectActivationReqFlow()
         collectInPosReqFlow()
+        collectActiveSelection()
+    }
+
+    private fun collectActiveSelection() {
+        scope.launch {
+            bhRepo.activeUid.collect { activeUid ->
+                if (activeUid == null) {
+                    cancelActiveProximityAlert()
+                } else {
+                    evaluateActiveTargetProximity()
+                }
+            }
+        }
     }
 
     private fun collectProximitySettings() {
@@ -167,18 +180,13 @@ class BloodhoundService: Service() {
         scope.launch {
             bhRepo.bloodhoundEvent
                 .filterNotNull()
-                .collect { event ->
+                .collect { update ->
+                    val event = update.event
                     //Log.i(TAG, "Bloodhound Event updated:\n$event")
-                    val isNewBloodhound = !bhRepo.isUidValid(event.uid)
-                    val currRemarkFromHoundmaster = event.remark.equals("#houndmaster")
-                    val previousRemarkFromHoundmaster = if (isNewBloodhound) false else bhRepo.remarkFromHoundmaster(event.uid)
-                    bhRepo.upsertFromEvent(event)
-                    if (isNewBloodhound) {
+                    if (update.isNewUid) {
                         repo.incrementBloodhoundUnreadCount(event.uid)
-                    } else {
-                        if (currRemarkFromHoundmaster && !previousRemarkFromHoundmaster) {
-                            repo.updateHasUnreadBloodhounds(true)
-                        }
+                    } else if (update.becameHoundmaster) {
+                        repo.updateHasUnreadBloodhounds(true)
                         //Log.i(TAG, "Bloodhound event refreshed without unread increment uid=${event.uid}")
                     }
                     updateVectors()
@@ -339,7 +347,7 @@ class BloodhoundService: Service() {
             resetProximityAlertState()
             return
         }
-        val activeItem = bhRepo.bloodhoundMap.value[activeUid] ?: run {
+        val activeItem = bhRepo.activeBhItemMap.value ?: run {
             resetProximityAlertState()
             return
         }

@@ -14,7 +14,10 @@ data class GeofenceCot(
     val callsign: String,
     val points: List<LatLon>,
     val tracking: Boolean,
-    val trigger: GeofenceTrigger
+    val trigger: GeofenceTrigger,
+    val sourceServerId: String? = null,
+    val receivedAt: Long = System.currentTimeMillis(),
+    val eventTime: Long = receivedAt
 )
 
 enum class GeofenceTrigger {

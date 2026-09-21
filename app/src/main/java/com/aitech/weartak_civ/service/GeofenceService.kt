@@ -49,8 +49,8 @@ class GeofenceService: Service() {
             importance = NotificationManager.IMPORTANCE_LOW
         )
         startLocationCollector()
-        startGeofenceCotConsumer(serviceScope) { geofence ->
-            handleIncomingGeofenceCot(geofence)
+        startGeofenceCotConsumer(serviceScope) { geofences ->
+            handleGeofenceSnapshot(geofences)
         }
     }
 
@@ -104,49 +104,41 @@ class GeofenceService: Service() {
         }
     }
 
-    private suspend fun handleIncomingGeofenceCot(geofence: GeofenceCot) {
-        // Dispatch to TAK / ATAK pipeline here
-        // e.g., cotDispatchService.send(xml)
-        Log.i(TAG, "Received geofence: $geofence")
+    private suspend fun handleGeofenceSnapshot(geofences: List<GeofenceCot>) {
+        val trackableByUid = geofences
+            .filter(::shouldTrackEntry)
+            .associateBy(GeofenceCot::uid)
+        val changed = mutableListOf<GeofenceCot>()
 
-        // If tracking is false, remove it and return.
-        if (!geofence.tracking) {
-            geofenceMutex.withLock {
-                geofencesByUid.remove(geofence.uid)
-                // We can also automatically remove airplane mode but not for now.
-                insideStateByUid.remove(geofence.uid)
-            }
-            Log.i(TAG, "Removed geofence uid=${geofence.uid} because tracking=false")
-            return
-        }
-
-        // Only keep geofences that are trackable by your rule (Entry or Both).
-        if (!shouldTrackEntry(geofence)) {
-            geofenceMutex.withLock {
-                geofencesByUid.remove(geofence.uid)
-                insideStateByUid.remove(geofence.uid)
-            }
-            Log.i(TAG, "Removed/ignored geofence uid=${geofence.uid} because tracking either is false (tracking=${geofence.tracking}) or trigger is not Entry/Both (trigger=${geofence.trigger})")
-            return
-        }
-
-        // Add/update store
         geofenceMutex.withLock {
-            geofencesByUid[geofence.uid] = geofence
-            insideStateByUid.putIfAbsent(geofence.uid, false)
+            val removedUids = geofencesByUid.keys - trackableByUid.keys
+            removedUids.forEach { uid ->
+                geofencesByUid.remove(uid)
+                insideStateByUid.remove(uid)
+            }
+
+            trackableByUid.forEach { (uid, geofence) ->
+                if (geofencesByUid[uid] != geofence) {
+                    geofencesByUid[uid] = geofence
+                    insideStateByUid.putIfAbsent(uid, false)
+                    changed += geofence
+                }
+            }
         }
 
-        // Evaluate immediately if we have a latest point
+        if (changed.isNotEmpty()) {
+            Log.i(TAG, "Synchronized ${changed.size} changed geofence(s)")
+        }
         val point = latestLatLon ?: return
-        evaluateSingleGeofence(geofence, point)
+        changed.forEach { geofence -> evaluateSingleGeofence(geofence, point) }
     }
     fun startGeofenceCotConsumer(
         scope: CoroutineScope,
-        onCotReceived: suspend (GeofenceCot) -> Unit
+        onCotReceived: suspend (List<GeofenceCot>) -> Unit
     ) {
         scope.launch {
-            GeofenceRepository.geofenceCotFlow.collect { geofence ->
-                onCotReceived(geofence)
+            GeofenceRepository.geofenceCotFlow.collect { geofences ->
+                onCotReceived(geofences)
             }
         }
     }

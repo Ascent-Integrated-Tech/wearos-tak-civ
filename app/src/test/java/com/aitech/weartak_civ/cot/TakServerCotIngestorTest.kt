@@ -1,0 +1,129 @@
+/*
+ * Copyright (C) 2026, Ascent Integrated Tech. All rights reserved.
+ *
+ * The copyright to the computer software herein is the property of Ascent Integrated Tech.
+ * This software may not be used and/or copied without the explicit written permission
+ * of Ascent Integrated Tech, and only in accordance with the terms and conditions stipulated
+ * in the license agreement and/or contract under which the software has been supplied.
+ */
+
+package com.aitech.weartak_civ.cot
+
+import com.aitech.weartak_civ.data.model.GeofenceCot
+import com.aitech.weartak_civ.events.TakChatEvent
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class TakServerCotIngestorTest {
+    private class RecordingSink : TakServerCotSink {
+        val chats = mutableListOf<TakChatEvent>()
+        val geofences = mutableListOf<GeofenceCot>()
+        val users = mutableListOf<Pair<CotUserPositionEvent, TakServerCotEnvelope>>()
+        val markers = mutableListOf<Pair<CotMarkerEvent, TakServerCotEnvelope>>()
+        val channelChanges = mutableListOf<TakServerCotEnvelope>()
+
+        override suspend fun onChat(event: TakChatEvent) {
+            chats += event
+        }
+
+        override suspend fun onGeofence(geofence: GeofenceCot) {
+            geofences += geofence
+        }
+
+        override suspend fun onUser(
+            event: CotUserPositionEvent,
+            envelope: TakServerCotEnvelope
+        ) {
+            users += event to envelope
+        }
+
+        override suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope) {
+            markers += event to envelope
+        }
+
+        override suspend fun onChannelChanged(envelope: TakServerCotEnvelope) {
+            channelChanges += envelope
+        }
+    }
+
+    @Test
+    fun routesSupportedDirectTakMessagesWithServerMetadata() = runTest {
+        val sink = RecordingSink()
+        val ingestor = ingestor(sink)
+
+        assertEquals(TakServerCotIngestResult.USER, ingestor.ingest(envelope(USER_XML, 101L)))
+        assertEquals(TakServerCotIngestResult.MARKER, ingestor.ingest(envelope(MARKER_XML, 102L)))
+        assertEquals(TakServerCotIngestResult.CHAT, ingestor.ingest(envelope(CHAT_XML, 103L)))
+        assertEquals(TakServerCotIngestResult.GEOFENCE, ingestor.ingest(envelope(GEOFENCE_XML, 104L)))
+
+        assertEquals(SERVER_ID, sink.users.single().second.sourceServerId)
+        assertEquals(SERVER_ID, sink.markers.single().second.sourceServerId)
+        assertEquals(SERVER_ID, sink.chats.single().sourceServerId)
+        assertEquals(103L, sink.chats.single().receivedAt)
+        assertEquals(SERVER_ID, sink.chats.single().parsedRooms?.single()?.messageList?.single()?.sourceServerId)
+        assertEquals(SERVER_ID, sink.geofences.single().sourceServerId)
+        assertEquals(104L, sink.geofences.single().receivedAt)
+    }
+
+    @Test
+    fun malformedMessageDoesNotPreventTheNextValidMessage() = runTest {
+        val sink = RecordingSink()
+        val logs = mutableListOf<String>()
+        val ingestor = ingestor(sink, logs)
+
+        assertEquals(
+            TakServerCotIngestResult.MALFORMED,
+            ingestor.ingest(envelope(MALFORMED_USER_XML, 100L))
+        )
+        assertEquals(
+            TakServerCotIngestResult.USER,
+            ingestor.ingest(envelope(USER_XML, 101L))
+        )
+
+        assertEquals(1, sink.users.size)
+        assertTrue(logs.any { it.contains("malformed") })
+    }
+
+    @Test
+    fun routesChannelChangeToTheOwningServer() = runTest {
+        val sink = RecordingSink()
+
+        assertEquals(
+            TakServerCotIngestResult.CHANNEL_CHANGED,
+            ingestor(sink).ingest(envelope(CHANNEL_CHANGE_XML, 105L))
+        )
+
+        assertEquals(SERVER_ID, sink.channelChanges.single().sourceServerId)
+    }
+
+    private fun ingestor(
+        sink: RecordingSink,
+        logs: MutableList<String> = mutableListOf()
+    ) = TakServerCotIngestor(
+        sink = sink,
+        isChatEnabled = { true },
+        isGeofenceEnabled = { true },
+        deviceUid = { "watch-1" },
+        deviceCallsign = { "EAGLE" },
+        logger = { message, _ -> logs += message }
+    )
+
+    private fun envelope(xml: String, receivedAt: Long) = TakServerCotEnvelope(
+        sourceServerId = SERVER_ID,
+        sourceServerAddress = "tak.example",
+        receivedAt = receivedAt,
+        rawXml = xml
+    )
+
+    private companion object {
+        const val SERVER_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        const val MALFORMED_USER_XML = "<event version='2.0' uid='broken' type='a-f-G-U-C' time='not-a-time' start='not-a-time' stale='not-a-time' how='m-g'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><contact callsign='BROKEN'/><__group role='Team Member' name='Cyan'/></detail></event>"
+        const val USER_XML = "<event version='2.0' uid='user-1' type='a-f-G-U-C' time='2099-05-01T12:00:00.000Z' start='2099-05-01T12:00:00.000Z' stale='2099-05-01T12:00:30.000Z' how='m-g'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><contact callsign='USER'/><__group role='Team Member' name='Cyan'/></detail></event>"
+        const val MARKER_XML = "<event version='2.0' uid='marker-1' type='a-h-G' time='2099-05-01T12:00:00.000Z' start='2099-05-01T12:00:00.000Z' stale='2099-05-01T12:00:30.000Z' how='h-g-i-g-o'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><contact callsign='TARGET'/></detail></event>"
+        const val CHAT_XML = "<event version='2.0' uid='chat-1' type='b-t-f' time='2099-05-01T12:00:00.000Z' start='2099-05-01T12:00:00.000Z' stale='2099-05-01T12:00:30.000Z' how='h-g-i-g-o'><point lat='0' lon='0' hae='0' ce='1' le='1'/><detail><__chat senderCallsign='SENDER'><chatgrp uid0='sender-1' uid1='watch-1' id='watch-1'/></__chat><remarks to='watch-1'>Hello</remarks></detail></event>"
+        const val GEOFENCE_XML = "<event version='2.0' uid='geofence-1' type='u-d-r' time='2099-05-01T12:00:00.000Z' start='2099-05-01T12:00:00.000Z' stale='2099-05-01T12:00:30.000Z' how='h-e'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><contact callsign='SCIF'/><link point='41.0,-87.0'/><link point='41.1,-87.0'/><link point='41.1,-87.1'/><__geofence trigger='Entry' tracking='true'/></detail></event>"
+        const val CHANNEL_CHANGE_XML = "<event version='2.0' uid='groups-1' type='t-x-g-c' time='2099-05-01T12:00:00.000Z' start='2099-05-01T12:00:00.000Z' stale='2099-05-01T12:00:30.000Z' how='h-g-i-g-o'><point lat='0' lon='0' hae='0' ce='1' le='1'/><detail/></event>"
+    }
+}
