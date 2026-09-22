@@ -8,6 +8,17 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
 import org.xml.sax.InputSource
 
+/** Logging-only ownership clues; explicit channel stamps are not treated as authorization data. */
+data class CotIngressDiagnostics(
+    val uid: String?,
+    val type: String?,
+    val eventTime: Long?,
+    val teamName: String?,
+    val teamRole: String?,
+    val flowTagNames: List<String>,
+    val explicitChannelStamps: List<String>
+)
+
 object CotMessageParser {
     private const val ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD"
     private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
@@ -64,6 +75,25 @@ object CotMessageParser {
     fun isMarkerType(type: String): Boolean =
         MarkerType.entries.any { it.type == type } || type == "b-m-p-s-p-i"
 
+    fun eventTypeOrNull(rawXml: String): String? = eventAttribute(rawXml, "type")
+
+    fun eventUidOrNull(rawXml: String): String? = eventAttribute(rawXml, "uid")
+
+    fun eventTimeOrNull(rawXml: String): Long? =
+        eventAttribute(rawXml, "time")
+            ?.let(::parseIsoToEpochMs)
+            ?.takeIf { it > 0L }
+
+    fun ingressDiagnostics(rawXml: String): CotIngressDiagnostics = CotIngressDiagnostics(
+        uid = eventUidOrNull(rawXml),
+        type = eventTypeOrNull(rawXml),
+        eventTime = eventTimeOrNull(rawXml),
+        teamName = extractAttribute(rawXml, "__group", "name"),
+        teamRole = extractAttribute(rawXml, "__group", "role"),
+        flowTagNames = flowTagNames(rawXml),
+        explicitChannelStamps = explicitChannelStamps(rawXml)
+    )
+
     fun isChatMessage(rawXml: String): Boolean =
         rawXml.contains("<__chat") && rawXml.contains("<remarks")
 
@@ -73,9 +103,17 @@ object CotMessageParser {
             rawXml.contains("to=\"$myUid\"") ||
             isAllChatNotSentByMe(rawXml, myCallsign)
 
-    fun parseChatRooms(rawXml: String, myUid: String, myCallsign: String): List<ChatRoom> {
+    fun parseChatRooms(
+        rawXml: String,
+        myUid: String,
+        myCallsign: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis()
+    ): List<ChatRoom> {
         val document = parseDocumentOrNull(rawXml)
-        if (document == null) return parseChatRoomsWithRegex(rawXml, myUid)
+        if (document == null) {
+            return parseChatRoomsWithRegex(rawXml, myUid, sourceServerId, receivedAt)
+        }
 
         val rooms = mutableListOf<ChatRoom>()
         val chatElements = document.getElementsByTagName("__chat")
@@ -89,7 +127,13 @@ object CotMessageParser {
                 val remark = remarkElements.item(remarkIndex) as? Element ?: continue
                 val recipient = remark.getAttribute("to")
                 if (recipient == myCallsign || recipient == myUid || recipient == ALL_CHAT_ROOMS) {
-                    rooms += chatRoom(senderUid, senderCallsign, remark.textContent.trim())
+                    rooms += chatRoom(
+                        senderUid,
+                        senderCallsign,
+                        remark.textContent.trim(),
+                        sourceServerId,
+                        receivedAt
+                    )
                 }
             }
         }
@@ -135,7 +179,12 @@ object CotMessageParser {
         relation = extractAttribute(rawXml, "link", "relation"),
     )
 
-    private fun parseChatRoomsWithRegex(rawXml: String, myUid: String): List<ChatRoom> {
+    private fun parseChatRoomsWithRegex(
+        rawXml: String,
+        myUid: String,
+        sourceServerId: String?,
+        receivedAt: Long
+    ): List<ChatRoom> {
         val senderUid = """<chatgrp[^>]*uid0=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
             ?: return emptyList()
         val senderCallsign = """<__chat[^>]*senderCallsign=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
@@ -144,14 +193,36 @@ object CotMessageParser {
             .toRegex(RegexOption.DOT_MATCHES_ALL)
             .findAll(rawXml)
             .filter { it.groupValues[1] == myUid || it.groupValues[1] == ALL_CHAT_ROOMS }
-            .map { chatRoom(senderUid, senderCallsign, it.groupValues[2].trim()) }
+            .map {
+                chatRoom(
+                    senderUid,
+                    senderCallsign,
+                    it.groupValues[2].trim(),
+                    sourceServerId,
+                    receivedAt
+                )
+            }
             .toList()
     }
 
-    private fun chatRoom(senderUid: String, senderCallsign: String, message: String) = ChatRoom(
+    private fun chatRoom(
+        senderUid: String,
+        senderCallsign: String,
+        message: String,
+        sourceServerId: String?,
+        receivedAt: Long
+    ) = ChatRoom(
         uid = senderUid,
         title = senderCallsign,
-        messageList = listOf(ChatMessage(message, senderUid, senderCallsign, System.currentTimeMillis())),
+        messageList = listOf(
+            ChatMessage(
+                message = message,
+                uid = senderUid,
+                callsign = senderCallsign,
+                timeReceived = receivedAt,
+                sourceServerId = sourceServerId
+            )
+        ),
         newMessagesPresent = true,
         timeLastOpened = 0L,
         timeLastClosed = 0L,
@@ -204,6 +275,25 @@ object CotMessageParser {
         return pattern.find(xml)?.groupValues?.get(1)?.trim()
     }
 
+    private fun flowTagNames(rawXml: String): List<String> {
+        val flowTag = TAG_PATTERN.findAll(rawXml)
+            .map(MatchResult::value)
+            .firstOrNull { it.startsWith("<_flow-tags_", ignoreCase = true) }
+            ?: return emptyList()
+        return ATTRIBUTE_PATTERN.findAll(flowTag)
+            .map { it.groupValues[1] }
+            .filterNot { it.equals("_flow-tags_", ignoreCase = true) }
+            .distinct()
+            .toList()
+    }
+
+    private fun explicitChannelStamps(rawXml: String): List<String> =
+        TAG_PATTERN.findAll(rawXml)
+            .flatMap { tag -> CHANNEL_ATTRIBUTE_PATTERN.findAll(tag.value) }
+            .map { match -> "${match.groupValues[1]}=${match.groupValues[3]}" }
+            .distinct()
+            .toList()
+
     private fun parseIsoToEpochMs(value: String): Long {
         try {
             return Instant.parse(value).toEpochMilli()
@@ -222,4 +312,10 @@ object CotMessageParser {
     }
 
     private const val ALL_CHAT_ROOMS = "All Chat Rooms"
+    private val TAG_PATTERN = """<[^>]+>""".toRegex()
+    private val ATTRIBUTE_PATTERN =
+        """\b([A-Za-z_][A-Za-z0-9_.:-]*)\s*=\s*(['"])(.*?)\2""".toRegex()
+    private val CHANNEL_ATTRIBUTE_PATTERN =
+        """\b(channel|channelId|channelUid|channelName|bitpos)\s*=\s*(['"])(.*?)\2"""
+            .toRegex(RegexOption.IGNORE_CASE)
 }

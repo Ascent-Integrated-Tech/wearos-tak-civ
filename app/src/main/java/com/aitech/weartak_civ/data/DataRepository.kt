@@ -128,7 +128,10 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.data.secure.crypto.EncryptedSerializer.DecryptResult
+import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
+import com.aitech.weartak_civ.data.takserver.TakServerId
+import com.aitech.weartak_civ.data.takserver.TakServerManagedReconciler
 import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -177,6 +180,7 @@ import kotlinx.coroutines.launch
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private const val NON_TAK_COT_SOURCE_ID = "non-tak"
 
 // Identifies which PDL the user selected
 enum class DittoPdlSource {
@@ -253,6 +257,26 @@ class DataRepository(private val context: Context) {
     )
 
     val deviceInfo: StateFlow<DeviceInfo> = _deviceInfo.asStateFlow()
+
+    private val _takChannels = MutableStateFlow<List<TakServerChannels>>(emptyList())
+    val takChannels: StateFlow<List<TakServerChannels>> = _takChannels.asStateFlow()
+
+    fun updateTakServerChannels(server: TakServerChannels) {
+        _takChannels.update { current ->
+            val existingIndex = current.indexOfFirst { it.serverId == server.serverId }
+            if (existingIndex == -1) {
+                current + server
+            } else {
+                current.toMutableList().apply { this[existingIndex] = server }
+            }
+        }
+    }
+
+    fun removeTakServerChannels(serverId: String) {
+        _takChannels.update { current ->
+            current.filterNot { it.serverId == serverId }
+        }
+    }
 
     private val _airplaneOnSuccess = MutableStateFlow(false)
     val airplaneOnSuccess: StateFlow<Boolean> = _airplaneOnSuccess.asStateFlow()
@@ -1437,61 +1461,82 @@ class DataRepository(private val context: Context) {
         val timeReceived: Long,
         val staleTime: Long,
         val location: LocationSnapshot?,
-        val source: String
+        val source: String,
+        val sourceServerId: String? = null,
+        val receivedAt: Long = timeReceived
     )
 
-    private val _receivedUserList = MutableStateFlow<List<ReceivedUser>>(emptyList())
-    val receivedUserList: StateFlow<List<ReceivedUser>> = _receivedUserList
+    private val receivedUserStore = SourceAwareCotStore(
+        sourceIdOf = { item: ReceivedUser -> item.sourceServerId ?: NON_TAK_COT_SOURCE_ID },
+        cotUidOf = ReceivedUser::uid,
+        eventTimeOf = ReceivedUser::timeReceived,
+        receivedAtOf = ReceivedUser::receivedAt
+    )
+    val receivedUserList: StateFlow<List<ReceivedUser>> = receivedUserStore.visibleItems
 
-    suspend fun upsertReceivedUser(item: ReceivedUser) {
-        _receivedUserList.update { list ->
-            val existingIndex = list.indexOfFirst { it.uid == item.uid }
-            if (existingIndex < 0) {
-                list + item
-            } else {
-                list.toMutableList().apply { this[existingIndex] = item }
-            }
-        }
-    }
+    suspend fun upsertReceivedUser(item: ReceivedUser): SourceCotUpsertResult =
+        receivedUserStore.upsertWithResult(item)
 
     suspend fun removeReceivedUserByUid(uid: String) {
-        _receivedUserList.update { list -> list.filterNot { it.uid == uid } }
+        receivedUserStore.removeUid(uid)
     }
 
     suspend fun clearReceivedUsers() {
-        _receivedUserList.emit(emptyList())
+        receivedUserStore.clear()
     }
 
     suspend fun applyReceivedUserEvent(
         event: CotUserPositionEvent,
-        source: String
+        source: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis()
     ): Boolean {
+        val sourceKey = sourceServerId ?: NON_TAK_COT_SOURCE_ID
         if (event.stale <= System.currentTimeMillis()) {
-            removeReceivedUserByUid(event.uid)
+            val removed = receivedUserStore.removeIfNotOlder(
+                key = SourceCotKey(sourceKey, event.uid),
+                eventTime = event.time,
+                receivedAt = receivedAt
+            )
+            Log.d(
+                TAG,
+                "Map state user stale uid=${event.uid} sourceServerId=$sourceServerId eventTime=${event.time} " +
+                    "receivedAt=$receivedAt removed=${removed != null} " +
+                    "visibleSourceId=${receivedUserStore.visibleKey(event.uid)?.sourceId} " +
+                    "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
+            )
             return false
         }
 
-        upsertReceivedUser(
-            ReceivedUser(
-                uid = event.uid,
-                type = event.type,
-                team = event.team,
-                role = event.role,
-                title = event.detail.markerCallsign.orEmpty(),
-                timeReceived = event.time,
-                staleTime = event.stale,
-                location = LocationSnapshot(
-                    timeMillis = event.time,
-                    lat = event.point.lat,
-                    lon = event.point.lon,
-                    hae = event.point.hae,
-                    ce = event.point.ce.toFloat(),
-                    le = event.point.le.toFloat(),
-                    course = null,
-                    speed = null
-                ),
-                source = source
-            )
+        val item = ReceivedUser(
+            uid = event.uid,
+            type = event.type,
+            team = event.team,
+            role = event.role,
+            title = event.detail.markerCallsign.orEmpty(),
+            timeReceived = event.time,
+            staleTime = event.stale,
+            location = LocationSnapshot(
+                timeMillis = event.time,
+                lat = event.point.lat,
+                lon = event.point.lon,
+                hae = event.point.hae,
+                ce = event.point.ce.toFloat(),
+                le = event.point.le.toFloat(),
+                course = null,
+                speed = null
+            ),
+            source = source,
+            sourceServerId = sourceServerId,
+            receivedAt = receivedAt
+        )
+        val result = upsertReceivedUser(item)
+        Log.d(
+            TAG,
+            "Map state user upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
+                "eventTime=${event.time} stale=${event.stale} receivedAt=$receivedAt applied=${result.applied} " +
+                "visibleSourceId=${receivedUserStore.visibleKey(event.uid)?.sourceId} team=${event.team} " +
+                "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
         )
         return true
     }
@@ -1520,7 +1565,9 @@ class DataRepository(private val context: Context) {
         val timeReceived: Long,
         val staleTime: Long,
         val location: LocationSnapshot?,
-        val source: String
+        val source: String,
+        val sourceServerId: String? = null,
+        val receivedAt: Long = timeReceived
     )
 
     private val _droppedMarkerList = MutableStateFlow<List<DroppedMarker>>(emptyList())
@@ -1566,58 +1613,130 @@ class DataRepository(private val context: Context) {
         _droppedMarkerList.emit(droppedMarkerList)
     }
 
-    private val _receivedMarkerList = MutableStateFlow<List<ReceivedMarker>>(emptyList())
-    val receivedMarkerList: StateFlow<List<ReceivedMarker>> = _receivedMarkerList
+    private val receivedMarkerStore = SourceAwareCotStore(
+        sourceIdOf = { item: ReceivedMarker -> item.sourceServerId ?: NON_TAK_COT_SOURCE_ID },
+        cotUidOf = ReceivedMarker::uid,
+        eventTimeOf = ReceivedMarker::timeReceived,
+        receivedAtOf = ReceivedMarker::receivedAt
+    )
+    val receivedMarkerList: StateFlow<List<ReceivedMarker>> = receivedMarkerStore.visibleItems
 
-    suspend fun upsertReceivedMarker(item: ReceivedMarker) {
-        _receivedMarkerList.update { list ->
-            val existingIndex = list.indexOfFirst { it.uid == item.uid }
-            if (existingIndex < 0) {
-                list + item
-            } else {
-                list.toMutableList().apply { this[existingIndex] = item }
-            }
-        }
-    }
+    suspend fun upsertReceivedMarker(item: ReceivedMarker): SourceCotUpsertResult =
+        receivedMarkerStore.upsertWithResult(item)
 
     suspend fun removeReceivedMarkerByUid(uid: String) {
-        _receivedMarkerList.update { list -> list.filterNot { it.uid == uid } }
+        receivedMarkerStore.removeUid(uid)
     }
 
     suspend fun clearReceivedMarkers() {
-        _receivedMarkerList.emit(emptyList())
+        receivedMarkerStore.clear()
     }
 
     suspend fun applyReceivedMarkerEvent(
         event: CotMarkerEvent,
-        source: String
+        source: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis()
     ): Boolean {
+        val sourceKey = sourceServerId ?: NON_TAK_COT_SOURCE_ID
         if (event.stale <= System.currentTimeMillis()) {
-            removeReceivedMarkerByUid(event.uid)
+            val removed = receivedMarkerStore.removeIfNotOlder(
+                key = SourceCotKey(sourceKey, event.uid),
+                eventTime = event.time,
+                receivedAt = receivedAt
+            )
+            Log.d(
+                TAG,
+                "Map state marker stale uid=${event.uid} sourceServerId=$sourceServerId eventTime=${event.time} " +
+                    "receivedAt=$receivedAt removed=${removed != null} " +
+                    "visibleSourceId=${receivedMarkerStore.visibleKey(event.uid)?.sourceId} " +
+                    "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
+            )
             return false
         }
 
-        upsertReceivedMarker(
-            ReceivedMarker(
-                uid = event.uid,
-                markerType = event.type,
-                title = event.detail.markerCallsign.orEmpty(),
-                timeReceived = event.time,
-                staleTime = event.stale,
-                location = LocationSnapshot(
-                    timeMillis = event.time,
-                    lat = event.point.lat,
-                    lon = event.point.lon,
-                    hae = event.point.hae,
-                    ce = event.point.ce.toFloat(),
-                    le = event.point.le.toFloat(),
-                    course = null,
-                    speed = null
-                ),
-                source = source
-            )
+        val item = ReceivedMarker(
+            uid = event.uid,
+            markerType = event.type,
+            title = event.detail.markerCallsign.orEmpty(),
+            timeReceived = event.time,
+            staleTime = event.stale,
+            location = LocationSnapshot(
+                timeMillis = event.time,
+                lat = event.point.lat,
+                lon = event.point.lon,
+                hae = event.point.hae,
+                ce = event.point.ce.toFloat(),
+                le = event.point.le.toFloat(),
+                course = null,
+                speed = null
+            ),
+            source = source,
+            sourceServerId = sourceServerId,
+            receivedAt = receivedAt
+        )
+        val result = upsertReceivedMarker(item)
+        Log.d(
+            TAG,
+            "Map state marker upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
+                "eventTime=${event.time} stale=${event.stale} receivedAt=$receivedAt applied=${result.applied} " +
+                "visibleSourceId=${receivedMarkerStore.visibleKey(event.uid)?.sourceId} " +
+                "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
         )
         return true
+    }
+
+    data class SourceClearSummary(
+        val serverId: String,
+        val userUids: List<String>,
+        val markerUids: List<String>,
+        val geofenceUids: List<String>,
+        val bloodhoundUids: List<String>
+    ) {
+        fun diagnosticSummary(): String =
+            "serverId=$serverId users=${userUids.size}:${userUids.forLog()} " +
+                "markers=${markerUids.size}:${markerUids.forLog()} " +
+                "geofences=${geofenceUids.size}:${geofenceUids.forLog()} " +
+                "bloodhounds=${bloodhoundUids.size}:${bloodhoundUids.forLog()}"
+
+        private fun List<String>.forLog(): String =
+            take(MAX_LOG_UIDS).joinToString(prefix = "[", postfix = if (size > MAX_LOG_UIDS) ",...]" else "]")
+
+        private companion object {
+            const val MAX_LOG_UIDS = 20
+        }
+    }
+
+    /** Clears live state owned by one TAK Server while preserving chat and all other sources. */
+    suspend fun clearSource(serverId: String): SourceClearSummary {
+        val normalizedServerId = TakServerId.normalizeOrNull(serverId)
+            ?: throw IllegalArgumentException("Invalid TAK server ID")
+        val summary = SourceClearSummary(
+            serverId = normalizedServerId,
+            userUids = receivedUserStore.removeSource(normalizedServerId).map(ReceivedUser::uid),
+            markerUids = receivedMarkerStore.removeSource(normalizedServerId).map(ReceivedMarker::uid),
+            geofenceUids = GeofenceRepository.clearSource(normalizedServerId).map { it.uid },
+            bloodhoundUids = (context.applicationContext as WearTakApplication).bhRepo
+                .clearSource(normalizedServerId)
+                .map { it.uid }
+        )
+        Log.i(
+            TAG,
+            "Cleared source-owned live state ${summary.diagnosticSummary()} " +
+                "remainingVisibleUsers=${receivedUserList.value.size} " +
+                "remainingVisibleMarkers=${receivedMarkerList.value.size} " +
+                "channelOwnership=unavailable"
+        )
+        return summary
+    }
+
+    private fun activeChannelsForLog(serverId: String?): String {
+        if (serverId == null) return "not-direct-tak"
+        val server = takChannels.value.firstOrNull { it.serverId == serverId } ?: return "unknown"
+        val active = server.channels.filter { it.active }
+        return active.joinToString(prefix = "[", postfix = "]") { channel ->
+            "${channel.name}{bitpos=${channel.bitPosition},direction=${channel.direction}}"
+        }
     }
 
     enum class MarkerType(
@@ -2802,7 +2921,8 @@ class DataRepository(private val context: Context) {
         val username: String,
         val password: String,
         val p12Cert: String,
-        val p12CertPassword: String
+        val p12CertPassword: String,
+        val serverId: String? = null
     )
 
     enum class TakServerAddResult {
@@ -2828,38 +2948,51 @@ class DataRepository(private val context: Context) {
             .replace("\n", "")
             .trim()
 
-    private fun normalizeTakServerItem(item: TakServerItem): TakServerItem {
+    private fun normalizeTakServerItem(
+        item: TakServerItem,
+        preferredServerId: String? = null
+    ): TakServerItem {
         val normalizedCert = normalizeP12Cert(item.p12Cert)
+        val normalizedServerId = TakServerId.ensure(preferredServerId ?: item.serverId)
         if (!item.isP12Cert) {
-            return if (normalizedCert == item.p12Cert) item else item.copy(p12Cert = normalizedCert)
+            return item.copy(
+                p12Cert = normalizedCert,
+                serverId = normalizedServerId
+            )
         }
         val normalizedPassword = normalizeP12Password(item.p12CertPassword)
-        return if (normalizedPassword == item.p12CertPassword && normalizedCert == item.p12Cert) {
-            item
-        } else {
-            item.copy(
-                p12Cert = normalizedCert,
-                p12CertPassword = normalizedPassword
-            )
+        return item.copy(
+            p12Cert = normalizedCert,
+            p12CertPassword = normalizedPassword,
+            serverId = normalizedServerId
+        )
+    }
+
+    private fun normalizeTakServerList(list: List<TakServerItem>): List<TakServerItem> {
+        val usedIds = mutableSetOf<String>()
+        return list.map { item ->
+            val uniqueId = TakServerId.ensureUnique(item.serverId, usedIds)
+            normalizeTakServerItem(item, preferredServerId = uniqueId)
         }
     }
 
-    private fun normalizeTakServerList(list: List<TakServerItem>): List<TakServerItem> =
-        list.map(::normalizeTakServerItem)
-
-    val getTakServerList: Flow<List<TakServerItem>> = takServerSecretsRepository.takServerListJson
-        .map { jsonString ->
-            if (jsonString.isNullOrEmpty()) {
-                Log.i(TAG, "getTakServerList: empty secure store")
-                emptyList()
-            } else {
-                Log.i(TAG, "getTakServerList: decrypt OK (len=${jsonString.length})")
-                // Split into typeToken and type for minifyEnabled true. Do not combine into one line
-                val typeToken = object : TypeToken<List<TakServerItem>>() {}
-                val type = typeToken.type
-                normalizeTakServerList(gson.fromJson<List<TakServerItem>>(jsonString, type))
+    val getTakServerList: Flow<List<TakServerItem>> = flow {
+        awaitTakServerMigration()
+        emitAll(
+            takServerSecretsRepository.takServerListJson.map { jsonString ->
+                if (jsonString.isNullOrEmpty()) {
+                    Log.i(TAG, "getTakServerList: empty secure store")
+                    emptyList()
+                } else {
+                    Log.i(TAG, "getTakServerList: decrypt OK (len=${jsonString.length})")
+                    // Split into typeToken and type for minifyEnabled true. Do not combine into one line
+                    val typeToken = object : TypeToken<List<TakServerItem>>() {}
+                    val type = typeToken.type
+                    normalizeTakServerList(gson.fromJson<List<TakServerItem>>(jsonString, type))
+                }
             }
-        }
+        )
+    }
 
     suspend fun awaitTakServerList(): List<TakServerItem> {
         awaitTakServerMigration()
@@ -2889,8 +3022,18 @@ class DataRepository(private val context: Context) {
     suspend fun storeTakServerList(newList: List<TakServerItem>) {
         awaitTakServerMigration()
         TakServerEndpointIdentity.mutationMutex.withLock {
-            val uniqueList = normalizeTakServerList(newList)
-                .distinctBy(TakServerEndpointIdentity::key)
+            val currentList = readTakServerList()
+            val deduplicatedList = newList.distinctBy(TakServerEndpointIdentity::key)
+            val matches = TakServerManagedReconciler.matchExistingIndexes(
+                deduplicatedList,
+                currentList
+            )
+            val usedIds = mutableSetOf<String>()
+            val uniqueList = deduplicatedList.mapIndexed { index, item ->
+                val existingId = matches[index]?.let { currentList[it].serverId }
+                val uniqueId = TakServerId.ensureUnique(existingId ?: item.serverId, usedIds)
+                normalizeTakServerItem(item, preferredServerId = uniqueId)
+            }
             val jsonString = gson.toJson(uniqueList)
             Log.i(TAG, "storeTakServerList: writing list size=${uniqueList.size}, len=${jsonString.length}")
             takServerSecretsRepository.setTakServerListJson(jsonString)
@@ -2908,7 +3051,11 @@ class DataRepository(private val context: Context) {
         awaitTakServerMigration()
         return TakServerEndpointIdentity.mutationMutex.withLock {
             val currentList = readTakServerList()
-            val normalizedItem = normalizeTakServerItem(item)
+            val usedIds = currentList.mapNotNullTo(mutableSetOf(), TakServerItem::serverId)
+            val normalizedItem = normalizeTakServerItem(
+                item,
+                preferredServerId = TakServerId.ensureUnique(item.serverId, usedIds)
+            )
             val duplicate = currentList.any {
                 TakServerEndpointIdentity.key(it) == TakServerEndpointIdentity.key(normalizedItem)
             }
@@ -2978,7 +3125,10 @@ class DataRepository(private val context: Context) {
             if (oldItemIndex !in currentList.indices) {
                 return@withLock TakServerUpdateResult.INVALID_INDEX
             }
-            val normalizedItem = normalizeTakServerItem(newItem)
+            val normalizedItem = normalizeTakServerItem(
+                newItem,
+                preferredServerId = currentList[oldItemIndex].serverId
+            )
             val duplicateIndex = currentList.indexOfFirst {
                 TakServerEndpointIdentity.key(it) == TakServerEndpointIdentity.key(normalizedItem) &&
                     it !== currentList[oldItemIndex]

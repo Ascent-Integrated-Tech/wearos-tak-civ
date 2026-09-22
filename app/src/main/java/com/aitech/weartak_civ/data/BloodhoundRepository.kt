@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.data
 
 import android.content.Context
+import android.util.Log
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -35,14 +36,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.flow.update
 import kotlin.math.pow
 import kotlin.math.roundToInt
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "bloodhound")
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+private const val NON_TAK_BLOODHOUND_SOURCE_ID = "non-tak"
 class BloodhoundRepository(private val context: Context) {
     private val TAG = "WearTAK-" + BloodhoundRepository::class.java.simpleName
 
@@ -57,6 +57,7 @@ class BloodhoundRepository(private val context: Context) {
         val compass: Compass = Compass()
     ) {
         val server = bhEvent.server
+        val sourceServerId = bhEvent.sourceServerId
         val uid = bhEvent.mapItem.uid
         val originLabel: String?
             get() = bhEvent.issuer?.parentCallsign
@@ -110,7 +111,15 @@ class BloodhoundRepository(private val context: Context) {
         var issuer: CotLink? = mapItem.link,              // so we send the chat to the right person
         var timeIssued: Long?,                            // tell user on UI when it was sent.
         val timeCompleted: Long?,                         // tell the issuer how long it took.
-        val remark: String = ""
+        val remark: String = "",
+        val sourceServerId: String? = null,
+        val receivedAt: Long = System.currentTimeMillis()
+    )
+
+    data class BloodhoundUpdate(
+        val event: BloodhoundEvent,
+        val isNewUid: Boolean,
+        val becameHoundmaster: Boolean
     )
 
     /*
@@ -119,6 +128,13 @@ class BloodhoundRepository(private val context: Context) {
      *    inactive, acknowledged or unacknowledged.
      */
     // ---- State ----
+    private val bloodhoundStateLock = Any()
+    private val bloodhoundStore = SourceAwareCotStore(
+        sourceIdOf = { item: BloodhoundItem -> sourceKey(item.bhEvent).sourceId },
+        cotUidOf = BloodhoundItem::uid,
+        eventTimeOf = { item: BloodhoundItem -> item.bhEvent.mapItem.cotEvent.time },
+        receivedAtOf = { item: BloodhoundItem -> item.bhEvent.receivedAt }
+    )
     private val _bloodhoundMap = MutableStateFlow<Map<String, BloodhoundItem>>(emptyMap())
     val bloodhoundMap: StateFlow<Map<String, BloodhoundItem>> = _bloodhoundMap
 
@@ -126,19 +142,19 @@ class BloodhoundRepository(private val context: Context) {
         uid: String,
         crossinline transform: (BloodhoundItem) -> BloodhoundItem
     ) {
-        _bloodhoundMap.update { prev ->
-            val curr = prev[uid] ?: return@update prev
-            prev + (uid to transform(curr))
+        synchronized(bloodhoundStateLock) {
+            bloodhoundStore.updateVisible(uid) { current -> transform(current) }
+            publishVisibleBloodhounds()
         }
     }
 
     // So we can filter da list of hounds
     private fun BloodhoundItem.receivedAt(): Long {
-        return this.origin.bhEvent.timeIssued // comes from cot event time
-            ?: this.target.mapItem.cotEvent.time
+        return bhEvent.receivedAt
     }
 
     // Detail screen activates a uid, downstream updates UI list and active
+    private val _activeKey = MutableStateFlow<SourceCotKey?>(null)
     private val _activeUid = MutableStateFlow<String?>(null)
     val activeUid: StateFlow<String?> = _activeUid
 
@@ -215,24 +231,28 @@ class BloodhoundRepository(private val context: Context) {
 
     // UI adapter, list to populate chips in the bloodhounds screen
     val listBhItemsUi: StateFlow<List<Utils.BloodhoundItem>> =
-        combine(_bloodhoundMap, _activeUid) { map, active ->
+        combine(bloodhoundMap, _activeKey) { map, activeKey ->
             map.values
                 .sortedWith(
-                    compareByDescending<BloodhoundItem> { it.uid == active }
+                    compareByDescending<BloodhoundItem> {
+                        sourceKey(it.bhEvent) == activeKey
+                    }
                         .thenByDescending { it.receivedAt() }
                 )
-                .map { it.toUi(isActive = (it.uid == active)) }
+                .map { item ->
+                    item.toUi(isActive = sourceKey(item.bhEvent) == activeKey)
+                }
         }.stateIn(scope, SharingStarted.Eagerly, emptyList())
 
     // UI adapter, BloodhoundItem used by Main Screen button and Complication
     val activeBhItemUi: StateFlow<Utils.BloodhoundItem?> =
-        combine(activeUid, _bloodhoundMap) { uid, map ->
-            uid?.let { map[it] }?.toUi(isActive = true)
+        combine(_activeKey, bloodhoundStore.allItems) { key, items ->
+            key?.let(items::get)?.toUi(isActive = true)
         }.stateIn(scope, SharingStarted.Eagerly, null)
 
     val activeBhItemMap: StateFlow<BloodhoundItem?> =
-        combine(activeUid, _bloodhoundMap) { uid, map ->
-            uid?.let { map[it] }
+        combine(_activeKey, bloodhoundStore.allItems) { key, items ->
+            key?.let(items::get)
         }.stateIn(scope, SharingStarted.Eagerly, null)
 
     fun Double.round(decimals: Int): Double {
@@ -245,16 +265,32 @@ class BloodhoundRepository(private val context: Context) {
         updateBloodhound(uid) { it.copy(vector = vector) }
     }
 
-    fun upsertFromEvent(e: BloodhoundEvent) {
-        _bloodhoundMap.update { prev ->
-            val curr = prev[e.uid]
-            val updated = if (curr == null) {
-                BloodhoundItem(e)
-            } else {
-                // Preserve state; refresh event payload
-                curr.copy(bhEvent = e, target = BloodhoundItem.Target(e.mapItem), origin = BloodhoundItem.Origin(e))
-            }
-            prev + (e.uid to updated)
+    fun upsertFromEvent(e: BloodhoundEvent) = synchronized(bloodhoundStateLock) {
+        val key = sourceKey(e)
+        val current = bloodhoundStore.item(key)
+        val updated = if (current == null) {
+            BloodhoundItem(e)
+        } else {
+            // Preserve state; refresh event payload for this source-owned copy.
+            current.copy(
+                bhEvent = e,
+                target = BloodhoundItem.Target(e.mapItem),
+                origin = BloodhoundItem.Origin(e)
+            )
+        }
+        val result = bloodhoundStore.upsertWithResult(updated)
+        publishVisibleBloodhounds()
+        Log.d(
+            TAG,
+            "Map state bloodhound upsert uid=${e.uid} sourceServerId=${e.sourceServerId} " +
+                "eventTime=${e.mapItem.cotEvent.time} receivedAt=${e.receivedAt} " +
+                "applied=${result.applied} visibleSourceId=${bloodhoundStore.visibleKey(e.uid)?.sourceId} " +
+                "channelOwnership=unavailable"
+        )
+
+        val activeKey = _activeKey.value
+        if (activeKey?.cotUid == e.uid && bloodhoundStore.visibleKey(e.uid) != activeKey) {
+            setActiveKey(null)
         }
     }
 
@@ -283,59 +319,95 @@ class BloodhoundRepository(private val context: Context) {
         if (isUidValid(uid)) _requestActivateBloodhound.tryEmit(uid)
     }
 
-    fun activate(uid: String): Pair<ActivationResult, BloodhoundItem?> {
-        val currentItem = _bloodhoundMap.value[uid] ?: return ActivationResult.NO_CHANGE to null
-        val currentActiveUid = _activeUid.value
-        val result = when {
-            currentItem.state.acknowledged -> ActivationResult.SWITCH_ONLY
-            else -> ActivationResult.FIRST_ACK
-        }
+    fun activate(uid: String): Pair<ActivationResult, BloodhoundItem?> =
+        synchronized(bloodhoundStateLock) {
+            val selectedKey = bloodhoundStore.visibleKey(uid)
+                ?: return@synchronized ActivationResult.NO_CHANGE to null
+            val currentItem = bloodhoundStore.item(selectedKey)
+                ?: return@synchronized ActivationResult.NO_CHANGE to null
+            val currentActiveKey = _activeKey.value
+            val result = when {
+                currentItem.state.acknowledged -> ActivationResult.SWITCH_ONLY
+                else -> ActivationResult.FIRST_ACK
+            }
 
-        _bloodhoundMap.update { prev ->
-            prev.mapValues { (key, value) ->
-                if (key == uid) {
+            bloodhoundStore.transformAll { key, value ->
+                if (key == selectedKey) {
                     value.copy(state = value.state.copy(active = true, acknowledged = true))
                 } else {
                     value.copy(state = value.state.copy(active = false))
                 }
             }
-        }
-        _activeUid.value = uid
+            publishVisibleBloodhounds()
+            setActiveKey(selectedKey)
 
-        val updatedItem = _bloodhoundMap.value[uid] ?: currentItem
-        val normalizedResult = if (currentActiveUid == uid && currentItem.state.acknowledged) {
-            ActivationResult.NO_CHANGE
-        } else {
-            result
+            val updatedItem = bloodhoundStore.item(selectedKey) ?: currentItem
+            val normalizedResult = if (
+                currentActiveKey == selectedKey && currentItem.state.acknowledged
+            ) {
+                ActivationResult.NO_CHANGE
+            } else {
+                result
+            }
+            normalizedResult to updatedItem
         }
-        return normalizedResult to updatedItem
+
+    fun setInPos(uid: String): BloodhoundItem? = synchronized(bloodhoundStateLock) {
+        val activeKey = _activeKey.value
+        val key = activeKey?.takeIf { it.cotUid == uid }
+            ?: bloodhoundStore.visibleKey(uid)
+            ?: return@synchronized null
+        val item = bloodhoundStore.remove(key) ?: return@synchronized null
+        publishVisibleBloodhounds()
+        if (activeKey == key) setActiveKey(null)
+        item
     }
 
-    fun setInPos(uid: String): BloodhoundItem? {
-        val item = _bloodhoundMap.value[uid] ?: return null
-        val wasActive = (_activeUid.value == uid)
-        _bloodhoundMap.update { prev -> prev - uid }
-        if (wasActive) _activeUid.value = null
-        return item
-    }
+    fun isUidValid(uid: String) = bloodhoundStore.visibleItem(uid) != null
 
-    fun isUidValid(uid: String) = _bloodhoundMap.value.containsKey(uid)
-
-    fun remarkFromHoundmaster(uid: String) = _bloodhoundMap.value[uid]?.containsHoundmasterRemark ?: false
+    fun remarkFromHoundmaster(uid: String) =
+        bloodhoundStore.visibleItem(uid)?.containsHoundmasterRemark ?: false
 
     fun updateBloodhoundCompassNeedle(uid: String, needleDeg: Double) {
-        _bloodhoundMap.update { currentMap ->
-            val item = currentMap[uid] ?: return@update currentMap  // nothing to change
-            // If angle is unchanged, avoid emitting a new map
-            if (item.compass.targetBearingDeg == needleDeg) return@update currentMap
-
-            val updated = HashMap(currentMap)
-            updated[uid] = item.copy(
-                compass = item.compass.copy(targetBearingDeg = needleDeg)
-            )
-            updated
+        synchronized(bloodhoundStateLock) {
+            bloodhoundStore.updateVisible(uid) { item ->
+                if (item.compass.targetBearingDeg == needleDeg) {
+                    item
+                } else {
+                    item.copy(compass = item.compass.copy(targetBearingDeg = needleDeg))
+                }
+            }
+            publishVisibleBloodhounds()
         }
     }
+
+    fun clearSource(serverId: String): List<BloodhoundItem> = synchronized(bloodhoundStateLock) {
+        val activeKey = _activeKey.value
+        val activeWasRemoved = activeKey?.sourceId == serverId
+        val removed = bloodhoundStore.removeSource(serverId)
+        publishVisibleBloodhounds()
+        if (_bloodhoundEvent.value?.event?.sourceServerId == serverId) {
+            _bloodhoundEvent.value = null
+        }
+        if (activeWasRemoved) {
+            setActiveKey(null)
+        }
+        removed
+    }
+
+    private fun setActiveKey(key: SourceCotKey?) {
+        _activeKey.value = key
+        _activeUid.value = key?.cotUid
+    }
+
+    private fun publishVisibleBloodhounds() {
+        _bloodhoundMap.value = bloodhoundStore.visibleItems.value.associateBy(BloodhoundItem::uid)
+    }
+
+    private fun sourceKey(event: BloodhoundEvent): SourceCotKey = SourceCotKey(
+        sourceId = event.sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID,
+        cotUid = event.uid
+    )
 
 
 
@@ -349,11 +421,24 @@ class BloodhoundRepository(private val context: Context) {
         }
     }
 
-    private val _bloodhoundEvent = MutableStateFlow<BloodhoundEvent?>(null)
-    val bloodhoundEvent: StateFlow<BloodhoundEvent?> = _bloodhoundEvent
+    private val _bloodhoundEvent = MutableStateFlow<BloodhoundUpdate?>(null)
+    val bloodhoundEvent: StateFlow<BloodhoundUpdate?> = _bloodhoundEvent
 
     suspend fun updateBloodhoundEvent(event: BloodhoundEvent) {
-        _bloodhoundEvent.emit(event)
+        synchronized(bloodhoundStateLock) {
+            val isNewUid = !isUidValid(event.uid)
+            val previouslyFromHoundmaster = if (isNewUid) {
+                false
+            } else {
+                remarkFromHoundmaster(event.uid)
+            }
+            upsertFromEvent(event)
+            _bloodhoundEvent.value = BloodhoundUpdate(
+                event = event,
+                isNewUid = isNewUid,
+                becameHoundmaster = event.remark == "#houndmaster" && !previouslyFromHoundmaster
+            )
+        }
     }
 
 
