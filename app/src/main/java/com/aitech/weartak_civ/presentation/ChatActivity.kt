@@ -84,6 +84,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavController
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.material.CardDefaults
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
@@ -108,6 +109,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.quickReplyOptions
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.presentation.viewmodel.ChatViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -125,7 +127,6 @@ class ChatActivity : ComponentActivity() {
     companion object {
         val TAG = "WearTAK-" + ChatActivity::class.java.simpleName
         const val EXTRA_OPEN_ROOM_UID = "extra_open_room_uid"
-        lateinit var dataRepository: DataRepository
         val sampleRooms = listOf(ChatRoom(
                 "0",
                 "Test Channel",
@@ -155,8 +156,6 @@ class ChatActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        dataRepository = DataRepository(applicationContext)
-
         setContent {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -165,7 +164,7 @@ class ChatActivity : ComponentActivity() {
 
                     val callsign = intent.getStringExtra("user_callsign")
                     var fromMaps = intent.getBooleanExtra("from_maps", false)
-                    val settingsVm: WearTAKSettingsViewModel = viewModel()
+                    val chatVm: ChatViewModel = viewModel()
 
                     ChatCivApp(
                         exitActivity = { finishAndRemoveTask() },
@@ -174,7 +173,7 @@ class ChatActivity : ComponentActivity() {
                         uid = uid,
                         callsign = callsign,
                         fromMaps = fromMaps,
-                        settingsVm
+                        chatVm
                     )
                 }
             }
@@ -184,12 +183,12 @@ class ChatActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, uid: String?, callsign: String?, fromMaps: Boolean, settingsVm: WearTAKSettingsViewModel) {
+fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, uid: String?, callsign: String?, fromMaps: Boolean, chatVm: ChatViewModel) {
     val navController = rememberSwipeDismissableNavController()
-    val chatEnabledLive by settingsVm.savedEnableChatService.collectAsState()
+    val chatEnabledLive by chatVm.savedEnableChatService.collectAsState()
     var pendingRoomUid by rememberSaveable { mutableStateOf(initialRoomUid) }
 
-    val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
+    val chatRooms by chatVm.chatRoomsFlow.collectAsState(initial = emptyList())
 
     val hasAnyNew = chatRooms.any { it.newMessagesPresent }
 
@@ -237,7 +236,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         }
     ) {
         composable("chat_screen") {
-            ChatScreen(navController, exitActivity, chatRooms)
+            ChatScreen(navController, chatRooms, chatVm)
         }
 
         composable("chat_reply_screen")
@@ -256,7 +255,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "chat_screen_detailed index: $index")
-            ChatScreenDetailed(navController, index, context, chatRooms)
+            ChatScreenDetailed(navController, index, context, chatRooms, chatVm)
         }
 
         composable("invalid_license_screen") {
@@ -270,67 +269,40 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
 @Composable
 fun ChatScreen(
     navController: NavController,
-    exitActivity: () -> Unit,
-    chatRooms: List<ChatRoom>
+    chatRooms: List<ChatRoom>,
+    chatVm: ChatViewModel
 ) {
     Log.d(TAG, "Chat called")
     val context = LocalContext.current
 
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.chat_messages),
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
-                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(chatRooms) { index, room ->
-                        // room.messageList is the List<ChatMessage>
-                        val lastMessage = room.messageList.lastOrNull()
-                        val lastMessageTime = lastMessage?.timeReceived ?: 0L
-                        val lastMessageText = lastMessage?.message.orEmpty()
+    WearTAKPageWithBackArrow(
+        title = stringResource(R.string.chat_messages),
+        columnContent = {
+            itemsIndexed(chatRooms){ index, room ->
+                run {
+                    val lastMessage = room.messageList.lastOrNull()
+                    val lastMessageTime = lastMessage?.timeReceived ?: 0L
+                    val lastMessageText = lastMessage?.message.orEmpty()
 
-                        ChatCard(
-                            index = index,
-                            title = room.title,
-                            time = utcToHoursMinutes(lastMessageTime),
-                            message = lastMessageText,
-                            newMessagesPresent = room.newMessagesPresent,
-                            onClick = {
-                                navController.navigate("chat_screen_detailed/$index")
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(5.dp))
-                    }
+                    ChatCard(
+                        index = index,
+                        title = room.title,
+                        time = chatVm.utcToHoursMinutes(lastMessageTime),
+                        message = lastMessageText,
+                        newMessagesPresent = room.newMessagesPresent,
+                        onClick = {
+                            navController.navigate("chat_screen_detailed/$index")
+                        }
+                    )
+                    Spacer(modifier = Modifier.height(5.dp))
                 }
-                Spacer(modifier = Modifier.height(10.dp))
             }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                WearTAKBackButton(
-                    onClick = {
-                        exitActivity(); context.startActivity(Intent(context, MainActivity::class.java))
-                    }
-                )
-            }
-        }
-    }
+            item{ Spacer(modifier = Modifier.height(10.dp)) }
+        },
+        navController = navController,
+        exitActivity = true,
+        exitFunction = {context.startActivity(Intent(context, MainActivity::class.java)) }
+    )
 }
 
 @OptIn(ExperimentalWearMaterialApi::class)
@@ -400,153 +372,126 @@ fun ChatScreenDetailed(
     navController: NavController,
     index: Int,
     context: Context,
-    chatRooms: List<ChatRoom>
+    chatRooms: List<ChatRoom>,
+    chatVm: ChatViewModel
 ) {
-    WearTAKCIVTheme {
-        val room = chatRooms.getOrNull(index)
-        val chatRoomTitle = room?.title.orEmpty()
-        val messageList = room?.messageList.orEmpty()
-        val roomId = room?.uid
-        val replyMessage by reply.observeAsState(initial = "")
+    val room = chatRooms.getOrNull(index)
+    val chatRoomTitle = room?.title.orEmpty()
+    val messageList = room?.messageList.orEmpty()
+    val roomId = room?.uid
+    val replyMessage by reply.observeAsState(initial = "")
 
-
-        // Mark this room as read when entering detail
-        LaunchedEffect(key1 = index) {
-            if (roomId != null) {
-                dataRepository.markRoomRead(roomId)
-            }
+    LaunchedEffect(key1 = index) {
+        if (roomId != null) {
+            chatVm.markRoomRead(roomId)
         }
+    }
 
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 10.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = chatRoomTitle,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(7.dp)
-                )
+    WearTAKPageWithBackArrow(
+        title = chatRoomTitle,
+        columnContent = {
+            itemsIndexed(messageList){ messageIndex, chatMsg ->
+                run {
+                    val currentDate = chatVm.utcToDate(chatMsg.timeReceived)
+                    val displayDate = if (messageIndex == 0) {
+                        true
+                    } else {
+                        chatVm.utcToDate(messageList[messageIndex - 1].timeReceived) != currentDate
+                    }
 
-                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(messageList) { messageIndex, chatMsg ->
-                        val currentDate = utcToDate(chatMsg.timeReceived)
-                        val displayDate = if (messageIndex == 0) {
-                            true
-                        } else {
-                            utcToDate(messageList[messageIndex - 1].timeReceived) != currentDate
-                        }
-
-                        if (displayDate) {
-                            Text(
-                                text = currentDate,
-                                fontSize = 12.sp,
-                                color = Color.Gray,
-                                modifier = Modifier.padding(top = 5.dp)
-                            )
-                        }
-                        ChatMessageItem(
-                            time = utcToHoursMinutes(chatMsg.timeReceived),
-                            callsign = chatMsg.callsign,
-                            message = chatMsg.message,
-                            uid= chatMsg.uid,
-                            context = context
+                    if (displayDate) {
+                        Text(
+                            text = currentDate,
+                            fontSize = 12.sp,
+                            color = Color.Gray,
+                            modifier = Modifier.padding(top = 5.dp)
                         )
                     }
-                    item {
-                        Row(
-                            verticalAlignment= Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center,
-                            modifier = Modifier
-                                .padding(horizontal = 10.dp)
-                                .padding(top = 5.dp)
-                        ) {
-                            Chip(
-                                onClick = { navController.navigate("chat_reply_screen") {
-                                    popUpTo("chat_reply_screen") { inclusive = true }
-                                }},
-                                enabled = true,
-                                modifier = if (replyMessage.isEmpty()) {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .weight(.8F)
-                                        .height(30.dp)
-                                } else {
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .weight(.8F)
-                                        .defaultMinSize(minHeight = 30.dp)
-                                        .wrapContentHeight()
-                                },
-                                label = {
-                                    Text(
-                                        text = replyMessage,
-                                        fontSize  = 12.sp,
-                                        maxLines = 3,
-                                        fontWeight = FontWeight.Normal,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                },
-                                colors = ChipDefaults.chipColors(
-                                    backgroundColor = Color.DarkGray,
-                                    contentColor = Color.White,
-                                    secondaryContentColor = Color.LightGray
-                                ),
+                    ChatMessageItem(
+                        time = chatVm.utcToHoursMinutes(chatMsg.timeReceived),
+                        callsign = chatMsg.callsign,
+                        message = chatMsg.message,
+                        uid= chatMsg.uid,
+                        context = context
+                    )
+                }
+            }
+            item {
+                Row(
+                    verticalAlignment= Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier
+                        .padding(horizontal = 10.dp)
+                        .padding(top = 5.dp)
+                ) {
+                    Chip(
+                        onClick = { navController.navigate("chat_reply_screen") {
+                            popUpTo("chat_reply_screen") { inclusive = true }
+                        }},
+                        enabled = true,
+                        modifier = if (replyMessage.isEmpty()) {
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(.8F)
+                                .height(30.dp)
+                        } else {
+                            Modifier
+                                .fillMaxWidth()
+                                .weight(.8F)
+                                .defaultMinSize(minHeight = 30.dp)
+                                .wrapContentHeight()
+                        },
+                        label = {
+                            Text(
+                                text = replyMessage,
+                                fontSize  = 12.sp,
+                                maxLines = 3,
+                                fontWeight = FontWeight.Normal,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            IconButton(
-                                onClick = {
-                                    if (replyMessage.trim().isNotEmpty()) {
-                                        // TODO: Do we want to add success dialog box?
-                                        // I think no, as this is ATAK behavior and we will send it once any endpoint gets connected.
-                                        // It might be good to have an enqueuedToBeSent flag
-                                        CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
-                                            dataRepository.requestChatMessageSendFromUI(roomId?: "", chatRoomTitle, replyMessage.trim(), System.currentTimeMillis())
-                                            reply.value = ""
-                                        }
-                                    }
-                                },
-                                modifier = Modifier
-                                    .size(35.dp),
-                                colors = IconButtonDefaults.iconButtonColors(
-                                    contentColor = Color.Black,
-                                    containerColor = colors.primary
-                                )
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Close icon",
-                                    tint = Color.Black
-                                )
+                        },
+                        colors = ChipDefaults.chipColors(
+                            backgroundColor = Color.DarkGray,
+                            contentColor = Color.White,
+                            secondaryContentColor = Color.LightGray
+                        ),
+                    )
+                    Spacer(modifier = Modifier.width(5.dp))
+                    IconButton(
+                        onClick = {
+                            if (replyMessage.trim().isNotEmpty()) {
+                                // TODO: Do we want to add success dialog box?
+                                // I think no, as this is ATAK behavior and we will send it once any endpoint gets connected.
+                                // It might be good to have an enqueuedToBeSent flag
+                                CoroutineScope(Dispatchers.Main + SupervisorJob()).launch {
+                                    chatVm.requestChatMessageSendFromUI(roomId?: "", chatRoomTitle, replyMessage.trim(), System.currentTimeMillis())
+                                    reply.value = ""
+                                }
                             }
-                        }
+                        },
+                        modifier = Modifier
+                            .size(35.dp),
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = Color.Black,
+                            containerColor = colors.primary
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Send,
+                            contentDescription = "Close icon",
+                            tint = Color.Black
+                        )
                     }
                 }
             }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                WearTAKBackButton(
-                    onClick = {
-                        navController.navigate("chat_screen") {
-                            popUpTo("chat_screen") { inclusive = true }
-                        }
-                    }
-                )
+        },
+        navController = navController,
+        exitFunction = {
+            navController.navigate("chat_screen") {
+                popUpTo("chat_screen") { inclusive = true }
             }
         }
-    }
+    )
 }
 
 @Composable
@@ -731,25 +676,12 @@ fun TextSelectionScreen(
 
 }
 
-fun utcToHoursMinutes(time: Long): String {
-    val instant = Instant.ofEpochMilli(time)
-    val localTime = instant.atZone(ZoneId.systemDefault())
-    val formatter = DateTimeFormatter.ofPattern("HH:mm a")
-    return localTime.format(formatter)
-}
 
-fun utcToDate(time: Long): String {
-    val instant = Instant.ofEpochMilli(time)
-    val localTime = instant.atZone(ZoneId.systemDefault())
-    val formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy")
-    return localTime.format(formatter)
-}
-
-@Preview(widthDp = 192, heightDp = 400, showBackground = true)
-@Composable
-fun ChatScreenPreview() {
-    ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList())
-}
+//@Preview(widthDp = 192, heightDp = 400, showBackground = true)
+//@Composable
+//fun ChatScreenPreview() {
+//    ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList())
+//}
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable

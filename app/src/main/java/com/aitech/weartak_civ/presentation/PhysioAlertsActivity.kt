@@ -99,6 +99,9 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.selectedPhysio
 import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.CrmViewModelFactory
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 class PhysioAlertsActivity : ComponentActivity() {
     companion object {
@@ -371,7 +374,19 @@ fun AlertsScreen(
         }
     )
 }
+fun utcToHoursMinutes(time: Long): String {
+    val instant = Instant.ofEpochMilli(time)
+    val localTime = instant.atZone(ZoneId.systemDefault())
+    val formatter = DateTimeFormatter.ofPattern("HH:mm a")
+    return localTime.format(formatter)
+}
 
+fun utcToDate(time: Long): String {
+    val instant = Instant.ofEpochMilli(time)
+    val localTime = instant.atZone(ZoneId.systemDefault())
+    val formatter = DateTimeFormatter.ofPattern("MM/dd/yyyy")
+    return localTime.format(formatter)
+}
 @Composable
 fun ExpandableCard(
     navController: NavController,

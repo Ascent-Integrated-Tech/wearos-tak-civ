@@ -19,7 +19,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,10 +31,6 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.IconButton
@@ -45,7 +40,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -55,7 +49,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
@@ -72,7 +65,6 @@ import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.bloodhoundDefaultList
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import androidx.compose.ui.graphics.Path
@@ -82,6 +74,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
+import androidx.wear.compose.foundation.lazy.itemsIndexed
 import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.WearTakApplication
@@ -89,7 +82,7 @@ import com.aitech.weartak_civ.complication.BloodhoundComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
-import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
+import com.aitech.weartak_civ.presentation.viewmodel.BloodhoundViewmodel
 import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -140,6 +133,7 @@ class BloodhoundActivity  : ComponentActivity() {
         val app = applicationContext as WearTakApplication
         Log.i(TAG, "onCreate() Bloodhound clearing unread state")
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
+            //TODO: Can you call this from viewmodel??
             app.repo.clearBloodhoundUnreadCount("BloodhoundActivity.onCreate")
         }
         enableEdgeToEdge()
@@ -147,9 +141,9 @@ class BloodhoundActivity  : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    val settingsVm: WearTAKSettingsViewModel = viewModel()
+                    val bhoundVm: BloodhoundViewmodel = viewModel()
 
-                    BloodhoundCivApp(exitActivity = {finishAndRemoveTask()}, context, settingsVm)
+                    BloodhoundCivApp(exitActivity = {finishAndRemoveTask()}, context, bhoundVm)
                 }
             }
         }
@@ -176,21 +170,18 @@ class BloodhoundActivity  : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: WearTAKSettingsViewModel) {
-    val app = context.applicationContext as WearTakApplication
-
-    val dataRepository = remember(app) { app.repo }
-    val bhRepo = remember(app) { app.bhRepo }
+fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, bhoundVm: BloodhoundViewmodel) {
 
     val navController = rememberSwipeDismissableNavController()
 
-    val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
-    val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
+    val licenseKey by bhoundVm.getLicense.collectAsState()
+    val uiList by bhoundVm.listBhItemsUi.collectAsState()
 
-    val bloodhoundEnabledLive by settingsVm.savedEnableBloodhoundCompassService.collectAsState()
+
+    val bloodhoundEnabledLive by bhoundVm.savedEnableBloodhoundCompassService.collectAsState()
 
     LaunchedEffect(Unit) {
-        dataRepository.bloodhoundUiCommands.collectLatest { command ->
+        bhoundVm.bloodhoundUiCommands.collectLatest { command ->
             when (command) {
                 is DataRepository.BloodhoundUiCommand.OpenChatRoom -> {
                     val intent = Intent(context, ChatActivity::class.java).apply {
@@ -218,12 +209,12 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
                 context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
                 exitActivity()
             }
-            isValid && bloodhoundEnabledLive == true && currentDestination != "bloodhound_screen" -> {
+            isValid && bloodhoundEnabledLive && currentDestination != "bloodhound_screen" -> {
                 navController.navigate("bloodhound_screen") {
                     popUpTo(0) { inclusive = true } // clears the back stack
                 }
             }
-            isValid && bloodhoundEnabledLive == false && currentDestination != "bloodhound_disabled_screen" -> {
+            isValid && !bloodhoundEnabledLive && currentDestination != "bloodhound_disabled_screen" -> {
                 navController.navigate("bloodhound_disabled_screen") {
                     popUpTo(0) { inclusive = true }
                 }
@@ -236,11 +227,10 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
         startDestination = if (isLicenseValid()) "bloodhound_screen" else "invalid_license_screen"
     ) {
         composable("bloodhound_screen" ) {
-            BloodhoundScreen(bloodhounds = uiList, navController, exitActivity, context)
+            BloodhoundScreen(bloodhounds = uiList, navController, context)
         }
 
         composable("bloodhound_disabled_screen") {
-//            ChatDisabledScreen(navController, exitActivity)
             ActivityDisabledScreen(
                 navController,
                 exitActivity,
@@ -254,7 +244,7 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
             arguments = listOf(navArgument("index") { type = NavType.IntType })
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
-            BloodhoundScreenDetailed(navController, index, uiList, context,{ exitActivity() })
+            BloodhoundScreenDetailed(navController, index, context, uiList, bhoundVm)
         }
 
         composable(
@@ -273,40 +263,16 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
 fun BloodhoundScreen(
     bloodhounds: List<Utils.BloodhoundItem>,
     navController: NavController,
-    exitActivity: () -> Unit,
     context: Context
 ) {
-    WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            OrientationAware()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp)
-                    .verticalScroll(rememberScrollState()),
+    OrientationAware()
 
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.bloodhound),
-                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .padding(vertical = 10.dp, horizontal = 20.dp)
-                        .align(Alignment.CenterHorizontally)
-                )
+    WearTAKPageWithBackArrow(
+        title = stringResource(R.string.bloodhound),
+        columnContent = {
+            item {
                 IconButton(
-                    onClick = {context.startActivity(Intent(context, MapActivity::class.java)) },
+                    onClick = { context.startActivity(Intent(context, MapActivity::class.java)) },
                     modifier = Modifier
                         .size(40.dp),
                     colors = IconButtonColors(
@@ -323,34 +289,31 @@ fun BloodhoundScreen(
                         tint = Color.Black
                     )
                 }
-                LazyColumn(modifier = Modifier
-                    .height(200.dp).padding(top = 10.dp)){
-                    itemsIndexed(bloodhounds){ index, bloodhoundItem ->
-                        BloodhoundChip(
-                            bloodhoundItem.target,
-                            bloodhoundItem.distance,
-                            bloodhoundItem.bloodhounding,
-                            bloodhoundItem.orientation,
-                            {
-                                if (bloodhoundItem.uid.isNotBlank()) {
-                                    navController.navigate("bloodhound_screen_detailed/$index")
-                                } else {
-                                    Log.i(TAG, "Blank bloodhoundItem")
-                                }
+            }
+            itemsIndexed(bloodhounds){ index, bloodhoundItem ->
+                run {
+                    BloodhoundChip(
+                        bloodhoundItem.target,
+                        bloodhoundItem.distance,
+                        bloodhoundItem.bloodhounding,
+                        bloodhoundItem.orientation,
+                        {
+                            if (bloodhoundItem.uid.isNotBlank()) {
+                                navController.navigate("bloodhound_screen_detailed/$index")
+                            } else {
+                                Log.i(TAG, "Blank bloodhoundItem")
                             }
-                        )
-                    }
+                        }
+                    )
                 }
             }
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                WearTAKBackButton(
-                    onClick = {
-                        exitActivity()
-                        context.startActivity(Intent(context, MainActivity::class.java))
-                    })
-            }
+        },
+        navController = navController,
+        exitActivity = true,
+        exitFunction ={
+            context.startActivity(Intent(context, MainActivity::class.java))
         }
-    }
+    )
 }
 
 @Composable
@@ -367,14 +330,6 @@ fun BloodhoundChip(
             metersLabel = stringResource(R.string.m),
             kilometersLabel = stringResource(R.string.km)
         )
-    val gradientColors = listOf(
-        colors.surface
-            .copy(alpha = 0f)
-            .compositeOver(colors.surface),
-        colors.primary
-            .copy(alpha = 0.5f)
-            .compositeOver(colors.surface),
-    )
     Chip(
         icon = {
             RotatingArrowIcon(
@@ -437,28 +392,21 @@ fun BloodhoundChip(
 fun BloodhoundScreenDetailed(
     navController: NavController,
     index: Int,
-    bloodhoundList: List<Utils.BloodhoundItem>,
     context: Context,
-    exitActivity: () -> Unit,
-) {
-    val app = context.applicationContext as WearTakApplication
-    val bhRepo = app.bhRepo
-    val list = bhRepo.listBhItemsUi.collectAsState().value
-    // 2) resolve uid *once* from the index, but guard
-    val initialUid = remember(index, list.size) {
-        list.getOrNull(index)?.uid
+    bloodhounds: List<Utils.BloodhoundItem>,
+    bhoundVm: BloodhoundViewmodel
+    ) {
+    val initialUid = remember(index, bloodhounds.size) {
+        bloodhounds.getOrNull(index)?.uid
     }
 
-    // 3) if we failed to resolve, bail
     if (initialUid == null) {
         LaunchedEffect(Unit) { navController.popBackStack() }
         return
     }
 
-    // 4) always re-find by uid (index may be stale after mutations)
-    val item = list.firstOrNull { it.uid == initialUid }
+    val item = bloodhounds.firstOrNull { it.uid == initialUid }
 
-    // 5) if removed (e.g., NPOS), bounce out gracefully
     if (item == null) {
         LaunchedEffect(initialUid) { navController.popBackStack() }
         return
@@ -474,7 +422,6 @@ fun BloodhoundScreenDetailed(
         .ofPattern("HH:mm 'UTC'")
         .withZone(ZoneOffset.UTC)
         .format(Instant.ofEpochMilli(bhoundTimeReceived))
-    //TODO: WEAR-450: Test this
     WearTAKPageWithBackArrow(
         title = bhoundTarget,
         columnContent = {
@@ -483,7 +430,6 @@ fun BloodhoundScreenDetailed(
             }
             item {
                 Text(
-                    //TODO: WEAR-161: Translate "Status" to stringResource that already exists when merged
                     text = "Status: " + bloodhoundingTextFromString(bhoundBloodhounding),
                     fontSize = 14.sp,
                     overflow = TextOverflow.Ellipsis,
@@ -504,9 +450,7 @@ fun BloodhoundScreenDetailed(
                 if (bhoundBloodhounding) {
                     Button(
                         onClick = {
-//                        bloodhoundDefaultList.removeAt(index)
-                            bhRepo.requestInPosition(item.uid)
-//                        activeBhoundItem.value = null
+                            bhoundVm.requestInPosition(item.uid)
                             requestBloodhoundComplicationUpdate(context)
                         },
                         modifier = Modifier.padding(top = 10.dp),
@@ -550,12 +494,8 @@ fun BloodhoundScreenDetailed(
                 } else {
                     Button(
                         onClick = {
-//                        activeBhoundItem.value = bloodhoundItem
-//                        setActiveBloodhound(index)
-
-                            bhRepo.requestActivateBloodhound(item.uid)
+                            bhoundVm.requestActivateBloodhound(item.uid)
                             requestBloodhoundComplicationUpdate(context)
-//                        Log.d(TAG, bloodhoundDefaultList.toString())
                             Log.i(TAG, "Requesting Ack and Activation of bloodhound")
                         },
                         modifier = Modifier.padding(top = 10.dp),
@@ -708,52 +648,13 @@ fun requestBloodhoundComplicationUpdate(context: Context) {
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
 }
-/*
-fun isAnyBloodhoundingActive(/*items: List<Utils.BloodhoundItem>*/): Boolean {
-    val items = bloodhoundDefaultList
-    return items.any { it.bloodhounding }
-}
 
-fun setActiveBloodhound(index: Int) {
-    // Iterate and update each item
-    val bloodhoundList = bloodhoundDefaultList
-//    for (i in bloodhoundList.indices) {
-//        val currentItem = bloodhoundList[i]
-//        // Only modify if state actually changes (to avoid redundant recompositions)
-//        if (currentItem.bloodhounding != (i == index)) {
-//            bloodhoundList[i] = currentItem.copy(bloodhounding = (i == index))
-//        }
-//    }
-    if (index !in bloodhoundList.indices) return
-
-    // Copy the selected item and set it to active
-    val selected = bloodhoundList[index].copy(bloodhounding = true)
-
-    // Build a list of all non-active items, setting them to false and sorting by distance
-    val others = bloodhoundList
-        .filterIndexed { i, _ -> i != index }
-        .map { it.copy(bloodhounding = false) }
-        .sortedBy { it.distance }
-
-    // Combine the selected item first, followed by the sorted others
-    val reorderedList = listOf(selected) + others
-
-    // Update the state list to trigger recomposition
-    bloodhoundList.clear()
-    bloodhoundList.addAll(reorderedList)
-}
-*/
 @Preview(widthDp = 192, heightDp = 300, showBackground = true)
 @Composable
 fun BloodhoundScreenPreview() {
-    BloodhoundScreen(bloodhoundDefaultList, rememberSwipeDismissableNavController(), {}, LocalContext.current)
+    BloodhoundScreen(bloodhoundDefaultList, rememberSwipeDismissableNavController(), LocalContext.current)
 }
 
-@Preview(widthDp = 192, heightDp = 300, showBackground = true)
-@Composable
-fun BloodhoundDetailedScreenPreview() {
-    BloodhoundScreenDetailed(rememberSwipeDismissableNavController(), 0, bloodhoundDefaultList, LocalContext.current, {})
-}
 @Preview(widthDp = 192, heightDp = 60, showBackground = true)
 @Composable
 fun BhoundTextPreview() {
