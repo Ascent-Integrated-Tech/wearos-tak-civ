@@ -375,6 +375,7 @@ fun WearTAKSettingsNav(
     val exertionAlertLength by settingsVm.savedExertionAlertThresholdLength.collectAsState()
 
     val isDevMode by settingsVm.savedEnableWearTakDevMode.collectAsState()
+    val networkPreferencesLocked by settingsVm.savedNetworkPreferencesLocked.collectAsState()
     val enableImmersionAlerts by settingsVm.savedEnableImmersionAlerts.collectAsState()
     val enableLowAtmPressureAlert by settingsVm.savedEnableLowAtmPressureAlert.collectAsState()
     val lowAtmPressureAlertThreshold by settingsVm.savedLowAtmPressureAlertThreshold.collectAsState()
@@ -423,11 +424,27 @@ fun WearTAKSettingsNav(
                                 )
                             }
                             item {
-                                WearTAKTitleChip(
-                                    title = stringResource(R.string.network_preferences),
-                                    route = "network_preferences",
-                                    navController = navController
-                                )
+                                if (networkPreferencesLocked) {
+                                    WearTAKLockedTitleChip(
+                                        title = stringResource(R.string.network_preferences),
+                                        lockedState = stringResource(R.string.locked),
+                                        onClick = {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.network_settings_locked),
+                                                Toast.LENGTH_SHORT
+                                            ).apply {
+                                                setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 50)
+                                            }.show()
+                                        }
+                                    )
+                                } else {
+                                    WearTAKTitleChip(
+                                        title = stringResource(R.string.network_preferences),
+                                        route = "network_preferences",
+                                        navController = navController
+                                    )
+                                }
                             }
                             item {
                                 WearTAKTitleChip(
@@ -1226,9 +1243,21 @@ fun WearTAKSettingsNav(
 
         //Network Settings vvv
         composable("network_preferences") {
-            WearTAKPageWithBackArrow(
-                "Network Preferences",
-                columnContent = {
+            if (networkPreferencesLocked) {
+                LaunchedEffect(Unit) {
+                    Toast.makeText(
+                        context,
+                        context.getString(R.string.network_settings_locked),
+                        Toast.LENGTH_SHORT
+                    ).apply {
+                        setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 50)
+                    }.show()
+                    navController.popBackStack()
+                }
+            } else {
+                WearTAKPageWithBackArrow(
+                    "Network Preferences",
+                    columnContent = {
                     item {
                         WearTAKTitleChip(
                             route = "tak_servers",
@@ -1786,9 +1815,10 @@ fun WearTAKSettingsNav(
                             navController = navController
                         )
                     }
-                },
-                navController = navController,
-            )
+                    },
+                    navController = navController,
+                )
+            }
         }
         composable("multicast_address"){
             WearTAKStringEntryPage(
@@ -2760,6 +2790,14 @@ fun WearTAKSettingsNav(
                         "Beta Features",
                         columnContent = {
                             item {
+                                WearTAKToggleChip(
+                                    checkedLive = networkPreferencesLocked,
+                                    onCheckedChange = { settingsVm.storeNetworkPreferencesLocked(it) },
+                                    title = stringResource(R.string.network_settings_lock),
+                                    description = stringResource(R.string.network_settings_lock_description)
+                                )
+                            }
+                            item {
                                 WearTAKTitleChip(
                                     route = "gunshot_detection",
                                     title = stringResource(R.string.gunshot_detection),
@@ -3066,6 +3104,36 @@ fun WearTAKTitleChip(
         modifier = Modifier
             .fillMaxWidth()
 //            .padding(bottom = 7.dp)
+    )
+}
+
+@Composable
+fun WearTAKLockedTitleChip(
+    title: String,
+    lockedState: String,
+    onClick: () -> Unit
+) {
+    Chip(
+        onClick = onClick,
+        enabled = true,
+        label = {
+            Text(
+                text = title,
+                color = Color.Gray
+            )
+        },
+        secondaryLabel = {
+            Text(
+                text = lockedState,
+                color = Color.Gray
+            )
+        },
+        colors = ChipDefaults.chipColors(
+            backgroundColor = Color.DarkGray.copy(alpha = 0.6f),
+            contentColor = Color.Gray,
+            secondaryContentColor = Color.Gray
+        ),
+        modifier = Modifier.fillMaxWidth()
     )
 }
 
