@@ -24,18 +24,38 @@ stages:
   before_script:
     - chmod +x gradlew
 
-    # Reconstruct the production Android signing keystore from the
-    # protected GitLab CI/CD variable.
-    - echo "$WEARTAK_RELEASE_KEYSTORE_B64" | base64 -d > "$CI_PROJECT_DIR/weartak-release.keystore"
-    - chmod 600 "$CI_PROJECT_DIR/weartak-release.keystore"
+    # Verify required CI variables exist.
+    - |
+      [ -n "$WEARTAK_RELEASE_KEYSTORE_B64" ] || { echo "ERROR: WEARTAK_RELEASE_KEYSTORE_B64 missing"; exit 1; }
+      [ -n "$RELEASE_STORE_PASSWORD" ] || { echo "ERROR: RELEASE_STORE_PASSWORD missing"; exit 1; }
+      [ -n "$RELEASE_KEY_ALIAS" ] || { echo "ERROR: RELEASE_KEY_ALIAS missing"; exit 1; }
+      [ -n "$RELEASE_KEY_PASSWORD" ] || { echo "ERROR: RELEASE_KEY_PASSWORD missing"; exit 1; }
 
-    # app/build.gradle reads this environment variable when configuring
-    # the release signing configuration.
-    - export WEARTAK_RELEASE_KEYSTORE_FILE="$CI_PROJECT_DIR/weartak-release.keystore"
+    # Recreate the exact release keystore used locally.
+    - printf '%s' "$WEARTAK_RELEASE_KEYSTORE_B64" | base64 -d > "$CI_PROJECT_DIR/app/weartak.keystore"
+    - chmod 600 "$CI_PROJECT_DIR/app/weartak.keystore"
 
-    # Print environment information without exposing signing secrets.
+    # Recreate signing.properties exactly as the local release build expects.
+    - |
+      cat > "$CI_PROJECT_DIR/signing.properties" <<EOF
+      RELEASE_KEYSTORE_FILE=app/weartak.keystore
+      RELEASE_STORE_PASSWORD=$RELEASE_STORE_PASSWORD
+      RELEASE_KEY_ALIAS=$RELEASE_KEY_ALIAS
+      RELEASE_KEY_PASSWORD=$RELEASE_KEY_PASSWORD
+      EOF
+
+    # Confirm the keystore/password/alias combination before spending 17 minutes building.
+    - |
+      keytool -list \
+        -keystore "$CI_PROJECT_DIR/app/weartak.keystore" \
+        -storepass "$RELEASE_STORE_PASSWORD" \
+        -alias "$RELEASE_KEY_ALIAS" >/dev/null
+
+      echo "Release keystore verified."
+
     - java -version
     - ./gradlew --version
+
 
   script:
     # Build the same release APK that we previously built manually.

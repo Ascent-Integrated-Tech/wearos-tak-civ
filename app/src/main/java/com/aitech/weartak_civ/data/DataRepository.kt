@@ -3292,6 +3292,17 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getNetworkPreferencesLocked: Flow<Boolean> =
+        context.dataStore.data
+            .map { prefs -> prefs[NETWORK_PREFERENCES_LOCKED] ?: false }
+            .distinctUntilChanged()
+
+    suspend fun storeNetworkPreferencesLocked(locked: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[NETWORK_PREFERENCES_LOCKED] = locked
+        }
+    }
+
     data class LocalizationBleBeaconItem(
         val uuid: String,
         val major: Int,
@@ -4220,6 +4231,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
         private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
+        private val NETWORK_PREFERENCES_LOCKED = booleanPreferencesKey("network_preferences_locked")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val RESTING_HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_high_alert_bpm_threshold")
         private val RESTING_HR_LOW_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_low_alert_bpm_threshold")

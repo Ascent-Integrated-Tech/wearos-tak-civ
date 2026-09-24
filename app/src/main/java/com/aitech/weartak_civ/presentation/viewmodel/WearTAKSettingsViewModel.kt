@@ -1195,6 +1195,19 @@ fun displaySitxGroupDialog(
         }
     }
 
+    val savedNetworkPreferencesLocked: StateFlow<Boolean> =
+        dataRepository.getNetworkPreferencesLocked.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = true
+        )
+
+    fun storeNetworkPreferencesLocked(locked: Boolean) {
+        viewModelScope.launch {
+            dataRepository.storeNetworkPreferencesLocked(locked)
+        }
+    }
+
     val savedEnableImmersionAlerts: StateFlow<Boolean> =
         dataRepository.getEnableImmersionAlerts.stateIn(
             scope = viewModelScope,
