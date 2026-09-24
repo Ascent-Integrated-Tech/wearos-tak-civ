@@ -122,6 +122,7 @@ internal class TakChannelApi(
     private val serverName: String,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .sslSocketFactory(sslContext.socketFactory, trustManager)
+        .hostnameVerifier(TakChannelHostnameVerifier())
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
