@@ -27,6 +27,8 @@ import androidx.lifecycle.MutableLiveData
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.channels.Channel
 import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
@@ -136,6 +138,7 @@ import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.withLock
@@ -260,6 +263,15 @@ class DataRepository(private val context: Context) {
 
     private val _takChannels = MutableStateFlow<List<TakServerChannels>>(emptyList())
     val takChannels: StateFlow<List<TakServerChannels>> = _takChannels.asStateFlow()
+
+    class TakServerConfigurationRefresh internal constructor() {
+        val result = CompletableDeferred<Result<Unit>>()
+    }
+
+    private val takServerConfigurationRefreshChannel =
+        Channel<TakServerConfigurationRefresh>(Channel.UNLIMITED)
+    val takServerConfigurationRefreshes: Flow<TakServerConfigurationRefresh> =
+        takServerConfigurationRefreshChannel.receiveAsFlow()
 
     fun updateTakServerChannels(server: TakServerChannels) {
         _takChannels.update { current ->
@@ -3045,6 +3057,15 @@ class DataRepository(private val context: Context) {
 //            // Store in DataStore
 //            preferences[TAK_SERVER_LIST_KEY] = jsonString
 //        }
+    }
+
+    suspend fun storeProvisionedTakServerList(
+        newList: List<TakServerItem>
+    ): TakServerConfigurationRefresh {
+        storeTakServerList(newList)
+        return TakServerConfigurationRefresh().also { refresh ->
+            takServerConfigurationRefreshChannel.send(refresh)
+        }
     }
 
     suspend fun addTakServerItem(item: TakServerItem): TakServerAddResult {
