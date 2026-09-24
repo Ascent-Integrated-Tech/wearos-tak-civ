@@ -685,6 +685,10 @@
     <string name="weartak_preferences">WearTAK Preferences</string>
     <string name="callsign_and_device_preferences">Callsign and Device Preferences</string>
     <string name="network_preferences">Network Preferences</string>
+    <string name="network_settings_lock">Network Settings Lock</string>
+    <string name="network_settings_lock_description">Prevent wearer access to Network Settings</string>
+    <string name="network_settings_locked">Network settings locked</string>
+    <string name="locked">Locked</string>
     <string name="alerting_preferences">Alerting Preferences</string>
     <string name="tool_preferences">Tool Preferences</string>
     <string name="dynamic_reporting">Dynamic Reporting</string>
