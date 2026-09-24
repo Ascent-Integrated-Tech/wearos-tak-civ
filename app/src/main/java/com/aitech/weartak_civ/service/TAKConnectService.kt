@@ -183,6 +183,7 @@ class TAKConnectService: Service() {
         )
 
         setFromDatastore()
+        startTakServerConfigurationCollector()
         startEnableGoefenceServiceCollector()
         startMulticastCollector()
 
@@ -262,28 +263,135 @@ class TAKConnectService: Service() {
             takServerDetails = mutableListOf()
             takServerDetailsById.clear()
             for (takServer in takServers) {
-                val detail = TakServerDetail(
-                    serverId = requireNotNull(TakServerId.normalizeOrNull(takServer.serverId)),
-                    isEnabled = takServer.isEnabled,
-                    name = takServer.name,
-                    address = takServer.address.trim(),
-                    port = takServer.port,
-                    isP12Cert = takServer.isP12Cert,
-                    username = takServer.username,
-                    password = takServer.password,
-                    p12Cert = takServer.p12Cert,
-                    p12CertPassword = takServer.p12CertPassword,
-                    numConnAttempts = 0
-                )
+                val detail = takServer.toRuntimeDetail()
                 takServerDetails.add(detail)
                 takServerDetailsById[detail.serverId] = detail
-                Log.d(TAG, "setFromDatastore takServer(${takServer.name}) isEnabled(${takServer.isEnabled}): address(${takServer.address.trim()}), port(${takServer.port}), isP12Cert(${takServer.isP12Cert}), un(${takServer.username}), paswd(${takServer.password}),")
-                Log.d(TAG, "                 p12Password(${takServer.p12CertPassword}), p12Cert(${takServer.p12Cert})")
+                Log.d(
+                    TAG,
+                    "setFromDatastore serverId=${detail.serverId} name=${detail.name} " +
+                        "address=${detail.address}:${detail.port} enabled=${detail.isEnabled} " +
+                        "isP12=${detail.isP12Cert} hasP12=${!detail.p12Cert.isNullOrBlank()}"
+                )
             }
             refreshDuplicateEndpointSuppression()
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
             esriEndpoint = dataRepository.getEsriEndpoint.first()
 
+        }
+    }
+
+    private fun TakServerItem.toRuntimeDetail(): TakServerDetail = TakServerDetail(
+        serverId = requireNotNull(TakServerId.normalizeOrNull(serverId)),
+        isEnabled = isEnabled,
+        name = name,
+        address = address.trim(),
+        port = port,
+        isP12Cert = isP12Cert,
+        username = username,
+        password = password,
+        p12Cert = p12Cert,
+        p12CertPassword = p12CertPassword,
+        numConnAttempts = 0
+    )
+
+    private fun TakServerDetail.hasSameRuntimeConfiguration(item: TakServerItem): Boolean =
+        isEnabled == item.isEnabled &&
+            address == item.address.trim() &&
+            port == item.port &&
+            isP12Cert == item.isP12Cert &&
+            username == item.username &&
+            password == item.password &&
+            p12Cert.orEmpty() == item.p12Cert &&
+            p12CertPassword.orEmpty() == item.p12CertPassword
+
+    private fun TakServerDetail.hasChangedCredentialMaterial(item: TakServerItem): Boolean =
+        address != item.address.trim() ||
+            port != item.port ||
+            isP12Cert != item.isP12Cert ||
+            username != item.username ||
+            password != item.password ||
+            p12Cert.orEmpty() != item.p12Cert ||
+            p12CertPassword.orEmpty() != item.p12CertPassword
+
+    private fun startTakServerConfigurationCollector() {
+        scope.launch {
+            dataRepository.takServerConfigurationRefreshes.collect { refresh ->
+                try {
+                    reloadProvisionedTakServers()
+                    refresh.result.complete(Result.success(Unit))
+                } catch (error: CancellationException) {
+                    refresh.result.complete(Result.failure(error))
+                    throw error
+                } catch (error: Throwable) {
+                    Log.e(TAG, "Unable to refresh provisioned TAK configuration", error)
+                    refresh.result.complete(Result.failure(error))
+                }
+            }
+        }
+    }
+
+    private suspend fun reloadProvisionedTakServers() {
+        val storedServers = dataRepository.tryAwaitTakServerList()
+            ?: error("Persisted TAK server list is unavailable")
+        val previousById = takServerDetails.associateBy(TakServerDetail::serverId)
+        val retainedIds = mutableSetOf<String>()
+        var replacedCount = 0
+        val refreshed = storedServers.map { stored ->
+            val serverId = requireNotNull(TakServerId.normalizeOrNull(stored.serverId))
+            retainedIds += serverId
+            val previous = previousById[serverId]
+            if (previous != null && previous.hasSameRuntimeConfiguration(stored)) {
+                previous.name = stored.name
+                dataRepository.takChannels.value
+                    .firstOrNull { it.serverId == serverId }
+                    ?.let { channels ->
+                        dataRepository.updateTakServerChannels(channels.copy(serverName = stored.name))
+                    }
+                previous
+            } else {
+                if (previous != null) {
+                    invalidateConnection(previous, terminate = true)
+                    if (previous.hasChangedCredentialMaterial(stored)) {
+                        applicationContext.deleteFile(certificateCacheFileName(previous))
+                        if (TakServerEndpointIdentity.key(previous.address, previous.port) !=
+                            TakServerEndpointIdentity.key(stored)) {
+                            applicationContext.deleteFile(
+                                certificateCacheFileName(stored.address, stored.port)
+                            )
+                        }
+                    }
+                }
+                replacedCount++
+                stored.toRuntimeDetail()
+            }
+        }
+
+        previousById
+            .filterKeys { it !in retainedIds }
+            .values
+            .forEach { removed -> invalidateConnection(removed, terminate = true) }
+
+        takServerDetails = refreshed.toMutableList()
+        takServerDetailsById.clear()
+        refreshed.forEach { detail -> takServerDetailsById[detail.serverId] = detail }
+        refreshDuplicateEndpointSuppression()
+        setIsAnyNetworkConnected()
+        setIsAnyNetworkConnecting()
+
+        Log.i(
+            TAG,
+            "Provisioned TAK configuration refreshed servers=${refreshed.size} replaced=$replacedCount"
+        )
+
+        val companionConnected = isCompanionAppConnected || dataRepository.isCompanionConnected.value
+        if (!companionConnected && isNetworkConnected) {
+            refreshed
+                .filter { detail ->
+                    detail.isEnabled &&
+                        !detail.duplicateEndpointSuppressed &&
+                        detail.connectionStatus.get() == TAK_SERVER_DISCONNECTED
+                }
+                .forEach(::getClientCertificateAndConnect)
         }
     }
 
@@ -1943,7 +2051,7 @@ class TAKConnectService: Service() {
 
                     // Initialize SSL Context with TrustManager
                     val root = findRootInChain(takServerDetail.keyStore)
-                    Log.d(TAG, "root=${root?.toString() ?: "null"}")
+                    Log.d(TAG, "TAK trust root present=${root != null}")
                     val trustKs = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
                         load(null, null)
                         setCertificateEntry("root", root)

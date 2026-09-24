@@ -958,10 +958,11 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Server $i Addr:", takServer.address)}
                     ${String.format("%-25s %-30s", "Server $i Port:", takServer.port)}
                     ${String.format("%-25s %-30s", "Server $i Uses Cert:", takServer.isP12Cert)}
-                    ${String.format("%-25s %-30s", "Server $i User:", takServer.username)}
-                    ${String.format("%-25s %-30s", "Server $i Pswd:", "${takServer.password.take(2)}...(${takServer.password.length})")}
-                    ${String.format("%-25s %-30s", "Server $i Cert:", takServer.p12Cert)}
-                    ${String.format("%-25s %-30s", "Server $i Cert Pswd:", "${takServer.p12CertPassword.take(2)}...(${takServer.p12CertPassword.length})")}
+                    ${String.format("%-25s %-30s", "Server $i ID:", takServer.serverId)}
+                    ${String.format("%-25s %-30s", "Server $i User:", "configured=${takServer.username.isNotEmpty()}")}
+                    ${String.format("%-25s %-30s", "Server $i Pswd:", "configured=${takServer.password.isNotEmpty()}")}
+                    ${String.format("%-25s %-30s", "Server $i Cert:", "configured=${takServer.p12Cert.isNotEmpty()}")}
+                    ${String.format("%-25s %-30s", "Server $i Cert Pswd:", "configured=${takServer.p12CertPassword.isNotEmpty()}")}
                        
                     
                     """.trimIndent()

@@ -1363,7 +1363,11 @@ fun WearTAKSettingsNav(
                         Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
                         WearTAKSwipeToRevealChip(
                             onPrimaryActionClick = {
-                                Log.d(TAG, "Remove takServerItem ($takServerItem)")
+                                Log.d(
+                                    TAG,
+                                    "Remove TAK server serverId=${takServerItem.serverId} " +
+                                        "address=${takServerItem.address}:${takServerItem.port}"
+                                )
                                 val mutableTakServerList = takServerList.toMutableList()
                                 mutableTakServerList.removeAt(index)
                                 settingsVm.storeTakServerList(mutableTakServerList.toList())
@@ -1560,7 +1564,7 @@ fun WearTAKSettingsNav(
         ) { backStackEntry ->
             val index = backStackEntry.arguments?.getInt("index") ?: -1
             Log.d(TAG, "edit_server_screen index: $index")
-            Log.d(TAG, "Edited tak server list: $takServerList")
+            Log.d(TAG, "Edited TAK server list size=${takServerList.size}")
             var name by remember { mutableStateOf(takServerList.getOrNull(index)?.name.orEmpty()) }
             var address by remember { mutableStateOf(takServerList.getOrNull(index)?.address.orEmpty()) }
             var port by remember { mutableStateOf(takServerList.getOrNull(index)?.port.toString().orEmpty()) }
@@ -1646,8 +1650,11 @@ fun WearTAKSettingsNav(
                         (if (isP12Cert) { true } else { password.isNotBlank() } ) ) {
                         val takServerDetails = takServerList.get(index)
                         Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
-                        Log.d(TAG, "takServerDetails: $takServerDetails")
-                        Log.d(TAG, "name: $name, address: $address, port=$port, username=$username, password=$password")
+                        Log.d(
+                            TAG,
+                            "TAK server edit serverId=${takServerDetails.serverId} " +
+                                "name=$name address=$address:$port isP12=$isP12Cert"
+                        )
                         if (name != takServerDetails.name || address != takServerDetails.address || port != takServerDetails.port.toString() ||
                             username != takServerDetails.username || password != takServerDetails.password) {
                             if (name == takServerDetails.name) {

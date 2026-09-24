@@ -73,6 +73,23 @@ class TakServerManagedReconcilerTest {
         )
     }
 
+    @Test
+    fun explicitIdsWinWhenNamesEndpointsAndOrderChange() {
+        val existing = listOf(
+            server("Alpha", "alpha.example", SERVER_A),
+            server("Bravo", "bravo.example", SERVER_B)
+        )
+        val configured = listOf(
+            server("Renamed Bravo", "new-bravo.example", SERVER_B),
+            server("Renamed Alpha", "new-alpha.example", SERVER_A)
+        )
+
+        assertEquals(
+            listOf(1, 0),
+            TakServerManagedReconciler.matchExistingIndexes(configured, existing)
+        )
+    }
+
     private fun server(name: String, address: String, serverId: String?) = TakServerItem(
         isEnabled = true,
         name = name,

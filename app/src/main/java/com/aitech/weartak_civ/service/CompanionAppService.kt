@@ -40,6 +40,7 @@ import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.takserver.TakServerP12Validator
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * CompanionAppService:
@@ -780,7 +782,7 @@ class CompanionAppService : Service() {
             }
 
             val chunk = value.toString(Charsets.UTF_8)
-            Log.d(TAG, "RX from companion chunk: $chunk")
+            Log.d(TAG, "RX from companion chunk bytes=${value.size}")
 
             rxBuf.append(chunk)
 
@@ -940,7 +942,7 @@ class CompanionAppService : Service() {
         }
 
         val device = connectedDevice ?: run {
-            Log.d(TAG, "Not connected companion; dropping JSON: $json")
+            Log.d(TAG, "Not connected companion; dropping JSON bytes=${json.toByteArray().size}")
             return
         }
         val tx = txCharacteristic ?: run {
@@ -968,7 +970,7 @@ class CompanionAppService : Service() {
             if (!ok) {
                 Log.w(TAG, "notifyCharacteristicChanged returned false, will keep connection but drop this msg")
             } else {
-                Log.d(TAG, "Sent JSON to companion: $json")
+                Log.d(TAG, "Sent JSON to companion bytes=${json.toByteArray().size}")
             }
         } catch (t: Throwable) {
             Log.w(TAG, "notifyCharacteristicChanged threw", t)
@@ -1030,9 +1032,19 @@ class CompanionAppService : Service() {
     private val rxBuf = StringBuilder(4096)
 
     suspend fun applySettingsFromCompanion(payload: CompanionAppRepository.SetSettingsPayload) {
+        TakServerP12Validator.validate(payload.takServerList)
+
         // 1) Store servers
         Log.d(TAG, "applySettingsFromCompanion: storeTakServerList size=${payload.takServerList.size}")
-        repo.storeTakServerList(payload.takServerList)
+        val refresh = repo.storeProvisionedTakServerList(payload.takServerList)
+        if (TAKConnectService.isRunning.get()) {
+            val refreshResult = withTimeoutOrNull(TAK_SERVER_REFRESH_TIMEOUT_MS) {
+                refresh.result.await()
+            } ?: throw IllegalStateException(
+                "Settings saved, but the active TAK service refresh timed out."
+            )
+            refreshResult.getOrThrow()
+        }
         val storedTakServerList = repo.awaitTakServerList()
         // reflect the settings ui.
         takServerList = storedTakServerList
@@ -1062,7 +1074,7 @@ class CompanionAppService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun handleCompanionLine(json: String) {
-        Log.d(TAG, "RX from companion line: $json")
+        Log.d(TAG, "RX from companion bytes=${json.toByteArray().size}")
 
         try {
             val base = gson.fromJson(json, CompanionAppRepository.EnvelopeBase::class.java)
@@ -1098,7 +1110,7 @@ class CompanionAppService : Service() {
                             sendJsonToCompanion(capRepo.envelopeToJson(ackEnv))                 // ACKNOWLEDGEMENT
 
                         } catch (t: Throwable) {
-                            Log.w(TAG, "set_settings: failed to parse/apply: $json", t)
+                            Log.w(TAG, "set_settings: failed to parse/apply", t)
 
                             val ackEnv = capRepo.buildSettingsAck(
                                 ok = false,
@@ -1122,7 +1134,7 @@ class CompanionAppService : Service() {
             }
 
         } catch (t: Throwable) {
-            Log.w(TAG, "Failed to parse RX JSON: $json", t)
+            Log.w(TAG, "Failed to parse RX JSON bytes=${json.toByteArray().size}", t)
         }
     }
 
@@ -1134,5 +1146,6 @@ class CompanionAppService : Service() {
         private const val DEFAULT_ATT_MTU = 23
         private const val TARGET_JSON_BYTES = 512
         private const val MAX_PENDING_JSON = 64
+        private const val TAK_SERVER_REFRESH_TIMEOUT_MS = 5_000L
     }
 }
