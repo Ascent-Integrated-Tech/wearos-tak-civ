@@ -8,6 +8,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import io.mockk.mockk
+import com.aitech.weartak_civ.WearTakApplication
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [32])
@@ -51,6 +53,34 @@ class PluginStateStoreTest {
 
         assertTrue(store.isEnabled(PACKAGE_NAME))
         assertFalse(store.isHidden(PACKAGE_NAME))
+    }
+
+    @Test
+    fun replacementPreservesDisabledState() {
+        store.setEnabled(PACKAGE_NAME, false)
+        val repository = HostPluginRepository(
+            mockk<WearTakApplication>(relaxed = true),
+            mockk<PluginManager>(relaxed = true),
+            store,
+        )
+
+        repository.onPackageChanged(PACKAGE_NAME, resetAdmissionState = false)
+
+        assertFalse(store.isEnabled(PACKAGE_NAME))
+    }
+
+    @Test
+    fun freshInstallResetsDisabledState() {
+        store.setEnabled(PACKAGE_NAME, false)
+        val repository = HostPluginRepository(
+            mockk<WearTakApplication>(relaxed = true),
+            mockk<PluginManager>(relaxed = true),
+            store,
+        )
+
+        repository.onPackageChanged(PACKAGE_NAME, resetAdmissionState = true)
+
+        assertTrue(store.isEnabled(PACKAGE_NAME))
     }
 
     private companion object {

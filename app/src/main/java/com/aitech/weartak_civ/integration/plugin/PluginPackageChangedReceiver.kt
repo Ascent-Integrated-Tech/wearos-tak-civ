@@ -27,15 +27,20 @@ class PluginPackageChangedReceiver : BroadcastReceiver() {
         val pkg = intent.data?.schemeSpecificPart?.takeIf { it.isNotBlank() } ?: return
         val app = context.applicationContext as? WearTakApplication ?: return
         val pendingResult = goAsync()
-        Log.i(TAG, "package changed: $pkg — resetting plugin admission state and refreshing")
-        app.pluginRepository.onPackageChanged(pkg)
+        val resetAdmissionState = action == Intent.ACTION_PACKAGE_ADDED
+        Log.i(
+            TAG,
+            "package changed: $pkg — " +
+                "resetAdmissionState=$resetAdmissionState; refreshing",
+        )
+        app.pluginRepository.onPackageChanged(pkg, resetAdmissionState)
 
         // Android can deliver the package broadcast before the newly installed service is
         // queryable. Retry after package publication while keeping the receiver alive.
         Handler(Looper.getMainLooper()).postDelayed({
             try {
                 Log.i(TAG, "retrying plugin discovery after package change: $pkg")
-                app.pluginRepository.onPackageChanged(pkg)
+                app.pluginRepository.onPackageChanged(pkg, resetAdmissionState)
             } finally {
                 pendingResult.finish()
             }

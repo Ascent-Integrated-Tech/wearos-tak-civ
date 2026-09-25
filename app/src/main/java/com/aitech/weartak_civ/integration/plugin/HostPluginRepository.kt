@@ -167,14 +167,17 @@ class HostPluginRepository(
     }
 
     /**
-     * Re-admits a package after installation or replacement. A reinstall is a new plugin
-     * admission event, so stale hidden/disabled state from a previous Remove action must not
-     * strand the package outside the host UI.
+     * Refreshes a package after installation or replacement.
+     *
+     * A fresh install is a new admission event and may reset stale state. A package replacement
+     * is an in-place update, so the user's enabled/disabled choice must survive it.
      */
-    internal fun onPackageChanged(packageName: String) {
-        pluginStateStore.remove(packageName)
-        synchronized(stateLock) {
-            identityStore.setHidden(packageName, false)
+    internal fun onPackageChanged(packageName: String, resetAdmissionState: Boolean) {
+        if (resetAdmissionState) {
+            pluginStateStore.remove(packageName)
+            synchronized(stateLock) {
+                identityStore.setHidden(packageName, false)
+            }
         }
         manager.unbindPackage(packageName)
         manager.refreshBindings()
