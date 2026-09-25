@@ -1199,7 +1199,7 @@ fun displaySitxGroupDialog(
         dataRepository.getNetworkPreferencesLocked.stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
-            initialValue = true
+            initialValue = false
         )
 
     fun storeNetworkPreferencesLocked(locked: Boolean) {

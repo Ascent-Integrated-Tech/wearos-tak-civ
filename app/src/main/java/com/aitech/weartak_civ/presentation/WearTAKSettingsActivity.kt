@@ -1243,21 +1243,9 @@ fun WearTAKSettingsNav(
 
         //Network Settings vvv
         composable("network_preferences") {
-            if (networkPreferencesLocked) {
-                LaunchedEffect(Unit) {
-                    Toast.makeText(
-                        context,
-                        context.getString(R.string.network_settings_locked),
-                        Toast.LENGTH_SHORT
-                    ).apply {
-                        setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 50)
-                    }.show()
-                    navController.popBackStack()
-                }
-            } else {
-                WearTAKPageWithBackArrow(
-                    "Network Preferences",
-                    columnContent = {
+            WearTAKPageWithBackArrow(
+                "Network Preferences",
+                columnContent = {
                     item {
                         WearTAKTitleChip(
                             route = "tak_servers",
@@ -1815,10 +1803,9 @@ fun WearTAKSettingsNav(
                             navController = navController
                         )
                     }
-                    },
-                    navController = navController,
-                )
-            }
+                },
+                navController = navController,
+            )
         }
         composable("multicast_address"){
             WearTAKStringEntryPage(
@@ -3089,9 +3076,7 @@ fun WearTAKTitleChip(
     Chip(
         onClick = {
             onClick()
-            navController.navigate(route) {
-                popUpTo(route) { inclusive = true }
-            }
+            navController.navigate(route)
         },
         enabled = true,
         label = { Text(text = title) },
