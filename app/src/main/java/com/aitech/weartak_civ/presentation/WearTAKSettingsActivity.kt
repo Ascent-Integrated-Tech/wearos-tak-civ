@@ -211,6 +211,7 @@ import kotlin.String
 
 class WearTAKSettingsActivity : ComponentActivity() {
     companion object Constants {
+        const val EXTRA_OPEN_NETWORK_PREFERENCES = "extra_open_network_preferences"
         val TAG = "WearTAK-" + WearTAKSettingsActivity::class.java.simpleName
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
@@ -278,6 +279,10 @@ class WearTAKSettingsActivity : ComponentActivity() {
                         settingsVm = settingsVm,
                         sitxVm = sitxVm,
                         pluginVm = pluginVm,
+                        openNetworkPreferences = intent.getBooleanExtra(
+                            EXTRA_OPEN_NETWORK_PREFERENCES,
+                            false
+                        ),
                         onExit = { finish() }
                     )
                 }
@@ -291,10 +296,12 @@ fun WearTAKSettingsNav(
     settingsVm: WearTAKSettingsViewModel,
     sitxVm: SitxViewModel,
     pluginVm: PluginViewModel,
+    openNetworkPreferences: Boolean = false,
     onExit: () -> Unit
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
+    var networkShortcutHandled by rememberSaveable { mutableStateOf(false) }
 //    var selectedCategoryAndRoleIndex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // collect license from data repo so we can see if it changes.
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
@@ -404,6 +411,12 @@ fun WearTAKSettingsNav(
         startDestination = "settings_screen"
     ) {
         composable("settings_screen") {
+            LaunchedEffect(openNetworkPreferences) {
+                if (openNetworkPreferences && !networkShortcutHandled) {
+                    networkShortcutHandled = true
+                    navController.navigate("network_preferences")
+                }
+            }
             val rootSwipeState = rememberSwipeToDismissBoxState()
             LaunchedEffect(rootSwipeState.currentValue) {
                 if (rootSwipeState.currentValue == SwipeToDismissValue.Dismissed) {
