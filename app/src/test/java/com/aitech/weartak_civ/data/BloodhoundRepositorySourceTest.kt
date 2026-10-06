@@ -40,6 +40,19 @@ class BloodhoundRepositorySourceTest {
         assertEquals(SERVER_A, repository.bloodhoundMap.value[UID]?.sourceServerId)
     }
 
+    @Test
+    fun removingBloodhoundFromMenuRemovesVisibleItemAndClearsActiveSelection() {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        repository.upsertFromEvent(event(SERVER_A, "Alpha", receivedAt = 100L))
+        repository.activate(UID)
+
+        val removed = repository.removeFromMenu(UID)
+
+        assertEquals("Alpha", removed?.target?.name)
+        assertNull(repository.bloodhoundMap.value[UID])
+        assertNull(repository.activeUid.value)
+    }
+
     private fun event(
         serverId: String,
         title: String,

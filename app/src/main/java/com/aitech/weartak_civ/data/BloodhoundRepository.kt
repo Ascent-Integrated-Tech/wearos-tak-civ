@@ -363,6 +363,14 @@ class BloodhoundRepository(private val context: Context) {
         item
     }
 
+    fun removeFromMenu(uid: String): BloodhoundItem? = synchronized(bloodhoundStateLock) {
+        val key = bloodhoundStore.visibleKey(uid) ?: return@synchronized null
+        val item = bloodhoundStore.remove(key) ?: return@synchronized null
+        publishVisibleBloodhounds()
+        if (_activeKey.value == key) setActiveKey(null)
+        item
+    }
+
     fun isUidValid(uid: String) = bloodhoundStore.visibleItem(uid) != null
 
     fun remarkFromHoundmaster(uid: String) =
