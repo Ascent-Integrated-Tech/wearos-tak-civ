@@ -54,6 +54,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.role
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.smsNumbersList
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
+import com.aitech.weartak_civ.presentation.requestBloodhoundComplicationUpdate
 import com.aitech.weartak_civ.presentation.requestPhysioStatusAndAlertingComplicationUpdate
 import com.aitech.weartak_civ.service.HailService.checkLicense
 import com.aitech.weartak_civ.service.HailService.checkLocalHailLicense
@@ -1029,6 +1030,9 @@ class CotDispatchService : Service() {
         pendingMarkerCotList.addAll(updatedList)
         enqueueMarkerClear(editedMarkerDrop)
         markerDropMap[uid] = editedMarkerDrop
+        if (bhRepo.removeTarget(uid).isNotEmpty()) {
+            requestBloodhoundComplicationUpdate(this)
+        }
         dataRepository.changeDroppedMarkerCotTypeStatusByUid(uid = uid, cotType = DataRepository.MarkerCotType.CLEAR, enqueuedToBeSent = true, waitingForUpdatedLocation = false)
 
         if (dataRepository.anyEndpointConnected.value) {

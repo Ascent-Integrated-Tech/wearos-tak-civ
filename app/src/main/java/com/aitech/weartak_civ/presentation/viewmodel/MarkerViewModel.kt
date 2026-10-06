@@ -11,12 +11,14 @@ package com.aitech.weartak_civ.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
@@ -119,6 +121,13 @@ class MarkerViewModel : ViewModel() {
             { it.lon },
             { it.timeDropped }
         )
+
+    fun deleteReceivedMarker(uid: String) {
+        bhRepo.removeTarget(uid)
+        viewModelScope.launch {
+            dataRepository.removeReceivedMarkerByUid(uid)
+        }
+    }
 
     suspend fun requestUpdateMarkerLocation(uid: String) {
         dataRepository.requestUpdateMarkerLocation(uid)

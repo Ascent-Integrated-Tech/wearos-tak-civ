@@ -2038,6 +2038,26 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                                 }
                             }
                         }
+                        Button(
+                            onClick = {
+                                viewModel.deleteReceivedMarker(marker.uid)
+                                requestBloodhoundComplicationUpdate(context)
+                                exitActivity()
+                            },
+                            modifier = Modifier.padding(top = 10.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.Red,
+                                contentColor = Color.White
+                            ),
+                        ) {
+                            androidx.wear.compose.material.Text(
+                                text = stringResource(R.string.delete),
+                                fontSize = 15.sp,
+                                overflow = TextOverflow.Ellipsis,
+                                color = Color.White,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
                     }
                     Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                         WearTAKBackButton(onClick = { exitActivity() })
