@@ -764,6 +764,19 @@ class WearTAKSettingsViewModel : ViewModel() {
         }
     }
 
+    fun removeSitxConfiguration() {
+        viewModelScope.launch {
+            dataRepository.storeEnableSitxService(false)
+            enableSitxService = false
+            sitxRepo.clearSecrets(keepBaseUrl = false)
+            dataRepository.setSelectedSitxGroup(null)
+            dataRepository.setSitxGroups(emptyList())
+            dataRepository.setSitxDisconnected()
+            sitxTakUrl = ""
+            sitxTakGroup = null
+        }
+    }
+
 //    val sitxEvent by sitxVm.lastEvent.collectAsStateWithLifecycle(initialValue=null)
 
 
@@ -859,7 +872,12 @@ fun displaySitxGroupDialog(
             is SitxServiceEvent.NeedsUserAction -> "Needs User Action"
             is SitxServiceEvent.Pending -> "Pending Authorization"
             is SitxServiceEvent.Authorized -> "Device Authorized"
-            is SitxServiceEvent.SocketStatus -> "Connected"
+            is SitxServiceEvent.SocketStatus -> when (sitxEvent.status) {
+                "CONNECTED" -> "Connected"
+                "CONNECTING" -> "Connecting"
+                "FAILED" -> "Error"
+                else -> "Disconnected"
+            }
             is SitxServiceEvent.SocketsConnected -> "Connected"
             is SitxServiceEvent.Info -> "Info"
             is SitxServiceEvent.Error -> "Error"

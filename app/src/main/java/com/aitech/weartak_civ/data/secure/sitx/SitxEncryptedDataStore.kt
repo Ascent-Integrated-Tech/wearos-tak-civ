@@ -82,6 +82,7 @@ class SitxEncryptedDataStore(context: Context) {
     suspend fun clearAllSecrets(keepBaseUrl: Boolean = true) {
         ds.edit { prefs ->
             prefs.remove(SitxSecretsKeys.CLIENT_ID)
+            prefs.remove(SitxSecretsKeys.GROUP_NAME)
 
             prefs.remove(SitxSecretsKeys.DEVICE_CODE)
             prefs.remove(SitxSecretsKeys.USER_CODE)
@@ -89,10 +90,13 @@ class SitxEncryptedDataStore(context: Context) {
             prefs.remove(SitxSecretsKeys.DEVICE_CODE_EXPIRES_AT_EPOCH_SEC)
             prefs.remove(SitxSecretsKeys.DEVICE_POLL_INTERVAL_SEC)
 
+            prefs.remove(SitxSecretsKeys.REFRESH_TOKEN_BASE_URL)
+            prefs.remove(SitxSecretsKeys.REFRESH_TOKEN_CLIENT_ID)
             prefs.remove(SitxSecretsKeys.REFRESH_TOKEN)
             prefs.remove(SitxSecretsKeys.REFRESH_TOKEN_EXPIRES_AT_EPOCH_SEC)
 
             prefs.remove(SitxSecretsKeys.TAK_SESSIONS_JSON)
+            prefs.remove(SitxSecretsKeys.SELECTED_TAK_GROUP)
             prefs.remove(SitxSecretsKeys.WS_HEALTH_JSON)
 
             prefs.remove(SitxSecretsKeys.DEVICE_UID)

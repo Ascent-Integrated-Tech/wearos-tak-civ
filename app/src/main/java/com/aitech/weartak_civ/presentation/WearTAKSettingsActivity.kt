@@ -1840,6 +1840,7 @@ fun WearTAKSettingsNav(
 
         composable("sitx_tak_screen") {
 //            val nameSecondary = if (enableSitxService) sitxStatusText(sitxEvent) else "Service not enabled"
+            val showRemoveConfigurationDialog = remember { mutableStateOf(false) }
 
             WearTAKPageWithBackArrow(
                 title = stringResource(R.string.sitx_tak),
@@ -1900,8 +1901,71 @@ fun WearTAKSettingsNav(
                             )
                         }
                     }
+                    item {
+                        Button(
+                            onClick = { showRemoveConfigurationDialog.value = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 8.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.Red,
+                                contentColor = Color.White
+                            )
+                        ) {
+                            Text(
+                                text = stringResource(R.string.remove),
+                                color = Color.White
+                            )
+                        }
+                    }
                 },
                 navController = navController,
+            )
+
+            WearTAKAlertDialog(
+                shouldShowDialog = showRemoveConfigurationDialog,
+                modifier = Modifier.wrapContentHeight(),
+                icon = {
+                    Icon(
+                        Icons.Default.Warning,
+                        modifier = Modifier.size(25.dp),
+                        contentDescription = null,
+                        tint = Color.LightGray
+                    )
+                },
+                text = {
+                    Text(
+                        text = stringResource(R.string.remove_sitx_configuration_confirmation),
+                        textAlign = TextAlign.Center,
+                        fontSize = 14.sp
+                    )
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showRemoveConfigurationDialog.value = false
+                            settingsVm.removeSitxConfiguration()
+                        },
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.remove),
+                            color = Color.White
+                        )
+                    }
+                },
+                dismissButton = {
+                    Button(
+                        onClick = { showRemoveConfigurationDialog.value = false },
+                        modifier = Modifier.fillMaxWidth(0.45f),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Gray)
+                    ) {
+                        Text(text = stringResource(R.string.dismiss))
+                    }
+                }
             )
         }
         composable("sitx_tak_url_screen") {

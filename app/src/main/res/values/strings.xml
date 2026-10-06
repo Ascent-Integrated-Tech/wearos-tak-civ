@@ -667,6 +667,8 @@
     <string name="enabled">Enabled</string>
     <string name="airplane_mode">Airplane Mode</string>
     <string name="sitx_tak" translatable="false">Sit(x) TAK</string>
+    <string name="remove">Remove</string>
+    <string name="remove_sitx_configuration_confirmation">Remove the saved Sit(x) configuration and turn the service off? You can re-enable and configure it again later.</string>
     <string name="client_id" translatable="false">Client ID</string>
     <string name="immersion_alerts">Immersion Alerts</string>
     <string name="atm_pressure_alerts">Atm Pressure Alerts</string>
