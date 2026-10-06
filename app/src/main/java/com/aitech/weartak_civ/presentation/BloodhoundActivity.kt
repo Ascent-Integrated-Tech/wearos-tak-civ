@@ -574,6 +574,30 @@ fun BloodhoundScreenDetailed(
                     }
                 }
             }
+            item {
+                Button(
+                    onClick = {
+                        bhRepo.removeFromMenu(item.uid)
+                        requestBloodhoundComplicationUpdate(context)
+                        navController.navigate("bloodhound_screen") {
+                            popUpTo("bloodhound_screen") { inclusive = true }
+                        }
+                    },
+                    modifier = Modifier.padding(top = 10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red,
+                        contentColor = Color.White
+                    ),
+                ) {
+                    Text(
+                        text = stringResource(R.string.delete),
+                        fontSize = 15.sp,
+                        overflow = TextOverflow.Ellipsis,
+                        color = Color.White,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                }
+            }
         },
         navController = navController,
         exitFunction = {
