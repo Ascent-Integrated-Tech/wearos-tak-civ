@@ -53,6 +53,20 @@ class BloodhoundRepositorySourceTest {
         assertNull(repository.activeUid.value)
     }
 
+    @Test
+    fun removingTargetDropsEveryUidCopyAndClearsActiveSelection() {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        repository.upsertFromEvent(event(SERVER_A, "Alpha", receivedAt = 100L))
+        repository.upsertFromEvent(event(SERVER_B, "Bravo", receivedAt = 200L))
+        repository.activate(UID)
+
+        val removed = repository.removeTarget(UID)
+
+        assertEquals(2, removed.size)
+        assertNull(repository.bloodhoundMap.value[UID])
+        assertNull(repository.activeUid.value)
+    }
+
     private fun event(
         serverId: String,
         title: String,

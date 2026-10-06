@@ -371,6 +371,15 @@ class BloodhoundRepository(private val context: Context) {
         item
     }
 
+    /** Removes every source copy of [uid], e.g. when the matching map item is deleted. */
+    fun removeTarget(uid: String): List<BloodhoundItem> = synchronized(bloodhoundStateLock) {
+        val removed = bloodhoundStore.removeUid(uid)
+        if (removed.isEmpty()) return@synchronized removed
+        publishVisibleBloodhounds()
+        if (_activeKey.value?.cotUid == uid) setActiveKey(null)
+        removed
+    }
+
     fun isUidValid(uid: String) = bloodhoundStore.visibleItem(uid) != null
 
     fun remarkFromHoundmaster(uid: String) =
