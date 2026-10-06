@@ -27,20 +27,5 @@
         "Tactical Communicator",
         "TOC"
       ]
-    },
-    {
-        "category": "FES",
-        "roles": [
-          "Assistant Chief",
-          "Battalion Chief",
-          "Captain",
-          "Deputy Chief",
-          "District Chief",
-          "Engineer",
-          "Fire Chief",
-          "Firefighter",
-          "Lieutenant",
-          "Safety Officer"
-        ]
     }
 ]
