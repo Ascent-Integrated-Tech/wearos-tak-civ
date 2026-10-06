@@ -628,6 +628,9 @@ object Utils {
             val category: String, val roles: List<String>
         )
 
+        fun selectableRoleCategories(entries: List<CategoryRolesEntry>): List<CategoryRolesEntry> =
+            entries.filterNot { it.category == "FES" }
+
         /**
          * Reads the default roles/categories from res/raw/roles_json_config.json.
          * On any error, logs it and returns an empty list.

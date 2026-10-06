@@ -706,7 +706,8 @@ class MainActivity : ComponentActivity() {
     private suspend fun initCategoryAndRoleAndCategoryRolesList(dataRepoCategoryRolesList: List<CategoryRolesEntry> ) {
         try {
             Log.i(TAG, "Just before loading category entries from DataStore")
-            categoryRolesEntryLists = dataRepoCategoryRolesList
+            // Exclude FES from cached and managed role lists as well as the defaults.
+            categoryRolesEntryLists = Utils.SettingsUtils.selectableRoleCategories(dataRepoCategoryRolesList)
 
             if (categoryRolesEntryLists.isEmpty()) {
                 Log.i(TAG, "DataStore empty → loading defaults from raw JSON")
