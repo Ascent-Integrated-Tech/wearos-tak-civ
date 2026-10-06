@@ -112,7 +112,11 @@ import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManagerFactory
+import com.aitech.weartak_civ.data.takserver.TakMissionApi
 import javax.net.ssl.X509TrustManager
+import com.aitech.weartak_civ.data.model.TakMissionStatus
+import com.aitech.weartak_civ.data.model.TakMissionState
+import com.aitech.weartak_civ.data.model.TakServerMissions
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
@@ -1008,7 +1012,62 @@ class TAKConnectService: Service() {
                 )
             }
         }
+        private suspend fun loadTakMissions(
+            detail: TakServerDetail
+        ) {
+            dataRepository.updateTakMissionLoading(
+                serverId = detail.serverId,
+                serverName = detail.name,
+                serverAddress = detail.address
+            )
 
+            Log.i(
+                TAG,
+                "Mission load starting serverId=${detail.serverId} " +
+                        "serverName=${detail.name} address=${detail.address}"
+            )
+
+            try {
+                Log.d(
+                    TAG,
+                    "MISSION AUTH " +
+                            "server=${detail.address} " +
+                            "username=${detail.username} " +
+                            "clientUid=${MainActivity.device_uid}"
+                )
+
+                val missions = missionApi(detail).getAllMissions()
+
+                dataRepository.updateTakMissions(
+                    serverId = detail.serverId,
+                    serverName = detail.name,
+                    serverAddress = detail.address,
+                    missions = missions
+                )
+
+                Log.i(
+                    TAG,
+                    "Mission load complete serverId=${detail.serverId} " +
+                            "missions=${missions.map { it.name }}"
+                )
+
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                dataRepository.updateTakMissionError(
+                    serverId = detail.serverId,
+                    serverName = detail.name,
+                    serverAddress = detail.address,
+                    message = error.message ?: error.javaClass.simpleName
+                )
+
+                Log.e(
+                    TAG,
+                    "Mission load failed serverId=${detail.serverId}",
+                    error
+                )
+            }
+        }
         private fun channelApi(detail: TakServerDetail): TakChannelApi {
             check(detail.isEnabled && detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT) {
                 "TAK Server Xis not connected"
@@ -1025,6 +1084,31 @@ class TAKConnectService: Service() {
                 trustManager = trustManager,
                 serverId = detail.serverId,
                 serverName = detail.name,
+            )
+        }
+
+        private fun missionApi(detail: TakServerDetail): TakMissionApi {
+            check(
+                detail.isEnabled &&
+                        detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT
+            ) {
+                "TAK Server is not connected"
+            }
+
+            val sslContext = checkNotNull(detail.channelSslContext) {
+                "TAK Server API TLS context is unavailable"
+            }
+
+            val trustManager = checkNotNull(detail.channelTrustManager) {
+                "TAK Server API trust manager is unavailable"
+            }
+
+            return TakMissionApi(
+                address = detail.address,
+                sslContext = sslContext,
+                trustManager = trustManager,
+                serverId = detail.serverId,
+                serverName = detail.name
             )
         }
 
@@ -1048,6 +1132,15 @@ class TAKConnectService: Service() {
                 }
             }
         }
+
+        private fun loadTakMissionsAfterConnect(
+            detail: TakServerDetail
+        ) {
+            connectionScope.launch {
+                loadTakMissions(detail)
+            }
+        }
+
 
         private suspend fun reconcileServerChannelChange(serverId: String) {
             val traceId = nextChannelTraceId("server-notice", serverId)
@@ -2120,6 +2213,8 @@ class TAKConnectService: Service() {
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
                     loadTakChannelsAfterConnect(takServerDetail)
+                    loadTakMissionsAfterConnect(takServerDetail)
+
                     startCotReader(takServerDetail, socket, attempt)
 
                 } catch (e: Exception) {

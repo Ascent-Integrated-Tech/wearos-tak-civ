@@ -142,6 +142,10 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.scan
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.withLock
+import com.aitech.weartak_civ.data.model.TakMission
+import com.aitech.weartak_civ.data.model.TakMissionState
+import com.aitech.weartak_civ.data.model.TakMissionStatus
+import com.aitech.weartak_civ.data.model.TakServerMissions
 import java.time.Year
 import java.time.temporal.ChronoUnit
 import java.util.EnumMap
@@ -264,6 +268,12 @@ class DataRepository(private val context: Context) {
     private val _takChannels = MutableStateFlow<List<TakServerChannels>>(emptyList())
     val takChannels: StateFlow<List<TakServerChannels>> = _takChannels.asStateFlow()
 
+    private val _takMissions =
+        MutableStateFlow<List<TakServerMissions>>(emptyList())
+
+    val takMissions: StateFlow<List<TakServerMissions>> =
+        _takMissions.asStateFlow()
+
     class TakServerConfigurationRefresh internal constructor() {
         val result = CompletableDeferred<Result<Unit>>()
     }
@@ -290,6 +300,70 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    fun updateTakMissionLoading(
+        serverId: String,
+        serverName: String,
+        serverAddress: String
+    ) {
+        val updated = TakServerMissions(
+            serverId = serverId,
+            serverName = serverName,
+            serverAddress = serverAddress,
+            missions = emptyList(),
+            status = TakMissionStatus.LOADING
+        )
+
+        _takMissions.value =
+            _takMissions.value.filterNot { it.serverId == serverId } + updated
+    }
+
+    fun updateTakMissions(
+        serverId: String,
+        serverName: String,
+        serverAddress: String,
+        missions: List<TakMission>
+    ) {
+        val missionStates = missions.map { mission ->
+            TakMissionState(
+                mission = mission,
+                status = TakMissionStatus.READY
+            )
+        }
+
+        val updated = TakServerMissions(
+            serverId = serverId,
+            serverName = serverName,
+            serverAddress = serverAddress,
+            missions = missionStates,
+            status = if (missionStates.isEmpty()) {
+                TakMissionStatus.EMPTY
+            } else {
+                TakMissionStatus.READY
+            }
+        )
+
+        _takMissions.value =
+            _takMissions.value.filterNot { it.serverId == serverId } + updated
+    }
+
+    fun updateTakMissionError(
+        serverId: String,
+        serverName: String,
+        serverAddress: String,
+        message: String
+    ) {
+        val updated = TakServerMissions(
+            serverId = serverId,
+            serverName = serverName,
+            serverAddress = serverAddress,
+            missions = emptyList(),
+            status = TakMissionStatus.ERROR,
+            errorMessage = message
+        )
+
+        _takMissions.value =
+            _takMissions.value.filterNot { it.serverId == serverId } + updated
+    }
     private val _airplaneOnSuccess = MutableStateFlow(false)
     val airplaneOnSuccess: StateFlow<Boolean> = _airplaneOnSuccess.asStateFlow()
 
