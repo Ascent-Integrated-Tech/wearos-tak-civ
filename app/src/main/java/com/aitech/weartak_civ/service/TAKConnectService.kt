@@ -68,6 +68,7 @@ import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommand
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.fasterxml.jackson.databind.ObjectMapper
 import kotlinx.coroutines.CancellationException
+import com.aitech.weartak_civ.data.model.TakMissionChange
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -620,6 +621,7 @@ class TAKConnectService: Service() {
             takServerDetail.isEnabled = false
             invalidateConnection(takServerDetail)
             dataRepository.removeTakServerChannels(takServerDetail.serverId)
+//            dataRepository.removeTakServerMissions(takServerDetail.serverId)
             setIsAnyNetworkConnected()
             setIsAnyNetworkConnecting()
         } else {
@@ -650,6 +652,7 @@ class TAKConnectService: Service() {
         takServerDetailsById.remove(takServerDetail.serverId, takServerDetail)
         takServerDetails.removeAt(index)
         dataRepository.removeTakServerChannels(takServerDetail.serverId)
+        dataRepository.removeTakServerMissions(takServerDetail.serverId)
         refreshDuplicateEndpointSuppression()
     }
 
@@ -1044,7 +1047,17 @@ class TAKConnectService: Service() {
                     serverAddress = detail.address,
                     missions = missions
                 )
-
+                dataRepository.restorePersistedMissionState(
+                    serverId = detail.serverId
+                )
+                syncSubscribedMissions(detail.serverId)
+//            // TEMP: auto-subscribe to test2 for backend testing
+//                if (detail.address == "tak.weartak.com") {
+//                    subscribeToTakMission(
+//                        serverId = detail.serverId,
+//                        missionName = "test2"
+//                    )
+//                }
                 Log.i(
                     TAG,
                     "Mission load complete serverId=${detail.serverId} " +
@@ -1068,6 +1081,233 @@ class TAKConnectService: Service() {
                 )
             }
         }
+
+        fun subscribeToTakMission(
+            serverId: String,
+            missionName: String
+        ) {
+            val detail = getTakServerDetail(serverId) ?: run {
+                Log.e(TAG, "TAK Server not found for serverId=$serverId")
+                return
+            }
+
+            connectionScope.launch {
+                try {
+                    Log.i(
+                        TAG,
+                        "Mission subscribe starting serverId=$serverId mission=$missionName"
+                    )
+
+                    missionApi(detail).subscribeToMission(
+                        missionName = missionName,
+                        clientUid = MainActivity.device_uid
+                    )
+
+                    dataRepository.setMissionSubscribed(
+                        serverId = serverId,
+                        missionName = missionName,
+                        subscribed = true
+                    )
+                    dataRepository.persistMissionSubscribed(
+                        serverId = serverId,
+                        missionName = missionName
+                    )
+
+                    Log.i(
+                        TAG,
+                        "Mission subscribe complete serverId=$serverId mission=$missionName"
+                    )
+
+                    syncTakMission(
+                        serverId = serverId,
+                        missionName = missionName
+                    )
+
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    dataRepository.setMissionSyncError(
+                        serverId = serverId,
+                        missionName = missionName,
+                        message = error.message ?: error.javaClass.simpleName
+                    )
+
+                    Log.e(
+                        TAG,
+                        "Mission subscribe failed serverId=$serverId mission=$missionName",
+                        error
+                    )
+                }
+            }
+        }
+
+        fun unsubscribeFromTakMission(
+            serverId: String,
+            missionName: String
+        ) {
+            val detail = getTakServerDetail(serverId) ?: run {
+                Log.e(TAG, "TAK Server not found for serverId=$serverId")
+                return
+            }
+
+            connectionScope.launch {
+                try {
+                    missionApi(detail).unsubscribeFromMission(
+                        missionName = missionName,
+                        clientUid = MainActivity.device_uid
+                    )
+
+                    dataRepository.setMissionSubscribed(
+                        serverId = serverId,
+                        missionName = missionName,
+                        subscribed = false
+                    )
+                    dataRepository.persistMissionUnsubscribed(
+                        serverId = serverId,
+                        missionName = missionName
+                    )
+
+                    Log.i(
+                        TAG,
+                        "Mission unsubscribe complete serverId=$serverId mission=$missionName"
+                    )
+
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    dataRepository.setMissionSyncError(
+                        serverId = serverId,
+                        missionName = missionName,
+                        message = error.message ?: error.javaClass.simpleName
+                    )
+
+                    Log.e(
+                        TAG,
+                        "Mission unsubscribe failed serverId=$serverId mission=$missionName",
+                        error
+                    )
+                }
+            }
+        }
+        private suspend fun syncSubscribedMissions(
+            serverId: String
+        ) {
+            val subscribedMissions =
+                dataRepository.getSubscribedMissions(serverId)
+
+            subscribedMissions.forEach { state ->
+                syncTakMission(
+                    serverId = serverId,
+                    missionName = state.mission.name
+                )
+            }
+        }
+        private suspend fun syncTakMission(
+            serverId: String,
+            missionName: String
+        ) {
+            val detail = getTakServerDetail(serverId) ?: run {
+                Log.e(TAG, "TAK Server not found for serverId=$serverId")
+                return
+            }
+
+            val state = dataRepository.takMissions.value
+                .firstOrNull { it.serverId == serverId }
+                ?.missions
+                ?.firstOrNull { it.mission.name == missionName }
+                ?: return
+
+            if (!state.subscribed) {
+                return
+            }
+
+            dataRepository.setMissionSyncing(
+                serverId = serverId,
+                missionName = missionName
+            )
+
+            try {
+                val changes =
+                    missionApi(detail).getMissionChanges(missionName)
+
+                val newChanges = changes.filter {
+                    it.changeKey() !in state.processedChangeKeys
+                }
+                Log.d(
+                    "MISSION_TEST",
+                    "changes=$changes"
+                )
+
+                Log.d(
+                    "MISSION_TEST",
+                    "newChanges=$newChanges"
+                )
+
+                Log.i(
+                    TAG,
+                    "Mission sync serverId=$serverId mission=$missionName " +
+                            "changes=${changes.size} new=${newChanges.size}"
+                )
+
+                if (newChanges.isNotEmpty()) {
+                    val cot =
+                        missionApi(detail).getMissionCot(missionName)
+
+                    Log.d(
+                        "MISSION_TEST",
+                        "cot=$cot"
+                    )
+
+                    Log.i(
+                        TAG,
+                        "Mission content downloaded serverId=$serverId " +
+                                "mission=$missionName bytes=${cot.toByteArray().size}"
+                    )
+                }
+
+                val processedKeys =
+                    state.processedChangeKeys +
+                            newChanges.map { it.changeKey() }
+                val syncTime = System.currentTimeMillis()
+
+                dataRepository.setMissionSyncComplete(
+                    serverId = serverId,
+                    missionName = missionName,
+                    processedChangeKeys = processedKeys,
+                    syncTime = syncTime
+                )
+                dataRepository.persistMissionSyncProgress(
+                    serverId = serverId,
+                    missionName = missionName,
+                    lastSyncTime = syncTime,
+                    processedChangeKeys = processedKeys
+                )
+
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                dataRepository.setMissionSyncError(
+                    serverId = serverId,
+                    missionName = missionName,
+                    message = error.message ?: error.javaClass.simpleName
+                )
+
+                Log.e(
+                    TAG,
+                    "Mission sync failed serverId=$serverId mission=$missionName",
+                    error
+                )
+            }
+        }
+
+        private fun TakMissionChange.changeKey(): String {
+            return listOf(
+                type,
+                contentUid.orEmpty(),
+                timestamp.orEmpty()
+            ).joinToString("|")
+        }
+
         private fun channelApi(detail: TakServerDetail): TakChannelApi {
             check(detail.isEnabled && detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT) {
                 "TAK Server Xis not connected"

@@ -31,6 +31,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.Utils
+import kotlinx.coroutines.flow.first
 import com.aitech.weartak_civ.DEFAULT_BIRTH_YEAR
 import com.aitech.weartak_civ.DEFAULT_ALLERGY_LIST
 import com.aitech.weartak_civ.DEFAULT_BATT_ALERT_PERCENTAGE
@@ -305,16 +306,19 @@ class DataRepository(private val context: Context) {
         serverName: String,
         serverAddress: String
     ) {
-        val updated = TakServerMissions(
-            serverId = serverId,
-            serverName = serverName,
-            serverAddress = serverAddress,
-            missions = emptyList(),
-            status = TakMissionStatus.LOADING
-        )
+        _takMissions.update { current ->
+            val previous = current.firstOrNull { it.serverId == serverId }
 
-        _takMissions.value =
-            _takMissions.value.filterNot { it.serverId == serverId } + updated
+            val updated = TakServerMissions(
+                serverId = serverId,
+                serverName = serverName,
+                serverAddress = serverAddress,
+                missions = previous?.missions.orEmpty(),
+                status = TakMissionStatus.LOADING
+            )
+
+            current.filterNot { it.serverId == serverId } + updated
+        }
     }
 
     fun updateTakMissions(
@@ -323,27 +327,43 @@ class DataRepository(private val context: Context) {
         serverAddress: String,
         missions: List<TakMission>
     ) {
-        val missionStates = missions.map { mission ->
-            TakMissionState(
-                mission = mission,
-                status = TakMissionStatus.READY
-            )
-        }
+        _takMissions.update { current ->
+            val previousServer =
+                current.firstOrNull { it.serverId == serverId }
 
-        val updated = TakServerMissions(
-            serverId = serverId,
-            serverName = serverName,
-            serverAddress = serverAddress,
-            missions = missionStates,
-            status = if (missionStates.isEmpty()) {
-                TakMissionStatus.EMPTY
-            } else {
-                TakMissionStatus.READY
+            val missionStates = missions.map { mission ->
+                val previousState =
+                    previousServer
+                        ?.missions
+                        ?.firstOrNull { it.mission.name == mission.name }
+
+                if (previousState != null) {
+                    previousState.copy(
+                        mission = mission,
+
+                    )
+                } else {
+                    TakMissionState(
+                        mission = mission,
+                        status = TakMissionStatus.READY
+                    )
+                }
             }
-        )
 
-        _takMissions.value =
-            _takMissions.value.filterNot { it.serverId == serverId } + updated
+            val updated = TakServerMissions(
+                serverId = serverId,
+                serverName = serverName,
+                serverAddress = serverAddress,
+                missions = missionStates,
+                status = if (missionStates.isEmpty()) {
+                    TakMissionStatus.EMPTY
+                } else {
+                    TakMissionStatus.READY
+                }
+            )
+
+            current.filterNot { it.serverId == serverId } + updated
+        }
     }
 
     fun updateTakMissionError(
@@ -352,24 +372,292 @@ class DataRepository(private val context: Context) {
         serverAddress: String,
         message: String
     ) {
-        val updated = TakServerMissions(
-            serverId = serverId,
-            serverName = serverName,
-            serverAddress = serverAddress,
-            missions = emptyList(),
-            status = TakMissionStatus.ERROR,
-            errorMessage = message
-        )
+        _takMissions.update { current ->
+            val previous =
+                current.firstOrNull { it.serverId == serverId }
 
-        _takMissions.value =
-            _takMissions.value.filterNot { it.serverId == serverId } + updated
+            val updated = TakServerMissions(
+                serverId = serverId,
+                serverName = serverName,
+                serverAddress = serverAddress,
+                missions = previous?.missions.orEmpty(),
+                status = TakMissionStatus.ERROR,
+                errorMessage = message
+            )
+
+            current.filterNot { it.serverId == serverId } + updated
+        }
     }
+    fun setMissionSubscribed(
+        serverId: String,
+        missionName: String,
+        subscribed: Boolean
+    ) {
+        _takMissions.update { servers ->
+            servers.map { server ->
+                if (server.serverId != serverId) {
+                    server
+                } else {
+                    server.copy(
+                        missions = server.missions.map { state ->
+                            if (state.mission.name == missionName) {
+                                state.copy(
+                                    subscribed = subscribed,
+                                    status = TakMissionStatus.IDLE,
+                                    errorMessage = null
+                                )
+                            } else {
+                                state
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    fun setMissionSyncing(
+        serverId: String,
+        missionName: String
+    ) {
+        _takMissions.update { servers ->
+            servers.map { server ->
+                if (server.serverId != serverId) {
+                    server
+                } else {
+                    server.copy(
+                        missions = server.missions.map { state ->
+                            if (state.mission.name == missionName) {
+                                state.copy(
+                                    status = TakMissionStatus.SYNCING,
+                                    errorMessage = null
+                                )
+                            } else {
+                                state
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    fun setMissionSyncComplete(
+        serverId: String,
+        missionName: String,
+        processedChangeKeys: Set<String>,
+        syncTime: Long
+    ) {
+        _takMissions.update { servers ->
+            servers.map { server ->
+                if (server.serverId != serverId) {
+                    server
+                } else {
+                    server.copy(
+                        missions = server.missions.map { state ->
+                            if (state.mission.name == missionName) {
+                                state.copy(
+                                    status = TakMissionStatus.IDLE,
+                                    lastSyncTime = syncTime,
+                                    processedChangeKeys = processedChangeKeys,
+                                    errorMessage = null
+                                )
+                            } else {
+                                state
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    fun setMissionSyncError(
+        serverId: String,
+        missionName: String,
+        message: String
+    ) {
+        _takMissions.update { servers ->
+            servers.map { server ->
+                if (server.serverId != serverId) {
+                    server
+                } else {
+                    server.copy(
+                        missions = server.missions.map { state ->
+                            if (state.mission.name == missionName) {
+                                state.copy(
+                                    status = TakMissionStatus.ERROR,
+                                    errorMessage = message
+                                )
+                            } else {
+                                state
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
+    fun getSubscribedMissions(
+        serverId: String
+    ): List<TakMissionState> {
+        return takMissions.value
+            .firstOrNull { it.serverId == serverId }
+            ?.missions
+            ?.filter { it.subscribed }
+            .orEmpty()
+    }
+
+    fun removeTakServerMissions(
+        serverId: String
+    ) {
+        _takMissions.update { current ->
+            current.filterNot {
+                it.serverId == serverId
+            }
+        }
+    }
+    data class PersistedMissionSubscription(
+        val serverId: String,
+        val missionName: String,
+        val lastSyncTime: Long? = null,
+        val processedChangeKeys: Set<String> = emptySet()
+    )
+    private val TAK_MISSION_SUBSCRIPTIONS =
+        stringPreferencesKey("tak_mission_subscriptions")
+    private val missionSubscriptionListType =
+        object : TypeToken<List<PersistedMissionSubscription>>() {}.type
+
+    val persistedMissionSubscriptions: Flow<List<PersistedMissionSubscription>> =
+        context.dataStore.data.map { prefs ->
+            val json = prefs[TAK_MISSION_SUBSCRIPTIONS]
+
+            if (json.isNullOrBlank()) {
+                emptyList()
+            } else {
+                runCatching {
+                    gson.fromJson<List<PersistedMissionSubscription>>(
+                        json,
+                        missionSubscriptionListType
+                    )
+                }.getOrDefault(emptyList())
+            }
+        }
+    private suspend fun storeMissionSubscriptions(
+        subscriptions: List<PersistedMissionSubscription>
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[TAK_MISSION_SUBSCRIPTIONS] =
+                gson.toJson(subscriptions, missionSubscriptionListType)
+        }
+    }
+    suspend fun persistMissionSubscribed(
+        serverId: String,
+        missionName: String
+    ) {
+        val current = persistedMissionSubscriptions.first()
+
+        if (current.none {
+                it.serverId == serverId &&
+                        it.missionName == missionName
+            }
+        ) {
+            storeMissionSubscriptions(
+                current + PersistedMissionSubscription(
+                    serverId = serverId,
+                    missionName = missionName
+                )
+            )
+        }
+    }
+
+    suspend fun persistMissionUnsubscribed(
+        serverId: String,
+        missionName: String
+    ) {
+        val current = persistedMissionSubscriptions.first()
+
+        storeMissionSubscriptions(
+            current.filterNot {
+                it.serverId == serverId &&
+                        it.missionName == missionName
+            }
+        )
+    }
+
+    suspend fun persistMissionSyncProgress(
+        serverId: String,
+        missionName: String,
+        lastSyncTime: Long,
+        processedChangeKeys: Set<String>
+    ) {
+        val current = persistedMissionSubscriptions.first()
+
+        val updated = current.map { subscription ->
+            if (
+                subscription.serverId == serverId &&
+                subscription.missionName == missionName
+            ) {
+                subscription.copy(
+                    lastSyncTime = lastSyncTime,
+                    processedChangeKeys = processedChangeKeys
+                )
+            } else {
+                subscription
+            }
+        }
+
+        storeMissionSubscriptions(updated)
+    }
+    suspend fun restorePersistedMissionState(
+        serverId: String
+    ) {
+        val persisted = persistedMissionSubscriptions.first()
+            .filter { it.serverId == serverId }
+
+        if (persisted.isEmpty()) {
+            return
+        }
+
+        _takMissions.update { servers ->
+            servers.map { server ->
+                if (server.serverId != serverId) {
+                    server
+                } else {
+                    server.copy(
+                        missions = server.missions.map { state ->
+
+                            val saved = persisted.firstOrNull {
+                                it.missionName == state.mission.name
+                            }
+
+                            if (saved != null) {
+                                state.copy(
+                                    subscribed = true,
+                                    lastSyncTime = saved.lastSyncTime,
+                                    processedChangeKeys = saved.processedChangeKeys,
+                                    status = TakMissionStatus.IDLE,
+                                    errorMessage = null
+                                )
+                            } else {
+                                state
+                            }
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     private val _airplaneOnSuccess = MutableStateFlow(false)
     val airplaneOnSuccess: StateFlow<Boolean> = _airplaneOnSuccess.asStateFlow()
 
     fun setAirplaneOnSuccess(success: Boolean) {
         _airplaneOnSuccess.value = success
     }
+
+
 
     /**
      * Below is a prototype of a resting heart rate average calculator, using aggregate
