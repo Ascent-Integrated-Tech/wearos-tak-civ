@@ -204,7 +204,14 @@ import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CON
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import com.fasterxml.jackson.databind.util.CompactStringObjectMap
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.bouncycastle.oer.its.ieee1609dot2.basetypes.Latitude
+import org.bouncycastle.oer.its.ieee1609dot2.basetypes.Longitude
 import org.json.JSONArray
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.spatialk.geojson.MultiLineString
+import org.maplibre.spatialk.geojson.MultiPoint
 import java.io.Serializable
 import kotlin.math.abs
 import kotlin.math.floor
@@ -868,6 +875,188 @@ fun BhoundMap(
     )
 }
 
+data class RouteCollection(
+    val uid: String,
+    val name: String,
+    val color: String,
+    val points: List<RouteItem>
+)
+
+data class RouteItem(
+    val lat: Double?,
+    val lon: Double?,
+    val hasPoint: Boolean = false,
+    val pointTitle: String? = null
+)
+
+fun RouteCollection.toLineString(): LineString? {
+    val positions = points
+        .mapNotNull { point ->
+            val lat = point.lat
+            val lon = point.lon
+
+            if (lat != null && lon != null) {
+                Position(lon, lat) // longitude FIRST
+            } else {
+                null
+            }
+        }
+
+    return if (positions.size >= 2) {
+        LineString(positions)
+    } else {
+        null
+    }
+}
+
+fun RouteCollection.toFeature(): Feature<LineString, JsonObject?>? {
+    val lineString = toLineString() ?: return null
+
+    return Feature(
+        geometry = lineString,
+        properties = buildJsonObject {
+            put("uid", uid)
+            put("name", name)
+            put("color", color)
+        }
+    )
+}
+
+fun List<RouteCollection>.toFeatureCollection():
+        FeatureCollection<LineString, JsonObject?> {
+
+    val features = mapNotNull { route ->
+        route.toFeature()
+    }
+
+    return FeatureCollection(features)
+}
+
+fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
+    return points.mapIndexedNotNull { index, item ->
+
+        val lat = item.lat
+        val lon = item.lon
+
+        if (
+            item.hasPoint &&
+            lat != null &&
+            lon != null
+        ) {
+            Feature(
+                geometry = Point(Position(lon, lat)),
+                properties = buildJsonObject {
+                    put("routeUid", uid)
+                    put("pointIndex", index)
+                    put("title", item.pointTitle ?: "")
+                    put("color", color)
+                }
+            )
+        } else {
+            null
+        }
+    }
+}
+
+@Composable
+fun RoutesLayer(
+    routes: List<RouteCollection>,
+    camera: CameraState,
+) {
+    val featureCollection = remember(routes) {
+        routes.toFeatureCollection()
+    }
+
+    val source = rememberGeoJsonSource(
+        data = GeoJsonData.Features(featureCollection)
+    )
+
+    val pointFeatures = remember(routes) {
+        routes.flatMap { route ->
+            route.toPointFeatures()
+        }
+    }
+    val pointFeatureCollection = remember(pointFeatures) {
+        FeatureCollection(pointFeatures)
+    }
+
+    val pointSource = rememberGeoJsonSource(
+        data = GeoJsonData.Features(pointFeatureCollection)
+    )
+
+    val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
+
+    LineLayer(
+        id = "routes-layer",
+        source = source,
+        color = switch(
+            //TODO: WEAR-47 - Add ability for hex coloring
+            condition(eq(get("color").asString(), const("White"), c), const(Color.White)),
+            condition(eq(get("color").asString(), const("Yellow"), c), const(Color.Yellow)),
+            condition(eq(get("color").asString(), const("Orange"), c), const(orange)),
+            condition(eq(get("color").asString(), const("Magenta"), c), const(Color.Magenta)),
+            condition(eq(get("color").asString(), const("Red"), c), const(Color.Red)),
+            condition(eq(get("color").asString(), const("Maroon"), c), const(maroon)),
+            condition(eq(get("color").asString(), const("Purple"), c), const(purple)),
+            condition(eq(get("color").asString(), const("Dark Blue"), c), const(dark_blue)),
+            condition(eq(get("color").asString(), const("Blue"), c), const(Color.Blue)),
+            condition(eq(get("color").asString(), const("Cyan"), c), const(Color.Cyan)),
+            condition(eq(get("color").asString(), const("Teal"), c), const(teal)),
+            condition(eq(get("color").asString(), const("Green"), c), const(Color.Green)),
+            condition(eq(get("color").asString(), const("Dark Green"), c), const(dark_green)),
+            condition(eq(get("color").asString(), const("Brown"), c), const(brown)),
+            fallback = const(Color.White),
+        ),
+        width = const(4.dp)
+    )
+    SymbolLayer(
+        id = "route-points-text-layer",
+        source = pointSource,
+        textAllowOverlap = const(true),
+        textIgnorePlacement = const(true),
+        textOptional = const(true),
+        textField = if (camera.position.zoom > 10.0) {
+            get("title").asString()
+        } else {
+            const("")
+        },
+        textSize = const(0.45.em),
+        textMaxWidth = const(4.em),
+        textAnchor = const(SymbolAnchor.Bottom),
+        textColor = const(Color.White),
+        textHaloColor = const(Color.Black),
+        textHaloWidth =const(2.dp),
+        textOffset = offset(0f.em, (-1f).em),
+    )
+
+    org.maplibre.compose.layers.CircleLayer(
+        id = "route-points-layer",
+        source = pointSource,
+        color = switch(
+            //TODO: WEAR-47 - Add ability for hex coloring
+            condition(eq(get("color").asString(), const("White"), c), const(Color.White)),
+            condition(eq(get("color").asString(), const("Yellow"), c), const(Color.Yellow)),
+            condition(eq(get("color").asString(), const("Orange"), c), const(orange)),
+            condition(eq(get("color").asString(), const("Magenta"), c), const(Color.Magenta)),
+            condition(eq(get("color").asString(), const("Red"), c), const(Color.Red)),
+            condition(eq(get("color").asString(), const("Maroon"), c), const(maroon)),
+            condition(eq(get("color").asString(), const("Purple"), c), const(purple)),
+            condition(eq(get("color").asString(), const("Dark Blue"), c), const(dark_blue)),
+            condition(eq(get("color").asString(), const("Blue"), c), const(Color.Blue)),
+            condition(eq(get("color").asString(), const("Cyan"), c), const(Color.Cyan)),
+            condition(eq(get("color").asString(), const("Teal"), c), const(teal)),
+            condition(eq(get("color").asString(), const("Green"), c), const(Color.Green)),
+            condition(eq(get("color").asString(), const("Dark Green"), c), const(dark_green)),
+            condition(eq(get("color").asString(), const("Brown"), c), const(brown)),
+            fallback = const(Color.White)),
+        radius = if (camera.position.zoom > 10.0) {
+            const(5.dp)
+        } else {
+            const(0.dp)
+        },
+    )
+}
+
 // MAP STYLE FILTERING
 // Removes hidden style layers before loading the map
 fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): String {
@@ -1401,6 +1590,33 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             target = Position(lon, lat),
             zoom = 15.5,
         )
+    )
+
+    val defaultRouteTestPoints = listOf(
+        RouteCollection(
+            uid = "000",
+            name = "Route 1",
+            color = "Red",
+            points = listOf(
+                RouteItem(41.88530878701452, -87.66696421190201, true, "start"),
+                RouteItem(41.896042995521924, -87.66730753465578),
+                RouteItem(41.8959791067602, -87.6697107939322),
+                RouteItem(41.89419019548383, -87.6697107939322, true, "pit stop"),
+                RouteItem(41.89422214076742, -87.67207113786438),
+                RouteItem(41.89329572105578, -87.67211405320862, true, "end"),
+            )
+        ),
+        RouteCollection(
+            uid = "001",
+            name = "Route 2",
+            color = "Blue",
+            points = listOf(
+                RouteItem(41.886782286379194, -87.67679882945833, true, "start"),
+                RouteItem(41.886833269845525, -87.67434198975624),
+                RouteItem(41.88601115648934, -87.67429918767084),
+                RouteItem(41.886081259591215, -87.67192795213953, true, "end"),
+            )
+        ),
     )
 
     // LAYER MENU CONFIGURATION
@@ -2186,6 +2402,12 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                 userLat = lat,
                 userLon = lon,
                 camera = cameraState
+            )
+
+            RoutesLayer(
+                routes = defaultRouteTestPoints,
+                camera = cameraState
+
             )
         }
 
