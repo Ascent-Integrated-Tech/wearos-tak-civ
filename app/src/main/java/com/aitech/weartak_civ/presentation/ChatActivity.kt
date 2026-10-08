@@ -186,7 +186,6 @@ class ChatActivity : ComponentActivity() {
 @Composable
 fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: String?, uid: String?, callsign: String?, fromMaps: Boolean, settingsVm: WearTAKSettingsViewModel) {
     val navController = rememberSwipeDismissableNavController()
-    val chatEnabledLive by settingsVm.savedEnableChatService.collectAsState()
     var pendingRoomUid by rememberSaveable { mutableStateOf(initialRoomUid) }
 
     val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
@@ -204,19 +203,6 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         else -> "chat_screen"
     }
 
-    LaunchedEffect(chatEnabledLive) {
-        Log.d(TAG, "Launch chatEnabledLive = $chatEnabledLive")
-        val currentDestination = navController.currentBackStackEntry?.destination?.route
-
-        when {
-            chatEnabledLive == false && currentDestination != "chat_disabled_screen" -> {
-                navController.navigate("chat_disabled_screen") {
-                    popUpTo(0) { inclusive = true }
-                }
-            }
-        }
-    }
-
     LaunchedEffect(chatRooms, pendingRoomUid) {
         val roomUid = pendingRoomUid ?: return@LaunchedEffect
         val roomIndex = chatRooms.indexOfFirst { it.uid == roomUid }
@@ -231,7 +217,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         navController = navController,
         startDestination =
         if (isLicenseValid()) {
-            if (chatEnabledLive == true) actualStartDestination else "chat_disabled_screen"
+            actualStartDestination
         } else {
             "invalid_license_screen"
         }
@@ -243,11 +229,6 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         composable("chat_reply_screen")
         {
             TextSelectionScreen(navController, quickReplyOptions, reply, "New Chat",{navController.popBackStack()}, {navController.popBackStack()})
-        }
-
-        composable("chat_disabled_screen") {
-            ActivityDisabledScreen( navController, exitActivity, stringResource(R.string.chat_disabled),
-                stringResource(R.string.please_enable_chat_in_order_to_use_this_feature))
         }
 
         composable(

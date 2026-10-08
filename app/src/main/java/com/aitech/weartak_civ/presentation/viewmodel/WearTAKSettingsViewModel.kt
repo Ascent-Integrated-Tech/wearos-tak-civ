@@ -1298,19 +1298,6 @@ fun displaySitxGroupDialog(
     //Alerting Preferences ^^^
 
     //Tool Preferences vvv
-    val savedEnableChatService: StateFlow<Boolean> =
-        dataRepository.getEnableChatService.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = DEFAULT_ENABLE_CHAT_SERVICE
-        )
-
-    fun storeEnableChatService(enable: Boolean) {
-        viewModelScope.launch {
-            dataRepository.storeEnableChatService(enable)
-            enableChatService = enable
-        }
-    }
     val savedEnableBloodhoundCompassService: StateFlow<Boolean> =
         dataRepository.getEnableBloodhoundCompassService.stateIn(
             scope = viewModelScope,
