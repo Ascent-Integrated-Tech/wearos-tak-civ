@@ -123,7 +123,7 @@ import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
-import com.aitech.weartak_civ.events.LocationUpdateRequired
+import com.aitech.weartak_civ.events.PliRefreshReason
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import org.greenrobot.eventbus.EventBus
 import org.maplibre.compose.camera.CameraState
@@ -1931,7 +1931,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 Log.i(TAG, "MapApp Lifecycle.Event.ON_RESUME called")
-                EventBus.getDefault().post(LocationUpdateRequired())
+                dataRepository.requestInteractionPliRefresh(PliRefreshReason.MAP_OPENED)
             }
         }
 

@@ -40,6 +40,9 @@ import com.aitech.weartak_civ.cot.CotOutboundMessage
 import com.aitech.weartak_civ.cot.CotTimeOffset
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
+import com.aitech.weartak_civ.events.InteractionLocationRcvd
+import com.aitech.weartak_civ.events.InteractionPliRefresh
+import com.aitech.weartak_civ.events.PliRefreshReason
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -89,6 +92,7 @@ class CotDispatchService : Service() {
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private var identityPliJob: kotlinx.coroutines.Job? = null
 
     private lateinit var dataRepository: DataRepository
     private var lastLocationUpdateRcvd: Long = 0L
@@ -280,6 +284,7 @@ class CotDispatchService : Service() {
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
                                     sentBatteryWarnChatMsg = true
+                                    dataRepository.requestInteractionPliRefresh(PliRefreshReason.CHAT_SENT)
                                 }
                             } else {
                                 if (!sentBatteryAlertChatMsg) {
@@ -304,6 +309,7 @@ class CotDispatchService : Service() {
                                     SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot(chatCot))
 
                                     sentBatteryAlertChatMsg = true
+                                    dataRepository.requestInteractionPliRefresh(PliRefreshReason.CHAT_SENT)
                                 }
                             }
                         } else {
@@ -349,6 +355,7 @@ class CotDispatchService : Service() {
                         if (sendToCompApp) {
                             capRepo.enqueueChatSnapshotForBle(chatSnap)
                         }
+                        dataRepository.requestInteractionPliRefresh(PliRefreshReason.CHAT_SENT)
                     }
                 }
         }
@@ -829,6 +836,9 @@ class CotDispatchService : Service() {
     )
 
     private fun buildPliCot(snapshot: DataRepository.PliSnapshot): String {
+        val callsign = snapshot.systemData.callsign
+        val role = snapshot.systemData.role
+        val teamValue = snapshot.systemData.team
         val compatibilityPayloads = LegacyPliPayloadBuilder.build(
             snapshot,
             LegacyPliPayloadBuilder.Options(
@@ -847,7 +857,7 @@ class CotDispatchService : Service() {
         }
         compatibilityPayloads.tabletCommandJson?.let { tabletCommandJsonMsg = it }
 
-        val hailDetail = buildHailDetail(snapshot.physioData.data)
+        val hailDetail = buildHailDetail(snapshot.physioData.data, callsign)
         val xml = CotMessageBuilder.pli(
             snapshot,
             CotMessageBuilder.PliOptions(callsign, role, teamValue, enableBatdokCot, hailDetail),
@@ -909,7 +919,7 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun buildHailDetail(physioData: PhysioData): String {
+    private fun buildHailDetail(physioData: PhysioData, callsign: String = MainActivity.callsign): String {
         val licenseValid = HailService.isHailLicenseValid()
         if (!dataRepository.buildHailDetail.value || !licenseValid) {
             return ""
@@ -1129,6 +1139,75 @@ class CotDispatchService : Service() {
     }
 
 
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun onIdentityPliRefresh(event: InteractionPliRefresh) {
+        if (event.reason !in setOf(
+                PliRefreshReason.CALLSIGN_CHANGED, PliRefreshReason.TEAM_CHANGED, PliRefreshReason.ROLE_CHANGED
+            )) return
+        identityPliJob?.cancel()
+        identityPliJob = serviceScope.launch {
+            // Merge settings saved together while the independent new GPS acquisition continues.
+            kotlinx.coroutines.delay(150L)
+            if (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) !=
+                android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Log.i(TAG, "Identity PLI refresh denied: ${event.reason}; no location permission")
+                return@launch
+            }
+            val location = dataRepository.latestLocation.value?.let { android.location.Location(it) }
+            fun fresh(): Boolean = location != null && location.time > 0L && location.altitude.isFinite() &&
+                InteractionPliRefreshGate.freshForIdentity(
+                    location.elapsedRealtimeNanos, android.os.SystemClock.elapsedRealtimeNanos(),
+                    InteractionPliRefreshGate.usable(location.latitude, location.longitude, location.accuracy, location.hasAccuracy())
+                )
+            if (!fresh()) {
+                Log.i(TAG, "Identity PLI awaits new GPS fix: ${event.reason}; no usable fix within 3 seconds")
+                return@launch
+            }
+            val snapshot = dataRepository.snapshotInteractionPli(location!!)
+            val xml = buildPliCot(snapshot)
+            if (!fresh()) {
+                Log.i(TAG, "Identity PLI fix expired while building snapshot: ${event.reason}")
+                return@launch
+            }
+            Log.i(TAG, "Dispatching persisted identity PLI with already-fresh fix: ${event.reason}")
+            dispatch(CotOutboundMessage(xml, CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot)))
+        }
+    }
+
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    fun onInteractionLocationRcvd(event: InteractionLocationRcvd) {
+        serviceScope.launch {
+            val location = event.location
+            val ageNanos = android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
+            if (ageNanos < 0 || ageNanos > InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L) {
+                Log.i(TAG, "Interaction PLI fix expired before dispatch: ${event.reasons}")
+                return@launch
+            }
+            // This callback supplies a verified fresh fix; leave periodic reporting timing alone.
+            val alertFix = dataRepository.latestLocation.value
+            val alertFixFresh = alertFix != null && InteractionPliRefreshGate.freshForIdentity(
+                alertFix.elapsedRealtimeNanos, android.os.SystemClock.elapsedRealtimeNanos(),
+                InteractionPliRefreshGate.usable(alertFix.latitude, alertFix.longitude, alertFix.accuracy, alertFix.hasAccuracy())
+            )
+            if (dataRepository.anyEndpointConnected.value && alertFixFresh) {
+                if (pendingManualAlertQueue.isNotEmpty()) sendAllManualAlerts(null)
+                if (pendingPhysioAndAutoGenAlertQueue.isNotEmpty()) sendAllPhysioAndAutoGenAlerts(null)
+            }
+            // Use this request's fix, not a concurrently replaced repository location.
+            val snapshot = dataRepository.snapshotInteractionPli(location)
+            val xml = buildPliCot(snapshot)
+            if (android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos >
+                InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L) {
+                Log.i(TAG, "Interaction PLI fix expired while building snapshot: ${event.reasons}")
+                return@launch
+            }
+            Log.i(TAG, "Dispatching interaction PLI without waiting for periodic cadence: ${event.reasons}")
+            dispatch(CotOutboundMessage(xml, CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot)))
+        }
+    }
+
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onLocationRcvdEvent(event: LocationRcvd) {
         Log.i(TAG, "onLocationRcvdEvent: received location trigger for outbound PLI")
@@ -1268,8 +1347,9 @@ class CotDispatchService : Service() {
     public fun onMessageEvent(event: MessageEvent) {
         val msg = event.message
         if (CALLSIGN_TEAM_ROLE_CHANGED == msg) {
-            Log.d(TAG, "onMessageEvent w/ msg($msg)")
-            buildAndSendPhysioLocationCotMsg()
+            // Actual persisted changes issue InteractionPliRefresh. This legacy UI event can
+            // also be posted for unchanged values; do not send a stale duplicate PLI here.
+            Log.d(TAG, "Identity UI notification received; refresh handled by persisted identity changes")
         } else if (CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED == msg) {
             Log.d(TAG, "onMessageEvent w/ msg($msg)")
             CoroutineScope(Dispatchers.Main).launch {
