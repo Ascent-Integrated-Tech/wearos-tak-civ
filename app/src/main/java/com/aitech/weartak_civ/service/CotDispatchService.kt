@@ -33,6 +33,7 @@ import com.aitech.weartak_civ.cot.CotCompanionPayload
 import com.aitech.weartak_civ.cot.CotDetail
 import com.aitech.weartak_civ.cot.CotEndpointAvailability
 import com.aitech.weartak_civ.cot.CotEndpointDispatcher
+import com.aitech.weartak_civ.cot.CotDispatchPolicy
 import com.aitech.weartak_civ.cot.CotEventTimeFactory
 import com.aitech.weartak_civ.cot.CotMessageBuilder
 import com.aitech.weartak_civ.cot.CotMessageKind
@@ -74,9 +75,13 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -92,6 +97,7 @@ class CotDispatchService : Service() {
     private var cotDispatchHandler: Handler? = null
     private var cotDispatchThread: HandlerThread? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val alertDispatchMutex = Mutex()
     private var identityPliJob: kotlinx.coroutines.Job? = null
 
     private lateinit var dataRepository: DataRepository
@@ -200,15 +206,31 @@ class CotDispatchService : Service() {
     private fun startAnyEndpointConnectedCollector() {
         serviceScope.launch {
             dataRepository.anyEndpointConnected.collect { connected ->
-                Log.i(TAG, "Any endpoint connected: $connected")
                 if (connected) {
                     EventBus.getDefault().post(LocationUpdateRequired())
                     sendPendingChatMessages()
-                    sendPendingManualAlerts()
-                    sendPendingPhysioAndAutoGenAlerts()
                     sendPendingMarkerCots()
                 }
             }
+        }
+        serviceScope.launch {
+            combine(
+                dataRepository.endpointConnected,
+                dataRepository.multicastPublisherRunning,
+                dataRepository.sitxStatus,
+                capRepo.companionAppReady,
+                combine(
+                    dataRepository.getEnableSitxService,
+                    dataRepository.getEnableCompanionAppService,
+                ) { sitx, companion -> sitx to companion },
+            ) { _, _, _, _, _ -> endpointAvailability() }
+                .distinctUntilChanged()
+                .collect { availability ->
+                    if (CotDispatchPolicy.routesFor(CotMessageKind.EMERGENCY, availability).isNotEmpty()) {
+                        sendAllManualAlerts(null)
+                        sendAllPhysioAndAutoGenAlerts(null)
+                    }
+                }
         }
     }
 
@@ -366,12 +388,10 @@ class CotDispatchService : Service() {
         startClearManualAlertCollector()
     }
 
-    private fun readyToSendAlertEvents(): Boolean {
-        val loc = dataRepository.latestLocation.value
-        // Alerts may send without a fix, but an existing fix must be fresh.
-        val send = if (null == loc) true else (System.currentTimeMillis() - lastLocationUpdateRcvd) < FRESH_GPS_INTERVAL_MILLIS
-        return (dataRepository.anyEndpointConnected.value && send)
-    }
+    private suspend fun hasUsableEmergencyRoute(): Boolean =
+        CotDispatchPolicy.routesFor(CotMessageKind.EMERGENCY, endpointAvailability()).isNotEmpty()
+
+    private suspend fun readyToSendAlertEvents(): Boolean = hasUsableEmergencyRoute()
 
     private fun startAddManualAlertCollector() {
         serviceScope.launch {
@@ -379,14 +399,13 @@ class CotDispatchService : Service() {
                 Log.i(TAG, "Received req to add manual alert: $req")
                 val manualAlert = DataRepository.CustomEmergencyAlert(uuid = UUID.randomUUID().toString(), alertState = DataRepository.AlertState.ALERT, category = req.category, description = req.description, priority = 1, sendSms = true, timeMillis = req.timeMillis, enqueuedToBeSent = false)
                 val manualAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = manualAlert)
-                manualAlertMap[manualAlert.uuid] = manualAlert
-                if (readyToSendAlertEvents()) {
-                    sendAllManualAlerts(manualAlertWithState)
-                } else {
-                    if (dataRepository.anyEndpointConnected.value) {
-                        EventBus.getDefault().post(LocationUpdateRequired())
+                alertDispatchMutex.withLock {
+                    manualAlertMap[manualAlert.uuid] = manualAlert
+                    if (readyToSendAlertEvents()) {
+                        sendAllManualAlertsLocked(manualAlertWithState)
+                    } else {
+                        enqueueManualAlertAndUpdateUI(manualAlertWithState)
                     }
-                    enqueueManualAlertAndUpdateUI(manualAlertWithState)
                 }
             }
         }
@@ -413,6 +432,12 @@ class CotDispatchService : Service() {
         return sentAll
     }
     private suspend fun sendAllManualAlerts(manualAlertWithState: CustomEmergencyAlertWithAddedState?) {
+        alertDispatchMutex.withLock {
+            sendAllManualAlertsLocked(manualAlertWithState)
+        }
+    }
+
+    private suspend fun sendAllManualAlertsLocked(manualAlertWithState: CustomEmergencyAlertWithAddedState?) {
         val sentPendingAlerts = sendPendingManualAlerts()
 
         if (null == manualAlertWithState) return
@@ -468,16 +493,19 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun handleClearManualAlertUid(uid: String) {
+        alertDispatchMutex.withLock {
+            handleClearManualAlertUidLocked(uid)
+        }
+    }
+
+    private suspend fun handleClearManualAlertUidLocked(uid: String) {
         val manualAlert = manualAlertMap[uid]
         if (null == manualAlert) return
 
         val manualAlertClearWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = manualAlert.copy(alertState = DataRepository.AlertState.CANCEL))
         if (readyToSendAlertEvents()) {
-            sendAllManualAlerts(manualAlertClearWithState)
+            sendAllManualAlertsLocked(manualAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value) {
-                EventBus.getDefault().post(LocationUpdateRequired())
-            }
             enqueueManualAlertAndUpdateUI(manualAlertClearWithState)
         }
         manualAlertMap.remove(uid)
@@ -513,17 +541,15 @@ class CotDispatchService : Service() {
                 )
                 val physioAndAutoGenAlert = DataRepository.CustomEmergencyAlert(uuid = req.uuid, alertState = DataRepository.AlertState.ALERT, category = req.category, description = req.description, priority = req.priority, sendSms = req.sendSms, timeMillis = req.timeMillis, enqueuedToBeSent = false)
                 val physioAndAutoGenAlertAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert)
-                physioAndAutoGenAlertMap[physioAndAutoGenAlert.uuid] = physioAndAutoGenAlert
-                if (readyToSendAlertEvents()) {
-                    Log.i(TAG, "Alert is ready to send now: uid=${physioAndAutoGenAlert.uuid}")
-                    sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertAlertWithState)
-                } else {
-                    if (dataRepository.anyEndpointConnected.value) {
-                        Log.i(TAG, "Alert not ready; requesting location refresh before send uid=${physioAndAutoGenAlert.uuid}")
-                        EventBus.getDefault().post(LocationUpdateRequired())
+                alertDispatchMutex.withLock {
+                    physioAndAutoGenAlertMap[physioAndAutoGenAlert.uuid] = physioAndAutoGenAlert
+                    if (readyToSendAlertEvents()) {
+                        Log.i(TAG, "Alert is ready to send now: uid=${physioAndAutoGenAlert.uuid}")
+                        sendAllPhysioAndAutoGenAlertsLocked(physioAndAutoGenAlertAlertWithState)
+                    } else {
+                        Log.i(TAG, "Alert queued locally until routing becomes available uid=${physioAndAutoGenAlert.uuid}")
+                        enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertAlertWithState)
                     }
-                    Log.i(TAG, "Alert queued locally until routing becomes available uid=${physioAndAutoGenAlert.uuid}")
-                    enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertAlertWithState)
                 }
             }
         }
@@ -550,6 +576,12 @@ class CotDispatchService : Service() {
         return sentAll
     }
     private suspend fun sendAllPhysioAndAutoGenAlerts(alertWithState: CustomEmergencyAlertWithAddedState?) {
+        alertDispatchMutex.withLock {
+            sendAllPhysioAndAutoGenAlertsLocked(alertWithState)
+        }
+    }
+
+    private suspend fun sendAllPhysioAndAutoGenAlertsLocked(alertWithState: CustomEmergencyAlertWithAddedState?) {
         val sentPendingAlerts = sendPendingPhysioAndAutoGenAlerts()
 
         if (null == alertWithState) return
@@ -608,16 +640,19 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun handleClearPhysioAndAutoGenAlertUid(uid: String) {
+        alertDispatchMutex.withLock {
+            handleClearPhysioAndAutoGenAlertUidLocked(uid)
+        }
+    }
+
+    private suspend fun handleClearPhysioAndAutoGenAlertUidLocked(uid: String) {
         val physioAndAutoGenAlert = physioAndAutoGenAlertMap[uid]
         if (null == physioAndAutoGenAlert) return
 
         val physioAndAutoGenAlertClearWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert.copy(alertState = DataRepository.AlertState.CANCEL))
         if (readyToSendAlertEvents()) {
-            sendAllPhysioAndAutoGenAlerts(physioAndAutoGenAlertClearWithState)
+            sendAllPhysioAndAutoGenAlertsLocked(physioAndAutoGenAlertClearWithState)
         } else {
-            if (dataRepository.anyEndpointConnected.value) {
-                EventBus.getDefault().post(LocationUpdateRequired())
-            }
             enqueuePhysioAndAutoGenAlertAndUpdateUI(physioAndAutoGenAlertClearWithState)
         }
         physioAndAutoGenAlertMap.remove(uid)
@@ -1002,6 +1037,15 @@ class CotDispatchService : Service() {
         return enabled && ready
     }
 
+    private suspend fun endpointAvailability(): CotEndpointAvailability =
+        CotEndpointAvailability(
+            tak = isLicenseValid() && TAKConnectService.isAnyTakConnected,
+            sitx = sitxAvailable(),
+            ditto = DittoService.isRunning.get(),
+            multicast = isLicenseValid() && dataRepository.multicastPublisherRunning.value,
+            companion = companionAppAvailable(),
+        )
+
     private suspend fun sitxAvailable(): Boolean {
         val enabled = dataRepository.getEnableSitxService.first()
         val connected = dataRepository.sitxStatus.value == SitxServerStatus.CONNECTED
@@ -1009,16 +1053,7 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun dispatch(message: CotOutboundMessage): Boolean =
-        endpointDispatcher.dispatch(
-            message,
-            CotEndpointAvailability(
-                tak = TAKConnectService.isAnyTakConnected,
-                sitx = sitxAvailable(),
-                ditto = DittoService.isRunning.get(),
-                multicast = dataRepository.multicastPublisherRunning.value,
-                companion = companionAppAvailable(),
-            ),
-        )
+        endpointDispatcher.dispatch(message, endpointAvailability())
 
     private suspend fun handleClearMarkerUid(uid: String) {
         val markerDrop = markerDropMap[uid]
@@ -1092,10 +1127,18 @@ class CotDispatchService : Service() {
         }
 
         val snapshot = dataRepository.snapshotEmergencyEvent(alert)
-        val xml = CotMessageBuilder.emergency(snapshot)
+        val snapshotForDispatch = snapshot.copy(
+            location = snapshot.location?.takeIf {
+                val ageMillis = System.currentTimeMillis() - it.timeMillis
+                ageMillis in 0 until FRESH_GPS_INTERVAL_MILLIS &&
+                    it.lat.isFinite() && it.lat in -90.0..90.0 &&
+                    it.lon.isFinite() && it.lon in -180.0..180.0
+            }?.let { it.copy(hae = it.hae?.takeIf { altitude -> altitude.isFinite() }) },
+        )
+        val xml = CotMessageBuilder.emergency(snapshotForDispatch)
 
         val sent = dispatch(
-            CotOutboundMessage(xml, CotMessageKind.EMERGENCY, CotCompanionPayload.Emergency(snapshot)),
+            CotOutboundMessage(xml, CotMessageKind.EMERGENCY, CotCompanionPayload.Emergency(snapshotForDispatch)),
         )
 
         if (sent) {
@@ -1212,16 +1255,10 @@ class CotDispatchService : Service() {
     public fun onLocationRcvdEvent(event: LocationRcvd) {
         Log.i(TAG, "onLocationRcvdEvent: received location trigger for outbound PLI")
         lastLocationUpdateRcvd = System.currentTimeMillis()
-        if (readyToSendAlertEvents()) {
-            if (pendingManualAlertQueue.isNotEmpty()) {
-                serviceScope.launch {
-                    sendAllManualAlerts(null)
-                }
-            }
-            if (pendingPhysioAndAutoGenAlertQueue.isNotEmpty()) {
-                serviceScope.launch {
-                    sendAllPhysioAndAutoGenAlerts(null)
-                }
+        serviceScope.launch {
+            if (readyToSendAlertEvents()) {
+                sendAllManualAlerts(null)
+                sendAllPhysioAndAutoGenAlerts(null)
             }
         }
 

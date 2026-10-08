@@ -12,6 +12,7 @@ import android.annotation.SuppressLint
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import androidx.activity.ComponentActivity
@@ -47,7 +48,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -102,6 +105,7 @@ import java.time.format.DateTimeFormatter
 
 class BloodhoundActivity  : ComponentActivity() {
     companion object Constants{
+        const val EXTRA_REMOTE_EMERGENCY_UID = "remote_emergency_uid"
         lateinit var bloodhoundActivity : BloodhoundActivity
         val TAG = "WearTAK-BloodHActivity"
         var bloodhoundDefaultList = mutableStateListOf(
@@ -134,9 +138,12 @@ class BloodhoundActivity  : ComponentActivity() {
             )
         )
     }
+    private val requestedRemoteEmergencyUid = mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         bloodhoundActivity = this
+        requestedRemoteEmergencyUid.value = intent.getStringExtra(EXTRA_REMOTE_EMERGENCY_UID)
         val app = applicationContext as WearTakApplication
         Log.i(TAG, "onCreate() Bloodhound clearing unread state")
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
@@ -149,10 +156,21 @@ class BloodhoundActivity  : ComponentActivity() {
                     val context = LocalContext.current
                     val settingsVm: WearTAKSettingsViewModel = viewModel()
 
-                    BloodhoundCivApp(exitActivity = {finishAndRemoveTask()}, context, settingsVm)
+                    BloodhoundCivApp(
+                        exitActivity = {finishAndRemoveTask()}, context, settingsVm,
+                        requestedRemoteEmergencyUid.value,
+                        onRemoteEmergencyOpened = { requestedRemoteEmergencyUid.value = null }
+                    )
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        // singleInstance reuses this activity when an alert is opened from the map.
+        requestedRemoteEmergencyUid.value = intent.getStringExtra(EXTRA_REMOTE_EMERGENCY_UID)
     }
 
     override fun onPause() {
@@ -176,7 +194,13 @@ class BloodhoundActivity  : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: WearTAKSettingsViewModel) {
+fun BloodhoundCivApp(
+    exitActivity: () -> Unit,
+    context: Context,
+    settingsVm: WearTAKSettingsViewModel,
+    remoteEmergencyUid: String? = null,
+    onRemoteEmergencyOpened: () -> Unit = {}
+) {
     val app = context.applicationContext as WearTakApplication
 
     val dataRepository = remember(app) { app.repo }
@@ -224,6 +248,17 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
         }
     }
 
+    LaunchedEffect(remoteEmergencyUid) {
+        val uid = remoteEmergencyUid ?: return@LaunchedEffect
+        if (isLicenseValid()) {
+            navController.navigate("bloodhound_screen_detailed/${Uri.encode(uid)}") {
+                popUpTo("bloodhound_screen")
+                launchSingleTop = true
+            }
+        }
+        onRemoteEmergencyOpened()
+    }
+
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = if (isLicenseValid()) "bloodhound_screen" else "invalid_license_screen"
@@ -233,11 +268,11 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
         }
 
         composable(
-            "bloodhound_screen_detailed/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
+            "bloodhound_screen_detailed/{uid}",
+            arguments = listOf(navArgument("uid") { type = NavType.StringType })
         ) { backStackEntry ->
-            val index = backStackEntry.arguments?.getInt("index") ?: -1
-            BloodhoundScreenDetailed(navController, index, uiList, context,{ exitActivity() })
+            val uid = backStackEntry.arguments?.getString("uid").orEmpty()
+            BloodhoundScreenDetailed(navController, uid, context,{ exitActivity() })
         }
 
         composable(
@@ -314,9 +349,11 @@ fun BloodhoundScreen(
                             bloodhoundItem.distance,
                             bloodhoundItem.bloodhounding,
                             bloodhoundItem.orientation,
+                            bloodhoundItem.alertCategory,
+                            bloodhoundItem.isStale,
                             {
                                 if (bloodhoundItem.uid.isNotBlank()) {
-                                    navController.navigate("bloodhound_screen_detailed/$index")
+                                    navController.navigate("bloodhound_screen_detailed/${Uri.encode(bloodhoundItem.uid)}")
                                 } else {
                                     Log.i(TAG, "Blank bloodhoundItem")
                                 }
@@ -339,9 +376,11 @@ fun BloodhoundScreen(
 @Composable
 fun BloodhoundChip(
     title: String,
-    distance: Double,
+    distance: Double?,
     bloodhounding: Boolean,
     directionDegrees: Float,
+    alertCategory: String? = null,
+    isStale: Boolean = false,
     onClick: () -> Unit
 ) {
     val distanceText = DistanceFormatter
@@ -360,7 +399,12 @@ fun BloodhoundChip(
     )
     Chip(
         icon = {
-            RotatingArrowIcon(
+            if (alertCategory != null) Icon(
+                painterResource(R.drawable.ic_alert_triangle),
+                contentDescription = stringResource(R.string.remote_emergency_alert),
+                tint = Color.Unspecified,
+                modifier = Modifier.size(ChipDefaults.IconSize)
+            ) else RotatingArrowIcon(
                 degrees = directionDegrees,
                 color = Color.White,
                 modifier = Modifier.size(ChipDefaults.IconSize)
@@ -397,8 +441,9 @@ fun BloodhoundChip(
             )
         },
         secondaryLabel = {
-            Text(text = distanceText,
-                maxLines = 1,
+            Text(text = if (isStale) stringResource(R.string.remote_emergency_stale_category, alertCategory.orEmpty())
+                else alertCategory ?: distanceText,
+                maxLines = if (isStale) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
                 color = Color.White,
                 fontSize = 13.sp
@@ -419,31 +464,24 @@ fun BloodhoundChip(
 @Composable
 fun BloodhoundScreenDetailed(
     navController: NavController,
-    index: Int,
-    bloodhoundList: List<Utils.BloodhoundItem>,
+    uid: String,
     context: Context,
     exitActivity: () -> Unit,
 ) {
     val app = context.applicationContext as WearTakApplication
     val bhRepo = app.bhRepo
     val list = bhRepo.listBhItemsUi.collectAsState().value
-    // 2) resolve uid *once* from the index, but guard
-    val initialUid = remember(index, list.size) {
-        list.getOrNull(index)?.uid
-    }
-
-    // 3) if we failed to resolve, bail
-    if (initialUid == null) {
+    val actionScope = rememberCoroutineScope()
+    if (uid.isBlank()) {
         LaunchedEffect(Unit) { navController.popBackStack() }
         return
     }
 
-    // 4) always re-find by uid (index may be stale after mutations)
-    val item = list.firstOrNull { it.uid == initialUid }
+    val item = list.firstOrNull { it.uid == uid }
 
     // 5) if removed (e.g., NPOS), bounce out gracefully
     if (item == null) {
-        LaunchedEffect(initialUid) { navController.popBackStack() }
+        LaunchedEffect(uid) { navController.popBackStack() }
         return
     }
 
@@ -476,12 +514,35 @@ fun BloodhoundScreenDetailed(
                 )
             }
             item {
-                DetailedBloodhoundInfo(
-                    distance = bhoundDistance,
-                    callsign = bhoundCallsign,
-                    timeReceived = timeUtc,
-                    orientation = bhoundOrientation
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    item.alertCategory?.let { category ->
+                        Text(
+                            stringResource(R.string.remote_emergency_description, category),
+                            color = Color.Yellow,
+                            fontSize = 14.sp
+                        )
+                    }
+                    if (!item.hasLocation) {
+                        Text(stringResource(R.string.remote_emergency_no_location), fontSize = 14.sp)
+                    }
+                    if (item.isStale) {
+                        Text(
+                            stringResource(
+                                if (item.hasLocation) R.string.remote_emergency_stale_location
+                                else R.string.remote_emergency_stale
+                            ),
+                            color = Color.Yellow,
+                            fontSize = 14.sp
+                        )
+                    }
+                    DetailedBloodhoundInfo(
+                        distance = bhoundDistance,
+                        callsign = bhoundCallsign,
+                        timeReceived = timeUtc,
+                        orientation = bhoundOrientation,
+                        showDirection = item.hasLocation
+                    )
+                }
             }
             item {
                 if (bhoundBloodhounding) {
@@ -532,6 +593,7 @@ fun BloodhoundScreenDetailed(
 //            }
                 } else {
                     Button(
+                        enabled = item.hasLocation,
                         onClick = {
 //                        activeBhoundItem.value = bloodhoundItem
 //                        setActiveBloodhound(index)
@@ -548,7 +610,10 @@ fun BloodhoundScreenDetailed(
                         ),
                     ) {
                         Text(
-                            text = stringResource(R.string.rgr),
+                            text = stringResource(
+                                if (item.isRemoteAlert) R.string.remote_emergency_bloodhound_to_alert
+                                else R.string.rgr
+                            ),
                             fontSize = 15.sp,
                             overflow = TextOverflow.Ellipsis,
                             color = Color.Black,
@@ -560,10 +625,12 @@ fun BloodhoundScreenDetailed(
             item {
                 Button(
                     onClick = {
-                        bhRepo.removeFromMenu(item.uid)
-                        requestBloodhoundComplicationUpdate(context)
-                        navController.navigate("bloodhound_screen") {
-                            popUpTo("bloodhound_screen") { inclusive = true }
+                        actionScope.launch {
+                            bhRepo.removeFromMenu(item.uid)
+                            requestBloodhoundComplicationUpdate(context)
+                            navController.navigate("bloodhound_screen") {
+                                popUpTo("bloodhound_screen") { inclusive = true }
+                            }
                         }
                     },
                     modifier = Modifier.padding(top = 10.dp),
@@ -573,7 +640,7 @@ fun BloodhoundScreenDetailed(
                     ),
                 ) {
                     Text(
-                        text = stringResource(R.string.delete),
+                        text = stringResource(if (item.isRemoteAlert) R.string.remote_emergency_dismiss else R.string.delete),
                         fontSize = 15.sp,
                         overflow = TextOverflow.Ellipsis,
                         color = Color.White,
@@ -606,7 +673,8 @@ fun DetailedBloodhoundInfo(
     distance: Double?,
     callsign: String,
     timeReceived: String,
-    orientation: Float
+    orientation: Float,
+    showDirection: Boolean = true
 ) {
     val distanceText = DistanceFormatter
         .format(distance)
@@ -617,25 +685,27 @@ fun DetailedBloodhoundInfo(
     Row(
         verticalAlignment = Alignment.CenterVertically
     ){
-        Column(
-            modifier = Modifier.fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween,
-            horizontalAlignment = Alignment.CenterHorizontally
-        ){
-            RotatingArrowIcon(
-                degrees = orientation,
-                color = Color.White,
-                modifier = Modifier.size(ChipDefaults.IconSize)
-            )
-            Text(
-                text = orientation.toString(),
-                fontSize = 13.sp,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.LightGray,
-                fontWeight = FontWeight.Normal
-            )
+        if (showDirection) {
+            Column(
+                modifier = Modifier.fillMaxHeight(),
+                verticalArrangement = Arrangement.SpaceBetween,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ){
+                RotatingArrowIcon(
+                    degrees = orientation,
+                    color = Color.White,
+                    modifier = Modifier.size(ChipDefaults.IconSize)
+                )
+                Text(
+                    text = orientation.toString(),
+                    fontSize = 13.sp,
+                    overflow = TextOverflow.Ellipsis,
+                    color = Color.LightGray,
+                    fontWeight = FontWeight.Normal
+                )
+            }
+            Spacer(modifier = Modifier.width(10.dp))
         }
-        Spacer(modifier = Modifier.width(10.dp))
         Column(){
             Text(
                 text = distanceText,
@@ -759,7 +829,7 @@ fun BloodhoundScreenPreview() {
 @Preview(widthDp = 192, heightDp = 300, showBackground = true)
 @Composable
 fun BloodhoundDetailedScreenPreview() {
-    BloodhoundScreenDetailed(rememberSwipeDismissableNavController(), 0, bloodhoundDefaultList, LocalContext.current, {})
+    BloodhoundScreenDetailed(rememberSwipeDismissableNavController(), bloodhoundDefaultList.first().uid, LocalContext.current, {})
 }
 @Preview(widthDp = 192, heightDp = 60, showBackground = true)
 @Composable

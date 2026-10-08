@@ -35,6 +35,115 @@ class CotMessageParserTest {
     }
 
     @Test
+    fun parsesEmergencyAlertCategorySenderAndLocation() {
+        val event = CotMessageParser.parseEmergencyOrNull(EMERGENCY_XML)
+
+        assertNotNull(event)
+        assertEquals("alert-1", event!!.uid)
+        assertEquals("b-a-o", event.type)
+        assertEquals("device-1", event.senderUid)
+        assertEquals("SENDER", event.senderCallsign)
+        assertEquals("CAT_HR_EMERGENCY", event.category)
+        assertEquals("Medical emergency", event.description)
+        assertEquals(CotPoint(41.0, -87.0, 100.0, 4.0, 5.0), event.point)
+        assertFalse(event.cancelled)
+    }
+
+    @Test
+    fun parsesEmergencySubtypeAndBothCancellationRepresentations() {
+        val subtype = CotMessageParser.parseEmergencyOrNull(
+            EMERGENCY_XML.replace("type='b-a-o'", "type='b-a-o-medical'")
+                .replace("alertCategory='CAT_HR_EMERGENCY'", "")
+        )
+        val cancelTrue = CotMessageParser.parseEmergencyOrNull(
+            EMERGENCY_XML.replace("type='b-a-o'", "type='b-a-o-medical'")
+                .replace("<emergency type='Medical emergency'>", "<emergency cancel='true'>")
+        )
+        val cancelOne = CotMessageParser.parseEmergencyOrNull(
+            EMERGENCY_XML.replace("type='b-a-o'", "type='b-a-o-medical'")
+                .replace("<emergency type='Medical emergency'>", "<emergency cancel='1'>")
+        )
+        val cancelType = CotMessageParser.parseEmergencyOrNull(
+            EMERGENCY_XML.replace("type='b-a-o'", "type='b-a-o-can'")
+        )
+
+        assertEquals("Medical emergency", subtype?.category)
+        assertFalse(subtype?.cancelled ?: true)
+        assertEquals(true, cancelTrue?.cancelled)
+        assertEquals(true, cancelOne?.cancelled)
+        assertEquals(true, cancelType?.cancelled)
+    }
+
+    @Test
+    fun parsesRepresentativeAtakNineOneOneAlertAndCancellation() {
+        val alert = CotMessageParser.parseEmergencyOrNull(ATAK_911_XML)
+        val cancel = CotMessageParser.parseEmergencyOrNull(ATAK_911_CANCEL_XML)
+
+        assertNotNull(alert)
+        assertEquals("ANDROID-1c9928da1656d2e7-9-1-1", alert!!.uid)
+        assertEquals("b-a-o-tbl", alert.type)
+        assertEquals("ANDROID-1c9928da1656d2e7", alert.senderUid)
+        assertEquals("RA26", alert.senderCallsign)
+        assertEquals("911 Alert", alert.category)
+        assertEquals("911 Alert", alert.description)
+        assertEquals(CotPoint(27.95, -82.51, 5.0, 10.0, 9999999.0), alert.point)
+        assertTrue(alert.hasLocation)
+        assertFalse(alert.cancelled)
+        assertTrue(alert.isFrom("ANDROID-1c9928da1656d2e7"))
+        assertFalse(alert.isFrom("WEAROS_056b9ca33004b318"))
+
+        assertNotNull(cancel)
+        assertEquals(alert.uid, cancel!!.uid)
+        assertEquals("ANDROID-1c9928da1656d2e7", cancel.senderUid)
+        assertTrue(cancel.cancelled)
+        assertTrue(cancel.time > alert.time)
+    }
+
+    @Test
+    fun parsesAllStandardAtakEmergencyTypesAndUsesTypeWhenEmergencyTextIsMissing() {
+        StandardEmergencyType.entries.forEach { standardType ->
+            val xml = ATAK_STANDARD_ALERT_XML
+                .replace("type='b-a-o-tbl'", "type='${standardType.cotType}'")
+                .replace("type='911 Alert'", "type='${standardType.cotDescription}'")
+            val event = CotMessageParser.parseEmergencyOrNull(xml)
+
+            assertNotNull(event)
+            assertEquals(standardType.displayName, event!!.category)
+            assertEquals(standardType.cotDescription, event.description)
+        }
+
+        val typeOnlyXml = ATAK_STANDARD_ALERT_XML
+            .replace("type='b-a-o-tbl'", "type='b-a-g'")
+            .replace("<emergency type='911 Alert'>RA26</emergency>", "")
+            .replace("<biometrics alertCategory='Manual Alert'/>", "")
+        val typeOnly = CotMessageParser.parseEmergencyOrNull(typeOnlyXml)
+        assertEquals("Geofence Breached", typeOnly?.category)
+        assertEquals("Geofence Breached", typeOnly?.description)
+        assertTrue(CotMessageParser.isEmergencyType("b-a-g"))
+    }
+
+    @Test
+    fun ownWearTakAlertShapesAreAttributedToTheSendingDevice() {
+        val alert = CotMessageParser.parseEmergencyOrNull(WEARTAK_ALERT_XML)
+        val cancel = CotMessageParser.parseEmergencyOrNull(WEARTAK_CANCEL_XML)
+
+        assertEquals("WEAROS_056b9ca33004b318", alert?.senderUid)
+        assertEquals("Manual Alert", alert?.category)
+        assertFalse(alert?.hasLocation ?: true)
+        assertTrue(alert?.isFrom("WEAROS_056b9ca33004b318") ?: false)
+        assertEquals("WEAROS_056b9ca33004b318", cancel?.senderUid)
+        assertTrue(cancel?.cancelled ?: false)
+        assertTrue(cancel?.isFrom("WEAROS_056b9ca33004b318") ?: false)
+    }
+
+    @Test
+    fun rejectsEmergencyWithoutStaleOrWithInvalidPoint() {
+        assertNull(CotMessageParser.parseEmergencyOrNull(ATAK_911_XML.replace(" stale=\"2026-10-08T03:12:32.000Z\"", "")))
+        assertNull(CotMessageParser.parseEmergencyOrNull(ATAK_911_XML.replace("lat=\"27.95\"", "lat=\"95.0\"")))
+        assertNull(CotMessageParser.parseEmergencyOrNull(MARKER_XML))
+    }
+
+    @Test
     fun preservesChatAddressingAndParsedRoomShape() {
         assertTrue(CotMessageParser.isChatMessage(CHAT_XML))
         assertTrue(CotMessageParser.isChatForRecipient(CHAT_XML, "watch-1", "EAGLE"))
@@ -72,6 +181,12 @@ class CotMessageParserTest {
 
     private companion object {
         const val MARKER_XML = "<event version='2.0' uid='marker-1' type='a-h-G' time='2026-05-01T12:00:00.000Z' start='2026-05-01T12:00:00.000Z' stale='2027-05-01T12:00:00.000Z' how='h-g-i-g-o' access='Undefined'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><link uid='watch-1' production_time='2026-05-01T12:00:00.000Z' type='a-f-G-U-C' parent_callsign='EAGLE' relation='p-p'/><remarks>Remark</remarks><contact callsign='Target'/></detail></event>"
+        const val EMERGENCY_XML = "<event version='2.0' uid='alert-1' type='b-a-o' time='2026-05-01T12:00:00.000Z' start='2026-05-01T12:00:00.000Z' stale='2026-05-01T12:05:00.000Z' how='h-e'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><link uid='device-1' type='a-f-G-U-C' parent_callsign='SENDER' relation='p-p'/><biometrics alertCategory='CAT_HR_EMERGENCY'><device><uid>device-1</uid></device></biometrics><contact callsign='SENDER'/><emergency type='Medical emergency'>SENDER</emergency></detail></event>"
+        const val ATAK_911_XML = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><event version=\"2.0\" uid=\"ANDROID-1c9928da1656d2e7-9-1-1\" type=\"b-a-o-tbl\" time=\"2026-10-08T03:02:32.000Z\" start=\"2026-10-08T03:02:32.000Z\" stale=\"2026-10-08T03:12:32.000Z\" how=\"m-g\"><point lat=\"27.95\" lon=\"-82.51\" hae=\"5.0\" ce=\"10.0\" le=\"9999999.0\"/><detail><link uid=\"ANDROID-1c9928da1656d2e7\" type=\"a-f-G-U-C\" relation=\"p-p\"/><contact callsign=\"RA26-Alert\"/><emergency type=\"911 Alert\">RA26</emergency></detail></event>"
+        const val ATAK_STANDARD_ALERT_XML = "<event version='2.0' uid='atak-alert' type='b-a-o-tbl' time='2026-10-08T03:02:32.000Z' start='2026-10-08T03:02:32.000Z' stale='2026-10-08T03:12:32.000Z' how='m-g'><point lat='27.95' lon='-82.51' hae='5.0' ce='10.0' le='9999999.0'/><detail><link uid='atak-device' type='a-f-G-U-C' relation='p-p'/><contact callsign='RA26-Alert'/><biometrics alertCategory='Manual Alert'/><emergency type='911 Alert'>RA26</emergency></detail></event>"
+        const val ATAK_911_CANCEL_XML = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?><event version=\"2.0\" uid=\"ANDROID-1c9928da1656d2e7-9-1-1\" type=\"b-a-o-can\" time=\"2026-10-08T03:03:01.000Z\" start=\"2026-10-08T03:03:01.000Z\" stale=\"2026-10-08T03:13:01.000Z\" how=\"m-g\"><point lat=\"27.95\" lon=\"-82.51\" hae=\"5.0\" ce=\"10.0\" le=\"9999999.0\"/><detail><link uid=\"ANDROID-1c9928da1656d2e7\" type=\"a-f-G-U-C\" relation=\"p-p\"/><emergency cancel=\"true\">RA26</emergency></detail></event>"
+        const val WEARTAK_ALERT_XML = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='34e71ecf-f5b5-4050-a9ee-d92e0ef1ec0f' type='b-a-o' time='2026-10-08T03:03:05.000Z' start='2026-10-08T03:03:05.000Z' stale='2026-10-08T03:08:05.000Z' how='h-e' access='Undefined'><point lat='0.0' lon='0.0' hae='0.0' ce='9999999.0' le='9999999.0'/><detail><biometrics alertUid='34e71ecf-f5b5-4050-a9ee-d92e0ef1ec0f' alertState='ALERT' alertCategory='Manual Alert' alertPriority='1' alertDescription='Manual Alert Pressed by User'><device><model>WEAROS</model><uid>WEAROS_056b9ca33004b318</uid></device></biometrics><link uid='WEAROS_056b9ca33004b318' type='a-f-G-U-C' relation='p-p'/><contact callsign='WATCH&#10;Manual Alert Pressed by User'/><emergency type='Manual Alert Pressed by User'>WATCH</emergency></detail></event>"
+        const val WEARTAK_CANCEL_XML = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='34e71ecf-f5b5-4050-a9ee-d92e0ef1ec0f' type='b-a-o-can' time='2026-10-08T03:03:14.000Z' start='2026-10-08T03:03:14.000Z' stale='2026-10-08T03:08:14.000Z' how='h-e' access='Undefined'><point lat='0.0' lon='0.0' hae='0.0' ce='9999999.0' le='9999999.0'/><detail><biometrics alertUid='34e71ecf-f5b5-4050-a9ee-d92e0ef1ec0f' alertState='CANCEL' alertCategory='Manual Alert' alertPriority='1' alertDescription='Manual Alert Pressed by User'><device><model>WEAROS</model><uid>WEAROS_056b9ca33004b318</uid></device></biometrics><emergency cancel='true'>WATCH</emergency></detail></event>"
         const val PLI_XML = "<event version='2.0' uid='watch-1' type='a-f-G-U-C' time='2026-05-01T12:00:00.000Z' start='2026-05-01T12:00:00.000Z' stale='2026-05-01T12:00:30.000Z' how='m-g'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><contact callsign='EAGLE'/><__group role='Team Member' name='Cyan'/></detail></event>"
         const val CHAT_XML = "<event version='2.0' uid='chat-1' type='b-t-f' time='2026-05-01T12:00:00.000Z' start='2026-05-01T12:00:00.000Z' stale='2026-05-01T12:00:00.000Z' how='h-g-i-g-o'><point lat='0' lon='0' hae='0' ce='1' le='1'/><detail><__chat senderCallsign='SENDER'><chatgrp uid0='sender-1' uid1='watch-1' id='watch-1'/></__chat><remarks to='watch-1'>Hello</remarks></detail></event>"
         const val DIAGNOSTIC_XML = "<event uid='watch-1' type='a-f-G-U-C' time='2026-05-01T12:00:00.000Z'><detail><__group role='Team Member' name='Cyan'/><_flow-tags_ TAK-Server-example='2026-05-01T12:00:00.000Z'/><routing channelId='A_group'/></detail></event>"

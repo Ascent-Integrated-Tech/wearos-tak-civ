@@ -492,10 +492,14 @@ object Utils {
         val uid: String,
         val callsign: String,
         val timeReceived: Long,
-        val distance: Double, // May not come directly from COT, changes consistently
+        val distance: Double?, // May not come directly from COT, changes consistently
         val orientation: Float, // May not come directly from COT, changes consistently
         val bloodhounding: Boolean,
-        val acknowledged: Boolean = false
+        val acknowledged: Boolean = false,
+        val alertCategory: String? = null,
+        val isRemoteAlert: Boolean = false,
+        val isStale: Boolean = false,
+        val hasLocation: Boolean = true
     )
 
     fun normalize0to360(deg: Double): Double =

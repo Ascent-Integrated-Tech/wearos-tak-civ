@@ -1216,6 +1216,16 @@ class TAKConnectService: Service() {
                         )
                     }
 
+                    override suspend fun onEmergency(
+                        event: com.aitech.weartak_civ.cot.CotEmergencyEvent,
+                        envelope: TakServerCotEnvelope
+                    ) {
+                        bhRepo.applyEmergencyEvent(
+                            event, envelope.sourceServerAddress, envelope.sourceServerId,
+                            envelope.receivedAt, MainActivity.device_uid
+                        )
+                    }
+
                     override suspend fun onChannelChanged(envelope: TakServerCotEnvelope) {
                         Log.i(
                             TAG,

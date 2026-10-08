@@ -122,6 +122,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.RemoteEmergencyMapItem
+import androidx.compose.ui.res.stringResource
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.events.PliRefreshReason
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
@@ -280,6 +282,52 @@ fun MapCivApp(exitActivity: () -> Unit, context: Context, mapVm: MapViewModel) {
 
 // DROPPED AND RECEIVED MARKER DATA
 // Converts marker data into GeoJSON features for MapLibre
+
+@Composable
+private fun EmergencyAlertsOnMap(
+    alerts: List<RemoteEmergencyMapItem>,
+    onClick: (String) -> Unit
+) {
+    if (alerts.isEmpty()) return
+    val staleLabel = stringResource(R.string.remote_emergency_stale)
+    val features = remember(alerts, staleLabel) {
+        FeatureCollection(alerts.map { alert ->
+            Feature(
+                geometry = Point(Position(alert.point.lon, alert.point.lat)),
+                properties = JsonObject(mapOf(
+                    "uid" to JsonPrimitive(alert.uid),
+                    "label" to JsonPrimitive(
+                        "${alert.callsign}: ${alert.category}".ellipsizeMarkerTitle(24) +
+                            if (alert.isStale) " ($staleLabel)" else ""
+                    )
+                ))
+            )
+        })
+    }
+    val source = rememberGeoJsonSource(data = GeoJsonData.Features(features))
+    SymbolLayer(
+        id = "remote-emergency-alerts",
+        source = source,
+        iconImage = image(painterResource(R.drawable.ic_alert_triangle)),
+        iconSize = const(1.2f),
+        iconAllowOverlap = const(true),
+        iconIgnorePlacement = const(true),
+        textField = get("label").asString(),
+        textSize = const(0.35.em),
+        textAnchor = const(SymbolAnchor.Bottom),
+        textOffset = offset(0f.em, (-1.5f).em),
+        textColor = const(Color.Yellow),
+        textHaloColor = const(Color.Black),
+        textHaloWidth = const(2.dp),
+        onClick = { clicked ->
+            val feature = clicked.firstOrNull()
+            if (feature == null) ClickResult.Pass else {
+                onClick(feature.getStringProperty("uid").orEmpty())
+                ClickResult.Consume
+            }
+        }
+    )
+}
 
 @Composable
 fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
@@ -1681,6 +1729,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
     // Active Bloodhound tracking data
     val activeItem by bhRepo.activeBhItemMap.collectAsStateWithLifecycle(initialValue = null)
+    val remoteEmergencyMapItems by bhRepo.remoteEmergencyMapItems.collectAsStateWithLifecycle()
 
 
     // MAP DATA CONVERSION
@@ -2067,6 +2116,13 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                         }
                     }
                 )
+            }
+
+            // Emergencies remain visible independently of ordinary marker/contact filters.
+            EmergencyAlertsOnMap(remoteEmergencyMapItems) { uid ->
+                context.startActivity(Intent(context, BloodhoundActivity::class.java).apply {
+                    putExtra(BloodhoundActivity.EXTRA_REMOTE_EMERGENCY_UID, uid)
+                })
             }
 
             // Displays dropped and received markers

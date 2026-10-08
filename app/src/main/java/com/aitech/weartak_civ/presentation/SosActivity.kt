@@ -73,6 +73,7 @@ import com.aitech.weartak_civ.complication.SosComplicationService
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.CAT_MANUAL_ALERT
 import com.aitech.weartak_civ.DESC_SOS_ALERT
+import com.aitech.weartak_civ.cot.ManualAlertTypes
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.SosActivity.Constants.TAG
@@ -98,21 +99,9 @@ companion object Constants{
     lateinit var sosActivity : SosActivity
     val TAG = "WearTAK-" + SosActivity::class.java.simpleName
     val isAlertingLiveData = MutableLiveData<Boolean>(false)
-//    val manualAlertOptions: List<Utils.TextSelectionButton> = listOf(
-//        Utils.TextSelectionButton("GATERU", "Gate Runner"),
-//        Utils.TextSelectionButton("GNSHOT", "Gunshot"),
-//        Utils.TextSelectionButton("INJURY", "Injury"),
-//        Utils.TextSelectionButton("UAS", "UAS"),
-//        Utils.TextSelectionButton("VEH", "Vehicle")
-//    )
-    val manualAlertOptions: List<Utils.TextSelectionButton> = listOf(
-        Utils.TextSelectionButton("GATERU", "Gate Runner"),
-        Utils.TextSelectionButton("GNSHOT", "Gunshot"),
-        Utils.TextSelectionButton("GSINJ", "Gunshot Injury"),
-        Utils.TextSelectionButton("INJURY", "Injury"),
-        Utils.TextSelectionButton("UAS", "UAS"),
-        Utils.TextSelectionButton("VEH", "Vehicle")
-    )
+    val manualAlertOptions: List<Utils.TextSelectionButton> = ManualAlertTypes.options.map {
+        Utils.TextSelectionButton(it.shortCode, it.displayName)
+    }
 
     val manualAlertType = MutableLiveData<String>("")
     val manualAlertTypeSaved = MutableLiveData<String>("")
@@ -438,22 +427,29 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
 //            LicenseKeyScreen(navController, licenseSettingsState, context)
 //        }
         composable("sos_screen"){
-            if (isAlertingLiveData.value == false) {
+    val sendManualAlert: (String) -> Unit = { description ->
+        if (!isConfirmed.value) {
+            manualAlertType.value = description
+            manualAlertTypeSaved.value = description
+            successBoolean.value = locationEnabled && anyEndpointConnected
+            isConfirmed.value = true
+            manualAlertOrClearRequest(false)
+        }
+    }
+    if (isAlertingLiveData.value == false) {
                 TextSelectionScreen(
                     navController,
                     manualAlertOptions,
                     manualAlertType,
                     "Manual Alert",
                     {
-                        manualAlertTypeSaved.value = manualAlertType.value
-                        successBoolean.value = locationEnabled && anyEndpointConnected
-                        manualAlertOrClearRequest(isAlertingLiveData.value ?: false)
-                        isConfirmed.value = true
+                        sendManualAlert(manualAlertType.value.orEmpty())
                     },
                     {
                         manualAlertType.value = ""
                         exitActivity()
-                    }
+                    },
+                    onOptionSelected = sendManualAlert
                 )
             } else {
                 shouldShowConfirm.value = true
@@ -506,4 +502,3 @@ fun requestSosComplicationUpdate(context: Context) {
     val requester = ComplicationDataSourceUpdateRequester.create(context, componentName)
     requester.requestUpdateAll()
 }
-

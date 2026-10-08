@@ -42,6 +42,66 @@ class CotMessageBuilderTest {
     }
 
     @Test
+    fun emergencyWithoutLocationUsesTheUnknownPositionErrorSentinel() {
+        val xml = CotMessageBuilder.emergency(
+            emergencySnapshot(DataRepository.AlertState.ALERT).copy(location = null),
+        )
+        val point = DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(InputSource(StringReader(xml)))
+            .documentElement
+            .getElementsByTagName("point")
+            .item(0) as Element
+
+        assertEquals("0.0", point.getAttribute("lat"))
+        assertEquals("0.0", point.getAttribute("lon"))
+        assertEquals("0.0", point.getAttribute("hae"))
+        assertEquals("9999999.0", point.getAttribute("ce"))
+        assertEquals("9999999.0", point.getAttribute("le"))
+    }
+
+    @Test
+    fun emergencyNeverSerializesInvalidCoordinatesOrErrors() {
+        for (invalid in listOf(
+            location().copy(lat = Double.NaN),
+            location().copy(lon = Double.POSITIVE_INFINITY),
+            location().copy(lat = 91.0),
+            location().copy(lon = -181.0),
+        )) {
+            val xml = CotMessageBuilder.emergency(emergencySnapshot(DataRepository.AlertState.ALERT).copy(location = invalid))
+            assertTrue(xml.contains("lat='0.0'"))
+            assertTrue(xml.contains("ce='9999999.0'"))
+        }
+        val xml = CotMessageBuilder.emergency(
+            emergencySnapshot(DataRepository.AlertState.CANCEL).copy(
+                location = location().copy(hae = Double.NaN, ce = Float.POSITIVE_INFINITY, le = -1f),
+            ),
+        )
+        assertTrue(xml.contains("hae='0.0'"))
+        assertTrue(xml.contains("ce='9999999.0'"))
+        assertTrue(xml.contains("le='9999999.0'"))
+    }
+
+    @Test
+    fun standardManualAlertsUseAtakTypesAndRoundTripAsTheirDisplayCategory() {
+        StandardEmergencyType.entries.forEach { standardType ->
+            val alert = emergencySnapshot(DataRepository.AlertState.ALERT)
+                .copy(category = "Manual Alert", description = standardType.displayName)
+            val xml = CotMessageBuilder.emergency(alert)
+            val parsed = CotMessageParser.parseEmergencyOrNull(xml)
+
+            assertEquals(standardType.cotType, rootAttribute(xml, "type"))
+            assertTrue(xml.contains("type='${standardType.cotDescription}'"))
+            assertEquals(standardType.displayName, parsed?.category)
+            assertEquals(standardType.cotDescription, parsed?.description)
+
+            val cancelXml = CotMessageBuilder.emergency(alert.copy(alertState = DataRepository.AlertState.CANCEL))
+            assertEquals("b-a-o-can", rootAttribute(cancelXml, "type"))
+            assertEquals(alert.uid, rootAttribute(cancelXml, "uid"))
+        }
+    }
+
+    @Test
     fun markerAndClearMatchLegacyStructure() {
         val marker = markerSnapshot(time())
         val clear = markerSnapshot(CotEventTime(0, 0, 0, START, "2026-08-19T11:59:56.000Z", "2026-08-19T11:57:00.000Z"))

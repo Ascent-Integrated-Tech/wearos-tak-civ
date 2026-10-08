@@ -33,6 +33,30 @@ data class CotMarkerEvent(
     val detail: CotMarkerDetail,
 )
 
+data class CotEmergencyEvent(
+    val uid: String,
+    val type: String,
+    val time: Long,
+    val start: Long,
+    val stale: Long,
+    val point: CotPoint?,
+    val senderUid: String?,
+    val senderCallsign: String?,
+    val category: String?,
+    val description: String?,
+    val cancelled: Boolean,
+) {
+    fun isFrom(deviceUid: String): Boolean =
+        uid == deviceUid || senderUid == deviceUid || uid == "$deviceUid-9-1-1"
+
+    val hasLocation: Boolean
+        get() = point?.let {
+            it.lat.isFinite() && it.lon.isFinite() &&
+                it.lat in -90.0..90.0 && it.lon in -180.0..180.0 &&
+                !(it.lat == 0.0 && it.lon == 0.0 && it.ce >= 1_000_000.0)
+        } == true
+}
+
 data class CotUserPositionEvent(
     val version: String,
     val uid: String,

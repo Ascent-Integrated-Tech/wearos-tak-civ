@@ -69,6 +69,62 @@ object CotMessageParser {
         )
     }
 
+    fun parseEmergencyOrNull(rawXml: String): CotEmergencyEvent? {
+        val type = eventAttribute(rawXml, "type") ?: return null
+        if (!isEmergencyType(type)) return null
+        // Emergency details contain sender text, not an assignment or a marker.
+        val document = parseDocumentOrNull(rawXml) ?: return null
+        val root = document.documentElement.takeIf { it.tagName == "event" } ?: return null
+        fun Element.attribute(name: String) = getAttribute(name).takeIf { it.isNotBlank() }
+        fun child(name: String) = root.getElementsByTagName(name).item(0) as? Element
+        val uid = root.attribute("uid") ?: return null
+        val time = root.attribute("time")?.let(::parseIsoToEpochMs)?.takeIf { it > 0 } ?: return null
+        val start = root.attribute("start")?.let(::parseIsoToEpochMs) ?: time
+        val stale = root.attribute("stale")?.let(::parseIsoToEpochMs) ?: return null
+        if (start <= 0 || stale <= 0) return null
+        val emergency = child("emergency")
+        val standardType = StandardEmergencyType.fromCotType(type)
+        val link = root.getElementsByTagName("link").let { nodes ->
+            (0 until nodes.length).mapNotNull { nodes.item(it) as? Element }
+                .firstOrNull { it.attribute("relation") in listOf("p-p", "p-r") }
+        }
+        val senderText = emergency?.textContent?.trim()?.takeIf(String::isNotBlank)
+        val biometrics = child("biometrics")
+        val biometricDeviceUid = (biometrics?.getElementsByTagName("uid")?.item(0) as? Element)
+            ?.textContent?.trim()?.takeIf(String::isNotBlank)
+        val creator = child("creator")
+        val point = child("point")?.let { p ->
+            val lat = p.attribute("lat")?.toDoubleOrNull()
+            val lon = p.attribute("lon")?.toDoubleOrNull()
+            if (lat == null || lon == null || !lat.isFinite() || !lon.isFinite() ||
+                lat !in -90.0..90.0 || lon !in -180.0..180.0
+            ) return null
+            CotPoint(
+                lat, lon,
+                p.attribute("hae")?.toDoubleOrNull()?.takeIf(Double::isFinite) ?: 9999999.0,
+                p.attribute("ce")?.toDoubleOrNull()?.takeIf(Double::isFinite) ?: 9999999.0,
+                p.attribute("le")?.toDoubleOrNull()?.takeIf(Double::isFinite) ?: 9999999.0
+            )
+        }
+        return CotEmergencyEvent(
+            uid, type, time, start, stale, point,
+            // WearTAK cancellations carry the sender only in biometrics/device/uid.
+            link?.attribute("uid") ?: creator?.attribute("uid") ?: biometricDeviceUid,
+            link?.attribute("parent_callsign") ?: creator?.attribute("callsign")
+                ?: senderText ?: child("contact")?.attribute("callsign")?.substringBefore('\n'),
+            standardType?.displayName ?: biometrics?.attribute("alertCategory") ?: biometrics?.attribute("alertType")
+                ?: emergency?.attribute("type") ?: type,
+            emergency?.attribute("type") ?: biometrics?.attribute("alertDescription")
+                ?: child("remarks")?.textContent?.trim()
+                ?: child("contact")?.attribute("callsign")?.substringAfter('\n', "")?.takeIf(String::isNotBlank)
+                ?: standardType?.displayName,
+            type == "b-a-o-can" || emergency?.attribute("cancel")?.lowercase() in listOf("true", "1")
+        )
+    }
+
+    fun isEmergencyType(type: String): Boolean =
+        type == "b-a-o" || type.startsWith("b-a-o-") || StandardEmergencyType.fromCotType(type) != null
+
     fun isUserPositionType(type: String): Boolean =
         type == "a-f-G-U-C" || type.startsWith("a-f-G-U-C-")
 

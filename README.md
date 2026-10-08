@@ -90,6 +90,56 @@ Chat is an online feature; the project does not provide an offline TAK chat queu
 
 ## Architecture
 
+### Remote emergencies
+
+Incoming `b-a-o`, `b-a-o-*`, and ATAK's standard `b-a-g` CoT emergencies share one active
+alert state for the map and Bloodhound. A yellow warning symbol distinguishes them from
+ordinary contacts and markers, remains visible regardless of those map filters, and opens
+the alert's Bloodhound details. Alerts appear first in the picker, with the sender and
+emergency category.
+Choosing navigation does not send an assignment acknowledgement or automated chat.
+
+TAK server, SITX, and companion IPC ingress use the same parser and lifecycle handling.
+ATAK's `*-9-1-1` alert UID, parent link, emergency text/type and cancellation flag are
+supported, as are WearTAK's biometric alert details. Own alerts are ignored. Source-owned
+copies are deduplicated by CoT UID; cancellation removes only emergency copies at or before
+its event time, not the sender's ordinary PLI or markers. Cancellation timestamps survive
+process restarts to reject delayed replay. Passing the sender's CoT stale deadline marks
+an alert **Stale** in both the map label and Bloodhound instead of removing it. Valid
+already-stale incoming alerts are accepted as last-known emergencies. A newer refresh
+updates the deadline and clears Stale while fresh; explicit cancellation removes the alert.
+A missed cancellation can therefore leave a stale alert visible; Stale does not mean
+the emergency ended or that its location is live. Explicit local dismissal is still available;
+source disconnect/removal clears only that source and preserves other copies.
+
+Alerts without a usable location remain readable in Bloodhound, but are not placed on
+the map and cannot guide navigation. A location-less refresh can retain that source's
+previous valid location, marked as last-known when stale. **Dismiss locally** hides the
+current emergency from both map and picker without sending any cancellation to the sender.
+The persisted dismissal suppresses ongoing repeats and refreshes, including after restart.
+Only a sender cancellation at or after the latest observed emergency update ends that
+dismissal; a newer reactivation may then reappear, even when ATAK reuses the same UID.
+Delayed older cancellations do not clear a dismissal. Ordinary point deletion is unchanged.
+
+Receive/apply/stale-transition logs record why an alert was ignored (self, cancelled, older),
+distinguishing missing ingress from rejected alerts during hardware verification.
+
+The manual alert picker also supports ATAK's standard `911 Alert`, `Ring The Bell`,
+`Geofence Breached`, and `In Contact` types alongside the existing custom options. These
+map to `b-a-o-tbl`, `b-a-o-pan`, `b-a-g`, and `b-a-o-opn`, respectively, so standard
+alerts can be sent and received without changing custom alert behavior. This feature builds
+on the remote-emergency reception and display work pending in gov MR!327.
+
+Manual, physiological, and automatically generated emergency alerts are queued only while
+there is no licensed, usable emergency dispatch route. A stale GPS fix does not hold an
+alert or its cancellation; stale coordinates are omitted at send time, and a CoT point with
+the unknown-position error sentinel is used when no fresh fix is available. Pending alerts
+drain in order when a route becomes available, without requiring a network restart.
+
+Selecting a preset manual alert sends that exact alert immediately, without a separate
+Send tap. Custom text still uses Send, and chat quick replies still append text without
+sending. Alerts without an available route continue to use the existing pending-alert queue.
+
 `WearTakApplication` initializes shared repositories and the CEP/plugin infrastructure. `DataRepository` is the main persistent state and settings hub, based on DataStore and Kotlin Flows. Newer components use Flow/StateFlow for reactive updates; some existing components communicate through EventBus.
 
 The important runtime path is:

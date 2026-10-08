@@ -41,7 +41,7 @@ class BloodhoundRepositorySourceTest {
     }
 
     @Test
-    fun removingBloodhoundFromMenuRemovesVisibleItemAndClearsActiveSelection() {
+    fun removingBloodhoundFromMenuRemovesVisibleItemAndClearsActiveSelection() = kotlinx.coroutines.runBlocking {
         val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
         repository.upsertFromEvent(event(SERVER_A, "Alpha", receivedAt = 100L))
         repository.activate(UID)

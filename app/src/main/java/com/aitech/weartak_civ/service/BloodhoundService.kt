@@ -167,6 +167,7 @@ class BloodhoundService: Service() {
             repo.azimuthTrueDegSmoothed.collect { azimuth ->
                 val map = bhRepo.bloodhoundMap.value
                 map.values.forEach { item ->
+                    if (item.bhEvent.remoteAlert?.hasLocation == false) return@forEach
                     if (azimuth != null) {
                         updateCompassAngle(item.uid, item.vector.bearing, azimuth)
                     }
@@ -256,6 +257,8 @@ class BloodhoundService: Service() {
     }
 
     private suspend fun sendBloodhoundReply(item: BloodhoundItem?, messagePrefix: String) {
+        // Remote emergencies are not assignments; navigating must not send unsolicited chat.
+        if (item?.bhEvent?.remoteAlert != null) return
         val issuerUid = item?.origin?.issuerUid
         val chatTitle = item?.originLabel ?: "Unknown sender"
         val targetTitle = item?.target?.name

@@ -24,10 +24,18 @@ import com.aitech.weartak_civ.cot.CotMarkerDetail
 import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
 import com.aitech.weartak_civ.cot.CotPoint
+import com.aitech.weartak_civ.cot.CotEmergencyEvent
 import com.aitech.weartak_civ.provider.TargetVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import org.json.JSONObject
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -43,8 +51,16 @@ import kotlin.math.roundToInt
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "bloodhound")
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private const val NON_TAK_BLOODHOUND_SOURCE_ID = "non-tak"
-class BloodhoundRepository(private val context: Context) {
+class BloodhoundRepository(
+    private val context: Context,
+    private val dataStore: DataStore<Preferences> = context.dataStore,
+) {
     private val TAG = "WearTAK-" + BloodhoundRepository::class.java.simpleName
+    private val emergencyMutex = Mutex()
+    private var cancellationsLoaded = false
+    private val cancellationTimes = mutableMapOf<String, Long>()
+    private val dismissalTimes = mutableMapOf<String, Long>()
+    private val alertExpiryJobs = mutableMapOf<SourceCotKey, Job>()
 
     data class BloodhoundItem(
         val bhEvent: BloodhoundEvent,
@@ -113,7 +129,18 @@ class BloodhoundRepository(private val context: Context) {
         val timeCompleted: Long?,                         // tell the issuer how long it took.
         val remark: String = "",
         val sourceServerId: String? = null,
-        val receivedAt: Long = System.currentTimeMillis()
+        val receivedAt: Long = System.currentTimeMillis(),
+        val remoteAlert: RemoteAlert? = null
+    )
+
+    data class RemoteAlert(
+        val category: String,
+        val description: String,
+        val senderUid: String?,
+        val senderCallsign: String?,
+        val staleTime: Long,
+        val hasLocation: Boolean,
+        val isStale: Boolean = false
     )
 
     data class BloodhoundUpdate(
@@ -137,13 +164,142 @@ class BloodhoundRepository(private val context: Context) {
     )
     private val _bloodhoundMap = MutableStateFlow<Map<String, BloodhoundItem>>(emptyMap())
     val bloodhoundMap: StateFlow<Map<String, BloodhoundItem>> = _bloodhoundMap
+    private val _remoteAlerts = MutableStateFlow<Map<String, BloodhoundItem>>(emptyMap())
+    val remoteAlerts: StateFlow<Map<String, BloodhoundItem>> = _remoteAlerts
+    val remoteEmergencyMapItems: StateFlow<List<RemoteEmergencyMapItem>> =
+        remoteAlerts.map { alerts -> alerts.values.mapNotNull { it.toRemoteEmergencyMapItemOrNull() } }
+            .stateIn(scope, SharingStarted.Eagerly, emptyList())
+
+    suspend fun applyEmergencyEvent(
+        event: CotEmergencyEvent,
+        server: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis(),
+        deviceUid: String
+    ): Boolean = emergencyMutex.withLock {
+        if (event.uid.isBlank() || event.time <= 0 || event.start <= 0 || event.stale <= 0 || event.isFrom(deviceUid)) {
+            Log.w(TAG, "Emergency ignored reason=invalid-or-self uid=${event.uid}")
+            return@withLock false
+        }
+        loadEmergencyLedgers()
+        if (event.cancelled) {
+            val previous = cancellationTimes[event.uid] ?: Long.MIN_VALUE
+            if (event.time > previous) {
+                val clearsDismissal = dismissalTimes[event.uid]?.let { event.time >= it } == true
+                // Persist before publishing removal so restart cannot resurrect a cancelled alert.
+                dataStore.edit { prefs ->
+                    val json = JSONObject(prefs[ALERT_CANCELLATIONS] ?: "{}")
+                    json.put(event.uid, maxOf(json.optLong(event.uid, Long.MIN_VALUE), event.time))
+                    prefs[ALERT_CANCELLATIONS] = json.toString()
+                    if (clearsDismissal) {
+                        val dismissed = JSONObject(prefs[ALERT_DISMISSALS] ?: "{}")
+                        dismissed.remove(event.uid)
+                        prefs[ALERT_DISMISSALS] = dismissed.toString()
+                    }
+                }
+                cancellationTimes[event.uid] = event.time
+                if (clearsDismissal) dismissalTimes.remove(event.uid)
+            }
+            synchronized(bloodhoundStateLock) {
+                bloodhoundStore.allItems.value.filter { (key, item) ->
+                    key.cotUid == event.uid && item.bhEvent.remoteAlert != null &&
+                        item.bhEvent.mapItem.cotEvent.time <= event.time
+                }.keys.forEach { key ->
+                    bloodhoundStore.remove(key)
+                    alertExpiryJobs.remove(key)?.cancel()
+                    if (_activeKey.value == key) setActiveKey(null)
+                }
+                publishVisibleBloodhounds()
+            }
+            Log.i(TAG, "Emergency cancelled uid=${event.uid} source=$sourceServerId time=${event.time}")
+            return@withLock true
+        }
+        val now = System.currentTimeMillis()
+        val cancelledAt = cancellationTimes[event.uid]
+        if (cancelledAt != null && event.time <= cancelledAt) {
+            Log.i(TAG, "Emergency ignored reason=cancelled uid=${event.uid} time=${event.time} cancelledAt=$cancelledAt")
+            return@withLock false
+        }
+        dismissalTimes[event.uid]?.let { dismissedAt ->
+            // Track suppressed refreshes so a delayed cancellation cannot end the wrong session.
+            if (event.time > dismissedAt) persistDismissal(event.uid, event.time)
+            Log.i(TAG, "Emergency ignored reason=locally-dismissed uid=${event.uid} time=${event.time}")
+            return@withLock false
+        }
+        synchronized(bloodhoundStateLock) {
+            val source = sourceServerId ?: "remote:$server"
+            val key = SourceCotKey("emergency:$source", event.uid)
+            val previous = bloodhoundStore.item(key)
+            if (previous != null && event.time < previous.bhEvent.mapItem.cotEvent.time) {
+                Log.i(TAG, "Emergency ignored reason=older uid=${event.uid} source=$source time=${event.time}")
+                return@synchronized false
+            }
+            // A location-less refresh can retain only this source's existing valid location.
+            val point = if (event.hasLocation) event.point else
+                previous?.takeIf { it.bhEvent.remoteAlert?.hasLocation == true }?.target?.point
+            val hasLocation = point != null
+            val detail = CotMarkerDetail(
+                markerCallsign = event.senderCallsign ?: event.uid,
+                creator = null,
+                link = CotLink(event.senderUid, null, null, event.senderCallsign, null),
+                usericon = null,
+                remarks = event.description,
+                contact = null
+            )
+            val marker = CotMarkerEvent(
+                "2.0", event.uid, event.type, "h-e", event.time, event.start, event.stale, null,
+                point ?: CotPoint(0.0, 0.0, 9999999.0, 9999999.0, 9999999.0), detail
+            )
+            val e = BloodhoundEvent(
+                mapItem = CotMarkerMapItem(marker), server = server, timeIssued = event.time,
+                timeCompleted = null, sourceServerId = source, receivedAt = receivedAt,
+                remoteAlert = RemoteAlert(
+                    event.category ?: event.type, event.description.orEmpty(), event.senderUid,
+                    event.senderCallsign, event.stale, hasLocation, isStale = event.stale <= now
+                )
+            )
+            val item = previous?.copy(
+                bhEvent = e, target = BloodhoundItem.Target(e.mapItem), origin = BloodhoundItem.Origin(e),
+                vector = TargetVector(), compass = BloodhoundItem.Compass()
+            ) ?: BloodhoundItem(e)
+            val isNew = !_remoteAlerts.value.containsKey(event.uid)
+            if (!bloodhoundStore.upsertWithResult(item).applied) {
+                Log.i(TAG, "Emergency ignored reason=not-newer uid=${event.uid} source=$source time=${event.time}")
+                return@synchronized false
+            }
+            publishVisibleBloodhounds()
+            if (_activeKey.value?.cotUid == event.uid && _activeKey.value != visibleKey(event.uid)) {
+                setActiveKey(null)
+            }
+            _bloodhoundEvent.value = BloodhoundUpdate(e, isNew, false)
+            alertExpiryJobs.remove(key)?.cancel()
+            alertExpiryJobs[key] = scope.launch {
+                delay((event.stale - System.currentTimeMillis()).coerceAtLeast(0))
+                synchronized(bloodhoundStateLock) {
+                    val current = bloodhoundStore.item(key)
+                    if (current?.bhEvent?.remoteAlert?.staleTime?.let { it <= System.currentTimeMillis() } == true) {
+                        bloodhoundStore.update(key) { item ->
+                            item.copy(bhEvent = item.bhEvent.copy(
+                                remoteAlert = item.bhEvent.remoteAlert?.copy(isStale = true)
+                            ))
+                        }
+                        alertExpiryJobs.remove(key)
+                        publishVisibleBloodhounds()
+                        Log.i(TAG, "Emergency stale retained uid=${event.uid} source=$source")
+                    }
+                }
+            }
+            Log.i(TAG, "Emergency active uid=${event.uid} source=$source hasLocation=$hasLocation")
+            true
+        }
+    }
 
     private inline fun updateBloodhound(
         uid: String,
         crossinline transform: (BloodhoundItem) -> BloodhoundItem
     ) {
         synchronized(bloodhoundStateLock) {
-            bloodhoundStore.updateVisible(uid) { current -> transform(current) }
+            visibleKey(uid)?.let { key -> bloodhoundStore.update(key) { current -> transform(current) } }
             publishVisibleBloodhounds()
         }
     }
@@ -161,11 +317,11 @@ class BloodhoundRepository(private val context: Context) {
     // --- UI Adapter function
     //  - backend domain item -> frontend UI model item (Utils.BloodhoundItem)
     private fun BloodhoundItem.toUi(isActive: Boolean): Utils.BloodhoundItem {
-        val distKm = this.vector.distance ?: 0.0
+        val distKm = if (bhEvent.remoteAlert?.hasLocation == false) null else this.vector.distance
         val needle = this.compass.targetBearingDeg ?: 0.0
 
 //        val eventMs = Utils.toMillis(bhEvent.timeIssued) ?: System.currentTimeMillis()
-        val eventMs = System.currentTimeMillis()
+        val eventMs = bhEvent.remoteAlert?.let { bhEvent.mapItem.cotEvent.time } ?: System.currentTimeMillis()
 
         return Utils.BloodhoundItem(
             target = this.target.name ?: "unknown",
@@ -175,7 +331,11 @@ class BloodhoundRepository(private val context: Context) {
             distance = distKm,
             orientation = needle.round(1).toFloat(),
             bloodhounding = isActive,
-            acknowledged = this.state.acknowledged
+            acknowledged = this.state.acknowledged,
+            alertCategory = bhEvent.remoteAlert?.category,
+            isRemoteAlert = bhEvent.remoteAlert != null,
+            isStale = bhEvent.remoteAlert?.isStale == true,
+            hasLocation = bhEvent.remoteAlert?.hasLocation != false
         )
     }
     fun addMarkerTarget(
@@ -234,9 +394,9 @@ class BloodhoundRepository(private val context: Context) {
         combine(bloodhoundMap, _activeKey) { map, activeKey ->
             map.values
                 .sortedWith(
-                    compareByDescending<BloodhoundItem> {
-                        sourceKey(it.bhEvent) == activeKey
-                    }
+                    compareByDescending<BloodhoundItem> { it.bhEvent.remoteAlert != null }
+                        .thenByDescending { if (it.bhEvent.remoteAlert != null) it.bhEvent.mapItem.cotEvent.time else Long.MIN_VALUE }
+                        .thenByDescending { sourceKey(it.bhEvent) == activeKey }
                         .thenByDescending { it.receivedAt() }
                 )
                 .map { item ->
@@ -289,18 +449,18 @@ class BloodhoundRepository(private val context: Context) {
         )
 
         val activeKey = _activeKey.value
-        if (activeKey?.cotUid == e.uid && bloodhoundStore.visibleKey(e.uid) != activeKey) {
+        if (activeKey?.cotUid == e.uid && visibleKey(e.uid) != activeKey) {
             setActiveKey(null)
         }
     }
 
     suspend fun storeActiveBloodhoundItems(list: List<BloodhoundItem>) {
         // TODO: Convert BloodHoundMapItem to Json string and store json string.
-        context.dataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[ACTIVE_BLOOD_HOUND] = list.toString()
         }
     }
-    val getLastActiveBloodhound: Flow<String> = context.dataStore.data.map { prefs -> prefs[ACTIVE_BLOOD_HOUND] ?: "" }
+    val getLastActiveBloodhound: Flow<String> = dataStore.data.map { prefs -> prefs[ACTIVE_BLOOD_HOUND] ?: "" }
 
     private val _requestActivateBloodhound = MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 1)
     val requestActivateBloodhound = _requestActivateBloodhound.asSharedFlow()
@@ -321,10 +481,13 @@ class BloodhoundRepository(private val context: Context) {
 
     fun activate(uid: String): Pair<ActivationResult, BloodhoundItem?> =
         synchronized(bloodhoundStateLock) {
-            val selectedKey = bloodhoundStore.visibleKey(uid)
+            val selectedKey = visibleKey(uid)
                 ?: return@synchronized ActivationResult.NO_CHANGE to null
             val currentItem = bloodhoundStore.item(selectedKey)
                 ?: return@synchronized ActivationResult.NO_CHANGE to null
+            if (currentItem.bhEvent.remoteAlert?.hasLocation == false) {
+                return@synchronized ActivationResult.NO_CHANGE to currentItem
+            }
             val currentActiveKey = _activeKey.value
             val result = when {
                 currentItem.state.acknowledged -> ActivationResult.SWITCH_ONLY
@@ -355,43 +518,93 @@ class BloodhoundRepository(private val context: Context) {
     fun setInPos(uid: String): BloodhoundItem? = synchronized(bloodhoundStateLock) {
         val activeKey = _activeKey.value
         val key = activeKey?.takeIf { it.cotUid == uid }
-            ?: bloodhoundStore.visibleKey(uid)
+            ?: visibleKey(uid)
             ?: return@synchronized null
-        val item = bloodhoundStore.remove(key) ?: return@synchronized null
+        val item = bloodhoundStore.item(key) ?: return@synchronized null
+        if (item.bhEvent.remoteAlert != null) {
+            if (activeKey == key) setActiveKey(null)
+            return@synchronized item
+        }
+        bloodhoundStore.remove(key)
         publishVisibleBloodhounds()
         if (activeKey == key) setActiveKey(null)
         item
     }
 
-    fun removeFromMenu(uid: String): BloodhoundItem? = synchronized(bloodhoundStateLock) {
-        val key = bloodhoundStore.visibleKey(uid) ?: return@synchronized null
-        val item = bloodhoundStore.remove(key) ?: return@synchronized null
+    suspend fun removeFromMenu(uid: String): BloodhoundItem? = emergencyMutex.withLock {
+        val selected = synchronized(bloodhoundStateLock) {
+            visibleKey(uid)?.let { bloodhoundStore.item(it) }
+        } ?: return@withLock null
+        if (selected.bhEvent.remoteAlert != null) {
+            loadEmergencyLedgers()
+            persistDismissal(uid, selected.bhEvent.mapItem.cotEvent.time)
+        }
+        synchronized(bloodhoundStateLock) {
+        val key = visibleKey(uid) ?: return@synchronized null
+        val item = bloodhoundStore.item(key) ?: return@synchronized null
+        // Local dismissal never emits a sender cancellation or removes ordinary targets.
+        val removedKeys = if (item.bhEvent.remoteAlert != null) {
+            bloodhoundStore.allItems.value.filter { (candidate, candidateItem) ->
+                candidate.cotUid == uid && candidateItem.bhEvent.remoteAlert != null
+            }.keys
+        } else {
+            setOf(key)
+        }
+        removedKeys.forEach { removedKey ->
+            bloodhoundStore.remove(removedKey)
+            alertExpiryJobs.remove(removedKey)?.cancel()
+        }
         publishVisibleBloodhounds()
-        if (_activeKey.value == key) setActiveKey(null)
+        if (_activeKey.value in removedKeys) setActiveKey(null)
         item
+        }
+    }
+
+    private suspend fun loadEmergencyLedgers() {
+        if (cancellationsLoaded) return
+        val prefs = dataStore.data.first()
+        val cancelled = JSONObject(prefs[ALERT_CANCELLATIONS] ?: "{}")
+        cancelled.keys().forEach { uid -> cancellationTimes[uid] = cancelled.getLong(uid) }
+        val dismissed = JSONObject(prefs[ALERT_DISMISSALS] ?: "{}")
+        dismissed.keys().forEach { uid -> dismissalTimes[uid] = dismissed.getLong(uid) }
+        cancellationsLoaded = true
+    }
+
+    private suspend fun persistDismissal(uid: String, time: Long) {
+        val latest = maxOf(dismissalTimes[uid] ?: Long.MIN_VALUE, time)
+        dataStore.edit { prefs ->
+            val dismissed = JSONObject(prefs[ALERT_DISMISSALS] ?: "{}")
+            dismissed.put(uid, latest)
+            prefs[ALERT_DISMISSALS] = dismissed.toString()
+        }
+        dismissalTimes[uid] = latest
     }
 
     /** Removes every source copy of [uid], e.g. when the matching map item is deleted. */
     fun removeTarget(uid: String): List<BloodhoundItem> = synchronized(bloodhoundStateLock) {
         val removed = bloodhoundStore.removeUid(uid)
         if (removed.isEmpty()) return@synchronized removed
+        alertExpiryJobs.keys.filter { it.cotUid == uid }.toList().forEach {
+            alertExpiryJobs.remove(it)?.cancel()
+        }
         publishVisibleBloodhounds()
         if (_activeKey.value?.cotUid == uid) setActiveKey(null)
         removed
     }
 
-    fun isUidValid(uid: String) = bloodhoundStore.visibleItem(uid) != null
+    fun isUidValid(uid: String) = _bloodhoundMap.value.containsKey(uid)
 
     fun remarkFromHoundmaster(uid: String) =
-        bloodhoundStore.visibleItem(uid)?.containsHoundmasterRemark ?: false
+        _bloodhoundMap.value[uid]?.containsHoundmasterRemark ?: false
 
     fun updateBloodhoundCompassNeedle(uid: String, needleDeg: Double) {
         synchronized(bloodhoundStateLock) {
-            bloodhoundStore.updateVisible(uid) { item ->
+            visibleKey(uid)?.let { key -> bloodhoundStore.update(key) { item ->
                 if (item.compass.targetBearingDeg == needleDeg) {
                     item
                 } else {
                     item.copy(compass = item.compass.copy(targetBearingDeg = needleDeg))
+                }
                 }
             }
             publishVisibleBloodhounds()
@@ -400,8 +613,11 @@ class BloodhoundRepository(private val context: Context) {
 
     fun clearSource(serverId: String): List<BloodhoundItem> = synchronized(bloodhoundStateLock) {
         val activeKey = _activeKey.value
-        val activeWasRemoved = activeKey?.sourceId == serverId
-        val removed = bloodhoundStore.removeSource(serverId)
+        val activeWasRemoved = activeKey?.sourceId in listOf(serverId, "emergency:$serverId")
+        val removed = bloodhoundStore.removeSource(serverId) + bloodhoundStore.removeSource("emergency:$serverId")
+        alertExpiryJobs.keys.filter { it.sourceId == "emergency:$serverId" }.toList().forEach {
+            alertExpiryJobs.remove(it)?.cancel()
+        }
         publishVisibleBloodhounds()
         if (_bloodhoundEvent.value?.event?.sourceServerId == serverId) {
             _bloodhoundEvent.value = null
@@ -418,22 +634,30 @@ class BloodhoundRepository(private val context: Context) {
     }
 
     private fun publishVisibleBloodhounds() {
-        _bloodhoundMap.value = bloodhoundStore.visibleItems.value.associateBy(BloodhoundItem::uid)
+        val alerts = bloodhoundStore.allItems.value.values.filter { it.bhEvent.remoteAlert != null }
+            .groupBy(BloodhoundItem::uid).mapValues { (_, items) ->
+                items.maxWith(compareBy<BloodhoundItem> { it.bhEvent.mapItem.cotEvent.time }.thenBy { it.bhEvent.receivedAt })
+            }
+        _remoteAlerts.value = alerts
+        _bloodhoundMap.value = bloodhoundStore.visibleItems.value.associateBy(BloodhoundItem::uid) + alerts
     }
 
+    private fun visibleKey(uid: String): SourceCotKey? = _bloodhoundMap.value[uid]?.let { sourceKey(it.bhEvent) }
+
     private fun sourceKey(event: BloodhoundEvent): SourceCotKey = SourceCotKey(
-        sourceId = event.sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID,
+        sourceId = if (event.remoteAlert != null) "emergency:${event.sourceServerId}"
+            else event.sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID,
         cotUid = event.uid
     )
 
 
 
-    val getEnableBloodhoundService: Flow<Boolean> = context.dataStore.data.map { prefs ->
+    val getEnableBloodhoundService: Flow<Boolean> = dataStore.data.map { prefs ->
         prefs[ENABLE] ?: false
     }
 
     suspend fun storeEnableBloodhoundService(enable: Boolean) {
-        context.dataStore.edit { prefs ->
+        dataStore.edit { prefs ->
             prefs[ENABLE] = enable
         }
     }
@@ -462,5 +686,7 @@ class BloodhoundRepository(private val context: Context) {
     companion object {
         private val ENABLE = booleanPreferencesKey("enable_bloodhound_service")
         private val ACTIVE_BLOOD_HOUND = stringPreferencesKey("active_bloodhound")
+        private val ALERT_CANCELLATIONS = stringPreferencesKey("remote_emergency_cancellations")
+        private val ALERT_DISMISSALS = stringPreferencesKey("remote_emergency_dismissals")
     }
 }
