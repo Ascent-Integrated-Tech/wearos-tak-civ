@@ -25,6 +25,12 @@ class TextSelectionTest {
     }
 
     @Test
+    fun chatQuickReplyStillAppendsWithoutSubmitting() {
+        assertEquals("Hello Roger", selectTextOption("Hello", "Roger", null))
+        assertEquals(" Roger", selectTextOption("", "Roger", null))
+    }
+
+    @Test
     fun chatPresetSubmitsOnlyTheSelectedReply() {
         val submissions = mutableListOf<String>()
         val selected = selectTextOption("unfinished draft", "Roger") {
