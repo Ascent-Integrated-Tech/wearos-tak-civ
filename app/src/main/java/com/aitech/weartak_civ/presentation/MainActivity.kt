@@ -174,7 +174,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.graphics.graphicsLayer
@@ -3024,6 +3023,15 @@ fun chatComplicationString() {
 @Composable
 fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewModel) {
     val iconSizeSmall= 20.dp
+    val context = LocalContext.current
+    val openNetworkPreferences = {
+        context.startActivity(
+            Intent(context, WearTAKSettingsActivity::class.java).putExtra(
+                WearTAKSettingsActivity.EXTRA_OPEN_NETWORK_PREFERENCES,
+                true
+            )
+        )
+    }
     networkManager?.checkNetworkConnected()
 
     Box(
@@ -3032,8 +3040,6 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewM
             .height(70.dp),
             contentAlignment = Alignment.TopCenter
     ) {
-        var clickCount by remember { mutableStateOf(0) }
-        val scope = rememberCoroutineScope()
         val locationCheckedLive by settingsVm.savedEnableLocationService.collectAsState()
         val battery by dataRepository.nonNullBatteryPercentage.collectAsState(initial = 100)
         //val takServer by remember{ mutableStateOf(enableTAKConnectService)}
@@ -3081,7 +3087,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewM
         // Icon on the top left curve
         Image(
             painter = painter,
-            contentDescription = "Top Left Icon",
+            contentDescription = stringResource(R.string.network_preferences),
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .offset(
@@ -3089,6 +3095,7 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewM
                     y = (-10).dp // Adjust this value based on the curve
                 )
                 .size(25.dp) // Adjust icon size as needed
+                .clickable(onClick = openNetworkPreferences)
         )
         //Log.d(TAG, "AnyTakServerConnected = $anyTakServerConnected; AnyTakServerConnecting = $anyTakServerConnecting")
 
@@ -3110,25 +3117,12 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewM
 //         Icon on the bottom left curve
         Icon(
             painter = wirelessConnPainter,
-            contentDescription = "Bottom Left Icon",
+            contentDescription = stringResource(R.string.network_preferences),
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .offset(x = 15.dp, y = 10.dp)
                 .size(25.dp)
-                .clickable {
-                    clickCount++
-
-                    if (clickCount == 2) {
-                        if (isConnected == false) setAirplaneMode("0") // OFF
-                        clickCount = 0
-                    } else {
-                        // reset counter after timeout
-                        scope.launch {
-                            delay(400)
-                            clickCount = 0
-                        }
-                    }
-                },
+                .clickable(onClick = openNetworkPreferences),
             tint = if (isConnected == true) Color.White else Color.Unspecified
         )
         /*
