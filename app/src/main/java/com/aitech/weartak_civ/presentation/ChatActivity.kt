@@ -96,6 +96,9 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.R
+import android.net.Uri
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.remember
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
@@ -226,9 +229,26 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
             ChatScreen(navController, exitActivity, chatRooms)
         }
 
-        composable("chat_reply_screen")
-        {
-            TextSelectionScreen(navController, quickReplyOptions, reply, "New Chat",{navController.popBackStack()}, {navController.popBackStack()})
+        composable(
+            "chat_reply_screen/{roomUid}",
+            arguments = listOf(navArgument("roomUid") { type = NavType.StringType })
+        ) { backStackEntry ->
+            val roomUid = backStackEntry.arguments?.getString("roomUid")
+            val room = chatRooms.firstOrNull { it.uid == roomUid }
+            if (room == null) {
+                LaunchedEffect(roomUid) {
+                    Toast.makeText(context, "Chat conversation is no longer available", Toast.LENGTH_SHORT).show()
+                    navController.popBackStack()
+                }
+            } else {
+                val sendPreset = rememberChatPresetSender(room) { navController.popBackStack() }
+                TextSelectionScreen(
+                    navController, quickReplyOptions, reply, "New Chat",
+                    { navController.popBackStack() },
+                    { navController.popBackStack() },
+                    onOptionSelected = sendPreset
+                )
+            }
         }
 
         composable(
@@ -389,7 +409,7 @@ fun ChatScreenDetailed(
         val messageList = room?.messageList.orEmpty()
         val roomId = room?.uid
         val replyMessage by reply.observeAsState(initial = "")
-
+        val sendPreset = room?.let { rememberChatPresetSender(it) }
 
         // Mark this room as read when entering detail
         LaunchedEffect(key1 = index) {
@@ -446,6 +466,9 @@ fun ChatScreenDetailed(
                             context = context
                         )
                     }
+                    if (sendPreset != null) item {
+                        TextPresetButtons(quickReplyOptions, sendPreset)
+                    }
                     item {
                         Row(
                             verticalAlignment= Alignment.CenterVertically,
@@ -455,10 +478,12 @@ fun ChatScreenDetailed(
                                 .padding(top = 5.dp)
                         ) {
                             Chip(
-                                onClick = { navController.navigate("chat_reply_screen") {
-                                    popUpTo("chat_reply_screen") { inclusive = true }
-                                }},
-                                enabled = true,
+                                onClick = {
+                                    navController.navigate("chat_reply_screen/${Uri.encode(roomId)}") {
+                                        launchSingleTop = true
+                                    }
+                                },
+                                enabled = room != null,
                                 modifier = if (replyMessage.isEmpty()) {
                                     Modifier
                                         .fillMaxWidth()
@@ -525,6 +550,28 @@ fun ChatScreenDetailed(
                         }
                     }
                 )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun rememberChatPresetSender(room: ChatRoom, onSent: () -> Unit = {}): (String) -> Unit {
+    val scope = rememberCoroutineScope()
+    var submitting by remember(room.uid) { mutableStateOf(false) }
+    return { message ->
+        if (!submitting) {
+            submitting = true
+            scope.launch {
+                try {
+                    dataRepository.requestChatMessageSendFromUI(
+                        room.uid, room.title, message, System.currentTimeMillis()
+                    )
+                    reply.value = ""
+                    onSent()
+                } finally {
+                    submitting = false
+                }
             }
         }
     }
@@ -668,43 +715,16 @@ fun TextSelectionScreen(
                 }
             }
             item {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(2),
-                    modifier = Modifier.height(100.dp),
-                    verticalArrangement = Arrangement.spacedBy(5.dp),
-                    horizontalArrangement = Arrangement.spacedBy(7.dp),
-                ) {
-                    items(buttonOptions) { replyOption ->
-                        Button(
-                            onClick = {
-                                val selectedText = selectTextOption(
-                                    replyTextFieldValue.text,
-                                    replyOption.longText,
-                                    onOptionSelected
-                                )
-                                replyTextFieldValue = TextFieldValue(
-                                    text = selectedText,
-                                    selection = TextRange(selectedText.length)
-                                )
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color.DarkGray,
-                                contentColor = Color.White
-                            ),
-                            shape = RoundedCornerShape(size = 10.dp)
-                        ) {
-                            Text(
-                                text = replyOption.longText,
-                                color = Color.White,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 10.sp,
-                                textAlign = TextAlign.Center,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-
-                    }
+                TextPresetButtons(buttonOptions) { optionText ->
+                    val selectedText = selectTextOption(
+                        replyTextFieldValue.text,
+                        optionText,
+                        onOptionSelected
+                    )
+                    replyTextFieldValue = TextFieldValue(
+                        text = selectedText,
+                        selection = TextRange(selectedText.length)
+                    )
                 }
             }
         },
@@ -716,6 +736,40 @@ fun TextSelectionScreen(
         onClickCancel = { onCancel() },
     )
 
+}
+
+@Composable
+internal fun TextPresetButtons(
+    options: List<Utils.TextSelectionButton>,
+    onSelected: (String) -> Unit
+) {
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(2),
+        modifier = Modifier.fillMaxWidth().height(100.dp),
+        verticalArrangement = Arrangement.spacedBy(5.dp),
+        horizontalArrangement = Arrangement.spacedBy(7.dp)
+    ) {
+        items(options) { option ->
+            Button(
+                onClick = { onSelected(option.longText) },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.DarkGray,
+                    contentColor = Color.White
+                ),
+                shape = RoundedCornerShape(size = 10.dp)
+            ) {
+                Text(
+                    text = option.longText,
+                    color = Color.White,
+                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 10.sp,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+        }
+    }
 }
 
 internal fun selectTextOption(
