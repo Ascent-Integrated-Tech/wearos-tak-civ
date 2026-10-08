@@ -2856,7 +2856,7 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
     val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     val physioCheckedLive by settingsVm.savedEnablePhysiologicalServices.collectAsState()
     val physioAlertsCheckedLive by settingsVm.savedEnablePhysiologicalAlerts.collectAsState()
-    val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState() // or collectAsStateWithLifecycle()
+    val alerts by dataRepository.displayableAlertList.collectAsState() // or collectAsStateWithLifecycle()
     val metricKey by settingsVm.savedSelectedPhysioMetric.collectAsState()
 
     // Derive the chip state from the latest list

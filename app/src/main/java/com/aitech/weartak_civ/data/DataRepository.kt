@@ -184,6 +184,10 @@ import kotlinx.coroutines.launch
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private const val NON_TAK_COT_SOURCE_ID = "non-tak"
+const val COMPANION_SOURCE_ID = "phone-companion"
+// Interim backstop until application acknowledgements and replay are available.
+// Explicit downstream deletes remain the authoritative removal mechanism.
+private const val COMPANION_MARKER_STALE_MS = 24 * 60 * 60 * 1000L
 
 // Identifies which PDL the user selected
 enum class DittoPdlSource {
@@ -1290,6 +1294,11 @@ class DataRepository(private val context: Context) {
 
     // This is the data class for both physio alerts and manual alerts that the backend adds to and clears.
     // This is a custom TAK emergency (911) alert as we change the description of the 911 alert sent to TAK
+    enum class AlertOrigin {
+        LOCAL,
+        COMPANION
+    }
+
     data class CustomEmergencyAlert(
         val uuid: String,
         val alertState: AlertState,
@@ -1299,6 +1308,7 @@ class DataRepository(private val context: Context) {
         val sendSms: Boolean,
         val timeMillis: Long,
         val enqueuedToBeSent: Boolean,
+        val origin: AlertOrigin = AlertOrigin.LOCAL,
     )
 
     // UI reads manualAlertList to display manual alerts sent out
@@ -1341,6 +1351,21 @@ class DataRepository(private val context: Context) {
 
     suspend fun removeManualAlertByUid(uid: String) {
         _manualAlertList.emit(_manualAlertList.value.filterNot { it.uuid == uid })
+    }
+
+    // Alerts received from the phone's ATAK instance. These are kept separate
+    // from locally generated SOS and physiology alerts.
+    private val _companionEmergencyList = MutableStateFlow<List<CustomEmergencyAlert>>(emptyList())
+    val companionEmergencyList: StateFlow<List<CustomEmergencyAlert>> = _companionEmergencyList
+
+    suspend fun applyCompanionEmergency(alert: CustomEmergencyAlert) {
+        val current = _companionEmergencyList.value
+        val updated = current.filterNot { it.uuid == alert.uuid } + alert
+        _companionEmergencyList.emit(updated)
+    }
+
+    suspend fun clearCompanionEmergency(uid: String) {
+        _companionEmergencyList.emit(_companionEmergencyList.value.filterNot { it.uuid == uid })
     }
 
     // This is used by UI to request to clear SOS and Markers (UI --> Backend)
@@ -1394,6 +1419,17 @@ class DataRepository(private val context: Context) {
 
     private val _physioAndAutoGenAlertList = MutableStateFlow<List<CustomEmergencyAlert>>(emptyList())
     val physioAndAutoGenAlertList: StateFlow<List<CustomEmergencyAlert>> = _physioAndAutoGenAlertList
+
+    val displayableAlertList: StateFlow<List<CustomEmergencyAlert>> = combine(
+        physioAndAutoGenAlertList,
+        companionEmergencyList
+    ) { localAlerts, companionAlerts ->
+        localAlerts + companionAlerts
+    }.stateIn(
+        scope = repoScope,
+        started = SharingStarted.WhileSubscribed(5_000),
+        initialValue = emptyList()
+    )
 
     // Backend-only use
     suspend fun appendPhysioAndAutoGenAlert(item: CustomEmergencyAlert) {
@@ -1696,6 +1732,50 @@ class DataRepository(private val context: Context) {
                 "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
         )
         return true
+    }
+
+    /**
+     * Applies a marker received from the phone companion plugin.
+     * Route and Bloodhound envelopes intentionally do not enter this store;
+     * their future watch-side consumers belong to separate epics.
+     */
+    suspend fun applyCompanionMarker(
+        uid: String,
+        markerType: String,
+        title: String,
+        lat: Double,
+        lon: Double,
+        hae: Double,
+        operation: String,
+        receivedAt: Long = System.currentTimeMillis()
+    ) {
+        if (operation == "delete") {
+            removeReceivedMarkerByUid(uid)
+            return
+        }
+
+        val now = receivedAt
+        val item = ReceivedMarker(
+            uid = uid,
+            markerType = markerType,
+            title = title,
+            timeReceived = now,
+            staleTime = now + COMPANION_MARKER_STALE_MS,
+            location = LocationSnapshot(
+                timeMillis = now,
+                lat = lat,
+                lon = lon,
+                hae = hae,
+                ce = 0F,
+                le = 0F,
+                course = null,
+                speed = null
+            ),
+            source = COMPANION_SOURCE_ID,
+            sourceServerId = null,
+            receivedAt = now
+        )
+        upsertReceivedMarker(item)
     }
 
     data class SourceClearSummary(

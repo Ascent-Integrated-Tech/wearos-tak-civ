@@ -43,8 +43,10 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerP12Validator
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.DISCONNECTED
@@ -75,6 +77,11 @@ class CompanionAppService : Service() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private val downstreamScope = CoroutineScope(
+        Dispatchers.IO.limitedParallelism(1) + SupervisorJob() + CoroutineExceptionHandler { _, error ->
+            Log.e(TAG, "Downstream message failed without taking down BLE service", error)
+        }
+    )
     private val gson = Gson()
 
     private val notifyScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -489,6 +496,7 @@ class CompanionAppService : Service() {
 
         // 2) Stop outbound work
         serviceJob.cancel()
+        downstreamScope.cancel()
 
         // 3) Stop bond monitoring, advertising + close the server + force disconnect
         unregisterBondReceiver()
@@ -1080,6 +1088,13 @@ class CompanionAppService : Service() {
             val base = gson.fromJson(json, CompanionAppRepository.EnvelopeBase::class.java)
 
             when (base.type) {
+                "ping" -> {
+                    serviceScope.launch {
+                        val env = capRepo.buildPongEnvelope(base.requestId)
+                        sendJsonToCompanion(capRepo.envelopeToJson(env))
+                    }
+                }
+
                 "request_watch_info" -> {
                     serviceScope.launch {
                         val env = capRepo.buildWatchInfoEnvelope()
@@ -1128,6 +1143,25 @@ class CompanionAppService : Service() {
                     }
                 }
 
+                "marker_downstream" -> {
+                    launchDownstream { handleDownstreamMarker(base) }
+                }
+
+                "chat_downstream" -> {
+                    launchDownstream { handleDownstreamChat(base) }
+                }
+
+                "emergency_downstream" -> {
+                    launchDownstream { handleDownstreamEmergency(base) }
+                }
+
+                // Route and Bloodhound messages are intentionally left for
+                // their separate watch-side epic. The plugin may send them,
+                // but this app does not consume or render them yet.
+                "route", "bloodhound" -> {
+                    Log.d(TAG, "RX downstream type=${base.type}; watch support is deferred")
+                }
+
                 else -> {
                     Log.d(TAG, "RX: unhandled type=${base.type}")
                 }
@@ -1136,6 +1170,124 @@ class CompanionAppService : Service() {
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to parse RX JSON bytes=${json.toByteArray().size}", t)
         }
+    }
+
+    private fun launchDownstream(block: suspend () -> Unit) {
+        downstreamScope.launch {
+            try {
+                block()
+            } catch (t: Throwable) {
+                Log.w(TAG, "Rejected malformed downstream message", t)
+            }
+        }
+    }
+
+    private suspend fun handleDownstreamMarker(base: CompanionAppRepository.EnvelopeBase) {
+        val payload = base.payloadAs<DownstreamMarkerPayload>() ?: return
+        val uid = payload.uid ?: base.requestId ?: return
+        val type = payload.type ?: return
+        val operation = payload.operation ?: "update"
+        if (operation == "delete") {
+            repo.applyCompanionMarker(
+                uid = uid,
+                markerType = type,
+                title = payload.title.orEmpty(),
+                lat = payload.lat ?: 0.0,
+                lon = payload.lon ?: 0.0,
+                hae = payload.hae ?: 0.0,
+                operation = operation
+            )
+            return
+        }
+        val lat = payload.lat ?: return
+        val lon = payload.lon ?: return
+        repo.applyCompanionMarker(
+            uid = uid,
+            markerType = type,
+            title = payload.title.orEmpty(),
+            lat = lat,
+            lon = lon,
+            hae = payload.hae ?: 0.0,
+            operation = operation
+        )
+    }
+
+    private suspend fun handleDownstreamChat(base: CompanionAppRepository.EnvelopeBase) {
+        val payload = base.payloadAs<DownstreamChatPayload>() ?: return
+        val chatService = ChatService.getInstance()
+        if (chatService == null) {
+            Log.w(TAG, "Dropping downstream chat because ChatService is unavailable")
+            return
+        }
+        chatService.ingestCompanionChat(
+            uid = payload.uid.orEmpty(),
+            roomUid = payload.roomUid ?: "All Chat Rooms",
+            roomTitle = payload.roomTitle ?: "All Chat Rooms",
+            message = payload.message.orEmpty(),
+            senderCallsign = payload.senderCallsign.orEmpty(),
+            receivedAt = payload.sentTime ?: System.currentTimeMillis()
+        )
+    }
+
+    private suspend fun handleDownstreamEmergency(base: CompanionAppRepository.EnvelopeBase) {
+        val payload = base.payloadAs<DownstreamEmergencyPayload>() ?: return
+        val uid = payload.uid.orEmpty()
+        if (uid.isBlank()) return
+        if (payload.state.equals("CANCEL", ignoreCase = true)) {
+            repo.clearCompanionEmergency(uid)
+            return
+        }
+        repo.applyCompanionEmergency(
+            DataRepository.CustomEmergencyAlert(
+                uuid = uid,
+                alertState = DataRepository.AlertState.ALERT,
+                category = payload.category ?: "ATAK_ALERT",
+                description = payload.message ?: "ATAK emergency alert",
+                priority = payload.priority ?: 1,
+                sendSms = false,
+                timeMillis = base.timestamp.toEpochMillis(),
+                enqueuedToBeSent = false,
+                origin = DataRepository.AlertOrigin.COMPANION
+            )
+        )
+    }
+
+    private inline fun <reified T> CompanionAppRepository.EnvelopeBase.payloadAs(): T? {
+        return payload?.let { gson.fromJson(gson.toJson(it), T::class.java) }
+    }
+
+    private data class DownstreamMarkerPayload(
+        val operation: String? = null,
+        val uid: String? = null,
+        val type: String? = null,
+        val title: String? = null,
+        val lat: Double? = null,
+        val lon: Double? = null,
+        val hae: Double? = null
+    )
+
+    private data class DownstreamChatPayload(
+        val uid: String? = null,
+        val roomUid: String? = null,
+        val roomTitle: String? = null,
+        val message: String? = null,
+        val senderCallsign: String? = null,
+        val sentTime: Long? = null
+    )
+
+    private data class DownstreamEmergencyPayload(
+        val state: String? = null,
+        val uid: String? = null,
+        val category: String? = null,
+        val message: String? = null,
+        val priority: Int? = null
+    )
+
+    private fun String?.toEpochMillis(): Long {
+        val value = this ?: return System.currentTimeMillis()
+        return value.toLongOrNull() ?: runCatching {
+            java.time.Instant.parse(value).toEpochMilli()
+        }.getOrDefault(System.currentTimeMillis())
     }
 
     companion object {

@@ -137,7 +137,7 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context, settingsVm: Wear
 
     //TOOD: Use when alerts are added to this
 //    val alerts by dataRepository.physioAlertsFlow.collectAsState(initial = emptyList())
-    val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState(initial = emptyList())
+    val alerts by dataRepository.displayableAlertList.collectAsState(initial = emptyList())
 
     LaunchedEffect(licenseKey) {
 //        Log.d(TAG, "Launch chatEnabledLive = $chatEnabledLive")
@@ -201,11 +201,15 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context, settingsVm: Wear
 }
 
 fun List<DataRepository.CustomEmergencyAlert>.alertChipState(isEnabled: Boolean?): Utils.AlertChipState = when {
-    isEmpty() || isEnabled == false -> Utils.AlertChipState.None
-    any { it.alertState == DataRepository.AlertState.ALERT && it.priority == 1 && isEnabled == true } -> Utils.AlertChipState.Emergency
-    all { (it.alertState == DataRepository.AlertState.ALERT && it.priority == 2 || it.priority == 3) && isEnabled == true} -> Utils.AlertChipState.Warning
+    isEmpty() -> Utils.AlertChipState.None
+    any { it.isVisibleAlert(isEnabled) && it.priority == 1 } -> Utils.AlertChipState.Emergency
+    all { !it.isVisibleAlert(isEnabled) || it.priority == 2 || it.priority == 3 } -> Utils.AlertChipState.Warning
     else -> Utils.AlertChipState.None // e.g., a mix of None + Warning is NOT “only Warning”
 }
+
+private fun DataRepository.CustomEmergencyAlert.isVisibleAlert(isEnabled: Boolean?): Boolean =
+    alertState == DataRepository.AlertState.ALERT &&
+        (origin == DataRepository.AlertOrigin.COMPANION || isEnabled == true)
 
 @Composable
 fun alertIconFromString(category: String): Painter {
@@ -226,6 +230,7 @@ fun alertIconFromString(category: String): Painter {
         "CAT_IMMERSION_ALERT" -> painterResource(R.drawable.immersion_icon)
         "CAT_LOW_PRESSURE_ALERT" -> painterResource(R.drawable.pressure_icon)
         "CAT_HIGH_PRESSURE_ALERT" -> painterResource(R.drawable.pressure_icon)
+        "CAT_ATAK_EMERGENCY" -> painterResource(R.drawable.warning)
 
 
         else ->  //TODO: Change to error icon
@@ -255,6 +260,7 @@ fun alertCategoryFromString(category: String): String {
         "CAT_SPO2_EMERGENCY" -> "Severe Hypoxemia"
         "CAT_LOW_PRESSURE_ALERT" -> "Low Pressure Alert"
         "CAT_HIGH_PRESSURE_ALERT" -> "High Pressure Alert"
+        "CAT_ATAK_EMERGENCY" -> "ATAK Emergency"
         else ->
             "ERROR"
     }

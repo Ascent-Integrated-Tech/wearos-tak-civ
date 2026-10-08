@@ -19,6 +19,7 @@ import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository.TakServerItem
 import com.google.gson.Gson
+import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -107,7 +108,9 @@ class CompanionAppRepository(private val context: Context) {
         val msgUid: String,     // Inherits the UID of the msgType
         val t: String,          // timestamp millis epoch string
         val src: String,        // source (default to wearos)
-        val payload: T
+        val payload: T,
+        @SerializedName("request_id")
+        val requestId: String? = null
     )
 
     sealed class OutboundCotEvent {
@@ -403,11 +406,34 @@ class CompanionAppRepository(private val context: Context) {
         val msg_type: String? = null,
 
         @SerializedName("msgType")
-        val msgType: String? = null
+        val msgType: String? = null,
+
+        @SerializedName("request_id")
+        val requestId: String? = null,
+
+        @SerializedName("t")
+        val timestamp: String? = null,
+
+        @SerializedName("payload")
+        val payload: JsonElement? = null
     ) {
         // Single accessor used everywhere else
         val type: String
             get() = msg_type ?: msgType ?: ""
+    }
+
+    data class PongPayload(val ok: Boolean = true)
+
+    fun buildPongEnvelope(requestId: String?): Envelope<PongPayload> {
+        return Envelope(
+            vers = 1,
+            msgType = "pong",
+            msgUid = requestId ?: UUID.randomUUID().toString(),
+            t = Utils.timeNowIsoUtc(),
+            src = "wearos",
+            payload = PongPayload(),
+            requestId = requestId
+        )
     }
     data class SetSettingsMessage(
         @SerializedName("msg_type")

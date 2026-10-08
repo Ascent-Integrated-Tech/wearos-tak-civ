@@ -20,6 +20,7 @@ import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.COMPANION_SOURCE_ID
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -92,29 +93,34 @@ class ChatService : Service() {
         val timeMillis = req.timeMillis
         if (uid.isBlank() || title.isBlank() || message.isBlank()) return
 
-        val existingChatRoom = chatRoomMap[uid]
-        val room = when {
-            existingChatRoom != null -> existingChatRoom
-            seedRoomIfMissing -> ChatRoom(
-                uid = uid,
+        val sortedInbox = synchronized(chatRoomMap) {
+            val existingChatRoom = chatRoomMap[uid]
+            val room = when {
+                existingChatRoom != null -> existingChatRoom
+                seedRoomIfMissing -> ChatRoom(
+                    uid = uid,
+                    title = title,
+                    messageList = emptyList(),
+                    newMessagesPresent = false,
+                    timeLastOpened = timeMillis,
+                    timeLastClosed = timeMillis
+                )
+                else -> null
+            } ?: return
+            val mergedRoom = room.copy(
                 title = title,
-                messageList = emptyList(),
+                messageList = room.messageList + ChatMessage(
+                    message,
+                    MainActivity.device_uid,
+                    MainActivity.callsign,
+                    timeMillis
+                ),
                 newMessagesPresent = false,
-                timeLastOpened = timeMillis,
                 timeLastClosed = timeMillis
             )
-            else -> null
-        } ?: return
-
-        val mergedMessages = room.messageList + ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
-        val mergedRoom = room.copy(
-            title = title,
-            messageList = mergedMessages,
-            newMessagesPresent = false,
-            timeLastClosed = timeMillis
-        )
-        chatRoomMap[uid] = mergedRoom
-        val sortedInbox = chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+            chatRoomMap[uid] = mergedRoom
+            chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+        }
         publishInboxToRepo()
         logChatRooms(sortedInbox)
         dataRepository.sendChatMessage(uid, title, message, timeMillis)
@@ -129,13 +135,15 @@ class ChatService : Service() {
             timeLastClosed = 0L,
             timeLastOpened = 0L
         )
-        chatRoomMap[uid] = newChatRoom
+        synchronized(chatRoomMap) {
+            chatRoomMap[uid] = newChatRoom
+        }
         publishInboxToRepo()
         return newChatRoom
     }
 
     fun resolveChatRoom(uid: String, cs: String): ChatRoom {
-        val existingChatRoom = chatRoomMap[uid]
+        val existingChatRoom = synchronized(chatRoomMap) { chatRoomMap[uid] }
         return existingChatRoom ?: createChatRoom(uid, cs)
     }
 
@@ -199,36 +207,77 @@ class ChatService : Service() {
         Log.v(TAG, "Received TakChatEvent: ${event.rawXml}")
 
         // 2) Merge into in-memory inbox
-        incomingRooms.forEach { incoming ->
-            val existing = chatRoomMap[incoming.uid]
-            if (existing != null) {
-                // Append new messages, and only mark “new” if these messages truly weren’t already in list
-                val mergedMessages = existing.messageList + incoming.messageList
-                val hasNew = incoming.messageList.any { newMsg ->
-                    existing.messageList.none { it.timeReceived == newMsg.timeReceived }
+        val sortedInbox = synchronized(chatRoomMap) {
+            incomingRooms.forEach { incoming ->
+                val existing = chatRoomMap[incoming.uid]
+                if (existing != null) {
+                    // Append new messages, and only mark “new” if these messages truly weren’t already in list
+                    val mergedMessages = existing.messageList + incoming.messageList
+                    val hasNew = incoming.messageList.any { newMsg ->
+                        existing.messageList.none { it.timeReceived == newMsg.timeReceived }
+                    }
+                    val mergedRoom = existing.copy(
+                        messageList        = mergedMessages,
+                        newMessagesPresent = existing.newMessagesPresent || hasNew,
+                        timeLastOpened     = existing.timeLastOpened,
+                        timeLastClosed     = existing.timeLastClosed
+                    )
+                    chatRoomMap[incoming.uid] = mergedRoom
+                } else {
+                    // Brand‐new room → mark newMessagesPresent = true
+                    chatRoomMap[incoming.uid] = incoming.copy(newMessagesPresent = true)
                 }
-                val mergedRoom = existing.copy(
-                    messageList        = mergedMessages,
-                    newMessagesPresent = existing.newMessagesPresent || hasNew,
-                    timeLastOpened     = existing.timeLastOpened,
-                    timeLastClosed     = existing.timeLastClosed
-                )
-                chatRoomMap[incoming.uid] = mergedRoom
-            } else {
-                // Brand‐new room → mark newMessagesPresent = true
-                chatRoomMap[incoming.uid] = incoming.copy(newMessagesPresent = true)
             }
+            chatRoomMap.values
+                .sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
         }
 
         // 3) Sort & publish once
-        val sortedInbox = chatRoomMap.values
-            .sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
-
         // 4) Notify the data layer (updates per‐room booleans correctly)
         publishInboxToRepo()
 
         // 5) (Optional) log for debugging
         logChatRooms(sortedInbox)
+    }
+
+    fun ingestCompanionChat(
+        uid: String,
+        roomUid: String,
+        roomTitle: String,
+        message: String,
+        senderCallsign: String,
+        receivedAt: Long
+    ) {
+        if (uid.isBlank() || roomUid.isBlank() || message.isBlank()) return
+        serviceScope.launch {
+            val updatedRoom = synchronized(chatRoomMap) {
+                val room = chatRoomMap[roomUid] ?: ChatRoom(
+                    uid = roomUid,
+                    title = roomTitle,
+                    messageList = emptyList(),
+                    newMessagesPresent = false,
+                    timeLastOpened = 0L,
+                    timeLastClosed = 0L
+                ).also { chatRoomMap[roomUid] = it }
+                if (room.messageList.any { it.uid == uid }) {
+                    null
+                } else {
+                    room.copy(
+                        title = roomTitle.ifBlank { room.title },
+                        messageList = room.messageList + ChatMessage(
+                            message = message,
+                            uid = uid,
+                            callsign = senderCallsign,
+                            timeReceived = receivedAt,
+                    sourceServerId = COMPANION_SOURCE_ID
+                        ),
+                        newMessagesPresent = true
+                    ).also { chatRoomMap[roomUid] = it }
+                }
+            }
+            if (updatedRoom == null) return@launch
+            publishInboxToRepo()
+        }
     }
 
     private fun publishInboxToRepo() {
