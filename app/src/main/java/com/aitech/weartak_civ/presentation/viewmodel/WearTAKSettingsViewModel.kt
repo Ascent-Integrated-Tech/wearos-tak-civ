@@ -85,9 +85,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableAllWifiB
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatdokCot
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBatteryAlerts
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBetaFeatures
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundProximityVibration
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableCompanionAppService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDittoService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicReportingStrategy
@@ -1298,19 +1296,6 @@ fun displaySitxGroupDialog(
     //Alerting Preferences ^^^
 
     //Tool Preferences vvv
-    val savedEnableBloodhoundCompassService: StateFlow<Boolean> =
-        dataRepository.getEnableBloodhoundCompassService.stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5000),
-            initialValue = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
-        )
-
-    fun storeEnableBloodhoundCompassService(enable: Boolean) {
-        viewModelScope.launch {
-            dataRepository.storeEnableBloodhoundCompassService(enable)
-            enableBloodhoundCompassService = enable
-        }
-    }
     val savedEnableBloodhoundProximityVibration: StateFlow<Boolean> =
         dataRepository.getEnableBloodhoundProximityVibration.stateIn(
             scope = viewModelScope,

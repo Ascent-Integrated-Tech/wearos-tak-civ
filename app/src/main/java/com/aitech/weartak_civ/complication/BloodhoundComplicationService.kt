@@ -27,7 +27,6 @@ import com.aitech.weartak_civ.presentation.bloodhoundActiveComplication
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withRotation
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableBloodhoundCompassService
 
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
     companion object {
@@ -63,7 +62,6 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
         }
         return when (isLicenseValid()) {
             //TODO: WEAR-450 see if this updates
-            true -> return when (enableBloodhoundCompassService) {
                 true -> return when (active != null) {
                     true -> createComplicationData(
                         text = activeDistanceText,
@@ -99,14 +97,8 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
                     titleText = getString(R.string.compass_disabled),
                     needleOrientation.toFloat()
                 )
-            }
-            false -> createComplicationData(
-                getString(R.string.invalid_license), getString(R.string.invalid_license_key),
-                icon = R.drawable.disabled_compass,
-                image = bloodhoundActiveComplication(),
-                titleText = getString(R.string.invalid_license),
-                0F
-            )
+
+
             /*
             true -> return when (chatComplication) {
                 CHAT_DISABLED -> createComplicationData(

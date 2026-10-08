@@ -389,7 +389,6 @@ fun WearTAKSettingsNav(
     val enableHighAtmPressureAlert by settingsVm.savedEnableHighAtmPressureAlert.collectAsState()
     val highAtmPressureAlertThreshold by settingsVm.savedHighAtmPressureAlertThreshold.collectAsState()
 
-    val enableBloodhoundCompass by settingsVm.savedEnableBloodhoundCompassService.collectAsState()
     val enableBloodhoundProximityVibration by settingsVm.savedEnableBloodhoundProximityVibration.collectAsState()
     val bloodhoundProximityRadius by settingsVm.savedBloodhoundProximityRadiusMeters.collectAsState()
     val bloodhoundProximityIntensity by settingsVm.savedBloodhoundProximityIntensity.collectAsState()
@@ -2576,14 +2575,6 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.bloodhound_compass),
                 columnContent = {
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableBloodhoundCompass,
-                            onCheckedChange = { settingsVm.storeEnableBloodhoundCompassService(it) },
-                            title = stringResource(R.string.bloodhound_compass),
-                            description = stringResource(R.string.on_off)
-                        )
-                    }
                     item {
                         WearTAKToggleChip(
                             checkedLive = enableBloodhoundProximityVibration,
