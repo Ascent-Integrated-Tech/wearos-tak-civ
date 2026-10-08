@@ -2345,6 +2345,7 @@
       "description": "SpO2 WARN: N consecutive valid readings <= baseline-4% with upper-curve guard.",
       "when": {
         "all": [
+          { "gte_key": ["settings.physio.alerts_enabled", 1.0] },
           { "gte_key": ["spo2.tier_event_warn_edge", 0.5] },
           { "gte_key": ["offbody.on_wrist", 0.5] },
           { "lte_key": ["profile.spo2_active_baseline_provisional", 0.5] },
@@ -2373,6 +2374,7 @@
       "description": "SpO2 ALERT: N consecutive valid readings <90%.",
       "when": {
         "all": [
+          { "gte_key": ["settings.physio.alerts_enabled", 1.0] },
           { "gte_key": ["spo2.tier_event_alert_edge", 0.5] },
           { "gte_key": ["offbody.on_wrist", 0.5] },
           { "eq_key": ["activity.state", "STILL"] },
@@ -2402,6 +2404,7 @@
       "description": "SpO2 EMERGENCY: corroborated severe hypoxemia.",
       "when": {
         "all": [
+          { "gte_key": ["settings.physio.alerts_enabled", 1.0] },
           { "gte_key": ["spo2.tier_event_emergency_edge", 0.5] },
           { "gte_key": ["offbody.on_wrist", 0.5] },
           { "lte_key_fresh": ["spo2.pct", 88.0, 30] }

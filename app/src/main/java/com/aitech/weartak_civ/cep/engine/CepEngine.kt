@@ -704,7 +704,8 @@ class CepEngine(
             .filter { ruleId ->
                 ruleId.startsWith("hr_") ||
                     ruleId.startsWith("hrv_") ||
-                    ruleId.startsWith("exertion_")
+                    ruleId.startsWith("exertion_") ||
+                    ruleId.startsWith("spo2_")
             }
             .forEach { ruleId ->
                 clearActiveAlertByRuleId(
