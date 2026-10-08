@@ -259,6 +259,17 @@ fun BloodhoundCivApp(
         onRemoteEmergencyOpened()
     }
 
+    LaunchedEffect(remoteEmergencyUid) {
+        val uid = remoteEmergencyUid ?: return@LaunchedEffect
+        if (isLicenseValid()) {
+            navController.navigate("bloodhound_screen_detailed/${Uri.encode(uid)}") {
+                popUpTo("bloodhound_screen")
+                launchSingleTop = true
+            }
+        }
+        onRemoteEmergencyOpened()
+    }
+
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = if (isLicenseValid()) "bloodhound_screen" else "invalid_license_screen"

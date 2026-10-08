@@ -137,16 +137,8 @@ the unknown-position error sentinel is used when no fresh fix is available. Pend
 drain in order when a route becomes available, without requiring a network restart.
 
 Selecting a preset manual alert sends that exact alert immediately, without a separate
-Send tap. Custom text still uses Send. Alerts without an available route continue to use
-the existing pending-alert queue.
-
-Chat presets in the reply picker submit the selected text immediately to that conversation.
-Typed chat text still uses the existing compose-and-Send flow. The picker keeps the
-conversation UID so incoming list changes cannot redirect a preset to another recipient.
-
-The conversation screen also shows the same chat presets beneath the message history.
-Both locations share the preset-button component, `quickReplyOptions` list, and immediate
-send handler, so future preset or behavior changes apply to both.
+Send tap. Custom text still uses Send, and chat quick replies still append text without
+sending. Alerts without an available route continue to use the existing pending-alert queue.
 
 `WearTakApplication` initializes shared repositories and the CEP/plugin infrastructure. `DataRepository` is the main persistent state and settings hub, based on DataStore and Kotlin Flows. Newer components use Flow/StateFlow for reactive updates; some existing components communicate through EventBus.
 
