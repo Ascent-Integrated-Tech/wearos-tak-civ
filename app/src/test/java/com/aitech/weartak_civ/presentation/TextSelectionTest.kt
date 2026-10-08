@@ -25,7 +25,7 @@ class TextSelectionTest {
     }
 
     @Test
-    fun chatQuickReplyStillAppendsWithoutSubmitting() {
+    fun textPickerWithoutImmediateCallbackStillAppendsWithoutSubmitting() {
         assertEquals("Hello Roger", selectTextOption("Hello", "Roger", null))
         assertEquals(" Roger", selectTextOption("", "Roger", null))
     }
