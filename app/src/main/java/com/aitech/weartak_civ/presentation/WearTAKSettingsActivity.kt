@@ -1372,8 +1372,13 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.tak_server_connections),
                 {
-                    itemsIndexed(takServerList) { index, takServerItem ->
-                        var takServerChecked by remember { mutableStateOf(takServerItem.isEnabled) }
+                    itemsIndexed(
+                        takServerList.alphabetizedServerEntries { it.name },
+                        key = { _, entry -> entry.value.serverId ?: entry.index }
+                    ) { _, (index, takServerItem) ->
+                        var takServerChecked by remember(takServerItem.isEnabled) {
+                            mutableStateOf(takServerItem.isEnabled)
+                        }
                         val takServerStatus by settingsVm
                             .getTakServerStatus(index)
                             .observeAsState(initial = TAK_SERVER_DISCONNECTED_STRING)

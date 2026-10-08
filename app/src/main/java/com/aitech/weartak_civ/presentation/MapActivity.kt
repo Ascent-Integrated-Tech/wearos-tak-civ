@@ -1274,7 +1274,10 @@ fun LayerChannelsPopup(
                         .wrapContentHeight()
                         .heightIn(max = 200.dp)
                 ) {
-                    itemsIndexed(takServers) { index, serverItem ->
+                    itemsIndexed(
+                        takServers.alphabetizedServerEntries { it.serverName },
+                        key = { _, entry -> entry.value.serverId }
+                    ) { _, (_, serverItem) ->
                         val channelsVisible = remember(serverItem.serverId) { mutableStateOf(false) }
                         ServerDropdown(
                             label = serverItem.serverName,
