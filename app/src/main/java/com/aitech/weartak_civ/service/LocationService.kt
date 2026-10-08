@@ -27,6 +27,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -36,6 +37,8 @@ import com.aitech.weartak_civ.Utils.runTimerJob
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.startGlobalTimer
 import com.aitech.weartak_civ.events.LocationRcvd
+import com.aitech.weartak_civ.events.InteractionPliRefresh
+import com.aitech.weartak_civ.events.InteractionLocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.events.PowerManagerEvent.Companion.CHANGED_UPDATE_INTERVAL
@@ -50,6 +53,8 @@ import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -64,7 +69,78 @@ class LocationService : Service() {
     private val binder = LocationServiceBinder()
     private var handler: Handler? = null
 
-    private lateinit var usingPeriodicGpsCallback : AtomicBoolean
+    private var usingPeriodicGpsCallback = AtomicBoolean(false)
+    private val interactionScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val interactionHandler = Handler(Looper.getMainLooper())
+    private val interactionGate = InteractionPliRefreshGate()
+    private var interactionCallback: LocationCallback? = null
+    private val interactionTimeout = Runnable {
+        Log.i(TAG, "Interaction PLI refresh timed out without a usable fresh fix")
+        cancelInteractionRefresh()
+    }
+
+    private fun cancelInteractionRefresh() {
+        interactionHandler.removeCallbacks(interactionTimeout)
+        interactionCallback?.let { fusedLocationProviderClient?.removeLocationUpdates(it) }
+        interactionCallback = null
+        interactionGate.cancel()
+    }
+
+    @SuppressLint("MissingPermission")
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    fun onInteractionPliRefresh(event: InteractionPliRefresh) {
+        if (!isRunning.get()) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            Log.i(TAG, "Interaction PLI refresh denied: ${event.reason}, no location permission")
+            cancelInteractionRefresh()
+            return
+        }
+        Log.i(TAG, "Interaction PLI refresh requested: ${event.reason}")
+        if (!interactionGate.request(event.reason, SystemClock.elapsedRealtimeNanos())) return
+        val client = fusedLocationProviderClient ?: run {
+            Log.i(TAG, "Interaction PLI refresh unavailable: ${event.reason}; no fused location client")
+            cancelInteractionRefresh()
+            return
+        }
+        val callback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                if (interactionCallback !== this) return
+                val location = result.lastLocation ?: return
+                val reasons = interactionGate.consume(
+                    location.elapsedRealtimeNanos, SystemClock.elapsedRealtimeNanos(),
+                    InteractionPliRefreshGate.usable(location.latitude, location.longitude, location.accuracy, location.hasAccuracy())
+                        && location.time > 0 && location.altitude.isFinite()
+                ) ?: return
+                cancelInteractionRefresh()
+                interactionScope.launch {
+                    dataRepository.storeLatestLocation(location)
+                    Log.i(TAG, "Interaction PLI fresh fix received: $reasons")
+                    EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
+                }
+            }
+        }
+        interactionCallback = callback
+        interactionHandler.postDelayed(interactionTimeout, InteractionPliRefreshGate.TIMEOUT_MILLIS)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1_000L)
+            .setMinUpdateIntervalMillis(0L)
+            .setMaxUpdateAgeMillis(0L)
+            .setDurationMillis(InteractionPliRefreshGate.TIMEOUT_MILLIS)
+            .setWaitForAccurateLocation(true)
+            .build()
+        try {
+            client.requestLocationUpdates(request, callback, Looper.getMainLooper())
+                .addOnFailureListener {
+                    if (interactionCallback === callback) {
+                        Log.w(TAG, "Interaction PLI location request failed", it)
+                        cancelInteractionRefresh()
+                    }
+                }
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Interaction PLI permission revoked", e)
+            cancelInteractionRefresh()
+        }
+    }
     private lateinit var mPowerManager: PowerManager
     private var mWakeLock: PowerManager.WakeLock? = null
     //private var oneShotPrevLocationUpdateTime: Long = 0L // TODO: Only for testing/logging, should be removed in the future
@@ -334,6 +410,12 @@ class LocationService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         isRunning.set(false)
+        cancelInteractionRefresh()
+        interactionScope.cancel()
+        fusedLocationProviderClient?.removeLocationUpdates(oneShotLocationCallback)
+        if (mWakeLock?.isHeld == true) mWakeLock?.release()
+        mWakeLock = null
+        _instance = null
         stopPeriodicLocationUpdates()
         fusedLocationProviderClient = null
         destroyLocationThread()

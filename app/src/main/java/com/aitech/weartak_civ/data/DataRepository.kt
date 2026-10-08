@@ -179,6 +179,9 @@ import com.aitech.weartak_civ.manager.NetworkManager
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import org.greenrobot.eventbus.EventBus
+import com.aitech.weartak_civ.events.InteractionPliRefresh
+import com.aitech.weartak_civ.events.PliRefreshReason
 
 
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
@@ -983,8 +986,8 @@ class DataRepository(private val context: Context) {
         _restingHeartRate.emit(restHr)
     }
 
-    suspend fun snapshotLocation(): LocationSnapshot? {
-        val baseLoc = latestLocation.value ?: return null
+    suspend fun snapshotLocation(location: Location? = latestLocation.value): LocationSnapshot? {
+        val baseLoc = location ?: return null
 
         var latActual   = baseLoc.latitude
         var lonActual   = baseLoc.longitude
@@ -1149,14 +1152,21 @@ class DataRepository(private val context: Context) {
         val deviceId: String,       // MainActivity.device_uid
         val wearTakVersion: String, // gradle build vers #
         val reportIntSecs: Int,     // pli reporting rate
-        val systemStates: SystemStates
+        val systemStates: SystemStates,
+        val role: String = "Team Member",
+        val team: String = "Orange"
     )
 
     suspend fun snapshotSystem(): SystemSnapshot {
         val now = System.currentTimeMillis()
 
         val battery  = latestBatteryPercentage.value
-        val callsign = getCallsign.first()
+        val prefs = context.dataStore.data.first()
+        val callsign = prefs[CALLSIGN] ?: ""
+        val teamNames = (prefs[TEAM_NAMES] ?: "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown").split(",")
+        val teamColors = (prefs[TEAM_COLORS] ?: "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown").split(",")
+        val teamIndex = teamNames.indexOf(prefs[TEAM] ?: "Orange")
+        val team = teamColors.getOrNull(teamIndex) ?: teamColors.firstOrNull() ?: "Orange"
         val deviceId = MainActivity.device_uid
         val version  = MainActivity.versionNumber
         val interval = CotDispatchService.actualReportingIntervalSecs
@@ -1168,7 +1178,9 @@ class DataRepository(private val context: Context) {
             deviceId = deviceId,
             wearTakVersion = version,
             reportIntSecs = interval,
-            systemStates = snapshotSystemStates()
+            systemStates = snapshotSystemStates(),
+            role = prefs[SELECTED_ROLE] ?: "Team Member",
+            team = team
         )
     }
 
@@ -1288,6 +1300,15 @@ class DataRepository(private val context: Context) {
         )
     }
 
+    suspend fun snapshotInteractionPli(location: Location): PliSnapshot =
+        snapshotPli().copy(
+            loc = snapshotLocation(location),
+            time = CotEventTimeFactory.at(
+                location.time,
+                staleOffset = CotTimeOffset(seconds = 3 * almightyReportingIntervalSecs.value)
+            )
+        )
+
     // This is the data class for both physio alerts and manual alerts that the backend adds to and clears.
     // This is a custom TAK emergency (911) alert as we change the description of the 911 alert sent to TAK
     data class CustomEmergencyAlert(
@@ -1378,18 +1399,22 @@ class DataRepository(private val context: Context) {
 
     suspend fun addManualAlertRequest(alertState: AlertState, category: String, description: String, timeMillis: Long) {
         _addManualAlert.emit(ManualAlertRequest(alertState, category, description, timeMillis))
+        requestInteractionPliRefresh(if (alertState == AlertState.CANCEL) PliRefreshReason.MANUAL_ALERT_CLEARED else PliRefreshReason.MANUAL_ALERT_ACTIVATED)
     }
 
     suspend fun clearManualAlertRequestUid(uid: String) {
         _clearManualAlert.emit(ClearRequest.Specific(uid))
+        requestInteractionPliRefresh(PliRefreshReason.MANUAL_ALERT_CLEARED)
     }
 
     suspend fun clearManualAlertRequestLast() {
         _clearManualAlert.emit(ClearRequest.Last)
+        requestInteractionPliRefresh(PliRefreshReason.MANUAL_ALERT_CLEARED)
     }
 
     suspend fun clearManualAlertRequestAll() {
         _clearManualAlert.emit(ClearRequest.All)
+        requestInteractionPliRefresh(PliRefreshReason.MANUAL_ALERT_CLEARED)
     }
 
     private val _physioAndAutoGenAlertList = MutableStateFlow<List<CustomEmergencyAlert>>(emptyList())
@@ -1445,6 +1470,7 @@ class DataRepository(private val context: Context) {
                 "sendSms=$sendSms subscriptionCount=${_addPhysioAndAutoGenAlert.subscriptionCount.value}",
         )
         _addPhysioAndAutoGenAlert.emit(PhysioAndAutoGenAlertRequest(uid, AlertState.ALERT, category, description, priority, sendSms, timeMillis))
+        requestInteractionPliRefresh(PliRefreshReason.PHYSIO_ALERT_ACTIVATED)
         Log.i(
             TAG,
             "addPhysioAndAutoGenAlertRequest emit complete uid=$uid category=$category priority=$priority " +
@@ -1454,14 +1480,17 @@ class DataRepository(private val context: Context) {
 
     suspend fun clearPhysioAndAutoGenAlertRequestUid(uid: String) {
         _clearPhysioAndAutoGenAlert.emit(ClearRequest.Specific(uid))
+        requestInteractionPliRefresh(PliRefreshReason.PHYSIO_ALERT_CLEARED)
     }
 
     suspend fun clearPhysioAndAutoGenAlertRequestLast() {
         _clearPhysioAndAutoGenAlert.emit(ClearRequest.Last)
+        requestInteractionPliRefresh(PliRefreshReason.PHYSIO_ALERT_CLEARED)
     }
 
     suspend fun clearPhysioAndAutoGenAlertRequestAll() {
         _clearPhysioAndAutoGenAlert.emit(ClearRequest.All)
+        requestInteractionPliRefresh(PliRefreshReason.PHYSIO_ALERT_CLEARED)
     }
 
     data class ReceivedUser(
@@ -2124,9 +2153,12 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeCallsign(callsign: String) {
+        var changed = false
         context.dataStore.edit { prefs ->
+            changed = (prefs[CALLSIGN] ?: "") != callsign
             prefs[CALLSIGN] = callsign
         }
+        if (changed) requestInteractionPliRefresh(PliRefreshReason.CALLSIGN_CHANGED)
     }
 
     suspend fun storeTeamNames(teamNames: String) {
@@ -2200,9 +2232,12 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeTeam(team: String) {
+        var changed = false
         context.dataStore.edit { prefs ->
+            changed = (prefs[TEAM] ?: "Orange") != team
             prefs[TEAM] = team
         }
+        if (changed) requestInteractionPliRefresh(PliRefreshReason.TEAM_CHANGED)
     }
 
     val getRole: Flow<String> = context.dataStore.data.map { prefs ->
@@ -2210,9 +2245,12 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeRole(role: String) {
+        var changed = false
         context.dataStore.edit { prefs ->
+            changed = (prefs[SELECTED_ROLE] ?: "Team Member") != role
             prefs[SELECTED_ROLE] = role
         }
+        if (changed) requestInteractionPliRefresh(PliRefreshReason.ROLE_CHANGED)
     }
 
     val getLicense: Flow<String> = context.dataStore.data.map { prefs ->
@@ -2713,6 +2751,11 @@ class DataRepository(private val context: Context) {
 
     suspend fun sendChatMessage(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
         _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
+        requestInteractionPliRefresh(PliRefreshReason.CHAT_SENT)
+    }
+
+    fun requestInteractionPliRefresh(reason: PliRefreshReason) {
+        EventBus.getDefault().post(InteractionPliRefresh(reason))
     }
 
     enum class Endpoint { TAK_SERVER, DITTO, COMPANION_APP, SITX, MULTICAST }

@@ -56,6 +56,32 @@ The app requests permissions at runtime. On a physical device, grant only the pe
 
 ## Configuration and operation
 
+### WEARTAK-66: Interaction-triggered PLI refresh and identity updates
+
+Changing callsign, team, or role (but not saving the same value), opening/resuming the map,
+sending chat, and activating or clearing manual/physiological alerts request a new watch
+location and then rebroadcast own PLI through the existing configured dispatcher, including
+the companion when available. Alerts (including cancellations) and chat retain their
+baseline send/queue behavior: existing alert location-freshness protections are unchanged,
+and the additional PLI request adds no new waiting to those messages. A qualifying new
+interaction fix also releases queued alerts using the existing dispatcher. The separate
+extra PLI requires a new fix.
+
+Identity changes also publish promptly using an already-usable watch fix no more than
+3 seconds old, if one exists. Settings saved together coalesce over 150 milliseconds,
+and PLI contains the latest persisted callsign, role, and team. This fast identity
+announcement keeps the original fix timestamp; it does not pretend the position was
+just measured. A concurrent new GPS request still publishes a qualifying new fix.
+Without an already-fresh fix, identity publication waits for GPS (up to the bounded
+request timeout), not the periodic reporting interval.
+
+Overlapping interactions share a high-accuracy acquisition bounded to 15 seconds. The fix
+must be usable and measured after the latest interaction; cached coordinates are not
+re-stamped as a fresh fix. PLI uses persisted identity and is sent as soon as a qualifying
+fix arrives, not literally instantly. Missing permission, provider failure, or no fix ends
+the refresh without sending an extra PLI. This does not change periodic reporting,
+reconnect behavior, or enable services/transports that are disabled.
+
 Configure the TAK endpoint and identity/certificates in the app before attempting to connect. Service enablement is persisted in `DataRepository` and centrally evaluated by `ReactiveServiceManager` and `ServiceConfiguration`; a service will run only when its setting, permissions, and prerequisite conditions are satisfied.
 
 The app starts essential behavior through its application/bootstrap receivers and coordinates most long-running work as foreground services. This is intentional: direct TAK connectivity, location tracking, sensor collection, and optional integrations are service-driven rather than tied to a single UI screen.
@@ -129,4 +155,3 @@ Unlimited Rights granted to TPC
 Keep changes focused and validate them with the narrowest relevant Gradle task or test. When adding or changing a service, account for its manifest declaration, permission requirements, persisted enablement, and registration with the service orchestration layer.
 
 ### Point of Contact: Alex Gorsuch on chat.tak.gov or Signal
-
