@@ -27,6 +27,7 @@ interface TakServerCotSink {
     suspend fun onGeofence(geofence: GeofenceCot)
     suspend fun onUser(event: CotUserPositionEvent, envelope: TakServerCotEnvelope)
     suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope)
+    suspend fun onEmergency(event: CotEmergencyEvent, envelope: TakServerCotEnvelope) = Unit
     suspend fun onChannelChanged(envelope: TakServerCotEnvelope) = Unit
 }
 
@@ -35,6 +36,7 @@ enum class TakServerCotIngestResult {
     GEOFENCE,
     USER,
     MARKER,
+    EMERGENCY,
     CHANNEL_CHANGED,
     UNSUPPORTED,
     MALFORMED
@@ -115,6 +117,21 @@ class TakServerCotIngestor(
         if (CotMessageParser.eventTypeOrNull(rawXml) == CHANNEL_CHANGE_EVENT_TYPE) {
             sink.onChannelChanged(envelope)
             return TakServerCotIngestResult.CHANNEL_CHANGED
+        }
+
+        if (CotMessageParser.eventTypeOrNull(rawXml)?.let(CotMessageParser::isEmergencyType) == true) {
+            val event = CotMessageParser.parseEmergencyOrNull(rawXml)
+            if (event == null) {
+                logger("Skipping malformed emergency CoT source=${envelope.sourceServerId}", null)
+                return TakServerCotIngestResult.MALFORMED
+            }
+            logger(
+                "Emergency ingress uid=${event.uid} source=${envelope.sourceServerId} " +
+                    "cancelled=${event.cancelled} hasLocation=${event.hasLocation} time=${event.time} stale=${event.stale}",
+                null
+            )
+            if (!event.isFrom(deviceUid())) sink.onEmergency(event, envelope)
+            return TakServerCotIngestResult.EMERGENCY
         }
 
         CotMessageParser.parseUserPositionOrNull(rawXml)?.let { event ->

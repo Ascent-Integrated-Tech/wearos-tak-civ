@@ -17,6 +17,8 @@ import android.os.Binder
 import android.util.Log
 import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.cot.CotMessageParser
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.sendDataTAKServers
@@ -141,6 +143,20 @@ class WearTakCotIpcService : Service() {
         }
         logIncomingPayloadPreview(route, size, callingUid, callerLabel, cotXml)
         logIncomingPayloadFull(route, callingUid, callerLabel, cotXml)
+        if (CotMessageParser.eventTypeOrNull(cotXml)?.let(CotMessageParser::isEmergencyType) == true) {
+            val event = CotMessageParser.parseEmergencyOrNull(cotXml)
+            if (event == null) {
+                Log.w(AtosIpcConstants.LOG_TAG, "Malformed emergency CoT callerUid=$callingUid")
+            } else {
+                serviceScope.launch {
+                    (applicationContext as WearTakApplication).bhRepo.applyEmergencyEvent(
+                        event, "Companion", sourceServerId = "companion:$callingUid",
+                        deviceUid = device_uid
+                    )
+                }
+            }
+            return
+        }
         val result = try {
             AtosCotParser.parse(cotXml)
         } catch (t: Throwable) {

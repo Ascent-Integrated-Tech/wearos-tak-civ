@@ -971,6 +971,20 @@ class SitxTakService : Service() {
                 }
             }
         } else {
+            if (CotMessageParser.eventTypeOrNull(rawXml)?.let(CotMessageParser::isEmergencyType) == true) {
+                val event = CotMessageParser.parseEmergencyOrNull(rawXml)
+                if (event == null) {
+                    Log.w(TAG, "Malformed emergency CoT source=SITX:$flowTag")
+                } else {
+                    serviceScope.launch {
+                        bhRepo.applyEmergencyEvent(
+                            event, flowTag, sourceServerId = "sitx:$flowTag",
+                            deviceUid = MainActivity.device_uid
+                        )
+                    }
+                }
+                return
+            }
             val userPositionCotEvent = CotMessageParser.parseUserPositionOrNull(rawXml)
             if (userPositionCotEvent != null) {
                 //TODO: WEAR-494: Move this to data repo

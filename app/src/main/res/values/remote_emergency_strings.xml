@@ -1,0 +1,10 @@
+<resources>
+    <string name="remote_emergency_alert">Remote emergency</string>
+    <string name="remote_emergency_no_location">Location unavailable. Navigation is disabled.</string>
+    <string name="remote_emergency_description">Emergency: %1$s</string>
+    <string name="remote_emergency_stale">Stale</string>
+    <string name="remote_emergency_dismiss">Dismiss locally</string>
+    <string name="remote_emergency_bloodhound_to_alert">Bloodhound to Alert</string>
+    <string name="remote_emergency_stale_category">Stale: %1$s</string>
+    <string name="remote_emergency_stale_location">Stale: last-known location. The sender has not refreshed this alert.</string>
+</resources>

@@ -591,7 +591,8 @@ fun TextSelectionScreen(
     confirmedText: MutableLiveData<String>,
     titleText: String,
     onConfirm: () -> Unit,
-    onCancel: () -> Unit ){
+    onCancel: () -> Unit,
+    onOptionSelected: ((String) -> Unit)? = null ){
 
     var replyTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(
@@ -676,9 +677,14 @@ fun TextSelectionScreen(
                     items(buttonOptions) { replyOption ->
                         Button(
                             onClick = {
+                                val selectedText = selectTextOption(
+                                    replyTextFieldValue.text,
+                                    replyOption.longText,
+                                    onOptionSelected
+                                )
                                 replyTextFieldValue = TextFieldValue(
-                                    text = replyTextFieldValue.text + " " + replyOption.longText,
-                                    selection = TextRange((replyTextFieldValue.text + " " + replyOption.longText).length)
+                                    text = selectedText,
+                                    selection = TextRange(selectedText.length)
                                 )
                             },
                             colors = ButtonDefaults.buttonColors(
@@ -710,6 +716,16 @@ fun TextSelectionScreen(
         onClickCancel = { onCancel() },
     )
 
+}
+
+internal fun selectTextOption(
+    currentText: String,
+    optionText: String,
+    onOptionSelected: ((String) -> Unit)?
+): String {
+    if (onOptionSelected == null) return "$currentText $optionText"
+    onOptionSelected(optionText)
+    return optionText
 }
 
 fun utcToHoursMinutes(time: Long): String {

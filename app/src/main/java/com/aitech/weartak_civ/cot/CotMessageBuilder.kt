@@ -82,14 +82,24 @@ object CotMessageBuilder {
     }
 
     fun emergency(snapshot: DataRepository.EmergencyEventSnapshot): String {
-        val location = snapshot.location
-        val ce = normalizedError(location?.ce)
-        val le = normalizedError(location?.le)
-        val point = listOf(
-            "lat" to (location?.lat ?: 0.0), "lon" to (location?.lon ?: 0.0), "hae" to (location?.hae ?: 0.0),
-            "ce" to ce, "le" to le,
-        )
+        val location = snapshot.location?.takeIf {
+            it.lat.isFinite() && it.lat in -90.0..90.0 &&
+                it.lon.isFinite() && it.lon in -180.0..180.0
+        }
+        val point = if (location == null) {
+            listOf(
+                "lat" to 0.0, "lon" to 0.0, "hae" to 0.0,
+                "ce" to UNKNOWN_LOCATION_ERROR_METERS, "le" to UNKNOWN_LOCATION_ERROR_METERS,
+            )
+        } else {
+            listOf(
+                "lat" to location.lat, "lon" to location.lon,
+                "hae" to (location.hae?.takeIf { it.isFinite() } ?: 0.0),
+                "ce" to normalizedError(location.ce), "le" to normalizedError(location.le),
+            )
+        }
         val physio = snapshot.physio?.data
+        val standardType = StandardEmergencyType.fromDisplayName(snapshot.description)
         val alertBiometrics = CotXml.element(
             "biometrics",
             listOf(
@@ -112,11 +122,18 @@ object CotMessageBuilder {
         } else {
             alertBiometrics + CotXml.element("link", listOf("uid" to snapshot.system.deviceId, "type" to "a-f-G-U-C", "relation" to "p-p")) +
                     CotXml.element("contact", listOf("callsign" to "${snapshot.system.callsign}&#10;${snapshot.description}")) +
-                    CotXml.element("emergency", listOf("type" to snapshot.description), snapshot.system.callsign) +
+                    CotXml.element(
+                        "emergency",
+                        listOf("type" to (standardType?.cotDescription ?: snapshot.description)),
+                        snapshot.system.callsign
+                    ) +
                     CotXml.element("usericon", listOf("iconsetpath" to "911 Alert")) +
                     CotXml.element("color", listOf("argb" to "-1"))
         }
-        val type = if (snapshot.alertState == DataRepository.AlertState.CANCEL) "b-a-o-can" else "b-a-o"
+        val type = when {
+            snapshot.alertState == DataRepository.AlertState.CANCEL -> "b-a-o-can"
+            else -> standardType?.cotType ?: "b-a-o"
+        }
         return CotXml.event(listOf(
             "version" to "2.0", "uid" to snapshot.uid, "type" to type, "time" to snapshot.time.startCot,
             "start" to snapshot.time.startCot, "stale" to snapshot.time.staleCot, "how" to "h-e", "access" to "Undefined",
@@ -198,6 +215,8 @@ object CotMessageBuilder {
         }
     }
 
-    private fun normalizedError(value: Float?, fallback: Float = 9_999_999f): Float =
-        value?.takeUnless { it.isNaN() } ?: fallback
+    private fun normalizedError(value: Float?, fallback: Float = UNKNOWN_LOCATION_ERROR_METERS): Float =
+        value?.takeIf { it.isFinite() && it >= 0f } ?: fallback
+
+    private const val UNKNOWN_LOCATION_ERROR_METERS = 9_999_999f
 }

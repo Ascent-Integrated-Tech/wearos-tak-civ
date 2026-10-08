@@ -61,4 +61,34 @@ class CotDispatchPolicyTest {
             ),
         )
     }
+
+    @Test
+    fun emergencyRouteIsReadyForLicensedMulticastAloneAndNotForDisconnectedEndpoints() {
+        assertEquals(
+            listOf(CotRoute.MULTICAST),
+            CotDispatchPolicy.routesFor(
+                CotMessageKind.EMERGENCY,
+                CotEndpointAvailability(
+                    tak = false,
+                    sitx = false,
+                    ditto = false,
+                    multicast = true,
+                    companion = false,
+                ),
+            ),
+        )
+        assertEquals(
+            emptyList<CotRoute>(),
+            CotDispatchPolicy.routesFor(
+                CotMessageKind.EMERGENCY,
+                CotEndpointAvailability(
+                    tak = false,
+                    sitx = false,
+                    ditto = false,
+                    multicast = false,
+                    companion = false,
+                ),
+            ),
+        )
+    }
 }
