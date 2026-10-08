@@ -2485,7 +2485,6 @@ fun MainScreen(
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
-    val chatCheckedLive by settingsVm.savedEnableChatService.collectAsState()
     val bloodhoundCheckedLive by settingsVm.savedEnableBloodhoundCompassService.collectAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
     val activeItem by bhRepo.activeBhItemUi.collectAsState()
@@ -2577,35 +2576,24 @@ fun MainScreen(
                                 disabledContentColor = Color.Gray,
                                 disabledContainerColor = Color.Black
                             ),
-                            enabled = if (chatCheckedLive == true) true else false
                         ) {
-                            if (chatCheckedLive == true) {
-                                if (hasUnreadMessages) {
-                                    requestChatComplicationUpdate(context)
-                                    Icon(
-                                        painter = painterResource(R.drawable.chat_newmessage),
-                                        contentDescription = "Favorite icon",
-                                        tint = Color.Unspecified,
-                                        modifier = Modifier.size(25.dp),
-                                    )
-                                } else {
-                                    requestChatComplicationUpdate(context)
-                                    Icon(
-                                        painter = painterResource(R.drawable.chat_nomessage),
-                                        contentDescription = "Favorite icon",
-                                        tint = Color.Unspecified,
-                                        modifier = Modifier.size(25.dp),
-                                    )
-                                }
-                        } else {
+                            if (hasUnreadMessages) {
+                                requestChatComplicationUpdate(context)
+                                Icon(
+                                    painter = painterResource(R.drawable.chat_newmessage),
+                                    contentDescription = "Favorite icon",
+                                    tint = Color.Unspecified,
+                                    modifier = Modifier.size(25.dp),
+                                )
+                            } else {
                                 requestChatComplicationUpdate(context)
                                 Icon(
                                     painter = painterResource(R.drawable.chat_nomessage),
                                     contentDescription = "Favorite icon",
-                                    tint = Color.DarkGray,
+                                    tint = Color.Unspecified,
                                     modifier = Modifier.size(25.dp),
                                 )
-                            }
+                        }
                         }
                         Spacer(
                             modifier = Modifier.width(10.dp)
