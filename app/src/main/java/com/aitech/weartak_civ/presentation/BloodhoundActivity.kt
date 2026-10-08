@@ -187,8 +187,6 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
 
-    val bloodhoundEnabledLive by settingsVm.savedEnableBloodhoundCompassService.collectAsState()
-
     LaunchedEffect(Unit) {
         dataRepository.bloodhoundUiCommands.collectLatest { command ->
             when (command) {
@@ -212,20 +210,15 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
         val currentDestination = navController.currentBackStackEntry?.destination?.route
         val isValid = isLicenseValid()
 
-        Log.i(TAG, "isValid: $isValid, currentDest: $currentDestination, chatEnabledLive: $bloodhoundEnabledLive")
+        Log.i(TAG, "isValid: $isValid, currentDest: $currentDestination")
         when {
             !isValid && currentDestination != "invalid_license_screen" -> {
                 context.startActivity(Intent(context, WearTAKSettingsActivity::class.java))
                 exitActivity()
             }
-            isValid && bloodhoundEnabledLive == true && currentDestination != "bloodhound_screen" -> {
+            isValid && currentDestination != "bloodhound_screen" -> {
                 navController.navigate("bloodhound_screen") {
                     popUpTo(0) { inclusive = true } // clears the back stack
-                }
-            }
-            isValid && bloodhoundEnabledLive == false && currentDestination != "bloodhound_disabled_screen" -> {
-                navController.navigate("bloodhound_disabled_screen") {
-                    popUpTo(0) { inclusive = true }
                 }
             }
         }
@@ -237,16 +230,6 @@ fun BloodhoundCivApp(exitActivity: () -> Unit, context: Context, settingsVm: Wea
     ) {
         composable("bloodhound_screen" ) {
             BloodhoundScreen(bloodhounds = uiList, navController, exitActivity, context)
-        }
-
-        composable("bloodhound_disabled_screen") {
-//            ChatDisabledScreen(navController, exitActivity)
-            ActivityDisabledScreen(
-                navController,
-                exitActivity,
-                stringResource(R.string.bloodhound_disabled),
-                "Please enable Chat in order to use this feature"
-            )
         }
 
         composable(

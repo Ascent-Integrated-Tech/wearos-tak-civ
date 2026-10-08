@@ -197,9 +197,7 @@ import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
 import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
 import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_CRM_POOR_MAX_THRESHOLD
-import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
-import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DYNAMIC_REPORTING
@@ -285,7 +283,6 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import java.util.EnumMap
 import com.aitech.weartak_civ.data.model.PressureReading
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableChatService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
@@ -329,11 +326,9 @@ class MainActivity : ComponentActivity() {
         var enableSkinTempService: Boolean = DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE
         var enableDittoService : Boolean = DEFAULT_ENABLE_DITTO_SERVICE
         var enableCompanionAppService: Boolean = DEFAULT_ENABLE_COMPANION_APP_SERVICE
-        var enableBloodhoundCompassService : Boolean = DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
         var enableBloodhoundProximityVibration: Boolean = DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
         var bloodhoundProximityRadiusMeters: Int = DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
         var bloodhoundProximityIntensity: String = DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
-        var enableChatService : Boolean =  DEFAULT_ENABLE_CHAT_SERVICE
         var enableBatteryAlerts: Boolean = DEFAULT_ENABLE_BATTERY_ALERTS
         var enableHailService: Boolean = DEFAULT_ENABLE_HAIL_SERVICE
         var enableBatdokCot: Boolean = DEFAULT_ENABLE_BATDOK_COT
@@ -797,13 +792,11 @@ class MainActivity : ComponentActivity() {
             enableHighAtmPressureAlert     = dataRepository.getEnableHighAtmPressureAlert.first()
             enableDittoService             = dataRepository.getEnableDittoService.first()
             enableCompanionAppService      = dataRepository.getEnableCompanionAppService.first()
-            enableChatService              = dataRepository.getEnableChatService.first()
             enableBatteryAlerts            = dataRepository.getEnableBatteryAlerts.first()
             enableHailService              = dataRepository.getEnableHailService.first()
             enableSitxService              = dataRepository.getEnableSitxService.first()
             enableBatdokCot                = dataRepository.getEnableBatdokCot.first()
             enableMulticastOnWifi          = dataRepository.getEnableMulticast.first()
-            enableBloodhoundCompassService = dataRepository.getEnableBloodhoundCompassService.first()
             enableBloodhoundProximityVibration = dataRepository.getEnableBloodhoundProximityVibration.first()
             bloodhoundProximityRadiusMeters = dataRepository.getBloodhoundProximityRadiusMeters.first()
             bloodhoundProximityIntensity = dataRepository.getBloodhoundProximityIntensity.first()
@@ -1009,8 +1002,6 @@ class MainActivity : ComponentActivity() {
                     ${String.format("%-25s %-30s", "Enable SMS For Alerts:", enableSmsForAlerts.toString())}
                     ${String.format("%-25s %-30s", "SMS Numbers:", smsNumbersList.toString())}
                     ${String.format("%-25s %-30s", "Selected Physio Metric:", selectedPhysioMetric)}
-                    ${String.format("%-25s %-30s", "Enable Chat:", enableChatService.toString())}
-                    ${String.format("%-25s %-30s", "Enable Bloodhound:", enableBloodhoundCompassService.toString())}
                     ${String.format("%-25s %-30s", "Enable Bloodhound Proximity Vibration:", enableBloodhoundProximityVibration.toString())}
                     ${String.format("%-25s %-30s", "Bloodhound Proximity Radius (m):", bloodhoundProximityRadiusMeters.toString())}
                     ${String.format("%-25s %-30s", "Bloodhound Proximity Vibration Intensity:", bloodhoundProximityIntensity)}
@@ -1560,8 +1551,6 @@ class MainActivity : ComponentActivity() {
         localMap[ServiceType.SKIN_TEMP]  = enableSkinTempService
         localMap[ServiceType.DITTO]      = enableDittoService
         localMap[ServiceType.COMPANION_APP] = enableCompanionAppService
-        localMap[ServiceType.CHAT]       = enableChatService
-        localMap[ServiceType.BLOOD_HOUND] = enableBloodhoundCompassService
         localMap[ServiceType.BLE_BEACON] = enableBleBeaconService
         localMap[ServiceType.HAIL]        = enableHailService
         localMap[ServiceType.GEOFENCE] = enableGeofenceService
@@ -1589,9 +1578,6 @@ class MainActivity : ComponentActivity() {
             appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
         val enableDittoServiceConfigUpdate =
             appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
-        val enableChatServiceConfigUpdate =
-            appRestrictions.getBoolean("chat_service_enabled", enableChatService)
-        val enableBloodhoundCompassConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_compass", enableBloodhoundCompassService)
         val enableBloodhoundProximityVibrationConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_proximity_vibration", enableBloodhoundProximityVibration)
         val bloodhoundProximityRadiusMetersConfigUpdate = appRestrictions.getInt("bloodhound_proximity_radius_meters", bloodhoundProximityRadiusMeters)
         val bloodhoundProximityIntensityConfigUpdate = appRestrictions.getString("bloodhound_proximity_intensity", bloodhoundProximityIntensity) ?: bloodhoundProximityIntensity
@@ -1614,7 +1600,6 @@ class MainActivity : ComponentActivity() {
         cfgUpdateMap[ServiceType.ACTIVITY_RECOGNITION] = enableActivityRecognitionServiceConfigUpdate
         cfgUpdateMap[ServiceType.SKIN_TEMP] = enableSkinTempServiceConfigUpdate
         cfgUpdateMap[ServiceType.DITTO] = enableDittoServiceConfigUpdate
-        cfgUpdateMap[ServiceType.CHAT] = enableChatServiceConfigUpdate
         cfgUpdateMap[ServiceType.BLE_BEACON] = enableBleBeaconServiceConfigUpdate
         cfgUpdateMap[ServiceType.HAIL]       = enableHailServiceConfigUpdate
         cfgUpdateMap[ServiceType.SITX_SERVICE] = enableSitxServiceConfigUpdate
@@ -1931,8 +1916,6 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeLowAtmPressureAlertThreshold(lowAtmPressureAlertThresholdConfigUpdate)
             dataRepository.storeEnableHighAtmPressureAlert(enableHighAtmPressureAlertConfigUpdate)
             dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThresholdConfigUpdate)
-            dataRepository.storeEnableChatService(enableChatServiceConfigUpdate)
-            dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassConfigUpdate)
             dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibrationConfigUpdate)
             dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMetersConfigUpdate)
             dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensityConfigUpdate)
@@ -2085,18 +2068,6 @@ class MainActivity : ComponentActivity() {
                 if (!calledOnCreate) dataRepository.getEnableMovementDetectionService.emit(
                     enableDynamicReportingStrategy
                 )
-            }
-            if (enableChatServiceConfigUpdate != enableChatService) {
-                enableChatService = enableChatServiceConfigUpdate
-                Log.d(TAG, "enableChatService=$enableChatService")
-                if (!calledOnCreate) {
-                    dataRepository.storeEnableChatService(enableChatService)
-                }
-            }
-            if (enableBloodhoundCompassConfigUpdate != enableBloodhoundCompassService) {
-                enableBloodhoundCompassService = enableBloodhoundCompassConfigUpdate
-                Log.d(TAG, "enableBloodhoundCompassService=$enableBloodhoundCompassService")
-                if (!calledOnCreate) dataRepository.storeEnableBloodhoundCompassService(enableBloodhoundCompassService)
             }
             if (enableBloodhoundProximityVibrationConfigUpdate != enableBloodhoundProximityVibration) {
                 enableBloodhoundProximityVibration = enableBloodhoundProximityVibrationConfigUpdate
@@ -2484,7 +2455,6 @@ fun MainScreen(
     //Log.d(TAG, "MainScreen called")
     val dismissState = rememberSwipeToDismissBoxState()
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
-    val bloodhoundCheckedLive by settingsVm.savedEnableBloodhoundCompassService.collectAsState()
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
     val activeItem by bhRepo.activeBhItemUi.collectAsState()
 
@@ -2606,7 +2576,7 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ){
-                        BloodhoundButton(context, activeItem, bloodhoundCheckedLive)
+                        BloodhoundButton(context, activeItem)
                         Spacer(modifier = Modifier.width(5.dp))
                         FilledIconButton(
                             onClick ={ context.startActivity(Intent(context, MapActivity::class.java)) },
@@ -3005,7 +2975,7 @@ fun overallComplicationString(context: Context): String {
 
 fun chatComplicationString() {
 //TODO: WEAR-450: See if this updates
-    if (enableChatService == true) {
+
         var hasUnreadMessages = false
         runBlocking {
             hasUnreadMessages = dataRepository.hasUnread.first()
@@ -3015,9 +2985,6 @@ fun chatComplicationString() {
         } else {
             chatComplication = CHAT_ENABLED_NO_NEW_MESSAGE
         }
-    } else {
-        chatComplication = CHAT_DISABLED
-    }
 }
 
 @Composable
@@ -3290,7 +3257,7 @@ fun bloodhoundActiveComplication(): Int {
 }
 
 @Composable
-fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodhoundChecked: Boolean?){
+fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
     val northBearing by dataRepository.azimuthTrueDegSmoothed.collectAsState()
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
@@ -3308,20 +3275,11 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
         modifier = Modifier
             .clickable(
                 onClick = {
-                    if (bloodhoundChecked == true) {
-                        context.startActivity(Intent(context, BloodhoundActivity::class.java))
-                    } else {
-                        Toast.makeText(
-                            context,
-                            "Bloodhound is disabled. Please enable it in Settings.",
-                            Toast.LENGTH_SHORT
-                        ).show()
-                    }
+                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
                 })
             .widthIn(max = 115.dp),
 //        verticalAlignment = Alignment.CenterVertically
     ){
-     if (bloodhoundChecked == true) {
          if (hasUnreadBloodhound) {
              requestBloodhoundComplicationUpdate(context)
              Image(
@@ -3334,10 +3292,8 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
          } else {
              requestBloodhoundComplicationUpdate(context)
          }
-     }
         Image(
             painter = if (activeItem != null) painterResource(R.drawable.compass_1) else painterResource(R.drawable.compass_needle),
-            alpha = if (bloodhoundChecked == true) 1F else 0.5F,
             contentDescription = "Top Left Icon",
             modifier = Modifier
                 .align(Alignment.CenterVertically)
@@ -3349,50 +3305,32 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?, bloodh
         Column (
             modifier = Modifier.padding(start = 7.dp)
         ) {
-            if (bloodhoundChecked == true) {
-                if (activeItem != null) {
-                    Text(
-                        text = activeTarget,
-                        fontSize = 10.sp,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.Medium,
-                    )
-
-                        Text(
-                            text = activeDistanceText,
-                            fontSize = 12.sp,
-                            overflow = TextOverflow.Ellipsis,
-                            fontWeight = FontWeight.SemiBold,
-                        )
-                } else {
-                    Text(
-                        text = stringResource(R.string.compass),
-                        fontSize = 13.sp,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.Medium,
-                    )
+            if (activeItem != null) {
+                Text(
+                    text = activeTarget,
+                    fontSize = 10.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.Medium,
+                )
 
                     Text(
-                        text = "---",
-                        fontSize = 15.sp,
+                        text = activeDistanceText,
+                        fontSize = 12.sp,
                         overflow = TextOverflow.Ellipsis,
                         fontWeight = FontWeight.SemiBold,
                     )
-                }
             } else {
                 Text(
-                    text = stringResource(R.string.compass_disabled),
-                    fontSize = 12.sp,
+                    text = stringResource(R.string.compass),
+                    fontSize = 13.sp,
                     overflow = TextOverflow.Ellipsis,
-                    color = Color.Gray,
                     fontWeight = FontWeight.Medium,
                 )
 
                 Text(
                     text = "---",
                     fontSize = 15.sp,
-                    color = Color.Gray,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )
