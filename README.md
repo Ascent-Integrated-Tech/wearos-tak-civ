@@ -130,15 +130,13 @@ map to `b-a-o-tbl`, `b-a-o-pan`, `b-a-g`, and `b-a-o-opn`, respectively, so stan
 alerts can be sent and received without changing custom alert behavior. This feature builds
 on the remote-emergency reception and display work pending in gov MR!327.
 
-Manual, physiological, and automatically generated emergency alerts are queued only while
-there is no licensed, usable emergency dispatch route. A stale GPS fix does not hold an
-alert or its cancellation; stale coordinates are omitted at send time, and a CoT point with
-the unknown-position error sentinel is used when no fresh fix is available. Pending alerts
-drain in order when a route becomes available, without requiring a network restart.
-
 Selecting a preset manual alert sends that exact alert immediately, without a separate
-Send tap. Custom text still uses Send, and chat quick replies still append text without
-sending. Alerts without an available route continue to use the existing pending-alert queue.
+Send tap. Custom text still uses Send. Alerts without an available route continue to use
+the existing pending-alert queue.
+
+Chat presets in the reply picker submit the selected text immediately to that conversation.
+Typed chat text still uses the existing compose-and-Send flow. The picker keeps the
+conversation UID so incoming list changes cannot redirect a preset to another recipient.
 
 `WearTakApplication` initializes shared repositories and the CEP/plugin infrastructure. `DataRepository` is the main persistent state and settings hub, based on DataStore and Kotlin Flows. Newer components use Flow/StateFlow for reactive updates; some existing components communicate through EventBus.
 
