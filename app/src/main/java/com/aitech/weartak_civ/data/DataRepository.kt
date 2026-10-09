@@ -1289,7 +1289,7 @@ class DataRepository(private val context: Context) {
     suspend fun snapshotPli(): PliSnapshot {
         val timeSnap = CotEventTimeFactory.now(
             startOffset = CotTimeOffset(),
-            staleOffset = CotTimeOffset(seconds = (3 * almightyReportingIntervalSecs.value))
+            staleOffset = pliStaleOffset()
         )
 
         return PliSnapshot(
@@ -1305,9 +1305,12 @@ class DataRepository(private val context: Context) {
             loc = snapshotLocation(location),
             time = CotEventTimeFactory.at(
                 location.time,
-                staleOffset = CotTimeOffset(seconds = 3 * almightyReportingIntervalSecs.value)
+                staleOffset = pliStaleOffset()
             )
         )
+
+    private fun pliStaleOffset(): CotTimeOffset =
+        CotTimeOffset(seconds = 2 * almightyReportingIntervalSecs.value + 15)
 
     // This is the data class for both physio alerts and manual alerts that the backend adds to and clears.
     // This is a custom TAK emergency (911) alert as we change the description of the 911 alert sent to TAK
