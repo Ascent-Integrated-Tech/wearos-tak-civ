@@ -50,6 +50,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
+import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.TakChatEvent
@@ -94,9 +95,13 @@ import org.xml.sax.InputSource
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
+import org.xmlpull.v1.XmlSerializer
+import java.io.StringReader
+import java.io.StringWriter
 import java.io.InputStream
 import java.io.InputStreamReader
-import java.io.StringReader
 import java.net.SocketTimeoutException
 import java.security.*
 import java.security.cert.Certificate
@@ -118,10 +123,12 @@ import javax.net.ssl.X509TrustManager
 import com.aitech.weartak_civ.data.model.TakMissionStatus
 import com.aitech.weartak_civ.data.model.TakMissionState
 import com.aitech.weartak_civ.data.model.TakServerMissions
+import kotlinx.coroutines.currentCoroutineContext
 import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.isActive
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
@@ -1192,16 +1199,21 @@ class TAKConnectService: Service() {
         private suspend fun syncSubscribedMissions(
             serverId: String
         ) {
-            val subscribedMissions =
-                dataRepository.getSubscribedMissions(serverId)
+            while (currentCoroutineContext().isActive) {
+                val subscribedMissions =
+                    dataRepository.getSubscribedMissions(serverId)
 
-            subscribedMissions.forEach { state ->
-                syncTakMission(
-                    serverId = serverId,
-                    missionName = state.mission.name
-                )
+                subscribedMissions.forEach { state ->
+                    syncTakMission(
+                        serverId = serverId,
+                        missionName = state.mission.name
+                    )
+                }
+
+                delay(20_000L)
             }
         }
+
         private suspend fun syncTakMission(
             serverId: String,
             missionName: String
@@ -1217,9 +1229,9 @@ class TAKConnectService: Service() {
                 ?.firstOrNull { it.mission.name == missionName }
                 ?: return
 
-            if (!state.subscribed) {
-                return
-            }
+
+
+            if (!state.subscribed) return
 
             dataRepository.setMissionSyncing(
                 serverId = serverId,
@@ -1227,21 +1239,12 @@ class TAKConnectService: Service() {
             )
 
             try {
-                val changes =
-                    missionApi(detail).getMissionChanges(missionName)
+                val api = missionApi(detail)
+                val changes = api.getMissionChanges(missionName)
 
                 val newChanges = changes.filter {
                     it.changeKey() !in state.processedChangeKeys
                 }
-                Log.d(
-                    "MISSION_TEST",
-                    "changes=$changes"
-                )
-
-                Log.d(
-                    "MISSION_TEST",
-                    "newChanges=$newChanges"
-                )
 
                 Log.i(
                     TAG,
@@ -1249,25 +1252,63 @@ class TAKConnectService: Service() {
                             "changes=${changes.size} new=${newChanges.size}"
                 )
 
-                if (newChanges.isNotEmpty()) {
-                    val cot =
-                        missionApi(detail).getMissionCot(missionName)
-
-                    Log.d(
-                        "MISSION_TEST",
-                        "cot=$cot"
-                    )
+                Log.d(
+                    TAG,
+                    "Stored routes for mission=$missionName: " +
+                            dataRepository.takRoutes.value.map {
+                                "${it.name} uid=${it.uid} mission=${it.missionName}"
+                            }
+                )
+                // Download existing content on the first sync,
+                // or whenever the mission has new changes.
+                if (
+                    dataRepository.takRoutes.value.none {
+                        it.serverId == serverId && it.missionName == missionName
+                    } || newChanges.isNotEmpty()) {
+                    val cot = api.getMissionCot(missionName)
 
                     Log.i(
                         TAG,
                         "Mission content downloaded serverId=$serverId " +
                                 "mission=$missionName bytes=${cot.toByteArray().size}"
                     )
+
+                    val events = extractMissionCotEvents(cot)
+
+                    Log.d(
+                        TAG,
+                        "Mission CoT events found=${events.size}"
+                    )
+
+                    for (eventXml in events) {
+                        val envelope = TakServerCotEnvelope(
+                            sourceServerId = serverId,
+                            sourceServerAddress = detail.address,
+                            receivedAt = System.currentTimeMillis(),
+                            rawXml = eventXml
+                        )
+                        Log.d("MISSION_TEST", "Extracted event XML=$eventXml")
+
+                        val result = cotIngestor.ingest(envelope)
+
+                        Log.d(
+                            TAG,
+                            "Mission CoT processed mission=$missionName " +
+                                    "result=$result"
+                        )
+                    }
+                } else {
+                    Log.d(
+                        TAG,
+                        "Mission sync skipped: route already loaded, no new changes"
+                    )
+
                 }
 
                 val processedKeys =
                     state.processedChangeKeys +
                             newChanges.map { it.changeKey() }
+
                 val syncTime = System.currentTimeMillis()
 
                 dataRepository.setMissionSyncComplete(
@@ -1276,6 +1317,7 @@ class TAKConnectService: Service() {
                     processedChangeKeys = processedKeys,
                     syncTime = syncTime
                 )
+
                 dataRepository.persistMissionSyncProgress(
                     serverId = serverId,
                     missionName = missionName,
@@ -1299,6 +1341,88 @@ class TAKConnectService: Service() {
                 )
             }
         }
+
+
+        private fun extractMissionCotEvents(xml: String): List<String> {
+            val events = mutableListOf<String>()
+
+            val parser = XmlPullParserFactory.newInstance()
+                .newPullParser()
+
+            parser.setFeature(
+                XmlPullParser.FEATURE_PROCESS_NAMESPACES,
+                false
+            )
+            parser.setInput(StringReader(xml))
+
+            var eventType = parser.eventType
+
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+                if (
+                    eventType == XmlPullParser.START_TAG &&
+                    parser.name == "event"
+                ) {
+                    val writer = StringWriter()
+                    val serializer = XmlPullParserFactory.newInstance()
+                        .newSerializer()
+
+                    serializer.setOutput(writer)
+                    serializer.startDocument("UTF-8", null)
+
+                    var depth = 0
+
+                    do {
+                        when (parser.eventType) {
+                            XmlPullParser.START_TAG -> {
+                                serializer.startTag(
+                                    parser.namespace,
+                                    parser.name
+                                )
+
+                                for (i in 0 until parser.attributeCount) {
+                                    serializer.attribute(
+                                        parser.getAttributeNamespace(i),
+                                        parser.getAttributeName(i),
+                                        parser.getAttributeValue(i)
+                                    )
+                                }
+
+                                depth++
+                            }
+
+                            XmlPullParser.END_TAG -> {
+                                serializer.endTag(
+                                    parser.namespace,
+                                    parser.name
+                                )
+                                depth--
+                            }
+
+                            XmlPullParser.TEXT -> {
+                                serializer.text(parser.text)
+                            }
+
+                            XmlPullParser.CDSECT -> {
+                                serializer.cdsect(parser.text)
+                            }
+                        }
+
+                        if (depth > 0) {
+                            parser.next()
+                        }
+                    } while (depth > 0)
+
+                    serializer.endDocument()
+                    events.add(writer.toString())
+                }
+
+                eventType = parser.next()
+            }
+
+            return events
+        }
+
+
 
         private fun TakMissionChange.changeKey(): String {
             return listOf(
@@ -1480,6 +1604,7 @@ class TAKConnectService: Service() {
                         GeofenceRepository.sendGeofenceCot(geofence)
                     }
 
+
                     override suspend fun onUser(
                         event: CotUserPositionEvent,
                         envelope: TakServerCotEnvelope
@@ -1546,6 +1671,22 @@ class TAKConnectService: Service() {
                             TAG,
                             "Inbound marker delivered to Bloodhound state uid=${event.uid} " +
                                 "sourceServerId=${envelope.sourceServerId} eventTime=${event.time}"
+                        )
+                    }
+
+                    override suspend fun onRoute(
+                        route: TakRoute,
+                        envelope: TakServerCotEnvelope
+                    ) {
+                        dataRepository.upsertTakRoute(route)
+
+                        Log.d(
+                            TAG,
+                            "Route received: uid=${route.uid}, " +
+                                    "name=${route.name}, " +
+                                    "points=${route.points.size}, " +
+                                    "serverId=${route.serverId}, " +
+                                    "mission=${route.missionName}"
                         )
                     }
 

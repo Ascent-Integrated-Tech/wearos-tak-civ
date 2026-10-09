@@ -160,6 +160,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_HIGH_ATM_PRESSURE_ALERT
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.cot.CotEventTime
 import com.aitech.weartak_civ.cot.CotEventTimeFactory
 import com.aitech.weartak_civ.cot.CotMarkerEvent
@@ -275,6 +276,29 @@ class DataRepository(private val context: Context) {
     val takMissions: StateFlow<List<TakServerMissions>> =
         _takMissions.asStateFlow()
 
+    private val _takRoutes = MutableStateFlow<Map<Pair<String, String>, TakRoute>>(emptyMap())
+
+    val takRoutes: StateFlow<List<TakRoute>> =
+        _takRoutes
+            .map { it.values.toList() }
+            .stateIn(
+                scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+                started = SharingStarted.Eagerly,
+                initialValue = emptyList()
+            )
+    fun upsertTakRoute(route: TakRoute) {
+        val key = route.serverId to route.uid
+
+        _takRoutes.update { current ->
+            current + (key to route)
+        }
+
+        Log.d(
+            TAG,
+            "Route stored uid=${route.uid} name=${route.name} " +
+                    "serverId=${route.serverId} points=${route.points.size}"
+        )
+    }
     class TakServerConfigurationRefresh internal constructor() {
         val result = CompletableDeferred<Result<Unit>>()
     }
