@@ -55,6 +55,33 @@ class BloodhoundRemoteAlertTest {
     private fun newRepository() = BloodhoundRepository(context, dataStore)
 
     @Test
+    @org.robolectric.annotation.Config(application = android.app.Application::class, sdk = [34])
+    fun removeAllClearsAllSourcesAndPersistsLocalAlertDismissals() = runBlocking {
+        val repository = newRepository()
+        val now = System.currentTimeMillis()
+        repository.upsertFromEvent(pointEvent("shared", now).copy(sourceServerId = SERVER_A))
+        repository.upsertFromEvent(pointEvent("shared", now + 1).copy(sourceServerId = SERVER_B))
+        val emergency = alert("shared", now + 2)
+        repository.applyEmergencyEvent(emergency, "TAK-A", sourceServerId = SERVER_A, deviceUid = SELF_UID)
+        repository.applyEmergencyEvent(emergency, "TAK-B", sourceServerId = SERVER_B, deviceUid = SELF_UID)
+        repository.activate("shared")
+
+        repository.removeAllFromMenu()
+
+        assertTrue(repository.bloodhoundMap.value.isEmpty())
+        assertTrue(repository.remoteAlerts.value.isEmpty())
+        assertNull(repository.activeUid.value)
+        assertFalse(repository.applyEmergencyEvent(emergency, "TAK", deviceUid = SELF_UID))
+        val restarted = newRepository()
+        assertFalse(restarted.applyEmergencyEvent(emergency.copy(time = now + 3), "TAK", deviceUid = SELF_UID))
+        repository.upsertFromEvent(pointEvent("new-point", now + 4))
+        assertEquals(setOf("new-point"), repository.bloodhoundMap.value.keys)
+        repository.removeAllFromMenu()
+        repository.removeAllFromMenu()
+        assertTrue(repository.bloodhoundMap.value.isEmpty())
+    }
+
+    @Test
     fun listsNewestRemoteAlertsBeforeOrdinaryPoints() = runBlocking {
         val repository = newRepository()
         val now = System.currentTimeMillis()
