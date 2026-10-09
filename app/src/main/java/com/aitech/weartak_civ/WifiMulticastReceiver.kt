@@ -27,6 +27,7 @@ import org.xml.sax.SAXException
 class WifiMulticastReceiver internal constructor(
     private val subscriptions: List<Subscription>,
     private val logPacket: (String) -> Unit = {},
+    private val localAddresses: Set<String> = emptySet(),
     private val releaseLock: () -> Unit
 ) : Closeable {
     internal data class Subscription(
@@ -49,6 +50,10 @@ class WifiMulticastReceiver internal constructor(
                     }
                     currentCoroutineContext().ensureActive()
                     logPacket(packetSummary(subscription.endpoint, packet))
+                    if (isSelfEcho(packet.address?.hostAddress, localAddresses)) {
+                        logPacket("Ignoring multicast self-echo group=${subscription.endpoint.sourceId}")
+                        continue
+                    }
                     val xml = try {
                         TakDatagramDecoder.decode(packet.data, packet.offset, packet.length)
                     } catch (error: IOException) {
@@ -81,6 +86,9 @@ class WifiMulticastReceiver internal constructor(
     }
 
     companion object {
+        internal fun isSelfEcho(fromAddress: String?, localAddresses: Set<String>): Boolean =
+            fromAddress != null && fromAddress in localAddresses
+
         internal fun packetSummary(endpoint: MulticastEndpoint, packet: DatagramPacket): String {
             val prefix = (0 until minOf(3, packet.length)).joinToString(" ") { index ->
                 "%02x".format(packet.data[packet.offset + index].toInt() and 0xff)
@@ -128,6 +136,10 @@ class WifiMulticastReceiver internal constructor(
                 }
                 val receiver = WifiMulticastReceiver(
                     subscriptions = subscriptions,
+                    localAddresses = java.util.Collections.list(NetworkInterface.getNetworkInterfaces())
+                        .flatMap { java.util.Collections.list(it.inetAddresses) }
+                        .mapNotNull { it.hostAddress }
+                        .toSet(),
                     releaseLock = { if (lock.isHeld) lock.release() },
                     logPacket = { summary ->
                         if (BuildConfig.DEBUG) Log.d("WearTAK-MulticastRx", summary)

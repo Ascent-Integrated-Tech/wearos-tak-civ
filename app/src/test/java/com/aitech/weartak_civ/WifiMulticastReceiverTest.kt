@@ -16,6 +16,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
@@ -26,6 +27,39 @@ import java.net.InetSocketAddress
 import java.net.MulticastSocket
 
 class WifiMulticastReceiverTest {
+    @Test
+    fun selfEchoUsesAllLocalAddressesRatherThanEventUid() {
+        val addresses = setOf("10.0.1.118", "fe80::1", "127.0.0.1")
+        addresses.forEach { assertTrue(WifiMulticastReceiver.isSelfEcho(it, addresses)) }
+        assertFalse(WifiMulticastReceiver.isSelfEcho("10.0.1.120", addresses))
+        assertFalse(WifiMulticastReceiver.isSelfEcho(null, addresses))
+        assertFalse(WifiMulticastReceiver.isSelfEcho("10.0.1.118", emptySet()))
+    }
+
+    @Test
+    fun ownMarkerDatagramIsNotDeliveredToIngress() = runBlocking {
+        val socket = localSocket()
+        val ignored = Channel<Unit>(Channel.UNLIMITED)
+        var deliveries = 0
+        val receiver = WifiMulticastReceiver(
+            subscriptions = listOf(WifiMulticastReceiver.Subscription(TakMulticastEndpoints.directCot, socket)),
+            localAddresses = setOf(socket.localAddress.hostAddress),
+            logPacket = { if (it.startsWith("Ignoring multicast self-echo")) ignored.trySend(Unit) },
+            releaseLock = {}
+        )
+        receiver.use {
+            val receiving = launch { receiver.receive { deliveries++ } }
+            try {
+                DatagramSocket().use { send(it, socket, MARKER_XML) }
+                withTimeout(3000) { ignored.receive() }
+            } finally {
+                withTimeout(3000) { receiving.cancelAndJoin() }
+            }
+        }
+        assertEquals(0, deliveries)
+        assertTrue(socket.isClosed)
+    }
+
     @Test
     fun diagnosticsRespectPacketOffsetAndDoNotDumpPayload() {
         val bytes = byteArrayOf(0, 0xbf.toByte(), 1, 0xbf.toByte(), 65, 66, 67)

@@ -77,6 +77,22 @@ class TakDatagramDecoderTest {
     }
 
     @Test
+    fun preservesMeshConfigurationDetailInBinaryDatagrams() {
+        val detail = proto {
+            writeString(1, "<__meshtastic_cfg url='https://meshtastic.org/e/#CgsS'/>")
+        }
+        val data = datagram(event("t-x-meshcfg", detail))
+        val xml = TakDatagramDecoder.decode(data, 0, data.size)!!
+        val document = javax.xml.parsers.DocumentBuilderFactory.newInstance()
+            .newDocumentBuilder()
+            .parse(org.xml.sax.InputSource(java.io.StringReader(xml)))
+        assertEquals("t-x-meshcfg", document.documentElement.getAttribute("type"))
+        val configuration = document.getElementsByTagName("__meshtastic_cfg").item(0)
+            as org.w3c.dom.Element
+        assertEquals("https://meshtastic.org/e/#CgsS", configuration.getAttribute("url"))
+    }
+
+    @Test
     fun acceptsControlOnlyMessage() {
         val data = byteArrayOf(0xbf.toByte(), 1, 0xbf.toByte()) +
             proto { writeByteArray(1, proto { writeUInt32(1, 1); writeUInt32(2, 1) }) }
