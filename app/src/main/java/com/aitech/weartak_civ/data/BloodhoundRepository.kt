@@ -571,13 +571,43 @@ class BloodhoundRepository(
     }
 
     private suspend fun persistDismissal(uid: String, time: Long) {
-        val latest = maxOf(dismissalTimes[uid] ?: Long.MIN_VALUE, time)
+        persistDismissals(mapOf(uid to time))
+    }
+
+    private suspend fun persistDismissals(times: Map<String, Long>) {
+        val latest = times.mapValues { (uid, time) ->
+            maxOf(dismissalTimes[uid] ?: Long.MIN_VALUE, time)
+        }
         dataStore.edit { prefs ->
             val dismissed = JSONObject(prefs[ALERT_DISMISSALS] ?: "{}")
-            dismissed.put(uid, latest)
+            latest.forEach { (uid, time) -> dismissed.put(uid, time) }
             prefs[ALERT_DISMISSALS] = dismissed.toString()
         }
-        dismissalTimes[uid] = latest
+        dismissalTimes.putAll(latest)
+    }
+
+    suspend fun removeAllFromMenu() = emergencyMutex.withLock {
+        val selected = synchronized(bloodhoundStateLock) {
+            bloodhoundStore.allItems.value.toMap()
+        }
+        val alerts = selected.values.filter { it.bhEvent.remoteAlert != null }
+            .groupBy { it.uid }
+            .mapValues { (_, items) -> items.maxOf { it.bhEvent.mapItem.cotEvent.time } }
+        if (alerts.isNotEmpty()) {
+            loadEmergencyLedgers()
+            persistDismissals(alerts)
+        }
+        synchronized(bloodhoundStateLock) {
+            selected.forEach { (key, item) ->
+                if (bloodhoundStore.item(key) == item) {
+                    bloodhoundStore.remove(key)
+                    alertExpiryJobs.remove(key)?.cancel()
+                    if (_activeKey.value == key) setActiveKey(null)
+                }
+            }
+            publishVisibleBloodhounds()
+        }
+        Log.i(TAG, "Bloodhound Remove All removed snapshot entries=${selected.size} dismissedAlerts=${alerts.size}")
     }
 
     /** Removes every source copy of [uid], e.g. when the matching map item is deleted. */

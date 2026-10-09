@@ -115,6 +115,14 @@ are not logged by enrollment.
 
 ## Architecture
 
+The Bloodhound picker has a **Remove All** button above its targets. Its confirmation
+screen offers **Remove All** and **Cancel**; Cancel or dismissing the dialog leaves
+the list unchanged. Remove All removes all
+current source copies of ordinary targets and locally dismisses remote emergency alerts,
+stopping navigation to removed targets. Alert dismissals survive restarts and suppress
+ongoing refreshes until the sender cancels. This does not send cancellation or acknowledgement
+messages, delete ordinary map markers, or prevent new ordinary targets from arriving.
+
 ### Remote emergencies
 
 Incoming `b-a-o`, `b-a-o-*`, and ATAK's standard `b-a-g` CoT emergencies share one active

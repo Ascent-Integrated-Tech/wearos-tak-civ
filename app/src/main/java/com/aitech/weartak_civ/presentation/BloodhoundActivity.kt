@@ -39,8 +39,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.IconButtonColors
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +49,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -316,7 +315,29 @@ fun BloodhoundScreen(
     exitActivity: () -> Unit,
     context: Context
 ) {
+    val actionScope = rememberCoroutineScope()
+    var removingAll by remember { mutableStateOf(false) }
+    val showRemoveAllConfirmation = remember { mutableStateOf(false) }
     WearTAKCIVTheme {
+        if (showRemoveAllConfirmation.value) {
+            BloodhoundRemoveAllDialog(
+                shouldShowDialog = showRemoveAllConfirmation,
+                onRemoveAll = {
+                    showRemoveAllConfirmation.value = false
+                    removingAll = true
+                    actionScope.launch {
+                        try {
+                            val app = context.applicationContext as WearTakApplication
+                            app.bhRepo.removeAllFromMenu()
+                        } finally {
+                            removingAll = false
+                        }
+                    }
+                },
+                onCancel = { showRemoveAllConfirmation.value = false },
+                enabled = bloodhounds.isNotEmpty() && !removingAll
+            )
+        }
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -345,23 +366,14 @@ fun BloodhoundScreen(
                         .padding(vertical = 10.dp, horizontal = 20.dp)
                         .align(Alignment.CenterHorizontally)
                 )
-                IconButton(
-                    onClick = {context.startActivity(Intent(context, MapActivity::class.java)) },
-                    modifier = Modifier
-                        .size(40.dp),
-                    colors = IconButtonColors(
-                        containerColor = colors.primary,
-                        contentColor = Color.Black,
-                        disabledContentColor = colors.primary,
-                        disabledContainerColor = Color.Black
-                    ),
+                Button(
+                    onClick = {
+                        showRemoveAllConfirmation.value = true
+                    },
+                    enabled = bloodhounds.isNotEmpty() && !removingAll,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Icon(
-                        painterResource(R.drawable.maps),
-                        contentDescription = "Marker Drop Button",
-                        modifier = Modifier.size(20.dp),
-                        tint = Color.Black
-                    )
+                    Text(stringResource(R.string.bloodhound_remove_all))
                 }
                 LazyColumn(modifier = Modifier
                     .height(200.dp).padding(top = 10.dp)){
