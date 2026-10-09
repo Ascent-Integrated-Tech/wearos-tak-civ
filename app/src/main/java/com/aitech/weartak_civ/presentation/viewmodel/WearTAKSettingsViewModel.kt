@@ -149,11 +149,8 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.whileAlertingR
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.wifiSsidList
 import com.aitech.weartak_civ.service.SitxTakService
 import com.aitech.weartak_civ.service.TAKConnectService
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTION_FAILED_STRING
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
-import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DUPLICATE_STRING
+import com.aitech.weartak_civ.data.takserver.TakServerId
+import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.service.sitx.SitxServiceEvent
 import com.aitech.weartak_civ.service.sitx.SitxServiceEventBus
 import kotlinx.coroutines.flow.Flow
@@ -640,58 +637,52 @@ class WearTAKSettingsViewModel : ViewModel() {
     }
     fun updateTakServerItem(oldItemIndex: Int, newItem: TakServerItem) {
         viewModelScope.launch {
-            dataRepository.updateTakServerItem(oldItemIndex, newItem)
-        }
-    }
-    fun getTakServerStatus(index: Int): LiveData<String> {
-        return TAKConnectService
-            .takServerDetails
-            .getOrNull(index)
-            ?.connectionStatusLiveData
-            ?: MutableLiveData(TAK_SERVER_DISCONNECTED_STRING)
-    }
-
-    fun displayServerDialogs(
-        isNetworkConnected: Boolean,
-        loadingDialog: String?,
-        shouldShowLoadingDialog: MutableState<Boolean>,
-        shouldShowConfirmDialog: MutableState<Boolean>,
-        isServerConnected: MutableState<Boolean>,
-        isDuplicate: MutableState<Boolean>) {
-        Log.d(TAG, "displayServerDialogs isNetworkConnected=$isNetworkConnected, loadingDialog=$loadingDialog, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}, shouldShowConfirmDialog=${shouldShowConfirmDialog.value}, isServerConnected=${isServerConnected.value}")
-        isDuplicate.value = loadingDialog == TAK_SERVER_DUPLICATE_STRING
-        if (isDuplicate.value) {
-            shouldShowLoadingDialog.value = false
-            shouldShowConfirmDialog.value = true
-            isServerConnected.value = false
-        } else if (isNetworkConnected) {
-            if (loadingDialog == TAK_SERVER_CONNECTING_STRING) {
-                Log.d(TAG, "displayServerDialogs: TAK_SERVER_CONNECTING_STRING")
-                shouldShowLoadingDialog.value = true
-                shouldShowConfirmDialog.value = false
-            } else if (loadingDialog == TAK_SERVER_CONNECTED_STRING) {
-                Log.d(TAG, "displayServerDialogs: TAK_SERVER_CONNECTED_STRING")
-                shouldShowLoadingDialog.value = false
-                shouldShowConfirmDialog.value = true
-                isServerConnected.value = true
-            } else if ((loadingDialog == TAK_SERVER_CONNECTION_FAILED_STRING) ||
-                (loadingDialog == TAK_SERVER_DISCONNECTED_STRING)
-            ) {
-                Log.d(TAG, "displayServerDialogs: $loadingDialog")
-                shouldShowLoadingDialog.value = false
-                shouldShowConfirmDialog.value = true
-                isServerConnected.value = false
+            if (dataRepository.updateTakServerItem(oldItemIndex, newItem) == DataRepository.TakServerUpdateResult.UPDATED) {
+                takServerList = dataRepository.awaitTakServerList()
             }
-            Log.d(TAG, "displayServerDialogs: $loadingDialog")
-        } else {
-            Log.d(TAG, "displayServerDialogs: Network is NOT connected")
-            shouldShowLoadingDialog.value = false
-            shouldShowConfirmDialog.value = true
-            isServerConnected.value = false
         }
-        Log.d(TAG, "Exiting displayServerDialogs: isNetworkConnected=$isNetworkConnected, loadingDialog=$loadingDialog, shouldShowLoadingDialog=${shouldShowLoadingDialog.value}, shouldShowConfirmDialog=${shouldShowConfirmDialog.value}, isServerConnected=${isServerConnected.value}")
     }
+    val serverRegistrationState = TAKConnectService.serverRegistration.state
+    val takServerRuntimeDetails = TAKConnectService.takServerRuntimeDetails
 
+    fun saveAndRegisterTakServer(item: TakServerItem, index: Int? = null) {
+        val serverId = TakServerId.ensure(item.serverId)
+        val savedItem = item.copy(serverId = serverId)
+        val ticket = TAKConnectService.serverRegistration.prepare(serverId)
+        val job = viewModelScope.launch {
+            TAKConnectService.serverRegistration.saveAndConnect(
+                serverId,
+                save = {
+                    val result = if (index == null) {
+                        when (dataRepository.addTakServerItem(savedItem)) {
+                            DataRepository.TakServerAddResult.ADDED ->
+                                TakServerRegistration.SaveResult.SAVED
+                            DataRepository.TakServerAddResult.DUPLICATE ->
+                                TakServerRegistration.SaveResult.DUPLICATE
+                        }
+                    } else {
+                        when (dataRepository.updateTakServerItem(index, savedItem)) {
+                            DataRepository.TakServerUpdateResult.UPDATED ->
+                                TakServerRegistration.SaveResult.SAVED
+                            DataRepository.TakServerUpdateResult.DUPLICATE ->
+                                TakServerRegistration.SaveResult.DUPLICATE
+                            DataRepository.TakServerUpdateResult.INVALID_INDEX ->
+                                TakServerRegistration.SaveResult.INVALID
+                        }
+                    }
+                    if (result == TakServerRegistration.SaveResult.SAVED) {
+                        takServerList = dataRepository.awaitTakServerList()
+                    }
+                    result
+                },
+                connect = { TAKConnectService.getInstance().registerServer(serverId) },
+                ticket = ticket,
+            )
+        }
+        job.invokeOnCompletion { error ->
+            if (error != null) TAKConnectService.serverRegistration.failPending(ticket)
+        }
+    }
     val savedEnableMulticast: StateFlow<Boolean> =
         dataRepository.getEnableMulticast.stateIn(
             scope = viewModelScope,
