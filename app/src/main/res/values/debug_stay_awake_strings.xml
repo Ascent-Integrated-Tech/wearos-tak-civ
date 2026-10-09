@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="debug_stay_awake">Stay awake</string>
+    <string name="debug_stay_awake_warning">Extra battery use. May heat watch.</string>
+    <string name="debug_stay_awake_active">Active until stopped or the process ends. Resumes after updates only if opted in.</string>
+    <string name="debug_stay_awake_resume_update">Resume after update</string>
+    <string name="debug_stay_awake_channel">Debug stay awake</string>
+    <string name="debug_stay_awake_stop">Stop</string>
+    <string name="debug_stay_awake_failed">Unable to start Stay awake. See WearTAK debug logs.</string>
+</resources>

@@ -35,8 +35,8 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
     private var mainActivity : MainActivity? = null
     private var connectivityManager : ConnectivityManager? = null
     private val handler = Handler(Looper.getMainLooper())
-    private val _wifiNetwork = MutableStateFlow<Network?>(null)
-    val wifiNetwork: StateFlow<Network?> = _wifiNetwork.asStateFlow()
+    private val multicastWifiCallback = MulticastWifiNetworkMonitor()
+    val wifiNetwork: StateFlow<Network?> = multicastWifiCallback.wifiNetwork
 
     enum class NetworkTransport {
         WIFI,
@@ -87,13 +87,21 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
         connectivityManager?.registerNetworkCallback(networkRequest, this,
             Handler(Looper.getMainLooper())
         )
+        // Local radio Wi-Fi need not provide internet or be Android's default network.
+        val wifiRequest = NetworkRequest.Builder()
+            .clearCapabilities()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .build()
+        connectivityManager?.registerNetworkCallback(wifiRequest, multicastWifiCallback, handler)
         checkNetworkConnected()
     }
 
     fun deInit() {
         if (null != connectivityManager) {
             connectivityManager?.unregisterNetworkCallback(this)
+            connectivityManager?.unregisterNetworkCallback(multicastWifiCallback)
         }
+        multicastWifiCallback.clear()
     }
 
     fun isNetworkConnected() : Boolean {
@@ -212,7 +220,6 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                 // TODO: What happens if the actual SSID is called <unknown_ssid>. For now, this case is not being handled
                 connectedWifiSsid = currWifiSsid
                 EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
-                handleMulticastToggle(network)
             }
         } else {
             //Log.d(TAG, "No change detected in network connection information.So NOT sending NwConnEvent")
@@ -223,43 +230,14 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
                     Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
                     connectedWifiSsid = currWifiSsid
                     EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
-                    handleMulticastToggle(network)
                 }
             } else {
                 if (currWifiSsid != connectedWifiSsid) {
                     Log.d(TAG, "Change in wifi SSID detected before($connectedWifiSsid) current($currWifiSsid)")
                     connectedWifiSsid = currWifiSsid
                     EventBus.getDefault().post(WifiSsidRcvd(connectedWifiSsid))
-                    handleMulticastToggle(network)
                 }
             }
-        }
-    }
-
-    private fun handleMulticastToggle(network: Network?) {
-        val cm = connectivityManager ?: return // We want to multicast whenever we are on Wi-Fi — even without internet (WAN).
-        val publishableWifi: Network? =
-            if (isWifi) {
-                // Prefer the specific callback's network *if* it's Wi-Fi.
-                var n = when {
-                    network != null && cm.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> network
-                    else -> null
-                }
-
-
-                // Fallback: find any Wi-Fi network if the callback didn't include one.
-                n = n ?: cm.allNetworks.firstOrNull { n2 ->
-                    cm.getNetworkCapabilities(n2)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true
-                }
-
-                n
-            } else {
-                null
-            }
-
-        if (_wifiNetwork.value != publishableWifi) {
-            _wifiNetwork.value = publishableWifi
-            Log.d(TAG, "Sending wifiNetwork=${publishableWifi.toString()}")
         }
     }
 

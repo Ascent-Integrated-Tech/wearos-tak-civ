@@ -195,6 +195,7 @@ android {
         checkReleaseBuilds true
     }
     testOptions {
+        unitTests.includeAndroidResources = true
         unitTests.all { test ->
             // Robolectric writes a download-lock file under user.home; override to a
             // writable build dir so tests work under sandboxed/CI environments where the
@@ -215,6 +216,7 @@ dependencies {
     implementation files('libs/hail-sdk.aar')
 
     implementation libs.protolite.well.known.types
+    implementation 'com.google.protobuf:protobuf-javalite:3.25.5'
     implementation libs.animation.core
     implementation libs.datastore.core
     implementation libs.ui.graphics

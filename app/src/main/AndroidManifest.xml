@@ -123,6 +123,23 @@
             tools:node="remove" />
 
         <service
+            android:name=".service.DebugStayAwakeService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="User-enabled screen, CPU and Wi-Fi locks for demo and development sessions" />
+        </service>
+
+        <receiver
+            android:name=".service.DebugStayAwakeUpdateReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <service
             android:name=".complication.CallsignComplicationService"
             android:exported="true"
             android:label="@string/callsign_complication"

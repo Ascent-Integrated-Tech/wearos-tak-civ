@@ -22,13 +22,9 @@ import javax.net.ssl.TrustManager
 import javax.net.ssl.TrustManagerFactory
 import javax.net.ssl.X509TrustManager
 import android.net.Network
-import com.aitech.weartak_civ.data.DataRepository
 import java.net.DatagramPacket
 import java.net.InetAddress
 import java.net.MulticastSocket
-import java.net.Inet4Address
-import java.net.NetworkInterface
-import java.util.Collections
 
 object NetworkUtils {
     private const val TAG = "WearTAK-NetworkUtils"
@@ -96,31 +92,26 @@ object NetworkUtils {
          */
         fun start(network: Network, address: String, port: Int): Boolean {
             Log.i(TAG, "MulticastPublisher starting → $address:$port")
-            MulticastPublisher.port = port
             synchronized(this) {
                 // No-op if already bound to this same Network and socket is alive
-                if (running && (currentNetwork == network) && (socket != null) && !socket!!.isClosed && (address == MulticastPublisher.address)) return true
+                if (running && (currentNetwork == network) && (socket != null) && !socket!!.isClosed &&
+                    (address == MulticastPublisher.address) && (port == MulticastPublisher.port)) return true
 
                 // If running but on a different (or stale) Network, rebuild
                 stopLocked()
 
                 try {
-                    val ms = java.net.MulticastSocket(null).apply {
-                        reuseAddress = true
-                        try { timeToLive = 1 } catch (_: Throwable) {}  // keep multicast on LAN
-                        bind(null) // ephemeral source port
-                    }
-
-                    try {
-                        network.bindSocket(ms)  // ensure packets egress over this Wi-Fi network
-                    } catch (e: Exception) {
-                        android.util.Log.e(TAG, "bindSocket failed: ${e.message}", e)
-                        ms.close()
-                        return false
-                    }
-
+                    val ms = MulticastSocket(null)
                     socket = ms
+                    ms.reuseAddress = true
+                    ms.timeToLive = 1
+                    ms.bind(null) // ephemeral source port
+
+                    network.bindSocket(ms)  // ensure packets egress over this Wi-Fi network
+
                     group = java.net.InetAddress.getByName(address)
+                    MulticastPublisher.address = address
+                    MulticastPublisher.port = port
                     currentNetwork = network
                     running = true
                     Log.i(TAG, "MulticastPublisher started → $address:${MulticastPublisher.port}")
@@ -155,6 +146,7 @@ object NetworkUtils {
          * Non-blocking send. Safe to call from any thread.
          * PLI CoT is small; if you ever send big payloads, consider chunking.
          */
+        @Synchronized
         fun send(cotXml: String) {
             //Log.i(TAG, "Checking socket")
             val ms = socket ?: return
@@ -165,13 +157,15 @@ object NetworkUtils {
             //Log.i(TAG, "Checking if multicast is enabled: ${MainActivity.enableMulticastOnWifi}")
             if (!MainActivity.enableMulticastOnWifi) return
 
-            val bytes = cotXml.toByteArray(Charsets.UTF_8)
+            val bytes = TakMulticastEndpoints.prepareOutbound(cotXml).toByteArray(Charsets.UTF_8)
             // Keep messages small; UDP can fragment.
             if (bytes.size > 1300) {
                 Log.w(TAG, "CoT payload ${bytes.size}B may fragment over UDP.")
             }
             try {
-                ms.send(DatagramPacket(bytes, bytes.size, grp, port))
+                val endpoint = TakMulticastEndpoints.outbound(cotXml, address, port)
+                val destination = if (endpoint.address == address) grp else InetAddress.getByName(endpoint.address)
+                ms.send(DatagramPacket(bytes, bytes.size, destination, endpoint.port))
                 //Log.i(TAG, "Sent Datagram to the multicast socket! $cotXml")
             } catch (e: Exception) {
                 Log.e(TAG, "Multicast send() error: ${e.message}", e)
