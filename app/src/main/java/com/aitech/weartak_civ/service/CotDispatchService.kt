@@ -24,6 +24,7 @@ import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.integration.plugin.PluginCotEgress
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.PhysioData
@@ -141,6 +142,9 @@ class CotDispatchService : Service() {
             sendDitto = { collection, xml -> EventBus.getDefault().post(DittoDocumentEvent(collection, xml)) },
             sendMulticast = ::sendMulticastDatagram,
             sendPliMulticast = NetworkUtils.MulticastPublisher::send,
+            sendPlugin = { xml ->
+                PluginCotEgress.offer(applicationContext as WearTakApplication, xml)
+            },
             sendCompanion = { payload ->
                 when (payload) {
                     is CotCompanionPayload.Pli -> capRepo.enqueuePliSnapshotForBle(payload.snapshot)
@@ -204,6 +208,18 @@ class CotDispatchService : Service() {
     }
 
     private fun startAnyEndpointConnectedCollector() {
+        serviceScope.launch {
+            (applicationContext as WearTakApplication).pluginManager.settingsCoordinator
+                .outboundCotAvailable.collect { available ->
+                    if (available) {
+                        EventBus.getDefault().post(LocationUpdateRequired())
+                        sendAllManualAlerts(null)
+                        sendAllPhysioAndAutoGenAlerts(null)
+                        sendPendingChatMessages()
+                        sendPendingMarkerCots()
+                    }
+                }
+        }
         serviceScope.launch {
             dataRepository.anyEndpointConnected.collect { connected ->
                 if (connected) {
@@ -276,7 +292,7 @@ class CotDispatchService : Service() {
                         return@collect
                     }
 
-                    val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || (dataRepository.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED) || dataRepository.multicastPublisherRunning.value || companionAppAvailable())
+                    val endpointsToSendTo = (TAKConnectService.isAnyTakConnected || (dataRepository.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED) || dataRepository.multicastPublisherRunning.value || companionAppAvailable() || pluginAvailable())
 
                     if (endpointsToSendTo) {
                         if ((batt <= MainActivity.battWarnPercent)) {
@@ -351,7 +367,7 @@ class CotDispatchService : Service() {
                     val sendToTak = TAKConnectService.isAnyTakConnected || (dataRepository.sitxStatus.value == DataRepository.SitxServerStatus.CONNECTED)
                     val sendToCompApp = companionAppAvailable()
                     val sendOverMulticast = dataRepository.multicastPublisherRunning.value
-                    val endpointsToSendTo = sendToTak || sendToCompApp || sendOverMulticast
+                    val endpointsToSendTo = sendToTak || sendToCompApp || sendOverMulticast || pluginAvailable()
 
 
                     if (endpointsToSendTo && enabled) {
@@ -672,7 +688,7 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.chatRequestSend.collect { req ->
                 Log.i(TAG, "Received req to send chat message: $req")
-                if (dataRepository.anyEndpointConnected.value) {
+                if (hasConnectedEndpoint()) {
                     sendAllChatMessages(req)
                 } else {
                     val chatMsg = ChatMessage(message = req.message, uid = req.dstUid, callsign = req.dstChatroom, timeReceived = req.timeMillis)
@@ -755,7 +771,7 @@ class CotDispatchService : Service() {
                     EventBus.getDefault().post(LocationUpdateRequired())
                 } else {
                     Log.i(TAG, "Drop lat(${req.lat}) and lon(${req.lon}) NOT null or location is fresh. Trying to send marker drop request now if possible...")
-                    if (dataRepository.anyEndpointConnected.value) {
+                    if (hasConnectedEndpoint()) {
                         sendPendingMarkerCots()
                     }
                 }
@@ -784,7 +800,7 @@ class CotDispatchService : Service() {
                         EventBus.getDefault().post(LocationUpdateRequired())
                     } else {
                         Log.i(TAG, "Marker edit waitingForUpdatedLocation is false. Trying to send edit marker request now if possible...")
-                        if (dataRepository.anyEndpointConnected.value) {
+                        if (hasConnectedEndpoint()) {
                             sendPendingMarkerCots()
                         }
                     }
@@ -794,8 +810,14 @@ class CotDispatchService : Service() {
     }
 
     private fun readyToSendMarkerEvents(): Boolean {
-        return (dataRepository.anyEndpointConnected.value && isLocationFresh())
+        return (hasConnectedEndpoint() && isLocationFresh())
     }
+
+    private fun pluginAvailable(): Boolean =
+        PluginCotEgress.hasSubscribers(applicationContext as WearTakApplication)
+
+    private fun hasConnectedEndpoint(): Boolean =
+        dataRepository.anyEndpointConnected.value || pluginAvailable()
 
     private fun isLocationFresh(): Boolean {
         val loc = dataRepository.latestLocation.value
@@ -1044,6 +1066,7 @@ class CotDispatchService : Service() {
             ditto = DittoService.isRunning.get(),
             multicast = isLicenseValid() && dataRepository.multicastPublisherRunning.value,
             companion = companionAppAvailable(),
+            plugin = pluginAvailable(),
         )
 
     private suspend fun sitxAvailable(): Boolean {
@@ -1080,7 +1103,7 @@ class CotDispatchService : Service() {
         }
         dataRepository.changeDroppedMarkerCotTypeStatusByUid(uid = uid, cotType = DataRepository.MarkerCotType.CLEAR, enqueuedToBeSent = true, waitingForUpdatedLocation = false)
 
-        if (dataRepository.anyEndpointConnected.value) {
+        if (hasConnectedEndpoint()) {
             sendPendingMarkerCots()
         }
     }
@@ -1234,7 +1257,7 @@ class CotDispatchService : Service() {
                 alertFix.elapsedRealtimeNanos, android.os.SystemClock.elapsedRealtimeNanos(),
                 InteractionPliRefreshGate.usable(alertFix.latitude, alertFix.longitude, alertFix.accuracy, alertFix.hasAccuracy())
             )
-            if (dataRepository.anyEndpointConnected.value && alertFixFresh) {
+            if (hasConnectedEndpoint() && alertFixFresh) {
                 if (pendingManualAlertQueue.isNotEmpty()) sendAllManualAlerts(null)
                 if (pendingPhysioAndAutoGenAlertQueue.isNotEmpty()) sendAllPhysioAndAutoGenAlerts(null)
             }

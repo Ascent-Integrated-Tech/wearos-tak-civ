@@ -8,6 +8,9 @@
  */
 package com.aitech.weartak_civ.service
 
+import com.aitech.weartak_civ.cot.TakServerCotEnvelope
+import com.aitech.weartak_civ.integration.plugin.PluginCotIngress
+
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
@@ -957,6 +960,12 @@ class SitxTakService : Service() {
 
     // TODO Sitx: Merge with startCotReader in TakConnectService
     private fun handleTextMessage(flowTag: String, rawXml: String) {
+        if (PluginCotIngress.offer(
+                TakServerCotEnvelope(
+                    "sitx:$flowTag", flowTag, System.currentTimeMillis(), rawXml
+                ),
+                (applicationContext as WearTakApplication).pluginManager.settingsCoordinator
+            )) return
         if (runBlocking { dataRepo.getEnableChatService.first() }
             && CotMessageParser.isChatMessage(rawXml)
             && CotMessageParser.isChatForRecipient(rawXml, MainActivity.device_uid, MainActivity.callsign)) {

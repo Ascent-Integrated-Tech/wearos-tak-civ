@@ -29,6 +29,7 @@ interface TakServerCotSink {
     suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope)
     suspend fun onEmergency(event: CotEmergencyEvent, envelope: TakServerCotEnvelope) = Unit
     suspend fun onChannelChanged(envelope: TakServerCotEnvelope) = Unit
+    suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean = false
 }
 
 enum class TakServerCotIngestResult {
@@ -38,6 +39,7 @@ enum class TakServerCotIngestResult {
     MARKER,
     EMERGENCY,
     CHANNEL_CHANGED,
+    CONFIGURATION,
     UNSUPPORTED,
     MALFORMED
 }
@@ -73,6 +75,8 @@ class TakServerCotIngestor(
             logger("Skipping malformed CoT from serverId=${envelope.sourceServerId}", null)
             return TakServerCotIngestResult.MALFORMED
         }
+
+        if (sink.onInboundCot(envelope)) return TakServerCotIngestResult.CONFIGURATION
 
         if (isChatEnabled() &&
             CotMessageParser.isChatMessage(rawXml) &&

@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.CoroutineScope
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -74,6 +75,51 @@ class PluginSettingsCoordinatorTest {
             else -> SettingsSchemaParcel()
         }
         fakePlugin.setSettingsSchemaForTest(schema)
+    }
+
+    @Test
+    fun inboundSubscriptionIsIndependentOfOutboundAndDisabledPluginsReceiveNothing() {
+        val inbound = PluginCotIngress.SETTING_RECEIVE_INBOUND_COT
+        fakePlugin.setSettingsSchemaForTest(SettingsSchemaParcel(fields = listOf(
+            SettingsFieldParcel(fieldId = inbound, label = "Receive CoT", fieldType = SettingsFieldTypes.TOGGLE)
+        )))
+        coordinator.onPluginConnected("com.plugin.settings", fakePlugin)
+        val args = Bundle().apply { putString("xml", "<event/>") }
+        coordinator.invokeActionOnPluginsWithSetting(inbound, "cot.inbound", args)
+        assertTrue(fakePlugin.mainUiActions.isEmpty())
+        assertTrue(coordinator.applyPluginSettings(
+            "com.plugin.settings", Bundle().apply { putBoolean(inbound, true) }
+        ).success)
+        coordinator.invokeActionOnPluginsWithSetting(inbound, "cot.inbound", args)
+        assertEquals("cot.inbound", fakePlugin.mainUiActions.single().first)
+        assertEquals("<event/>", fakePlugin.mainUiActions.single().second?.getString("xml"))
+        assertFalse(coordinator.outboundCotAvailable.value)
+        coordinator.invokeActionOnPluginsWithSetting(
+            PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT, "cot.outbound", args
+        )
+        assertEquals(1, fakePlugin.mainUiActions.size)
+    }
+
+    @Test
+    fun outboundCotReadinessTracksOptInAndDisconnect() {
+        val field = PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT
+        fakePlugin.setSettingsSchemaForTest(SettingsSchemaParcel(fields = listOf(
+            SettingsFieldParcel(fieldId = field, label = "Forward CoT", fieldType = SettingsFieldTypes.TOGGLE)
+        )))
+        coordinator.onPluginConnected("com.plugin.settings", fakePlugin)
+        assertFalse(coordinator.outboundCotAvailable.value)
+        assertTrue(coordinator.applyPluginSettings(
+            "com.plugin.settings", Bundle().apply { putBoolean(field, true) }
+        ).success)
+        assertTrue(coordinator.anyPluginHasSettingEnabled(field))
+        assertTrue(coordinator.outboundCotAvailable.value)
+        coordinator.invokeActionOnPluginsWithSetting(
+            field, "cot.outbound", Bundle().apply { putString("xml", "<event/>") }
+        )
+        assertEquals("cot.outbound", fakePlugin.mainUiActions.single().first)
+        coordinator.unregisterPlugin("com.plugin.settings")
+        assertFalse(coordinator.anyPluginHasSettingEnabled(field))
+        assertFalse(coordinator.outboundCotAvailable.value)
     }
 
     @Test

@@ -17,6 +17,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
@@ -36,17 +38,85 @@ class PluginSettingsCoordinator(
     private val pluginRefs = ConcurrentHashMap<String, IWearTakPlugin>()
     private val syncMutex = Mutex()
     private var hostWatcherStarted = false
+    private val outboundCotAvailableState = MutableStateFlow(false)
+    val outboundCotAvailable = outboundCotAvailableState.asStateFlow()
 
     fun registerPlugin(pluginId: String, plugin: IWearTakPlugin) {
         pluginRefs[pluginId] = plugin
+        updateOutboundCotAvailability()
     }
 
     fun unregisterPlugin(pluginId: String) {
         pluginRefs.remove(pluginId)
         cache.remove(pluginId)
+        updateOutboundCotAvailability()
     }
 
     fun getState(pluginId: String): PluginSettingsState? = cache[pluginId]
+
+    /** True when any connected plugin declares [fieldId] and currently has it set. */
+    fun anyPluginHasSettingEnabled(fieldId: String): Boolean =
+        cache.entries.any { (pluginId, state) ->
+            pluginRefs.containsKey(pluginId) &&
+                state.schema.fields.any { it.fieldId == fieldId } && state.values.getBoolean(fieldId, false)
+        }
+
+    /**
+     * Fire [actionId] at every connected plugin that declares [fieldId] and currently has it set.
+     *
+     * The opt-in is the plugin's own settings schema — declaring the field advertises the interest,
+     * and its value is the on/off switch the wearer already controls through the normal settings UI.
+     * No new contract surface, and a plugin that never declares the field is never contacted.
+     *
+     * **Always asynchronous.** Callers are on WearTAK's own CoT dispatch paths; a plugin that is
+     * slow, wedged, or dying must never delay the host's own sending, so this dispatches onto the
+     * coordinator's scope and returns immediately. Delivery is therefore best-effort and unordered
+     * with respect to the host's other endpoints.
+     */
+    fun invokeActionOnPluginsWithSetting(fieldId: String, actionId: String, args: Bundle) {
+        val targets = cache.entries
+            .filter { (_, state) ->
+                state.schema.fields.any { it.fieldId == fieldId } && state.values.getBoolean(fieldId, false)
+            }
+            .mapNotNull { (pluginId, _) -> pluginRefs[pluginId]?.let { pluginId to it } }
+        if (targets.isEmpty()) return
+
+        scope.launch {
+            for ((pluginId, plugin) in targets) {
+                runCatching { plugin.invokeMainUiAction(actionId, args) }
+                    .onFailure { Log.w(TAG, "action $actionId failed for $pluginId: ${it.message}") }
+            }
+        }
+    }
+
+    /**
+     * Deliver a host-originated value to every connected plugin that declares [fieldId] in its
+     * settings schema, and return the ids that accepted it.
+     *
+     * This is the bridge for host-side data that has no dedicated contract method — notably inbound
+     * CoT payloads. [IWearTakHostCallback] is plugin-to-host in every direction, so a plugin cannot
+     * observe CoT arriving from a TAK server; routing it through the settings channel reuses the
+     * one host-to-plugin path that carries an arbitrary value and validates it against the plugin's
+     * own declared schema. A plugin opts in simply by declaring the field.
+     */
+    fun pushValueToPluginsDeclaring(fieldId: String, value: String): List<String> {
+        val targets = cache.entries
+            .filter { (_, state) -> state.schema.fields.any { it.fieldId == fieldId } }
+            .map { it.key }
+        if (targets.isEmpty()) return emptyList()
+
+        val accepted = mutableListOf<String>()
+        for (pluginId in targets) {
+            val bundle = Bundle().apply { putString(fieldId, value) }
+            val result = runCatching { applyPluginSettings(pluginId, bundle) }.getOrNull()
+            if (result?.success == true) {
+                accepted += pluginId
+            } else {
+                Log.w(TAG, "pushValue $fieldId rejected by $pluginId: ${result?.errors}")
+            }
+        }
+        return accepted
+    }
 
     fun startHostSettingsWatcher() {
         if (hostWatcherStarted) return
@@ -326,6 +396,12 @@ class PluginSettingsCoordinator(
 
     private fun updateCache(pluginId: String, state: PluginSettingsState) {
         cache[pluginId] = state
+        updateOutboundCotAvailability()
+    }
+
+    private fun updateOutboundCotAvailability() {
+        outboundCotAvailableState.value =
+            anyPluginHasSettingEnabled(PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT)
     }
 
     private data class HostWatchKey(

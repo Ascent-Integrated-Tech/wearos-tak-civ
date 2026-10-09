@@ -58,6 +58,7 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.TakChatEvent
+import com.aitech.weartak_civ.integration.plugin.PluginCotIngress
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.manager.MulticastWifiRequest
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -1227,6 +1228,12 @@ class TAKConnectService: Service() {
         private val cotIngestor by lazy {
             TakServerCotIngestor(
                 sink = object : TakServerCotSink {
+                    override suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean =
+                        PluginCotIngress.offer(
+                            envelope,
+                            (context as WearTakApplication).pluginManager.settingsCoordinator
+                        )
+
                     override suspend fun onChat(event: TakChatEvent) {
                         Log.d(
                             TAG,
@@ -2191,6 +2198,15 @@ class TAKConnectService: Service() {
             }
             runCatching { socket.close() }
             if (shouldReconnect) getClientCertificateAndConnect(detail)
+        }
+
+        suspend fun handleInboundCot(rawXml: String, source: String) {
+            cotIngestor.ingest(TakServerCotEnvelope(
+                sourceServerId = source,
+                sourceServerAddress = source,
+                receivedAt = System.currentTimeMillis(),
+                rawXml = rawXml
+            ))
         }
 
         private fun startCotReader(

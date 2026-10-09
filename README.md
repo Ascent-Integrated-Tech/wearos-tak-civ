@@ -159,8 +159,25 @@ Multicast position broadcasts advertise the GeoChat UDP endpoint so ATAK can sen
 messages to the watch without a TAK server; server-bound broadcasts retain their server endpoint.
 The receiver ignores datagrams sent from this device's local addresses, including markers
 whose event UID differs from the watch UID. Binary decoding preserves custom XML details
-such as `t-x-meshcfg`/`__meshtastic_cfg`, but applying Meshtastic configuration requires a
-separate plugin integration; receiving the payload does not itself configure a mesh.
+such as `t-x-meshcfg`/`__meshtastic_cfg`; a plugin declaring `configShareUrl` can receive that
+configuration through its validated settings interface.
+
+### Plugin CoT
+
+Plugins can opt in through their settings schema and enabled boolean values:
+`forwardOutboundCot` receives watch-generated CoT as `cot.outbound`, while
+`receiveInboundCot` receives incoming CoT as `cot.inbound`. Both actions carry `xml`;
+incoming actions also carry `source` and `receivedAt`. Incoming delivery covers direct
+TAK, multicast, SITX, and companion CoT IPC without changing their existing processing.
+Plugin-injected CoT is processed locally but is not sent back into plugin bearers,
+preventing reinjection loops. Unsupported CoT types can still be observed by opted-in plugins.
+
+These subscriptions do not start or enable any network transport, and observing inbound
+CoT does not retransmit it. A BLE-only configuration remains BLE-only. The companion BLE
+protocol itself is unchanged; it does not currently provide a raw incoming CoT feed.
+Plugin `requestCotDispatch` retains its existing TAK-server relay by default; a plugin
+can declare `relayInboundToNetwork` and set it false for local-only injection. That relay
+does not enable disconnected TAK servers or fan out to other transports.
 
 ## Architecture
 

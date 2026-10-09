@@ -1,6 +1,8 @@
 package com.aitech.weartak_civ.service
 
 import android.app.Application
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.integration.plugin.PluginSettingsCoordinator
 import com.aitech.weartak_civ.cot.CotCompanionPayload
 import com.aitech.weartak_civ.cot.CotEndpointDispatcher
 import com.aitech.weartak_civ.cot.CotEventTime
@@ -10,6 +12,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -33,6 +36,26 @@ import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class CotDispatchServiceAlertReadinessTest {
+    @Test
+    fun pluginOnlyAvailabilityDrainsQueuedEmergencyWithoutEnablingNetworkRoutes() = runTest {
+        val fixture = Fixture(this)
+        fixture.startRecoveryCollector()
+        runCurrent()
+        val alert = fixture.alert("plugin-only")
+        fixture.activeAlerts(false)[alert.uuid] = alert
+        fixture.send(false, alert)
+        assertTrue(fixture.sent.isEmpty())
+        fixture.pluginAvailable.value = true
+        runCurrent()
+        delay(10)
+        runCurrent()
+        assertEquals(1, fixture.sent.size)
+        assertTrue(fixture.endpoints.value.isEmpty())
+        assertFalse(fixture.multicast.value)
+        assertFalse(fixture.companionEnabled.value)
+        fixture.stopRecoveryCollector()
+    }
+
     @Test
     fun usableRouteSendsManualAndAutomaticAlertsAndCancellationsWithoutFreshGps() = runTest {
         for (automatic in listOf(false, true)) {
@@ -106,6 +129,7 @@ class CotDispatchServiceAlertReadinessTest {
         val multicast = MutableStateFlow(false)
         val companionReady = MutableStateFlow(false)
         val companionEnabled = MutableStateFlow(false)
+        val pluginAvailable = MutableStateFlow(false)
         val sent = mutableListOf<String>()
         val payloads = mutableListOf<CotCompanionPayload.Emergency>()
         var snapshotLocation: DataRepository.LocationSnapshot? = null
@@ -125,6 +149,7 @@ class CotDispatchServiceAlertReadinessTest {
             DittoService.isRunning.set(false)
             every { repo.endpointConnected } returns endpoints
             every { repo.anyEndpointConnected } returns MutableStateFlow(false)
+            every { repo.latestLocation } returns MutableStateFlow<android.location.Location?>(null)
             every { repo.multicastPublisherRunning } returns multicast
             every { repo.sitxStatus } returns MutableStateFlow(DataRepository.SitxServerStatus.DISCONNECTED)
             every { repo.getEnableSitxService } returns MutableStateFlow(false)
@@ -139,7 +164,13 @@ class CotDispatchServiceAlertReadinessTest {
                     snapshotLocation, null, mockk(relaxed = true),
                 )
             }
-            service = CotDispatchService()
+            val coordinator = mockk<PluginSettingsCoordinator>(relaxed = true)
+            every { coordinator.outboundCotAvailable } returns pluginAvailable
+            every { coordinator.anyPluginHasSettingEnabled(any()) } answers { pluginAvailable.value }
+            val app = mockk<WearTakApplication>(relaxed = true)
+            every { app.pluginManager.settingsCoordinator } returns coordinator
+            service = spyk(CotDispatchService())
+            every { service.applicationContext } returns app
             field("dataRepository").set(service, repo)
             field("serviceScope").set(service, collectorScope)
             field("capRepo\$delegate").set(service, lazyOf(companion))
@@ -150,6 +181,7 @@ class CotDispatchServiceAlertReadinessTest {
                 sendMulticast = { sent += it },
                 sendPliMulticast = { error("Unexpected PLI route") },
                 sendCompanion = { payloads += it as CotCompanionPayload.Emergency },
+                sendPlugin = { sent += it },
             )
             field("endpointDispatcher\$delegate").set(service, lazyOf(dispatcher))
         }

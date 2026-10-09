@@ -18,6 +18,8 @@ import android.util.Log
 import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cot.CotMessageParser
+import com.aitech.weartak_civ.cot.TakServerCotEnvelope
+import com.aitech.weartak_civ.integration.plugin.PluginCotIngress
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
@@ -143,6 +145,12 @@ class WearTakCotIpcService : Service() {
         }
         logIncomingPayloadPreview(route, size, callingUid, callerLabel, cotXml)
         logIncomingPayloadFull(route, callingUid, callerLabel, cotXml)
+        if (PluginCotIngress.offer(
+                TakServerCotEnvelope(
+                    "companion:$callingUid", callerLabel, System.currentTimeMillis(), cotXml
+                ),
+                (applicationContext as WearTakApplication).pluginManager.settingsCoordinator
+            )) return
         if (CotMessageParser.eventTypeOrNull(cotXml)?.let(CotMessageParser::isEmergencyType) == true) {
             val event = CotMessageParser.parseEmergencyOrNull(cotXml)
             if (event == null) {
