@@ -22,6 +22,7 @@ class CotEndpointDispatcher(
     private val sendMulticast: (xml: String) -> Unit,
     private val sendPliMulticast: (xml: String) -> Unit,
     private val sendCompanion: suspend (payload: CotCompanionPayload) -> Unit,
+    private val sendPlugin: (xml: String) -> Unit = {},
 ) {
     suspend fun dispatch(message: CotOutboundMessage, availability: CotEndpointAvailability): Boolean {
         val routes = CotDispatchPolicy.routesFor(message.kind, availability)
@@ -36,6 +37,7 @@ class CotEndpointDispatcher(
                     sendMulticast(message.xml)
                 }
                 CotRoute.COMPANION -> sendCompanion(message.companionPayload)
+                CotRoute.PLUGIN -> sendPlugin(message.xml)
             }
         }
         return routes.isNotEmpty()

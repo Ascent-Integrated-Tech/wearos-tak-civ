@@ -132,5 +132,9 @@ class FakeWearTakPlugin(
 
     override fun getMainUiState(): Bundle = Bundle()
 
-    override fun invokeMainUiAction(actionId: String?, args: Bundle?) {}
+    val mainUiActions = mutableListOf<Pair<String?, Bundle?>>()
+
+    override fun invokeMainUiAction(actionId: String?, args: Bundle?) {
+        mainUiActions += actionId to args?.let { Bundle(it) }
+    }
 }

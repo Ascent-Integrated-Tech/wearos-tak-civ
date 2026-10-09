@@ -83,9 +83,43 @@ class HostControlImpl(
             Log.w(TAG, "requestCotDispatch: empty payload format=${request.payloadFormat}")
             return
         }
+        // Ingest locally, then relay onward unless the plugin has asked us not to.
+        //
+        // The ingest is the new half: a plugin handing us CoT it picked up off-network - mesh
+        // traffic, say - should have it appear on this watch, through the same parsers and map
+        // state as anything arriving on a server socket.
+        //
+        // The relay is the pre-existing behaviour of this call and stays on by default, so a plugin
+        // that knows nothing about this is unaffected. A plugin opts out by declaring
+        // [SETTING_RELAY_INBOUND_TO_NETWORK] in its settings schema and clearing it - worth doing
+        // for a bearer the watch is not well placed to gateway from, since it has the weakest radio
+        // and smallest battery on the network.
         runCatching {
-            TAKConnectService.sendDataTAKServers(msg = xml, isNotPli = true)
-        }.onFailure { Log.e(TAG, "requestCotDispatch failed", it) }
+            runBlocking {
+                TAKConnectService.handleInboundCot(rawXml = xml, source = "plugin:$pluginPackage")
+            }
+        }.onFailure { Log.e(TAG, "requestCotDispatch ingest failed", it) }
+
+        if (relayInboundToNetwork()) {
+            runCatching {
+                TAKConnectService.sendDataTAKServers(msg = xml, isNotPli = true)
+            }.onFailure { Log.e(TAG, "requestCotDispatch relay failed", it) }
+        }
+    }
+
+    /**
+     * Whether CoT this plugin injects should also be relayed on to the TAK servers.
+     *
+     * True unless the plugin both declares [SETTING_RELAY_INBOUND_TO_NETWORK] and has it off, so a
+     * plugin that never heard of the setting keeps the behaviour this call has always had. The
+     * declare-to-participate pattern matches how a plugin opts in to outbound CoT, and needs no
+     * addition to the AIDL contract.
+     */
+    private fun relayInboundToNetwork(): Boolean {
+        val state = app.pluginManager.settingsCoordinator.getState(pluginPackage) ?: return true
+        val declared = state.schema.fields.any { it.fieldId == SETTING_RELAY_INBOUND_TO_NETWORK }
+        if (!declared) return true
+        return state.values.getBoolean(SETTING_RELAY_INBOUND_TO_NETWORK, true)
     }
 
     override fun requestAlert(request: AlertRequestParcel?) {
@@ -317,6 +351,12 @@ class HostControlImpl(
     override fun getMapLayerControl() = mapLayer
 
     companion object {
+        /**
+         * Settings field a plugin declares to control whether CoT it injects is relayed on to the
+         * TAK servers. Absent or true means relay, which is what this call always did.
+         */
+        const val SETTING_RELAY_INBOUND_TO_NETWORK = "relayInboundToNetwork"
+
         private const val TAG = "CEP-HostControl"
 
         internal fun formatPluginAlertDescription(message: String, channelId: String?): String {

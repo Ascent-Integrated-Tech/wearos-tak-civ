@@ -5,6 +5,31 @@ import org.junit.Test
 
 class CotDispatchPolicyTest {
     @Test
+    fun companionOnlyConfigurationDoesNotAddOtherRoutes() {
+        val availability = CotEndpointAvailability(
+            tak = false, sitx = false, ditto = false, multicast = false,
+            companion = true, plugin = false
+        )
+        listOf(CotMessageKind.CHAT, CotMessageKind.MARKER, CotMessageKind.EMERGENCY).forEach { kind ->
+            assertEquals(listOf(CotRoute.COMPANION), CotDispatchPolicy.routesFor(kind, availability))
+        }
+    }
+
+    @Test
+    fun pluginIsOfferedFirstForEveryKindWithoutOtherEndpoints() {
+        val availability = CotEndpointAvailability(
+            tak = false, sitx = false, ditto = false, multicast = false,
+            companion = false, plugin = true
+        )
+        CotMessageKind.entries.forEach { kind ->
+            val routes = CotDispatchPolicy.routesFor(kind, availability)
+            assertEquals(CotRoute.PLUGIN, routes.first())
+            assertEquals(1, routes.count { it == CotRoute.PLUGIN })
+            if (kind != CotMessageKind.PLI) assertEquals(listOf(CotRoute.PLUGIN), routes)
+        }
+    }
+
+    @Test
     fun pliPreservesLegacyTakSitxCompanionAndAlwaysMulticastRoutes() {
         assertEquals(
             listOf(CotRoute.TAK, CotRoute.SITX, CotRoute.COMPANION, CotRoute.MULTICAST),

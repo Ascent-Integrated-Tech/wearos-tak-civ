@@ -24,6 +24,14 @@ class TakServerCotIngestorTest {
         val markers = mutableListOf<Pair<CotMarkerEvent, TakServerCotEnvelope>>()
         val emergencies = mutableListOf<Pair<CotEmergencyEvent, TakServerCotEnvelope>>()
         val channelChanges = mutableListOf<TakServerCotEnvelope>()
+        val configurations = mutableListOf<TakServerCotEnvelope>()
+        var acceptConfiguration = false
+
+        override suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean {
+            if (!acceptConfiguration) return false
+            configurations += envelope
+            return true
+        }
 
         override suspend fun onChat(event: TakChatEvent) {
             chats += event
@@ -51,6 +59,22 @@ class TakServerCotIngestorTest {
         override suspend fun onChannelChanged(envelope: TakServerCotEnvelope) {
             channelChanges += envelope
         }
+    }
+
+    @Test
+    fun configurationHookRunsForEverySourceAndUnclaimedEventsKeepRouting() = runTest {
+        val sink = RecordingSink()
+        val ingestor = ingestor(sink)
+        val xml = "<event uid='config' type='t-x-meshcfg'><detail></detail></event>"
+        listOf("tak-1", "multicast:239.2.3.1:6969", "plugin:com.example").forEach { source ->
+            val message = TakServerCotEnvelope(source, source, 100L, xml)
+            sink.acceptConfiguration = true
+            assertEquals(TakServerCotIngestResult.CONFIGURATION, ingestor.ingest(message))
+            assertEquals(message, sink.configurations.last())
+            sink.acceptConfiguration = false
+            assertEquals(TakServerCotIngestResult.UNSUPPORTED, ingestor.ingest(message))
+        }
+        assertEquals(TakServerCotIngestResult.USER, ingestor.ingest(envelope(USER_XML, 101L)))
     }
 
     @Test

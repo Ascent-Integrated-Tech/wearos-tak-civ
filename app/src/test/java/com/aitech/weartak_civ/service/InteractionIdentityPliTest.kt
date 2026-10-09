@@ -6,6 +6,7 @@ import android.os.SystemClock
 import com.aitech.weartak_civ.cot.CotCompanionPayload
 import com.aitech.weartak_civ.cot.CotEndpointDispatcher
 import com.aitech.weartak_civ.cot.CotOutboundMessage
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.InteractionPliRefresh
@@ -16,6 +17,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.spyk
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
@@ -72,7 +74,10 @@ class InteractionIdentityPliTest {
             sent.add(firstArg())
             true
         }
-        val service = CotDispatchService()
+        val hostApp = mockk<WearTakApplication>(relaxed = true)
+        every { hostApp.pluginManager.settingsCoordinator.anyPluginHasSettingEnabled(any()) } returns false
+        val service = spyk(CotDispatchService())
+        every { service.applicationContext } returns hostApp
         fun inject(name: String, value: Any) {
             CotDispatchService::class.java.getDeclaredField(name).apply {
                 isAccessible = true
