@@ -39,6 +39,7 @@ import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.data.takserver.TakChannelApi
 import com.aitech.weartak_civ.data.takserver.TakChannelState
+import com.aitech.weartak_civ.data.takserver.TakSanHostnameVerifier
 import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
 import com.aitech.weartak_civ.data.takserver.TakServerId
 import com.aitech.weartak_civ.data.takserver.TakChannelsUnsupportedException
@@ -108,6 +109,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
@@ -166,6 +168,7 @@ class TAKConnectService: Service() {
         var secureSocket : SSLSocket? = null,
         var channelSslContext: SSLContext? = null,
         var channelTrustManager: X509TrustManager? = null,
+        var channelHostnameVerifier: HostnameVerifier? = null,
         val channelMutex: Mutex = Mutex(),
         val runtime: ConnectionRuntime = ConnectionRuntime(),
         var duplicateEndpointSuppressed: Boolean = false,
@@ -1025,6 +1028,9 @@ class TAKConnectService: Service() {
                 trustManager = trustManager,
                 serverId = detail.serverId,
                 serverName = detail.name,
+                hostnameVerifier = checkNotNull(detail.channelHostnameVerifier) {
+                    "TAK Server channel hostname verifier is unavailable"
+                },
             )
         }
 
@@ -1301,6 +1307,7 @@ class TAKConnectService: Service() {
                 detail.runtime.readerJob = null
                 detail.channelSslContext = null
                 detail.channelTrustManager = null
+                detail.channelHostnameVerifier = null
                 detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                 detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
             }
@@ -2114,6 +2121,18 @@ class TAKConnectService: Service() {
                     }
                     takServerDetail.channelSslContext = sslContext
                     takServerDetail.channelTrustManager = trustManager
+                    takServerDetail.channelHostnameVerifier = TakSanHostnameVerifier(
+                        address = takServer,
+                        serverTrustManager = trustManager,
+                        onResolved = { name ->
+                            Log.i(TAG, "Resolved channel TLS name serverId=${takServerDetail.serverId} " +
+                                "address=$takServer tlsName=$name")
+                        },
+                        onRejected = { reason ->
+                            Log.w(TAG, "Channel SAN discovery rejected serverId=${takServerDetail.serverId} " +
+                                "address=$takServer reason=$reason")
+                        },
+                    )
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
                     dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)

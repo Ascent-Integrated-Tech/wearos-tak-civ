@@ -39,9 +39,9 @@ internal class TakChannelHostnameVerifier(
     ): Boolean {
         if (certificate.getExtensionValue(SUBJECT_ALTERNATIVE_NAME_OID) != null) return false
 
-        val normalizedHostname = normalizeDnsName(hostname) ?: return false
+        val normalizedHostname = normalizeTakDnsName(hostname) ?: return false
         val normalizedCommonName = certificate.commonName()
-            ?.let(::normalizeDnsName)
+            ?.let(::normalizeTakDnsName)
             ?: return false
 
         return normalizedHostname == normalizedCommonName
@@ -58,20 +58,22 @@ internal class TakChannelHostnameVerifier(
             ?.toString()
     }.getOrNull()
 
-    private fun normalizeDnsName(value: String): String? {
-        val withoutTrailingDot = value.removeSuffix(".")
-        if (withoutTrailingDot.isEmpty() || withoutTrailingDot.contains('*')) return null
-        if (withoutTrailingDot.contains(':') || withoutTrailingDot.all { it.isDigit() || it == '.' }) {
-            return null
-        }
-
-        return runCatching {
-            IDN.toASCII(withoutTrailingDot, IDN.USE_STD3_ASCII_RULES)
-                .lowercase(Locale.US)
-        }.getOrNull()
-    }
-
     private companion object {
         const val SUBJECT_ALTERNATIVE_NAME_OID = "2.5.29.17"
+    }
+}
+
+internal fun normalizeTakDnsName(value: String): String? {
+    val withoutTrailingDot = value.removeSuffix(".")
+    if (withoutTrailingDot.isEmpty() || withoutTrailingDot.contains('*')) return null
+    if (withoutTrailingDot.contains(':') || withoutTrailingDot.all { it.isDigit() || it == '.' }) {
+        return null
+    }
+
+    return try {
+        IDN.toASCII(withoutTrailingDot, IDN.USE_STD3_ASCII_RULES)
+            .lowercase(Locale.US)
+    } catch (_: IllegalArgumentException) {
+        null
     }
 }
