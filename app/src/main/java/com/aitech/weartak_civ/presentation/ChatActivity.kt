@@ -73,6 +73,7 @@ import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -246,7 +247,8 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
                     navController, quickReplyOptions, reply, "New Chat",
                     { navController.popBackStack() },
                     { navController.popBackStack() },
-                    onOptionSelected = sendPreset
+                    onOptionSelected = sendPreset,
+                    onKeyboardSend = sendPreset
                 )
             }
         }
@@ -639,8 +641,10 @@ fun TextSelectionScreen(
     titleText: String,
     onConfirm: () -> Unit,
     onCancel: () -> Unit,
-    onOptionSelected: ((String) -> Unit)? = null ){
+    onOptionSelected: ((String) -> Unit)? = null,
+    onKeyboardSend: ((String) -> Unit)? = null ){
 
+    val context = LocalContext.current
     var replyTextFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(
             TextFieldValue(
@@ -685,7 +689,18 @@ fun TextSelectionScreen(
                         ),
                         shape = RoundedCornerShape(50), // pill shape like Chip
                         maxLines = 3,
-                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done)
+                        keyboardOptions = KeyboardOptions(
+                            imeAction = if (onKeyboardSend != null) ImeAction.Send else ImeAction.Done
+                        ),
+                        keyboardActions = KeyboardActions(
+                            onSend = {
+                                if (replyTextFieldValue.text.isBlank()) {
+                                    Toast.makeText(context, R.string.chat_empty_message, Toast.LENGTH_SHORT).show()
+                                } else {
+                                    onKeyboardSend?.invoke(replyTextFieldValue.text)
+                                }
+                            }
+                        )
                     )
                     Spacer(modifier = Modifier.width(5.dp))
                     IconButton(
