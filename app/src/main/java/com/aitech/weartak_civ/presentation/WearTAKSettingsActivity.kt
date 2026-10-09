@@ -155,8 +155,7 @@ import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxGroupStatus
 import com.aitech.weartak_civ.events.MessageEvent
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
-import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
+import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.integration.plugin.PluginCompatibilityStatus
@@ -1380,6 +1379,8 @@ fun WearTAKSettingsNav(
             )
         }
         composable("tak_servers") {
+            val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
+            val disconnectedStatus = remember { androidx.lifecycle.MutableLiveData(TAK_SERVER_DISCONNECTED_STRING) }
             WearTAKPageWithBackArrow(
                 stringResource(R.string.tak_server_connections),
                 {
@@ -1387,11 +1388,12 @@ fun WearTAKSettingsNav(
                         takServerList.alphabetizedServerEntries { it.name },
                         key = { _, entry -> entry.value.serverId ?: entry.index }
                     ) { _, (index, takServerItem) ->
-                        var takServerChecked by remember(takServerItem.isEnabled) {
+                        var takServerChecked by remember(takServerItem.serverId, takServerItem.isEnabled) {
                             mutableStateOf(takServerItem.isEnabled)
                         }
-                        val takServerStatus by settingsVm
-                            .getTakServerStatus(index)
+                        val takServerStatus by (runtimeDetails
+                            .firstOrNull { it.serverId == takServerItem.serverId }
+                            ?.connectionStatusLiveData ?: disconnectedStatus)
                             .observeAsState(initial = TAK_SERVER_DISCONNECTED_STRING)
                         Log.d(TAG, "index($index): takServerChecked($takServerChecked)")
                         WearTAKSwipeToRevealChip(
@@ -1532,17 +1534,8 @@ fun WearTAKSettingsNav(
                         password.isNotBlank()) {
                         val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
                             isP12Cert, username, password, "", "")
-                        settingsVm.addTakServerItem(takServerItem)
-
-                        val mutableTakServerList = takServerList.toMutableList() ?: emptyList<DataRepository.TakServerItem>().toMutableList()
-                        mutableTakServerList.add(takServerItem)
-                        settingsVm.storeTakServerList(mutableTakServerList.toList())
+                        settingsVm.saveAndRegisterTakServer(takServerItem)
                         serverSettingsChanged.value = true
-
-                        Log.d(TAG, "serverSettingsChanged=${serverSettingsChanged.value}")
-                        Handler(Looper.getMainLooper()).postDelayed(
-                            { EventBus.getDefault().post(MessageEvent(
-                                SERVER_ADDED_VIA_UI, MainActivity.Constants.takServerList.size-1)) }, EVENT_SEND_DELAY_MS)
                     } else {
                         Toast.makeText(
                             mainActivity,
@@ -1550,43 +1543,9 @@ fun WearTAKSettingsNav(
                     }
                 },
                 loadingDialogBehavior = {
-                    Log.d(TAG, "NewServerPage serverSettingsChanged=${serverSettingsChanged.value}")
                     if (serverSettingsChanged.value) {
-                        val loadingDialog by TAKConnectService.newServerAddedViaUiConnectionStatusLiveData.observeAsState()
-                        val shouldShowLoadingDialog = remember { mutableStateOf(false) }
-                        val shouldShowConfirmDialog = remember { mutableStateOf(false) }
-                        val isServerConnected = remember { mutableStateOf(false) }
-
-                        if (NetworkManager.isNetworkConnected) {
-                            Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network connected")
-                            isNetworkConnected.value = true
-                            val isDuplicate = remember { mutableStateOf(false) }
-                            settingsVm.displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
-                            WearTAKLoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
-                            WearTAKServerDialog(
-                                shouldShowDialog = shouldShowConfirmDialog,
-                                shouldShowLoadingDialog = shouldShowLoadingDialog,
-                                isNetworkConnected = isNetworkConnected,
-                                navController = navController,
-                                isServerConnected = isServerConnected,
-                                serverDetailsChanged = serverSettingsChanged,
-                                isDuplicate = isDuplicate
-                            )
-                        } else {
-                            Log.d(TAG, "NewServerPage: serverSettingsChanged w/ Network disconnected")
-                            isNetworkConnected.value = false
-                            val isDuplicate = remember { mutableStateOf(false) }
-                            settingsVm.displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
-                           WearTAKServerDialog(
-                                shouldShowDialog = shouldShowConfirmDialog,
-                                shouldShowLoadingDialog = shouldShowLoadingDialog,
-                                isNetworkConnected = isNetworkConnected,
-                                navController = navController,
-                                isServerConnected = isServerConnected,
-                                serverDetailsChanged = serverSettingsChanged,
-                                isDuplicate = isDuplicate
-                            )
-                        }
+                        val registration by settingsVm.serverRegistrationState.collectAsStateWithLifecycle()
+                        WearTAKRegistrationDialogs(registration, serverSettingsChanged, navController)
                     }
                 }
             )
@@ -1689,14 +1648,16 @@ fun WearTAKSettingsNav(
                                 "name=$name address=$address:$port isP12=$isP12Cert"
                         )
                         if (name != takServerDetails.name || address != takServerDetails.address || port != takServerDetails.port.toString() ||
-                            username != takServerDetails.username || password != takServerDetails.password) {
+                            username != takServerDetails.username || password != takServerDetails.password ||
+                            isP12Cert != takServerDetails.isP12Cert) {
                             if (name == takServerDetails.name) {
                                 // Name is same, so something else in address, port, username, or password has changed
                                 serverConnSettingsChanged.value = true
                                 Log.d(TAG, "serverConnSettingsChanged set to true")
                             } else { // Name is different
                                 if (address != takServerDetails.address || port.toInt() != takServerDetails.port ||
-                                    username != takServerDetails.username || password != takServerDetails.password) {
+                                    username != takServerDetails.username || password != takServerDetails.password ||
+                                    isP12Cert != takServerDetails.isP12Cert) {
                                     // Apart from name, something else is different
                                     serverConnSettingsChanged.value = true
                                     Log.d(TAG, "serverConnSettingsChanged set to true with name being different")
@@ -1704,24 +1665,16 @@ fun WearTAKSettingsNav(
                             }
                             val changedTakServerDetail: DataRepository.TakServerItem =
                                 if (isP12Cert == true) {
-                                    DataRepository.TakServerItem(takServerList.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
-                                        takServerList.get(index).username, takServerList.get(index).password, takServerList.get(index).p12Cert, takServerList.get(index).p12CertPassword)
+                                    takServerDetails.copy(name = name, address = address.trim(), port = port.toInt(), isP12Cert = isP12Cert)
                                 } else {
-                                    DataRepository.TakServerItem(takServerList.get(index).isEnabled, name, address, port.toInt(), isP12Cert,
-                                        username, password, "", "")
+                                    takServerDetails.copy(name = name, address = address.trim(), port = port.toInt(), isP12Cert = isP12Cert,
+                                        username = username, password = password, p12Cert = "", p12CertPassword = "")
                                 }
 
-                                settingsVm.updateTakServerItem(index, changedTakServerDetail)
-
-
-                            val mutableTakServerList = takServerList.toMutableList()
-                            mutableTakServerList.set(index, changedTakServerDetail)
-                            settingsVm.storeTakServerList(mutableTakServerList.toList())
-
                             if (serverConnSettingsChanged.value) {
-                                Log.d(TAG, "EditServerPage serverSettingsChanged=${serverConnSettingsChanged.value}")
-                                EventBus.getDefault().post(MessageEvent(SERVER_CHANGED, index))
+                                settingsVm.saveAndRegisterTakServer(changedTakServerDetail, index)
                             } else {
+                                settingsVm.updateTakServerItem(index, changedTakServerDetail)
                                 navController.navigate("tak_servers") {
                                     popUpTo(("tak_servers")) {
                                         inclusive = true
@@ -1742,43 +1695,9 @@ fun WearTAKSettingsNav(
                     }
                 },
                 loadingDialogBehavior = {
-                    Log.d(TAG, "EditServerPage: loadingDialog serverSettingsChanged=${serverConnSettingsChanged.value}")
                     if (serverConnSettingsChanged.value) {
-//                        val loadingDialog by TAKConnectService.takServerDetails.get(index).connectionStatusLiveData.observeAsState()
-                        val loadingDialog by settingsVm.getTakServerStatus(index).observeAsState()
-                        val shouldShowLoadingDialog = remember { mutableStateOf(false) }
-                        val shouldShowConfirmDialog = remember { mutableStateOf(false) }
-                        val isServerConnected = remember { mutableStateOf(false) }
-                        if (NetworkManager.isNetworkConnected) {
-                            Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network connected")
-                            val isNetworkConnected = remember { mutableStateOf(true)}
-                            val isDuplicate = remember { mutableStateOf(false) }
-                            settingsVm.displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
-                            WearTAKLoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
-                            WearTAKServerDialog(
-                                shouldShowDialog = shouldShowConfirmDialog,
-                                shouldShowLoadingDialog = shouldShowLoadingDialog,
-                                isNetworkConnected = isNetworkConnected,
-                                navController = navController,
-                                isServerConnected = isServerConnected,
-                                serverDetailsChanged = serverConnSettingsChanged,
-                                isDuplicate = isDuplicate
-                            )
-                        } else {
-                            Log.d(TAG, "EditServerPage: serverSettingsChanged w/ Network disconnected")
-                            val isNetworkConnected = remember { mutableStateOf(false)}
-                            val isDuplicate = remember { mutableStateOf(false) }
-                            settingsVm.displayServerDialogs(true, loadingDialog, shouldShowLoadingDialog, shouldShowConfirmDialog, isServerConnected, isDuplicate)
-                            WearTAKServerDialog(
-                                shouldShowDialog = shouldShowConfirmDialog,
-                                shouldShowLoadingDialog = shouldShowLoadingDialog,
-                                isNetworkConnected = isNetworkConnected,
-                                navController = navController,
-                                isServerConnected = isServerConnected,
-                                serverDetailsChanged = serverConnSettingsChanged,
-                                isDuplicate = isDuplicate
-                            )
-                        }
+                        val registration by settingsVm.serverRegistrationState.collectAsStateWithLifecycle()
+                        WearTAKRegistrationDialogs(registration, serverConnSettingsChanged, navController)
                     }
                 }
             )
@@ -4323,6 +4242,37 @@ fun WearTAKDebugVersionText(
 
 // Custom Screens
 @Composable
+private fun WearTAKRegistrationDialogs(
+    registration: TakServerRegistration.State,
+    serverDetailsChanged: MutableState<Boolean>,
+    navController: NavController,
+) {
+    val shouldShowLoadingDialog = remember(registration) { mutableStateOf(registration.isLoading) }
+    val shouldShowConfirmDialog = remember(registration) { mutableStateOf(!registration.isLoading) }
+    val isServerConnected = remember(registration) {
+        mutableStateOf(registration.status == TakServerRegistration.Status.CONNECTED)
+    }
+    val isDuplicate = remember(registration) {
+        mutableStateOf(registration.status == TakServerRegistration.Status.DUPLICATE)
+    }
+    val isNetworkConnected = remember(NetworkManager.isNetworkConnected) {
+        mutableStateOf(NetworkManager.isNetworkConnected)
+    }
+    WearTAKLoadingDialog(shouldShowLoadingDialog, stringResource(R.string.registering_device_with_tak_server))
+    WearTAKServerDialog(
+        shouldShowDialog = shouldShowConfirmDialog,
+        shouldShowLoadingDialog = shouldShowLoadingDialog,
+        isNetworkConnected = isNetworkConnected,
+        navController = navController,
+        isServerConnected = isServerConnected,
+        serverDetailsChanged = serverDetailsChanged,
+        failure = registration.failure,
+        onRetry = { TAKConnectService.retryServerRegistration() },
+        isDuplicate = isDuplicate,
+    )
+}
+
+@Composable
 fun WearTAKServerDialog(
     shouldShowDialog: MutableState<Boolean>,
     shouldShowLoadingDialog: MutableState<Boolean>,
@@ -4330,7 +4280,9 @@ fun WearTAKServerDialog(
     navController: NavController,
     isServerConnected: MutableState<Boolean>,
     serverDetailsChanged: MutableState<Boolean>,
-    isDuplicate: MutableState<Boolean>
+    isDuplicate: MutableState<Boolean>,
+    failure: com.aitech.weartak_civ.data.takserver.TakConnectionFailure? = null,
+    onRetry: () -> Unit
     ){
     WearTAKAlertDialog(
         shouldShowDialog = shouldShowDialog,
@@ -4347,15 +4299,13 @@ fun WearTAKServerDialog(
         },
         text = {
             if (!isDuplicate.value) {
-                if (isNetworkConnected.value) {
-                    if (isServerConnected.value) {
-                        Text(stringResource(R.string.tak_server_registration_succeeded), textAlign = TextAlign.Center)
-                    } else {
-                        Text( stringResource(R.string.invalid_credentials_try_again), textAlign = TextAlign.Center, fontSize = if( stringResource(R.string.invalid_credentials_try_again).length!!<35) 15.sp else 13.sp)
-                    }
+                if (isServerConnected.value) {
+                    Text(stringResource(R.string.tak_server_registration_succeeded), textAlign = TextAlign.Center)
                 } else {
-                    Log.d(TAG, "text=(${stringResource(R.string.network_disconnected_try_later)}), isNetworkConnected=${isNetworkConnected.value}, isServerConnected=${isServerConnected.value}")
-                    Text(stringResource(R.string.registration_failed), textAlign = TextAlign.Center)
+                    Text(failure?.displayMessage(LocalContext.current) ?: stringResource(
+                        if (isNetworkConnected.value) R.string.registration_failed
+                        else R.string.network_disconnected_try_later),
+                        textAlign = TextAlign.Center, fontSize = 13.sp)
                 }
             }
         },
@@ -4365,9 +4315,7 @@ fun WearTAKServerDialog(
                 // Create retry button only if network is connected && server is NOT connected
                 Log.d(TAG, "ServerRegistrationDialog confirmButton: RetryButton is shown")
                 Button(
-                    onClick = { shouldShowDialog.value = false
-                        serverDetailsChanged.value = false
-                    },
+                    onClick = onRetry,
                     modifier = Modifier.fillMaxWidth(0.45f),
                     contentPadding = PaddingValues(0.dp),
                     colors = ButtonDefaults.buttonColors(

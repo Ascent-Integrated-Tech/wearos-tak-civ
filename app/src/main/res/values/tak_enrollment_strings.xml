@@ -1,0 +1,13 @@
+<resources>
+    <string name="tak_enrollment_stage_config">Certificate configuration</string>
+    <string name="tak_enrollment_stage_csr">Certificate request</string>
+    <string name="tak_enrollment_stage_sign">Certificate signing</string>
+    <string name="tak_enrollment_stage_certificate">Client certificate</string>
+    <string name="tak_enrollment_stage_connection">TAK connection</string>
+    <string name="tak_enrollment_authentication_failed">Authentication rejected (HTTP 401). Check username/password.</string>
+    <string name="tak_enrollment_http_failed">Server rejected request (HTTP %1$d).</string>
+    <string name="tak_enrollment_tls_failed">Secure connection failed. Check server certificate and hostname.</string>
+    <string name="tak_enrollment_connectivity_failed">Server unreachable. Check network and server address.</string>
+    <string name="tak_enrollment_certificate_failed">Invalid or missing certificate data.</string>
+    <string name="tak_enrollment_failure">%1$s: %2$s</string>
+</resources>

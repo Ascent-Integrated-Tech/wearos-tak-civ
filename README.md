@@ -96,6 +96,23 @@ Channel HTTPS requests automatically discover a legacy TAK server's TLS name whe
 
 This fallback does not change the CoT stream or enrollment connection. A Data Sync API client is not currently implemented in this app.
 
+### TAK certificate enrollment
+
+Username/password enrollment uses HTTPS port **8446** (`tls/config`, then
+`tls/signClient/v2`) with normal platform certificate and hostname validation.
+Configuration failures stop enrollment before CSR generation/signing. Signing
+responses may be JSON or XML with a required `signedCert` and optional numbered
+`caN` certificates; chains are leaf-first, then CAs in numeric order.
+Registration errors identify the failed stage and distinguish HTTP 401
+authentication rejection, other HTTP statuses (including 403), TLS, connectivity,
+and invalid certificate data. Retry clears the previous error for that server.
+Add/edit registration waits for the saved configuration before starting an attempt.
+The dialog follows a stable server-ID request across runtime configuration refreshes;
+failures replace the spinner, and retry starts an attempt even when settings are unchanged.
+This does **not** repair rejected credentials: HTTP 401 still requires valid
+credentials/server-side authorization. Response bodies and certificate material
+are not logged by enrollment.
+
 ## Architecture
 
 ### Remote emergencies
