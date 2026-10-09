@@ -157,6 +157,10 @@ Reception supports both XML CoT and binary TAK Protocol v1 datagrams, including 
 and ATAK contacts using friendly equipment/vehicle position types.
 Multicast position broadcasts advertise the GeoChat UDP endpoint so ATAK can send direct
 messages to the watch without a TAK server; server-bound broadcasts retain their server endpoint.
+The receiver ignores datagrams sent from this device's local addresses, including markers
+whose event UID differs from the watch UID. Binary decoding preserves custom XML details
+such as `t-x-meshcfg`/`__meshtastic_cfg`, but applying Meshtastic configuration requires a
+separate plugin integration; receiving the payload does not itself configure a mesh.
 
 ## Architecture
 
