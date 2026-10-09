@@ -92,6 +92,10 @@ Outgoing periodic and interaction-triggered PLI expires after twice the active r
 interval plus 15 seconds (135 seconds for a 60-second interval). Interaction PLI retains
 the location fix timestamp as the expiry baseline. Alert and marker expiry is unchanged.
 
+Channel HTTPS requests automatically discover a legacy TAK server's TLS name when the configured address does not match its certificate. For example, the watch can keep connecting to `takserver.nctak.org` while validating the certificate against its exact DNS SAN, `takserver2.nctak.org`. Discovery requires a certificate trusted by the imported/enrollment CA that is not also trusted by the device's public roots, and exactly one supported, non-wildcard DNS SAN. Normal hostname validation (including the existing exact Common Name fallback for certificates without SANs) remains unchanged. The discovered identity is reused for channel requests until the TAK connection is reset; a different identity is not silently substituted during that connection. Discovery failures appear in channel errors and diagnostic logs.
+
+This fallback does not change the CoT stream or enrollment connection. A Data Sync API client is not currently implemented in this app.
+
 ## Architecture
 
 ### Remote emergencies

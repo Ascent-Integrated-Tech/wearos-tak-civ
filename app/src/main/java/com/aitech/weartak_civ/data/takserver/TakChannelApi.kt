@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode
 import com.fasterxml.jackson.databind.node.ObjectNode
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
 import okhttp3.HttpUrl
@@ -120,9 +121,10 @@ internal class TakChannelApi(
     trustManager: X509TrustManager,
     private val serverId: String,
     private val serverName: String,
+    hostnameVerifier: HostnameVerifier,
     private val client: OkHttpClient = OkHttpClient.Builder()
         .sslSocketFactory(sslContext.socketFactory, trustManager)
-        .hostnameVerifier(TakChannelHostnameVerifier())
+        .hostnameVerifier(hostnameVerifier)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
