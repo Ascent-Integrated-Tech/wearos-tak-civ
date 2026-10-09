@@ -26,7 +26,7 @@ import org.robolectric.annotation.Config
  * Bind / unbind / discovery orchestration for [PluginManager] without a real plugin APK.
  */
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [32])
+@Config(sdk = [34])
 class PluginManagerLifecycleMockTest {
 
     private val pluginPkg = "com.weartak.fake.plugin"
@@ -69,6 +69,7 @@ class PluginManagerLifecycleMockTest {
         val pm = mockk<PackageManager>(relaxed = true)
         @Suppress("DEPRECATION")
         every { pm.queryIntentServices(any<Intent>(), any<Int>()) } returns resolveList
+        every { pm.queryIntentServices(any<Intent>(), any<PackageManager.ResolveInfoFlags>()) } returns resolveList
         @Suppress("DEPRECATION")
         every { pm.getApplicationInfo(any<String>(), any<Int>()) } returns ApplicationInfo().apply {
             uid = 10_001

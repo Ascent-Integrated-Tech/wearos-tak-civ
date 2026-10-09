@@ -392,8 +392,9 @@ fun grayMarkerIconFromString(markerType: String): Painter {
 
 // Creates MapLibre symbol layers for dropped and received markers
 @Composable
-fun MarkersOnMap(
+internal fun MarkersOnMap(
     markers: List<MapMarkerItem>,
+    collection: MarkerLayerCollection,
     onMarkerClick: (id: String, title: String) -> Unit = { _, _ -> },
     camera: CameraState,
 ) {
@@ -413,11 +414,12 @@ fun MarkersOnMap(
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
     // Create one symbol layer for each marker type
-    typeGroups.forEach { (markerType, group) ->
+    typeGroups.keys.forEach { markerType ->
+        androidx.compose.runtime.key(collection, markerType) {
         val iconRes = markerIconFromString(markerType)
         val iconResGray = grayMarkerIconFromString(markerType)
         SymbolLayer(
-            id = group.first().uid,
+            id = collection.layerId(markerType),
             zOrder = const(SymbolZOrder.Source),
             sortKey = const(0),
             source = source,
@@ -462,6 +464,7 @@ fun MarkersOnMap(
             textOffset = offset(0f.em, (-1f).em),
 
             )
+        }
     }
 }
 
@@ -2133,6 +2136,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
                 // Displays markers dropped by the current user
                 MarkersOnMap(
+                    collection = MarkerLayerCollection.DROPPED,
                     markers = droppedMapMarkers.filter {
                         it.lat != null && it.lon != null
                     },
@@ -2174,6 +2178,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
                 // Displays markers received from other users
                 MarkersOnMap(
+                    collection = MarkerLayerCollection.RECEIVED,
                     markers = receivedMapMarkers,
 
                     // Opens the selected received marker

@@ -126,7 +126,8 @@ object CotMessageParser {
         type == "b-a-o" || type.startsWith("b-a-o-") || StandardEmergencyType.fromCotType(type) != null
 
     fun isUserPositionType(type: String): Boolean =
-        type == "a-f-G-U-C" || type.startsWith("a-f-G-U-C-")
+        type == "a-f-G-U-C" || type.startsWith("a-f-G-U-C-") ||
+            type == "a-f-G-E" || type.startsWith("a-f-G-E-")
 
     fun isMarkerType(type: String): Boolean =
         MarkerType.entries.any { it.type == type } || type == "b-m-p-s-p-i"
@@ -322,7 +323,10 @@ object CotMessageParser {
     private fun extractAttribute(xml: String, elementName: String, attributeName: String): String? {
         val pattern = """<${Regex.escape(elementName)}\b[^>]*?\b${Regex.escape(attributeName)}\s*=\s*(['"])(.*?)\1"""
             .toRegex(RegexOption.DOT_MATCHES_ALL)
-        return pattern.find(xml)?.groupValues?.getOrNull(2)
+        val value = pattern.find(xml)?.groupValues?.getOrNull(2) ?: return null
+        if ('&' !in value) return value
+        val element = parseDocumentOrNull(xml)?.getElementsByTagName(elementName)?.item(0) as? Element
+        return element?.getAttribute(attributeName) ?: value
     }
 
     private fun extractElementText(xml: String, elementName: String): String? {

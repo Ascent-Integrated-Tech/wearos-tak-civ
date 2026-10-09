@@ -1,0 +1,146 @@
+package com.aitech.weartak_civ
+
+import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.wifi.WifiManager
+import android.util.Log
+import com.aitech.weartak_civ.cot.TakServerCotEnvelope
+import com.aitech.weartak_civ.cot.TakDatagramDecoder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import java.io.Closeable
+import java.io.IOException
+import java.net.DatagramPacket
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.MulticastSocket
+import java.net.NetworkInterface
+import java.net.SocketTimeoutException
+import org.xml.sax.SAXException
+
+class WifiMulticastReceiver internal constructor(
+    private val subscriptions: List<Subscription>,
+    private val logPacket: (String) -> Unit = {},
+    private val releaseLock: () -> Unit
+) : Closeable {
+    internal data class Subscription(
+        val endpoint: MulticastEndpoint,
+        val socket: MulticastSocket
+    )
+
+    suspend fun receive(onCot: suspend (TakServerCotEnvelope) -> Unit) = coroutineScope {
+        subscriptions.forEach { subscription ->
+            launch(Dispatchers.IO) {
+                val buffer = ByteArray(65535)
+                val packet = DatagramPacket(buffer, buffer.size)
+                while (currentCoroutineContext().isActive) {
+                    // receive() shrinks the packet length; restore it before reusing the buffer.
+                    packet.length = buffer.size
+                    try {
+                        subscription.socket.receive(packet)
+                    } catch (_: SocketTimeoutException) {
+                        continue
+                    }
+                    currentCoroutineContext().ensureActive()
+                    logPacket(packetSummary(subscription.endpoint, packet))
+                    val xml = try {
+                        TakDatagramDecoder.decode(packet.data, packet.offset, packet.length)
+                    } catch (error: IOException) {
+                        Log.w("WearTAK-MulticastRx", "Rejecting datagram from ${packet.address}: ${error.message}")
+                        continue
+                    } catch (error: SAXException) {
+                        Log.w("WearTAK-MulticastRx", "Rejecting invalid TAK detail XML from ${packet.address}", error)
+                        continue
+                    }
+                    if (xml == null) {
+                        logPacket("Received control-only TAK message group=${subscription.endpoint.sourceId}")
+                        continue
+                    }
+                    onCot(
+                        TakServerCotEnvelope(
+                            sourceServerId = subscription.endpoint.sourceId,
+                            sourceServerAddress = subscription.endpoint.address,
+                            receivedAt = System.currentTimeMillis(),
+                            rawXml = xml
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    override fun close() {
+        subscriptions.forEach { it.socket.close() }
+        releaseLock()
+    }
+
+    companion object {
+        internal fun packetSummary(endpoint: MulticastEndpoint, packet: DatagramPacket): String {
+            val prefix = (0 until minOf(3, packet.length)).joinToString(" ") { index ->
+                "%02x".format(packet.data[packet.offset + index].toInt() and 0xff)
+            }
+            return "Multicast packet group=${endpoint.address}:${endpoint.port} " +
+                "sender=${packet.address?.hostAddress}:${packet.port} bytes=${packet.length} " +
+                "prefixHex=[$prefix]"
+        }
+
+        fun open(
+            context: Context,
+            network: Network,
+            address: String,
+            port: Int
+        ): WifiMulticastReceiver {
+            val endpoints = TakMulticastEndpoints.receiveEndpoints(address, port)
+            val connectivity = context.getSystemService(ConnectivityManager::class.java)
+                ?: throw IOException("ConnectivityManager unavailable")
+            val interfaceName = connectivity.getLinkProperties(network)?.interfaceName
+                ?: throw IOException("Wi-Fi network has no interface")
+            val networkInterface = NetworkInterface.getByName(interfaceName)
+                ?: throw IOException("Wi-Fi interface $interfaceName unavailable")
+            val wifi = context.applicationContext.getSystemService(WifiManager::class.java)
+                ?: throw IOException("WifiManager unavailable")
+            val lock = wifi.createMulticastLock("WearTAK-MulticastReceiver").apply {
+                setReferenceCounted(false)
+            }
+            val subscriptions = mutableListOf<Subscription>()
+            var opened = false
+            try {
+                lock.acquire()
+                for (endpoint in endpoints) {
+                    val group = InetAddress.getByName(endpoint.address)
+                    require(group is Inet4Address && group.isMulticastAddress) {
+                        "Not an IPv4 multicast group: ${endpoint.address}"
+                    }
+                    val socket = MulticastSocket(null)
+                    subscriptions += Subscription(endpoint, socket)
+                    socket.reuseAddress = true
+                    socket.soTimeout = 1000
+                    socket.bind(InetSocketAddress(endpoint.port))
+                    network.bindSocket(socket)
+                    socket.networkInterface = networkInterface
+                    socket.joinGroup(InetSocketAddress(group, endpoint.port), networkInterface)
+                }
+                val receiver = WifiMulticastReceiver(
+                    subscriptions = subscriptions,
+                    releaseLock = { if (lock.isHeld) lock.release() },
+                    logPacket = { summary ->
+                        if (BuildConfig.DEBUG) Log.d("WearTAK-MulticastRx", summary)
+                    }
+                )
+                opened = true
+                return receiver
+            } finally {
+                if (!opened) {
+                    subscriptions.forEach { it.socket.close() }
+                    if (lock.isHeld) lock.release()
+                }
+            }
+        }
+    }
+}

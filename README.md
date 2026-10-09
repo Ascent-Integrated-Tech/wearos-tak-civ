@@ -113,6 +113,51 @@ This does **not** repair rejected credentials: HTTP 401 still requires valid
 credentials/server-side authorization. Response bodies and certificate material
 are not logged by enrollment.
 
+### Dev Mode Stay Awake
+
+Debug and release APKs include an opt-in **Stay awake** switch under **Dev Debug Tools** (tap the
+version eight times in Preferences to reveal these tools). This standalone demo/development
+session control does not require Wireless debugging or read its system setting. The switch
+holds screen, CPU and Wi-Fi locks and keeps a Wi-Fi network actively requested, including
+while viewing system settings. The request does not require Internet access, so local-only
+hotspots can satisfy it. It shows an ongoing notification with a Stop action. It remains
+enabled until you turn off the switch,
+tap notification Stop, or the app process ends. Leaving the UI or swiping the recent task
+does not stop the foreground service. The adjacent **Resume after update** checkbox is
+off by default. When checked, an enabled session is remembered and restored after an
+in-place app update on the same watch boot. Updates briefly release the locks while replacing
+the process. Turning off Stay awake or tapping notification Stop clears this remembered
+session. The service uses `START_NOT_STICKY`: ordinary process restarts and watch reboots
+do not start it automatically. A remembered session can still resume on a later update
+in the same boot unless explicitly stopped or update resumption is unchecked.
+There is no timed expiry. The warning **Extra battery use. May heat watch.** appears only while
+enabled. The Wi-Fi request is released on stop, service destruction, or startup failure.
+It does not force Wi-Fi on or guarantee connectivity against RF conditions, hotspot
+disconnects, or system overrides. It does not prevent an explicit screen-off action or
+guarantee ADB/multicast delivery. The switch
+is only available in the hidden Dev Mode menu.
+
+### TAK SA multicast
+
+With TAK SA Multicast enabled and the watch directly connected to Wi-Fi, WearTAK sends and
+receives position/other CoT on the configured multicast endpoint (default `239.2.3.1:6969`)
+and GeoChat on `224.10.10.1:17012`. It also receives direct ATAK points/other CoT on
+`224.10.10.1:6969`, since ATAK uses that port for non-chat traffic to the advertised UDP contact.
+Incoming traffic uses the same contact, marker, and chat
+handling as TAK-server traffic; receiving chat requires the chat service to be enabled.
+Multicast status indicates that the sender and all receivers are ready, not that a peer
+has been discovered. The Wi-Fi access point must permit multicast between clients.
+Multicast tracks local Wi-Fi independently of Android's default internet connection,
+so cellular routing changes do not stop receivers on a connected radio Wi-Fi network.
+While multicast is enabled, WearTAK requests local Wi-Fi so Wear OS does not shut it down
+for lack of network demand. The request does not require internet and is released when
+multicast is disabled or the TAK connection service stops. Keeping Wi-Fi connected can
+increase battery use; this does not keep the screen awake or guarantee screen-off delivery.
+Reception supports both XML CoT and binary TAK Protocol v1 datagrams, including GeoChat
+and ATAK contacts using friendly equipment/vehicle position types.
+Multicast position broadcasts advertise the GeoChat UDP endpoint so ATAK can send direct
+messages to the watch without a TAK server; server-bound broadcasts retain their server endpoint.
+
 ## Architecture
 
 The Bloodhound picker has a **Remove All** button above its targets. Its confirmation

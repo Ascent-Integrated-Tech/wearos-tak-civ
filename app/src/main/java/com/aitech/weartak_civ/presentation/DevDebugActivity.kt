@@ -24,7 +24,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -160,27 +159,10 @@ private fun DebugScreen(
             } else {
                 DebugInformationPage(
                     debugInfo = debugInfo,
+                    onBack = { navigateBack() },
                     onShowQrCode = {
                         showQrCode = true
                     }
-                )
-            }
-
-            IconButton(
-                onClick = {
-                    navigateBack()
-                },
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 4.dp)
-                    .size(40.dp)
-            ) {
-                Text(
-                    text = "‹",
-                    fontSize = 32.sp,
-                    lineHeight = 32.sp,
-                    color = MaterialTheme.colors.primary,
-                    textAlign = TextAlign.Center
                 )
             }
         }
@@ -190,6 +172,7 @@ private fun DebugScreen(
 @Composable
 private fun DebugInformationPage(
     debugInfo: DebugDisplayInfo,
+    onBack: () -> Unit,
     onShowQrCode: () -> Unit
 ) {
     val rows = listOf(
@@ -253,6 +236,10 @@ private fun DebugInformationPage(
         }
 
         item {
+            DebugStayAwakeSetting()
+        }
+
+        item {
             Spacer(
                 modifier = Modifier.size(5.dp)
             )
@@ -280,6 +267,9 @@ private fun DebugInformationPage(
                     fontSize = 12.sp
                 )
             }
+        }
+        item {
+            WearTAKBackButton(onClick = onBack)
         }
     }
 }
@@ -380,18 +370,7 @@ private fun DebugQrPage(
         }
 
         item {
-            Button(
-                onClick = onBack,
-                modifier = Modifier.size(
-                    width = 90.dp,
-                    height = 38.dp
-                )
-            ) {
-                Text(
-                    text = "Back",
-                    fontSize = 11.sp
-                )
-            }
+            WearTAKBackButton(onClick = onBack)
         }
     }
 }
@@ -457,6 +436,7 @@ private fun PreviewDebugInformationPage() {
                 ipAddress = "192.168.1.84",
                 port = DEBUG_SERVER_PORT
             ),
+            onBack = {},
             onShowQrCode = {}
         )
     }

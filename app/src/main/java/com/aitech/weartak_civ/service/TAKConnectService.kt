@@ -17,10 +17,14 @@ import android.content.Intent
 import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Network
+import android.net.ConnectivityManager
+import android.os.Handler
+import android.os.Looper
 import android.os.IBinder
 import android.util.Log
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
+import com.aitech.weartak_civ.WifiMulticastReceiver
 import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
 import com.aitech.weartak_civ.cot.CotMessageParser
@@ -55,6 +59,7 @@ import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.manager.NetworkManager
+import com.aitech.weartak_civ.manager.MulticastWifiRequest
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
@@ -79,6 +84,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -124,6 +131,7 @@ import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
+    private var multicastWifiRequest: MulticastWifiRequest? = null
 
     class ConnectionAttempt(val generation: Long) {
         var job: Job? = null
@@ -228,6 +236,24 @@ class TAKConnectService: Service() {
     )
 
     private fun startMulticastCollector() {
+        val wifiRequest = MulticastWifiRequest(
+            getSystemService(ConnectivityManager::class.java),
+            Handler(Looper.getMainLooper())
+        )
+        multicastWifiRequest = wifiRequest
+        scope.launch(Dispatchers.Main.immediate) {
+            try {
+                dataRepository.multicastEnabled.collect { enabled ->
+                    try {
+                        wifiRequest.setEnabled(enabled == true)
+                    } catch (error: SecurityException) {
+                        Log.e(TAG, "Multicast Wi-Fi request permission denied", error)
+                    }
+                }
+            } finally {
+                wifiRequest.close()
+            }
+        }
         scope.launch {
             combine(NetworkManager.getInstance().wifiNetwork,
                 dataRepository.multicastEnabled,
@@ -235,25 +261,51 @@ class TAKConnectService: Service() {
                 dataRepository.multicastPort) { net, enable, address, port ->
                 MulticastConfig(net, enable, address, port)
             }.distinctUntilChanged().collectLatest{ cfg ->
-                val shouldRun = cfg.enable != null && cfg.enable && cfg.net != null &&
-                        !cfg.address.isNullOrBlank() && cfg.port != null
+                val network = cfg.net
+                val address = cfg.address
+                val port = cfg.port
+                val shouldRun = cfg.enable == true && network != null &&
+                        !address.isNullOrBlank() && port != null
                 Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
-                if (shouldRun) {
-                    val started = NetworkUtils.MulticastPublisher.start(network = cfg.net, address = cfg.address, port = cfg.port)
-                    if (started) {
-                        dataRepository.setMulticastPublisherRunning(true)
-                        dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
-                    } else {
-                        dataRepository.setMulticastPublisherRunning(false)
-                        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
+                if (cfg.enable == true && network != null && !address.isNullOrBlank() && port != null) {
+                    while (currentCoroutineContext().isActive) {
+                        try {
+                            WifiMulticastReceiver.open(applicationContext, network, address, port).use { receiver ->
+                                if (!NetworkUtils.MulticastPublisher.start(network, address, port)) {
+                                    throw IOException("Multicast publisher could not start")
+                                }
+                                dataRepository.setMulticastPublisherRunning(true)
+                                dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
+                                Log.i(TAG, "Multicast sender and receivers ready on Wi-Fi")
+                                receiver.receive { envelope ->
+                                    val result = cotIngestor.ingest(envelope)
+                                    Log.d(TAG, "Inbound multicast CoT source=${envelope.sourceServerId} result=$result")
+                                }
+                            }
+                        } catch (error: IOException) {
+                            Log.e(TAG, "Multicast I/O failed; retrying in 5 seconds", error)
+                        } catch (error: IllegalArgumentException) {
+                            Log.e(TAG, "Invalid multicast configuration", error)
+                            return@collectLatest
+                        } catch (error: SecurityException) {
+                            Log.e(TAG, "Multicast permission denied", error)
+                            return@collectLatest
+                        } finally {
+                            stopMulticast()
+                        }
+                        delay(5000)
                     }
                 } else {
-                    NetworkUtils.MulticastPublisher.stop()
-                    dataRepository.setMulticastPublisherRunning(false)
-                    dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
+                    stopMulticast()
                 }
             }
         }
+    }
+
+    private fun stopMulticast() {
+        NetworkUtils.MulticastPublisher.stop()
+        dataRepository.setMulticastPublisherRunning(false)
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
     }
 
     fun setFromDatastore() {
@@ -448,8 +500,10 @@ class TAKConnectService: Service() {
             EventBus.getDefault().unregister(this)
         }
         closeTakServerSockets()
-        NetworkUtils.MulticastPublisher.stop()
+        stopMulticast()
         scope.cancel()
+        multicastWifiRequest?.close()
+        multicastWifiRequest = null
         connectionScope.cancel()
         connectJob?.cancel()
         networkManager = null

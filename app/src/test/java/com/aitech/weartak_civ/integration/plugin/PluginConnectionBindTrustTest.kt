@@ -23,7 +23,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [32])
+@Config(sdk = [34])
 class PluginConnectionBindTrustTest {
 
     private val pluginPkg = "com.trust.fail.plugin"
@@ -55,6 +55,7 @@ class PluginConnectionBindTrustTest {
         val pm = mockk<PackageManager>(relaxed = true)
         @Suppress("DEPRECATION")
         every { pm.queryIntentServices(any<Intent>(), any<Int>()) } returns resolveList
+        every { pm.queryIntentServices(any<Intent>(), any<PackageManager.ResolveInfoFlags>()) } returns resolveList
         @Suppress("DEPRECATION")
         every { pm.getApplicationInfo(any<String>(), any<Int>()) } returns ApplicationInfo().apply {
             uid = pluginUid

@@ -1,19 +1,31 @@
 package com.aitech.weartak_civ.integration.plugin
 
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.content.pm.ServiceInfo
 import com.weartak.plugin.sdk.WearTakPluginContract
+import io.mockk.every
+import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
-import org.robolectric.RuntimeEnvironment
-import org.robolectric.Shadows
+import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34])
 class PluginServiceQueryTest {
+
+    private fun packageManager(vararg services: ResolveInfo): PackageManager = mockk {
+        every {
+            queryIntentServices(
+                match<Intent> { it.action == WearTakPluginContract.ACTION_PLUGIN_SERVICE },
+                any<PackageManager.ResolveInfoFlags>()
+            )
+        } returns services.toList()
+    }
 
     private fun resolveInfo(
         packageName: String,
@@ -29,42 +41,27 @@ class PluginServiceQueryTest {
     }
 
     @Test
-    fun discover_includesShadowResolve() {
-        val app = RuntimeEnvironment.getApplication()
+    fun discover_includesMatchingService() {
         val pluginPkg = "com.weartak.plugin.sample"
         val ri = resolveInfo(pluginPkg, ".SamplePluginService")
-        Shadows.shadowOf(app.packageManager).addResolveInfoForIntent(
-            Intent(WearTakPluginContract.ACTION_PLUGIN_SERVICE),
-            ri
-        )
         val hostPkg = "com.host.app"
-        val found = PluginServiceQuery.discoverPluginComponents(app.packageManager, hostPkg)
+        val found = PluginServiceQuery.discoverPluginComponents(packageManager(ri), hostPkg)
         assertTrue(found.any { it.packageName == pluginPkg })
     }
 
     @Test
     fun discover_excludesHostPackage() {
-        val app = RuntimeEnvironment.getApplication()
         val hostPkg = "com.host.app"
         val ri = resolveInfo(hostPkg, ".EchoService")
-        Shadows.shadowOf(app.packageManager).addResolveInfoForIntent(
-            Intent(WearTakPluginContract.ACTION_PLUGIN_SERVICE),
-            ri
-        )
-        val found = PluginServiceQuery.discoverPluginComponents(app.packageManager, hostPkg)
+        val found = PluginServiceQuery.discoverPluginComponents(packageManager(ri), hostPkg)
         assertEquals(0, found.size)
     }
 
     @Test
     fun discover_excludesServicesWithoutBindPermission() {
-        val app = RuntimeEnvironment.getApplication()
         val pluginPkg = "com.weartak.plugin.noperm"
         val ri = resolveInfo(pluginPkg, ".NoPermService", permission = null)
-        Shadows.shadowOf(app.packageManager).addResolveInfoForIntent(
-            Intent(WearTakPluginContract.ACTION_PLUGIN_SERVICE),
-            ri
-        )
-        val found = PluginServiceQuery.discoverPluginComponents(app.packageManager, "com.host.app")
+        val found = PluginServiceQuery.discoverPluginComponents(packageManager(ri), "com.host.app")
         assertTrue(found.none { it.packageName == pluginPkg })
     }
 }
