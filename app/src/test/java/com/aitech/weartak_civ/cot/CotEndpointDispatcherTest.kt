@@ -9,7 +9,7 @@ import org.junit.Test
 
 class CotEndpointDispatcherTest {
     @Test
-    fun dispatchesStandardChatInLegacyOrderWithTakQueueing() = runBlocking {
+    fun dispatchesChatOnlyToReadyCompanion() = runBlocking {
         val calls = mutableListOf<String>()
         val dispatcher = dispatcher(calls)
         val snapshot = chatSnapshot()
@@ -21,23 +21,37 @@ class CotEndpointDispatcherTest {
 
         assertTrue(sent)
         assertEquals(
-            listOf("companion:Chat", "multicast:<chat/>", "ditto:mapitem:<chat/>", "tak:true:<chat/>", "sitx:<chat/>"),
+            listOf("companion:Chat"),
             calls,
         )
     }
 
     @Test
-    fun pliUsesNonQueueingTakAndUnconditionalPliMulticast() = runBlocking {
+    fun chatUsesDirectRoutesWhenCompanionIsDisconnected() = runBlocking {
+        val calls = mutableListOf<String>()
+        val dispatcher = dispatcher(calls)
+        dispatcher.dispatch(
+            CotOutboundMessage("<chat/>", CotMessageKind.CHAT, CotCompanionPayload.Chat(chatSnapshot())),
+            allAvailable.copy(companion = false),
+        )
+        assertEquals(
+            listOf("multicast:<chat/>", "ditto:mapitem:<chat/>", "tak:true:<chat/>", "sitx:<chat/>"),
+            calls,
+        )
+    }
+
+    @Test
+    fun pliUsesOnlyTheReadyCompanionRoute() = runBlocking {
         val calls = mutableListOf<String>()
         val dispatcher = dispatcher(calls)
         val snapshot = pliSnapshot()
 
         dispatcher.dispatch(
             CotOutboundMessage("<pli/>", CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot)),
-            CotEndpointAvailability(tak = true, sitx = false, ditto = true, multicast = false, companion = false),
+            CotEndpointAvailability(tak = true, sitx = true, ditto = true, multicast = true, companion = true),
         )
 
-        assertEquals(listOf("tak:false:<pli/>", "sitx:<pli/>", "pliMulticast:<pli/>"), calls)
+        assertEquals(listOf("companion:Pli"), calls)
     }
 
     private fun dispatcher(calls: MutableList<String>) = CotEndpointDispatcher(

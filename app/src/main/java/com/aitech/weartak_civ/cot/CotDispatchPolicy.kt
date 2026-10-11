@@ -20,7 +20,12 @@ object CotDispatchPolicy {
     // conditional on any other endpoint being up.
 
     fun routesFor(kind: CotMessageKind, availability: CotEndpointAvailability): List<CotRoute> =
-        when (kind) {
+        if (availability.companion) {
+            buildList {
+                if (availability.plugin) add(CotRoute.PLUGIN)
+                add(CotRoute.COMPANION)
+            }
+        } else when (kind) {
             CotMessageKind.PLI -> buildList {
                 if (availability.plugin) add(CotRoute.PLUGIN)
                 if (availability.tak) add(CotRoute.TAK)

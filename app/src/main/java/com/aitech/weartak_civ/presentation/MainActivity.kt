@@ -2889,7 +2889,7 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
 }
 
 enum class Connectivity { CELL, WIFI, BLUETOOTH, AIRPLANE, NONE }
-enum class TakServer { CONNECTED, CONNECTED_MULTICAST, SOME_SERVERS_CONNECTED, CONNECTING, DISCONNECTED }
+enum class TakServer { PHONE_UPLINK, CONNECTED, CONNECTED_MULTICAST, SOME_SERVERS_CONNECTED, CONNECTING, DISCONNECTED }
 //2 functions below are meant to connect to complication service, TODO: Is there a better way to do this?
 fun readConnectivity(networkManager: NetworkManager?): Connectivity {
     if (networkManager == null) return Connectivity.NONE
@@ -2911,6 +2911,7 @@ fun readConnectivity(networkManager: NetworkManager?): Connectivity {
 }
 
 fun readTakStatus(takConnectService: TAKConnectService?): TakServer {
+    if (dataRepository.isCompanionConnected.value) return TakServer.PHONE_UPLINK
     if ((takConnectService == null) && (enableSitxService == false) && (enableMulticastOnWifi == false)) {
         return TakServer.DISCONNECTED
     }
@@ -2956,6 +2957,7 @@ fun buildComplicationString(
     }
     val takLabel = when (effectiveTak) {
         TakServer.CONNECTED -> getString(context, R.string.server_connected)
+        TakServer.PHONE_UPLINK -> getString(context, R.string.phone_uplink_active)
         TakServer.CONNECTING -> getString(context, R.string.server_connecting)
         TakServer.CONNECTED_MULTICAST -> getString(context, R.string.server_connected_multicast)
         TakServer.SOME_SERVERS_CONNECTED -> getString(context, R.string.some_servers_connected)
@@ -3054,7 +3056,9 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewM
         // Icon on the top left curve
         Image(
             painter = painter,
-            contentDescription = stringResource(R.string.network_preferences),
+            contentDescription = stringResource(
+                if (companionConnected) R.string.phone_uplink_active else R.string.network_preferences
+            ),
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .offset(
