@@ -35,11 +35,9 @@ import com.aitech.weartak_civ.cot.CotDetail
 import com.aitech.weartak_civ.cot.CotEndpointAvailability
 import com.aitech.weartak_civ.cot.CotEndpointDispatcher
 import com.aitech.weartak_civ.cot.CotDispatchPolicy
-import com.aitech.weartak_civ.cot.CotEventTimeFactory
 import com.aitech.weartak_civ.cot.CotMessageBuilder
 import com.aitech.weartak_civ.cot.CotMessageKind
 import com.aitech.weartak_civ.cot.CotOutboundMessage
-import com.aitech.weartak_civ.cot.CotTimeOffset
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.InteractionLocationRcvd
@@ -118,7 +116,7 @@ class CotDispatchService : Service() {
     private var iconSetPath: String = ""
     private var markerType: String = ""
     private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.DroppedMarker>()
-    private val pendingMarkerCotList = mutableListOf<DataRepository.DroppedMarker>()
+    private val pendingMarkerCotList = java.util.concurrent.CopyOnWriteArrayList<DataRepository.DroppedMarker>()
 
     private val pendingChatMsgQueue = ArrayDeque<ChatMessage>()
 
@@ -846,6 +844,12 @@ class CotDispatchService : Service() {
 
     private fun startMarkerClearCollector() {
         serviceScope.launch {
+            dataRepository.remotePointDeletions.collect { uid ->
+                markerDropMap.remove(uid)
+                pendingMarkerCotList.removeAll { it.uid == uid }
+            }
+        }
+        serviceScope.launch {
             dataRepository.clearMarkerRequests.collect { req ->
                 Log.i(TAG, "Received req to clear marker: $req")
                 when (req) {
@@ -1039,20 +1043,6 @@ class CotDispatchService : Service() {
         }
     }
 
-    private fun makeMarkerSnapshotStale(snapshot: DataRepository.MarkerSnapshot): DataRepository.MarkerSnapshot {
-        // TAK clears a marker when stale precedes start.
-        val clearTime = CotEventTimeFactory.now(
-            startOffset = CotTimeOffset(seconds = -4),
-            staleOffset = CotTimeOffset(minutes = -3)
-        )
-
-        val clearedSnapshot = snapshot.copy(
-            time = clearTime
-        )
-
-        return clearedSnapshot
-    }
-
     private suspend fun companionAppAvailable(): Boolean {
         val enabled = dataRepository.getEnableCompanionAppService.first()
         val ready = capRepo.companionAppReady.first()
@@ -1079,46 +1069,11 @@ class CotDispatchService : Service() {
         endpointDispatcher.dispatch(message, endpointAvailability())
 
     private suspend fun handleClearMarkerUid(uid: String) {
-        val markerDrop = markerDropMap[uid]
-        if (null == markerDrop) {
-            Log.w(TAG, "Cannot obtain marker drop for uid=$uid. Ignoring...")
-            return
-        }
-        val editedMarkerDrop =
-            markerDrop.copy(cotType = DataRepository.MarkerCotType.CLEAR, enqueuedToBeSent = true, waitingForUpdatedLocation = false)
-        val updatedList = pendingMarkerCotList.map { item ->
-            if ((item.cotType != DataRepository.MarkerCotType.CLEAR) && (item.uid == uid) && item.waitingForUpdatedLocation) {
-                Log.i(TAG, "Changing Marker Status for [$uid] of cotType ${item.cotType} with waitingForUpdatedLocation set to false")
-                item.copy(enqueuedToBeSent = true, waitingForUpdatedLocation = false)
-            } else {
-                item
-            }
-        }.toMutableList()
-        pendingMarkerCotList.clear()
-        pendingMarkerCotList.addAll(updatedList)
-        enqueueMarkerClear(editedMarkerDrop)
-        markerDropMap[uid] = editedMarkerDrop
-        if (bhRepo.removeTarget(uid).isNotEmpty()) {
+        if (dataRepository.deleteDroppedPointLocally(uid, bhRepo)) {
             requestBloodhoundComplicationUpdate(this)
         }
-        dataRepository.changeDroppedMarkerCotTypeStatusByUid(uid = uid, cotType = DataRepository.MarkerCotType.CLEAR, enqueuedToBeSent = true, waitingForUpdatedLocation = false)
-
-        if (hasConnectedEndpoint()) {
-            sendPendingMarkerCots()
-        }
-    }
-
-    private suspend fun sendMarkerClearNow(snapshot: DataRepository.MarkerSnapshot): Boolean {
-        val staleSnapshot = makeMarkerSnapshotStale(snapshot)
-        val clearXml = CotMessageBuilder.marker(
-            staleSnapshot,
-            finalMarkerTitle(staleSnapshot.title),
-            iconSetPath,
-        )
-
-        val sent = dispatchMarkerSnapshot(staleSnapshot, clearXml, CotMessageKind.MARKER_CLEAR)
-        Log.i(TAG, "sendMarkerClearNow with result $sent")
-        return sent
+        markerDropMap.remove(uid)
+        pendingMarkerCotList.removeAll { it.uid == uid }
     }
 
     private suspend fun handleClearMarkerAll() {
@@ -1304,11 +1259,6 @@ class CotDispatchService : Service() {
         pendingMarkerCotList.add(req)
     }
 
-    private fun enqueueMarkerClear(req: DataRepository.DroppedMarker) {
-        Log.i(TAG, "===> Adding to marker cot list: Clear Marker for uid=${req.uid}")
-        pendingMarkerCotList.add(req)
-    }
-
     private suspend fun sendPendingMarkerCots(): Boolean {
         var sentAllReadyToSend = true
         val queueSize = pendingMarkerCotList.size
@@ -1316,6 +1266,14 @@ class CotDispatchService : Service() {
         val newPendingMarkerDropList = mutableListOf<DataRepository.DroppedMarker>()
         val isLocationFresh = isLocationFresh()
         for ((i, item) in pendingMarkerCotList.withIndex()) {
+            if (item.cotType == DataRepository.MarkerCotType.CLEAR) {
+                handleClearMarkerUid(item.uid)
+                continue
+            }
+            if (dataRepository.isDeletedLocalPoint(item.uid)) {
+                markerDropMap.remove(item.uid)
+                continue
+            }
             val cotType = item.cotType
             var marker = item
             Log.i(TAG, "sendPendingMarkerCots: Looking at element $i ($cotType): time ${marker.timeDropped}, uid=${marker.uid} type=${marker.markerType}, title=${marker.title}, remark=${marker.remark}, loc=(${marker.location?.lat ?: "null"}, ${marker.location?.lon ?: "null"})")
@@ -1332,42 +1290,35 @@ class CotDispatchService : Service() {
             }
             // The location refresh above may have made this marker sendable.
             if (!marker.waitingForUpdatedLocation) {
-                if (cotType == DataRepository.MarkerCotType.CLEAR) {
-                    if (sendMarkerClearNow(dataRepository.snapshotMarker(marker))) {
-                        dataRepository.removeMarkerByUid(marker.uid)
-                        markerDropMap.remove(marker.uid)
-                    } else {
-                        markerDropMap[marker.uid] = marker.copy(enqueuedToBeSent = true)
-                        dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid, cotType = DataRepository.MarkerCotType.CLEAR,
-                            enqueuedToBeSent = true, waitingForUpdatedLocation = false)
-                        sentAllReadyToSend = false
-                        newPendingMarkerDropList.add(item)
-                    }
-                } else {
-                    if (sendMarkerDropNow(marker)) {
-                        Log.i(TAG, "sendPendingMarkerCots: sendMarkerDropNow returned true. Removing....")
+                if (sendMarkerDropNow(marker)) {
+                    Log.i(TAG, "sendPendingMarkerCots: sendMarkerDropNow returned true. Removing....")
+                    if (!dataRepository.isDeletedLocalPoint(marker.uid)) {
                         markerDropMap[marker.uid] = marker.copy(enqueuedToBeSent = false)
-                        dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid,
-                            cotType = marker.cotType,
-                            enqueuedToBeSent = false,
-                            waitingForUpdatedLocation = false
-                        )
-                    } else {
-                        Log.i(TAG, "sendPendingMarkerCots: sendMarkerDropNow returned false. Skipping....")
-                        markerDropMap[marker.uid] = marker.copy(enqueuedToBeSent = true)
-                        dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid,
-                            cotType = marker.cotType,
-                            enqueuedToBeSent = true,
-                            waitingForUpdatedLocation = false
-                        )
-                        sentAllReadyToSend = false
-                        newPendingMarkerDropList.add(item)
                     }
+                    dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid,
+                        cotType = marker.cotType,
+                        enqueuedToBeSent = false,
+                        waitingForUpdatedLocation = false
+                    )
+                } else {
+                    Log.i(TAG, "sendPendingMarkerCots: sendMarkerDropNow returned false. Skipping....")
+                    if (!dataRepository.isDeletedLocalPoint(marker.uid)) {
+                        markerDropMap[marker.uid] = marker.copy(enqueuedToBeSent = true)
+                    }
+                    dataRepository.changeDroppedMarkerCotTypeStatusByUid(marker.uid,
+                        cotType = marker.cotType,
+                        enqueuedToBeSent = true,
+                        waitingForUpdatedLocation = false
+                    )
+                    sentAllReadyToSend = false
+                    newPendingMarkerDropList.add(item)
                 }
             }
         }
         pendingMarkerCotList.clear()
-        pendingMarkerCotList.addAll(newPendingMarkerDropList)
+        pendingMarkerCotList.addAll(newPendingMarkerDropList.filterNot {
+            dataRepository.isDeletedLocalPoint(it.uid)
+        })
         return sentAllReadyToSend
     }
 
@@ -1377,6 +1328,7 @@ class CotDispatchService : Service() {
         kind: CotMessageKind = CotMessageKind.MARKER,
     ): Boolean {
         if (snapshot == null) return false
+        if (dataRepository.isDeletedLocalPoint(snapshot.uid)) return false
         val sent = dispatch(
             CotOutboundMessage(xml, kind, CotCompanionPayload.Marker(snapshot)),
         )

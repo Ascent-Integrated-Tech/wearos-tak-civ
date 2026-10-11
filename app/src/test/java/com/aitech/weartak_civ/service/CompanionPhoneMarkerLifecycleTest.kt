@@ -4,6 +4,8 @@ import android.app.Application
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
 import android.bluetooth.BluetoothGattServerCallback
+import android.bluetooth.BluetoothGattServer
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothProfile
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
@@ -11,6 +13,7 @@ import androidx.datastore.preferences.core.emptyPreferences
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
+import com.aitech.weartak_civ.data.CompanionPointRevisions
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.coEvery
@@ -24,6 +27,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -71,6 +76,218 @@ class CompanionPhoneMarkerLifecycleTest {
     @After fun cleanup() {
         job.cancel()
         runBlocking { bloodhounds.removeAllFromMenu() }
+    }
+
+    private fun remember(uid: String, time: Long, token: String = "revision", local: Boolean = false) {
+        repository.companionPointRevisions.remember(uid, CompanionPointRevisions.Revision(token, time, local, 0))
+    }
+
+    @Test fun explicitDeletionRemovesOnlyPhoneCopyAndClearsSelectedNavigationWithoutReplay() = runBlocking {
+        tak(cot("shared", now - 1, lat = 37.0))
+        receive(cot("shared", now))
+        remember("shared", now)
+        bloodhounds.activate("shared")
+        assertTrue(repository.receivePointDeletion("shared", "revision", 0, bloodhounds))
+        assertPoint("shared", now - 1, 37.0, "tak-test")
+        assertNull(bloodhounds.activeUid.value)
+        assertFalse(repository.receivePointDeletion("shared", "revision", 0, bloodhounds))
+        receive(cot("shared", now))
+        assertPoint("shared", now - 1, 37.0, "tak-test")
+        receive(cot("shared", now + 1))
+        assertPoint("shared", now + 1, 38.0, "companion-phone")
+    }
+
+    @Test fun exactRevisionFencesNewerEditsReconnectUnknownAndMalformedDeletes() = runBlocking {
+        receive(cot("point", now))
+        remember("point", now)
+        assertFalse(repository.receivePointDeletion("unknown", "revision", 0, bloodhounds))
+        assertFalse(repository.receivePointDeletion("point", "revision", 1, bloodhounds))
+        assertFalse(repository.receivePointDeletion("point", "old-revision", 0, bloodhounds))
+        receive(cot("point", now + 1))
+        assertFalse(repository.receivePointDeletion("point", "revision", 0, bloodhounds))
+        assertPoint("point", now + 1, 38.0, "companion-phone")
+        listOf(JSONObject(), JSONObject().put("targetUid", "point").put("revision", 1),
+            JSONObject().put("targetUid", "").put("revision", "x"),
+            JSONObject().put("targetUid", "point").put("revision", "bad\nvalue"))
+            .forEach { assertNull(CompanionPointRevisions.parseDeletion(it)) }
+        val deletion = CompanionPointRevisions.deletion("point", "revision")
+        assertEquals("marker_delete", deletion.getString("msg_type"))
+        assertEquals("point" to "revision", CompanionPointRevisions.parseDeletion(deletion.getJSONObject("payload")))
+    }
+
+    @Test fun localReceivedDeletionPreservesExistingUidWideUxButOnlySharedSourceCanRelay() = runBlocking {
+        receive(cot("point", now))
+        remember("point", now)
+        repository.companionPointGeneration = 0
+        repository.deleteReceivedPointLocally("point", bloodhounds)
+        assertEmpty()
+        assertNull(repository.companionPointRevisions.current("point", 0))
+        receive(cot("point", now))
+        assertEmpty()
+        tak(cot("tak-only", now + 1))
+        repository.deleteReceivedPointLocally("tak-only", bloodhounds)
+        assertEmpty()
+    }
+
+    @Test fun deletingOriginalWatchPointAfterPhoneEditClearsLocalAndPhoneTargetsButNotTak() = runBlocking {
+        repository.appendDroppedMarker(DataRepository.DroppedMarker(
+            DataRepository.MarkerCotType.EDIT, "shared", DataRepository.MarkerType.HOSTILE,
+            "Target", "", now - 1, null, false, false))
+        bloodhounds.addMarkerTarget("shared", "Target", "a-h-G", 38.0, -77.0, now - 1)
+        tak(cot("shared", now - 2, lat = 37.0))
+        receive(cot("shared", now))
+        remember("shared", now, local = true)
+        bloodhounds.activate("shared")
+        val remote = mutableListOf<String>()
+        val notifications = launch(start = CoroutineStart.UNDISPATCHED) {
+            repository.remotePointDeletions.collect { remote.add(it) }
+        }
+        assertTrue(repository.receivePointDeletion("shared", "revision", 0, bloodhounds))
+        assertTrue(repository.droppedMarkerList.value.isEmpty())
+        assertTrue(repository.isDeletedLocalPoint("shared"))
+        assertPoint("shared", now - 2, 37.0, "tak-test")
+        assertNull(bloodhounds.activeUid.value)
+        kotlinx.coroutines.yield()
+        assertEquals(listOf("shared"), remote)
+        ready()
+        service.sendJsonToCompanion(JSONObject().put("msgType", "marker")
+            .put("payload", JSONObject().put("uid", "shared").put("type", "a-h-G")
+                .put("tStart", Instant.ofEpochMilli(now).toString())
+                .put("tStale", Instant.ofEpochMilli(now + 300_000).toString())).toString())
+        assertNull(repository.companionPointRevisions.current("shared", 0))
+        notifications.cancel()
+    }
+
+    @Test fun pendingLocalWatchEditBlocksOldDeletion() = runBlocking {
+        repository.appendDroppedMarker(DataRepository.DroppedMarker(
+            DataRepository.MarkerCotType.EDIT, "point", DataRepository.MarkerType.HOSTILE,
+            "Edited", "", now, null, true, false))
+        receive(cot("point", now))
+        remember("point", now, local = true)
+        assertFalse(repository.receivePointDeletion("point", "revision", 0, bloodhounds))
+        assertEquals("Edited", repository.droppedMarkerList.value.single().title)
+        assertPoint("point", now, 38.0, "companion-phone")
+    }
+
+    @Test fun locallyDeletingSharedDroppedPointPreservesOtherSourceCopiesAndStopsLocalNavigation() = runBlocking {
+        repository.appendDroppedMarker(DataRepository.DroppedMarker(
+            DataRepository.MarkerCotType.EDIT, "shared", DataRepository.MarkerType.HOSTILE,
+            "Target", "", now, null, false, false))
+        receive(cot("shared", now))
+        tak(cot("shared", now + 1, lat = 37.0))
+        bloodhounds.addMarkerTarget("shared", "Local edit", "a-h-G", 38.0, -77.0, now + 2)
+        remember("shared", now, local = true)
+        repository.companionPointGeneration = 0
+        bloodhounds.activate("shared")
+        assertTrue(repository.deleteDroppedPointLocally("shared", bloodhounds))
+        assertTrue(repository.droppedMarkerList.value.isEmpty())
+        assertNull(bloodhounds.activeUid.value)
+        assertPoint("shared", now + 1, 37.0, "tak-test")
+        assertFalse(repository.deleteDroppedPointLocally("shared", bloodhounds))
+    }
+
+    private fun ready(bonded: Boolean = true) {
+        val device = mockk<BluetoothDevice>()
+        every { device.address } returns "AA:BB"
+        every { device.bondState } returns if (bonded) BluetoothDevice.BOND_BONDED else BluetoothDevice.BOND_NONE
+        val cap = mockk<CompanionAppRepository>(relaxed = true)
+        every { cap.companionAppReady } returns MutableStateFlow(true)
+        inject("connectedDevice", device)
+        inject("notificationsEnabled", true)
+        inject("gattServer", mockk<BluetoothGattServer>())
+        inject("txCharacteristic", mockk<BluetoothGattCharacteristic>())
+        inject("capRepo\$delegate", lazyOf(cap))
+    }
+
+    @Test fun serviceDeletionRequiresBondReadinessAndUsesExplicitEnvelopeWithoutEcho() {
+        receive(cot("point", now))
+        remember("point", now)
+        val json = CompanionPointRevisions.deletion("point", "revision").toString()
+        handle(json)
+        assertPoint("point", now, 38.0, "companion-phone")
+        ready(bonded = false)
+        handle(json)
+        assertPoint("point", now, 38.0, "companion-phone")
+        ready()
+        handle(json)
+        assertEmpty()
+        handle(json)
+        assertEmpty()
+    }
+
+    @Test fun queuedDeletionIsFencedWhenConnectionChangesBeforeRepositoryWork() {
+        receive(cot("point", now))
+        remember("point", now)
+        ready()
+        CompanionAppService::class.java.getDeclaredMethod("handleCompanionLine", String::class.java).apply {
+            isAccessible = true
+            invoke(service, CompanionPointRevisions.deletion("point", "revision").toString())
+        }
+        val generation = CompanionAppService::class.java.getDeclaredField("bloodhoundConnectionGeneration").apply {
+            isAccessible = true
+        }.get(service) as java.util.concurrent.atomic.AtomicLong
+        generation.incrementAndGet()
+        scheduler.runCurrent()
+        assertPoint("point", now, 38.0, "companion-phone")
+    }
+
+    @Test fun serviceAddsRevisionOnlyToReadyLiveWatchMarkersAndNeverImportsLegacyClear() {
+        val payload = JSONObject().put("uid", "watch-point").put("type", "a-h-G")
+            .put("tStart", Instant.ofEpochMilli(now).toString())
+            .put("tStale", Instant.ofEpochMilli(now + 300_000).toString())
+        val envelope = JSONObject().put("msgType", "marker").put("payload", payload)
+        ready(bonded = false)
+        service.sendJsonToCompanion(envelope.toString())
+        assertNull(repository.companionPointRevisions.current("watch-point", 0))
+        ready()
+        service.sendJsonToCompanion(envelope.toString())
+        val revision = repository.companionPointRevisions.current("watch-point", 0)!!
+        assertTrue(CompanionPointRevisions.validToken(revision.token))
+        assertTrue(revision.local)
+        assertEquals(now, revision.time)
+        payload.put("uid", "cleared").put("tStale", Instant.ofEpochMilli(now - 1).toString())
+        service.sendJsonToCompanion(envelope.toString())
+        assertNull(repository.companionPointRevisions.current("cleared", 0))
+    }
+
+    @Test fun localDeleteEmitsOnceForSelectedCompanionCopyButNeverForSelectedTakCopy() = runBlocking {
+        repository.companionPointGeneration = 0
+        val requests = mutableListOf<DataRepository.PointDeletionRequest>()
+        val collector = launch(start = CoroutineStart.UNDISPATCHED) {
+            repository.pointDeletionRequests.collect { requests.add(it) }
+        }
+        receive(cot("shared", now))
+        remember("shared", now)
+        repository.deleteReceivedPointLocally("shared", bloodhounds)
+        repository.deleteReceivedPointLocally("shared", bloodhounds)
+        kotlinx.coroutines.yield()
+        assertEquals(listOf("shared"), requests.map { it.uid })
+        assertEquals("revision", requests.single().revision.token)
+        receive(cot("other", now))
+        remember("other", now)
+        tak(cot("other", now + 1))
+        repository.deleteReceivedPointLocally("other", bloodhounds)
+        kotlinx.coroutines.yield()
+        assertEquals(1, requests.size)
+        collector.cancel()
+    }
+
+    @Test fun asynchronousDeletionFailureIsLoggedWithoutPayloadAndDoesNotKillReceiveScope() {
+        receive(cot("failed", now))
+        remember("failed", now)
+        ready()
+        val failure = IllegalStateException("test removal failure")
+        every { bloodhounds.removeMarkerCopy("failed", "companion-phone", any(), any()) } throws failure
+        ShadowLog.clear()
+        handle(CompanionPointRevisions.deletion("failed", "revision").toString())
+        assertTrue(ShadowLog.getLogs().any {
+            it.msg == "Failed to process point deletion" && it.throwable === failure
+        })
+        assertTrue(job.isActive)
+        receive(cot("next", now))
+        remember("next", now)
+        handle(CompanionPointRevisions.deletion("next", "revision").toString())
+        assertEquals(listOf("failed"), repository.receivedMarkerList.value.map { it.uid })
     }
 
     @Test fun newMarkerAndCoordinateRefreshPreserveOriginalTimesAndNavigationState() = runBlocking {
@@ -246,6 +463,10 @@ class CompanionPhoneMarkerLifecycleTest {
     private fun receive(xml: String) {
         val json = JSONObject().put("msg_type", "phone_marker_cot")
             .put("payload", JSONObject().put("cot", xml)).toString()
+        handle(json)
+    }
+
+    private fun handle(json: String) {
         CompanionAppService::class.java.getDeclaredMethod("handleCompanionLine", String::class.java).apply {
             isAccessible = true
             invoke(service, json)

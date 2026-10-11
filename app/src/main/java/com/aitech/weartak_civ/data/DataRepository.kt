@@ -1623,6 +1623,7 @@ class DataRepository(private val context: Context) {
 
     // Backend-only mutators (UI never calls these)
     suspend fun appendDroppedMarker(item: DroppedMarker) {
+        deletedLocalPointUids.remove(item.uid)
         _droppedMarkerList.emit(_droppedMarkerList.value + item)
     }
 
@@ -1681,6 +1682,81 @@ class DataRepository(private val context: Context) {
     }
 
     private val markerIngressMutex = Mutex()
+    private val deletedLocalPointUids = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    fun isDeletedLocalPoint(uid: String): Boolean = uid in deletedLocalPointUids
+    val companionPointRevisions = CompanionPointRevisions()
+    data class PointDeletionRequest(val uid: String, val revision: CompanionPointRevisions.Revision)
+    private val _pointDeletionRequests = MutableSharedFlow<PointDeletionRequest>(extraBufferCapacity = 64)
+    val pointDeletionRequests: SharedFlow<PointDeletionRequest> = _pointDeletionRequests
+    private val _remotePointDeletions = MutableSharedFlow<String>(extraBufferCapacity = 64)
+    val remotePointDeletions: SharedFlow<String> = _remotePointDeletions
+
+    fun notifyLocalPointDeletion(uid: String) {
+        // The receiver of this request checks readiness and its connection generation.
+        val revision = companionPointRevisions.current(uid, companionPointGeneration) ?: return
+        receivedMarkerStore.removeIfNotOlder(SourceCotKey("companion-phone", uid),
+            revision.time, System.currentTimeMillis())
+        companionPointRevisions.forget(uid)
+        if (_pointDeletionRequests.subscriptionCount.value == 0) {
+            Log.d(TAG, "Point deletion local only: no active companion transport")
+        } else if (!_pointDeletionRequests.tryEmit(PointDeletionRequest(uid, revision))) {
+            Log.w(TAG, "Point deletion request buffer full")
+        }
+    }
+
+    @Volatile var companionPointGeneration = -1L
+
+    suspend fun deleteReceivedPointLocally(uid: String, bloodhounds: BloodhoundRepository) =
+        markerIngressMutex.withLock {
+            if (receivedMarkerStore.visibleKey(uid)?.sourceId == "companion-phone") {
+                companionPointRevisions.current(uid, companionPointGeneration)?.let {
+                    bloodhounds.removeMarkerCopy(uid, "companion-phone", it.time, System.currentTimeMillis())
+                }
+                notifyLocalPointDeletion(uid)
+            }
+            // Preserve the existing received-point delete UX (all local UID copies).
+            bloodhounds.removeTarget(uid)
+            receivedMarkerStore.removeUid(uid)
+        }
+
+    suspend fun deleteDroppedPointLocally(uid: String, bloodhounds: BloodhoundRepository): Boolean =
+        markerIngressMutex.withLock {
+            if (_droppedMarkerList.value.none { it.uid == uid }) return@withLock false
+            deletedLocalPointUids.add(uid)
+            companionPointRevisions.current(uid, companionPointGeneration)?.let {
+                bloodhounds.removeMarkerCopy(uid, "companion-phone", it.time, System.currentTimeMillis())
+            }
+            notifyLocalPointDeletion(uid)
+            bloodhounds.removeLocalMarkerCopy(uid)
+            removeMarkerByUid(uid)
+            true
+        }
+
+    suspend fun receivePointDeletion(
+        uid: String, token: String, generation: Long, bloodhounds: BloodhoundRepository
+    ): Boolean = markerIngressMutex.withLock {
+        val revision = companionPointRevisions.current(uid, generation)
+            ?.takeIf { it.token == token } ?: return@withLock false
+        val local = _droppedMarkerList.value.firstOrNull { it.uid == uid }
+        if (revision.local && local?.let {
+                it.enqueuedToBeSent || it.waitingForUpdatedLocation
+            } == true) return@withLock false
+        val key = SourceCotKey("companion-phone", uid)
+        if (receivedMarkerStore.item(key)?.timeReceived?.let { it > revision.time } == true) {
+            return@withLock false
+        }
+        val receivedAt = System.currentTimeMillis()
+        bloodhounds.removeMarkerCopy(uid, "companion-phone", revision.time, receivedAt)
+        val removed = receivedMarkerStore.removeIfNotOlder(key, revision.time, receivedAt) != null
+        if (revision.local && local != null) {
+            deletedLocalPointUids.add(uid)
+            removeMarkerByUid(uid)
+            bloodhounds.removeMarkerCopy(uid, null, revision.time, receivedAt)
+            _remotePointDeletions.emit(uid)
+        }
+        companionPointRevisions.forget(uid)
+        removed || (revision.local && local != null)
+    }
 
     /** Serializes map and navigation ingestion across BLE and TAK receive paths. */
     suspend fun receiveMarkerEvent(
@@ -1688,7 +1764,8 @@ class DataRepository(private val context: Context) {
         bloodhoundRepository: BloodhoundRepository,
         source: String,
         sourceServerId: String? = null,
-        receivedAt: Long = System.currentTimeMillis()
+        receivedAt: Long = System.currentTimeMillis(),
+        companionRevision: CompanionPointRevisions.Revision? = null
     ): Boolean = markerIngressMutex.withLock {
         currentCoroutineContext().ensureActive()
         if (event.uid.isBlank() || event.time <= 0 || event.start <= 0 || event.stale <= 0) {
@@ -1696,7 +1773,12 @@ class DataRepository(private val context: Context) {
         }
         val now = System.currentTimeMillis()
         bloodhoundRepository.applyReceivedMarkerEvent(event, source, sourceServerId, receivedAt, now)
-        applyReceivedMarkerEvent(event, source, sourceServerId, receivedAt, now)
+        val applied = applyReceivedMarkerEvent(event, source, sourceServerId, receivedAt, now)
+        if (applied && sourceServerId == "companion-phone") {
+            companionPointRevisions.forget(event.uid)
+            companionRevision?.let { companionPointRevisions.remember(event.uid, it) }
+        }
+        applied
     }
 
     suspend fun applyReceivedMarkerEvent(

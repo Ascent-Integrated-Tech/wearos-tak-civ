@@ -15,12 +15,14 @@ data class CotEndpointAvailability(
 )
 
 object CotDispatchPolicy {
-    // PLUGIN is offered first on every kind. A plugin's transport may be the only one available -
+    // PLUGIN is offered first on live kinds. A plugin's transport may be the only one available -
     // a mesh plugin on LoRa still works with no wifi, no cell and no TAK server - so it must not be
     // conditional on any other endpoint being up.
 
     fun routesFor(kind: CotMessageKind, availability: CotEndpointAvailability): List<CotRoute> =
-        if (availability.companion) {
+        // Point removal is a local paired-device operation, never outbound clear CoT.
+        if (kind == CotMessageKind.MARKER_CLEAR) emptyList()
+        else if (availability.companion) {
             buildList {
                 if (availability.plugin) add(CotRoute.PLUGIN)
                 add(CotRoute.COMPANION)
@@ -33,17 +35,7 @@ object CotDispatchPolicy {
                 if (availability.companion) add(CotRoute.COMPANION)
                 add(CotRoute.MULTICAST)
             }
-            CotMessageKind.MARKER_CLEAR -> buildList {
-                if (availability.plugin) add(CotRoute.PLUGIN)
-                if (availability.companion) add(CotRoute.COMPANION)
-                if (availability.ditto) add(CotRoute.DITTO)
-                if (availability.tak) add(CotRoute.TAK)
-                if (availability.multicast) {
-                    add(CotRoute.MULTICAST)
-                    add(CotRoute.MULTICAST)
-                }
-                if (availability.sitx) add(CotRoute.SITX)
-            }
+            CotMessageKind.MARKER_CLEAR -> emptyList()
             CotMessageKind.CHAT, CotMessageKind.MARKER, CotMessageKind.EMERGENCY -> buildList {
                 if (availability.plugin) add(CotRoute.PLUGIN)
                 if (availability.companion) add(CotRoute.COMPANION)

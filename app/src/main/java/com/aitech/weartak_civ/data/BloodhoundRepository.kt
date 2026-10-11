@@ -813,17 +813,7 @@ class BloodhoundRepository(
         now: Long = System.currentTimeMillis()
     ) {
         if (event.stale <= now) {
-            synchronized(bloodhoundStateLock) {
-                val key = SourceCotKey(sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID, event.uid)
-                val removed = bloodhoundStore.removeIfNotOlder(key, event.time, receivedAt)
-                if (removed != null) {
-                    if (_activeKey.value == key) setActiveKey(null)
-                    if (_bloodhoundEvent.value?.event?.let { sourceKey(it) == key } == true) {
-                        _bloodhoundEvent.value = null
-                    }
-                    publishVisibleBloodhounds()
-                }
-            }
+            removeMarkerCopy(event.uid, sourceServerId, event.time, receivedAt)
         } else {
             val mapItem = CotMarkerMapItem(event)
             updateBloodhoundEvent(BloodhoundEvent(
@@ -832,6 +822,26 @@ class BloodhoundRepository(
                 sourceServerId = sourceServerId, receivedAt = receivedAt
             ))
         }
+    }
+
+    fun removeMarkerCopy(uid: String, sourceId: String?, time: Long, receivedAt: Long): Boolean =
+        synchronized(bloodhoundStateLock) {
+            val key = SourceCotKey(sourceId ?: NON_TAK_BLOODHOUND_SOURCE_ID, uid)
+            val removed = bloodhoundStore.removeIfNotOlder(key, time, receivedAt)
+            if (removed != null) {
+                if (_activeKey.value == key) setActiveKey(null)
+                if (_bloodhoundEvent.value?.event?.let { sourceKey(it) == key } == true) {
+                    _bloodhoundEvent.value = null
+                }
+                publishVisibleBloodhounds()
+            }
+            removed != null
+        }
+
+    fun removeLocalMarkerCopy(uid: String): Boolean = synchronized(bloodhoundStateLock) {
+        val local = bloodhoundStore.item(SourceCotKey(NON_TAK_BLOODHOUND_SOURCE_ID, uid))
+            ?: return@synchronized false
+        removeMarkerCopy(uid, null, local.bhEvent.mapItem.cotEvent.time, System.currentTimeMillis())
     }
 
 

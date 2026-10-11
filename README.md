@@ -254,6 +254,70 @@ Source-scoped removal watermarks reject older and equal-time replay during the
 watch process lifetime, including BLE reconnects. Disconnecting does not clear
 received points. There is no offline replay queue or new automatic expiry policy.
 Asynchronous repository failures are logged; cancellation is not treated as an error.
+
+### WEARTAK-112: explicit shared-point deletion
+
+**Local paired-device mirrors only.** A watch deletion removes the selected local
+point and its eligible paired-phone copy; a phone deletion removes its local point
+and its eligible paired-watch copy. It never sends a deletion to TAK servers,
+multicast, Ditto, SITX, plugins/mesh, or any other devices. This also holds when
+BLE is unavailable: delete locally immediately, without queuing a network clear.
+Incoming mirrored deletion neither broadcasts nor re-echoes deletion.
+
+Both peers add an opaque `payload.revision` (UUID) to live marker envelopes.
+Existing marker fields and XML remain unchanged; peers without this addition can
+still receive points but cannot authorize explicit deletion.
+
+```json
+{"msg_type":"marker_delete","payload":{"targetUid":"shared-point-uid","revision":"previously-exchanged-revision"}}
+```
+
+Deletion means **remove the exact shared revision**, not delete every copy of a UID.
+Only the current bonded, services-ready BLE connection can send/apply this envelope.
+There is no timestamp fabrication, CoT `t-x-d-d` importer invocation, network delete
+broadcast, ACK, offline queue, startup snapshot, or reconnect replay.
+The revision must match a supported marker exchanged in this connection. New
+shared updates replace it; unknown, duplicate, superseded, malformed, and
+previous-connection deletions are inert and logged without payload contents.
+
+On phone deletion, the watch removes the `companion-phone` map/Bloodhound copy
+using its stored event-time watermark. Other-source copies survive. An original
+watch-dropped point with the matching shared revision is also removed unless a
+local edit/location update is pending; its dispatch backlog is cleared without
+echoing a delete. Navigation to a removed source copy stops.
+On watch deletion, the phone removes only the observed, supported shared marker
+whose exported content still matches the exchanged revision, using ATAK's local
+`removeFromGroup()` API, with echo suppression. Unshared native items, alerts,
+PLI, routes, shapes, and groups are not eligible.
+
+The existing watch received-marker Delete UX still removes all local copies of
+that UID; it relays only when the selected visible copy belongs to the companion.
+Dropped-marker Clear/Last/All removes local points immediately and emits
+per-point explicit BLE deletions only for points shared this connection.
+Legacy expired marker clear CoT is no longer generated or dispatched on any
+transport; the outbound `MARKER_CLEAR` policy rejects every CoT route defensively.
+Bloodhound menu Remove remains local target dismissal, not map deletion.
+Transport enqueue is best-effort, not delivery confirmation: both apps must be
+updated together and hardware acceptance is still required.
+
+Regression coverage: `CompanionPhoneMarkerLifecycleTest`, `SourceAwareCotStoreTest`,
+and companion `PhoneMarkerRelayTest` cover revision/session rejection, source
+preservation, navigation cleanup, replay watermarks, echo release, and write failures.
+`CotDispatchServicePointDeletionTest` verifies local clear and dispatch-backlog
+cleanup without any external/network/legacy companion CoT calls.
+`CotEndpointDispatcherTest`/`CotDispatchPolicyTest` verify clear CoT never reaches
+any transport even with all endpoints available, both with and without ready BLE.
+
+Paired-device acceptance (not performed by JVM tests): create a phone point, start
+watch Bloodhound, then delete in ATAK: the companion-source point/target disappears
+and navigation stops. Repeat with a watch-dropped point deleted on the watch and
+verify the ATAK marker/tracking disappears. Edit the watch-origin marker in ATAK
+and repeat both directions. With a same-UID TAK copy present, verify deleting the
+phone copy leaves the TAK copy intact. Replay the old deletion after a newer
+shared edit or reconnect: the newer point must remain, with no echo deletion or
+startup replay. Unsupported PLI/emergency/route/shape/group items must remain.
+With a third TAK/network peer displaying the same point, delete on either paired
+device and verify that third peer retains its copy and receives no deletion packet.
 ### Remote emergencies
 
 Incoming `b-a-o`, `b-a-o-*`, and ATAK's standard `b-a-g` CoT emergencies share one active

@@ -123,9 +123,8 @@ class MarkerViewModel : ViewModel() {
         )
 
     fun deleteReceivedMarker(uid: String) {
-        bhRepo.removeTarget(uid)
         viewModelScope.launch {
-            dataRepository.removeReceivedMarkerByUid(uid)
+            dataRepository.deleteReceivedPointLocally(uid, bhRepo)
         }
     }
 
