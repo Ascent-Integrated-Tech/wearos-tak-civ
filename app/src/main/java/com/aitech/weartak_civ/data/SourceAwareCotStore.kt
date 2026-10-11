@@ -40,6 +40,7 @@ class SourceAwareCotStore<T>(
 
     private val lock = Any()
     private val storedByKey = LinkedHashMap<SourceCotKey, Stored<T>>()
+    private val removedAtByKey = HashMap<SourceCotKey, Long>()
     private val uidOrder = LinkedHashMap<String, Long>()
     private var sequence = 0L
 
@@ -55,6 +56,9 @@ class SourceAwareCotStore<T>(
         val key = SourceCotKey(sourceIdOf(item), cotUidOf(item))
         require(key.sourceId.isNotBlank()) { "Source ID cannot be blank" }
         require(key.cotUid.isNotBlank()) { "CoT UID cannot be blank" }
+        if (removedAtByKey[key]?.let { eventTimeOf(item) <= it } == true) {
+            return@synchronized SourceCotUpsertResult(key, applied = false)
+        }
 
         val candidate = nextStored(item)
         val current = storedByKey[key]
@@ -113,15 +117,16 @@ class SourceAwareCotStore<T>(
         removed
     }
 
-    /** Applies a source-scoped removal only when it is not older than the stored event. */
+    /** Records a source removal watermark; equal event-time removals win over live copies. */
     fun removeIfNotOlder(
         key: SourceCotKey,
         eventTime: Long,
         receivedAt: Long
     ): T? = synchronized(lock) {
+        // A removal is an event-time watermark, even if this source has no current copy.
+        removedAtByKey[key] = maxOf(removedAtByKey[key] ?: Long.MIN_VALUE, eventTime)
         val current = storedByKey[key] ?: return@synchronized null
-        sequence += 1
-        if (!isNewer(eventTime, receivedAt, sequence, current)) {
+        if (eventTime < eventTimeOf(current.value)) {
             return@synchronized null
         }
 
@@ -162,6 +167,7 @@ class SourceAwareCotStore<T>(
 
     fun clear() = synchronized(lock) {
         storedByKey.clear()
+        removedAtByKey.clear()
         uidOrder.clear()
         publishLocked()
     }

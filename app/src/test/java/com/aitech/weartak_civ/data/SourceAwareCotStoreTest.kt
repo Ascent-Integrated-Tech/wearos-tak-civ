@@ -110,4 +110,17 @@ class SourceAwareCotStoreTest {
         )
         assertNull(store.item(key))
     }
+
+    @Test
+    fun removalWatermarkRejectsReplayIncludingEqualTimeButNotOtherSources() {
+        val store = store()
+        val key = SourceCotKey("ble", "point")
+        assertNull(store.removeIfNotOlder(key, 200, 300))
+        assertFalse(store.upsertWithResult(Item("ble", "point", 100, 400, "Old")).applied)
+        assertFalse(store.upsertWithResult(Item("ble", "point", 200, 500, "Replay")).applied)
+        assertTrue(store.upsertWithResult(Item("tak", "point", 100, 400, "TAK")).applied)
+        assertTrue(store.upsertWithResult(Item("ble", "point", 201, 600, "New")).applied)
+        assertNull(store.removeIfNotOlder(key, 200, 700))
+        assertEquals("New", store.item(key)?.value)
+    }
 }

@@ -452,6 +452,7 @@ class BloodhoundRepository(
         if (activeKey?.cotUid == e.uid && visibleKey(e.uid) != activeKey) {
             setActiveKey(null)
         }
+        result.applied
     }
 
     suspend fun storeActiveBloodhoundItems(list: List<BloodhoundItem>) {
@@ -703,12 +704,44 @@ class BloodhoundRepository(
             } else {
                 remarkFromHoundmaster(event.uid)
             }
-            upsertFromEvent(event)
+            if (!upsertFromEvent(event) || visibleKey(event.uid) != sourceKey(event)) {
+                return@synchronized
+            }
             _bloodhoundEvent.value = BloodhoundUpdate(
                 event = event,
                 isNewUid = isNewUid,
                 becameHoundmaster = event.remark == "#houndmaster" && !previouslyFromHoundmaster
             )
+        }
+
+    }
+
+    suspend fun applyReceivedMarkerEvent(
+        event: CotMarkerEvent,
+        server: String,
+        sourceServerId: String?,
+        receivedAt: Long,
+        now: Long = System.currentTimeMillis()
+    ) {
+        if (event.stale <= now) {
+            synchronized(bloodhoundStateLock) {
+                val key = SourceCotKey(sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID, event.uid)
+                val removed = bloodhoundStore.removeIfNotOlder(key, event.time, receivedAt)
+                if (removed != null) {
+                    if (_activeKey.value == key) setActiveKey(null)
+                    if (_bloodhoundEvent.value?.event?.let { sourceKey(it) == key } == true) {
+                        _bloodhoundEvent.value = null
+                    }
+                    publishVisibleBloodhounds()
+                }
+            }
+        } else {
+            val mapItem = CotMarkerMapItem(event)
+            updateBloodhoundEvent(BloodhoundEvent(
+                mapItem = mapItem, server = server, timeIssued = mapItem.link?.productionTime,
+                timeCompleted = null, remark = event.detail.remarks.orEmpty(),
+                sourceServerId = sourceServerId, receivedAt = receivedAt
+            ))
         }
     }
 

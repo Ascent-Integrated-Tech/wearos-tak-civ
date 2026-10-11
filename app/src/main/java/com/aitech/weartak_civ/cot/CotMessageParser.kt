@@ -50,21 +50,30 @@ object CotMessageParser {
     fun parseMarkerOrNull(rawXml: String): CotMarkerEvent? {
         val type = eventAttribute(rawXml, "type") ?: return null
         if (!isMarkerType(type)) return null
-        val uid = eventAttribute(rawXml, "uid") ?: return null
+        val uid = eventAttribute(rawXml, "uid")?.takeIf(String::isNotBlank) ?: return null
         val time = eventAttribute(rawXml, "time") ?: return null
         val start = eventAttribute(rawXml, "start") ?: time
         val stale = eventAttribute(rawXml, "stale") ?: time
+        val timeMs = parseIsoToEpochMs(time)
+        val startMs = parseIsoToEpochMs(start)
+        val staleMs = parseIsoToEpochMs(stale)
+        if (timeMs <= 0 || startMs <= 0 || staleMs <= 0) return null
+        val point = pointOf(rawXml) ?: return null
+        if (!point.lat.isFinite() || point.lat !in -90.0..90.0 ||
+            !point.lon.isFinite() || point.lon !in -180.0..180.0 ||
+            !point.hae.isFinite() || !point.ce.isFinite() || !point.le.isFinite()
+        ) return null
 
         return CotMarkerEvent(
             version = eventAttribute(rawXml, "version") ?: "",
             uid = uid,
             type = type,
             how = eventAttribute(rawXml, "how") ?: "",
-            time = parseIsoToEpochMs(time),
-            start = parseIsoToEpochMs(start),
-            stale = parseIsoToEpochMs(stale),
+            time = timeMs,
+            start = startMs,
+            stale = staleMs,
             access = eventAttribute(rawXml, "access"),
-            point = pointOf(rawXml) ?: return null,
+            point = point,
             detail = detailOf(rawXml),
         )
     }

@@ -1203,6 +1203,30 @@ class CompanionAppService : Service() {
                     }
                 }
 
+                "phone_marker_cot" -> {
+                    val receivedAt = System.currentTimeMillis()
+                    val payload = org.json.JSONObject(json).optJSONObject("payload")
+                    val xml = payload?.optString("cot", "")?.takeIf(String::isNotBlank)
+                    val event = xml?.let(CotMessageParser::parseMarkerOrNull)
+                    if (event == null) {
+                        Log.w(TAG, "Ignoring invalid phone marker CoT")
+                    } else {
+                        val failureHandler = CoroutineExceptionHandler { _, error ->
+                            Log.e(TAG, "Failed to process phone marker uid=${event.uid}", error)
+                        }
+                        serviceScope.launch(failureHandler) {
+                            val applied = repo.receiveMarkerEvent(
+                                event = event,
+                                bloodhoundRepository = bhRepo,
+                                source = "Companion ATAK",
+                                sourceServerId = "companion-phone",
+                                receivedAt = receivedAt
+                            )
+                            Log.d(TAG, "Phone marker processed uid=${event.uid} applied=$applied")
+                        }
+                    }
+                }
+
                 "chat_received" -> {
                     val payload = gson.fromJson(
                         json,
