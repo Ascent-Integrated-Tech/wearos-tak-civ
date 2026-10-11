@@ -51,6 +51,7 @@ import kotlin.math.roundToInt
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "bloodhound")
 private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private const val NON_TAK_BLOODHOUND_SOURCE_ID = "non-tak"
+private const val COMPANION_BLOODHOUND_SOURCE_ID = "companion-bloodhound"
 class BloodhoundRepository(
     private val context: Context,
     private val dataStore: DataStore<Preferences> = context.dataStore,
@@ -268,9 +269,7 @@ class BloodhoundRepository(
                 return@synchronized false
             }
             publishVisibleBloodhounds()
-            if (_activeKey.value?.cotUid == event.uid && _activeKey.value != visibleKey(event.uid)) {
-                setActiveKey(null)
-            }
+            reconcileActiveTrackingSource(event.uid)
             _bloodhoundEvent.value = BloodhoundUpdate(e, isNew, false)
             alertExpiryJobs.remove(key)?.cancel()
             alertExpiryJobs[key] = scope.launch {
@@ -448,10 +447,7 @@ class BloodhoundRepository(
                 "channelOwnership=unavailable"
         )
 
-        val activeKey = _activeKey.value
-        if (activeKey?.cotUid == e.uid && visibleKey(e.uid) != activeKey) {
-            setActiveKey(null)
-        }
+        if (result.applied) reconcileActiveTrackingSource(e.uid)
         result.applied
     }
 
@@ -515,6 +511,99 @@ class BloodhoundRepository(
             }
             normalizedResult to updatedItem
         }
+
+    fun activeTrackingItem(): BloodhoundItem? = synchronized(bloodhoundStateLock) {
+        _activeKey.value?.let(bloodhoundStore::item)
+    }
+
+    fun activateCompanionTarget(
+        uid: String,
+        callsign: String,
+        lat: Double,
+        lon: Double,
+        hae: Double
+    ): Boolean = synchronized(bloodhoundStateLock) {
+        if (uid.isBlank() || !lat.isFinite() || !lon.isFinite() || !hae.isFinite() ||
+            lat !in -90.0..90.0 || lon !in -180.0..180.0
+        ) {
+            Log.w(TAG, "Companion tracking rejected: invalid target")
+            return@synchronized false
+        }
+        if (visibleKey(uid) == null) {
+            val time = System.currentTimeMillis()
+            val marker = CotMarkerEvent(
+                version = "2.0", uid = uid, type = "b-m-p-s-m", how = "h-g-i-g-o",
+                time = time, start = time, stale = time + 300_000L, access = null,
+                point = CotPoint(lat, lon, hae, 999999.0, 999999.0),
+                detail = CotMarkerDetail(callsign, null, null, null, null, null)
+            )
+            upsertFromEvent(
+                BloodhoundEvent(
+                    mapItem = CotMarkerMapItem(marker), server = "Companion ATAK",
+                    timeIssued = time, timeCompleted = null, sourceServerId = COMPANION_BLOODHOUND_SOURCE_ID
+                )
+            )
+        } else {
+            val key = visibleKey(uid)
+            val item = key?.let(bloodhoundStore::item)
+            if (key?.sourceId == COMPANION_BLOODHOUND_SOURCE_ID && item != null) {
+                refreshCompanionTarget(item, callsign, lat, lon, hae)
+            }
+        }
+        // Companion tracking is navigation, not an assignment acknowledgement or chat request.
+        activate(uid)
+        _activeUid.value == uid
+    }
+
+    fun stopTracking(uid: String): Boolean = synchronized(bloodhoundStateLock) {
+        val key = _activeKey.value?.takeIf { it.cotUid == uid }
+            ?: return@synchronized false
+        bloodhoundStore.transformAll { candidate, item ->
+            if (candidate == key) item.copy(state = item.state.copy(active = false)) else item
+        }
+        publishVisibleBloodhounds()
+        setActiveKey(null)
+        true
+    }
+
+    fun updateCompanionTarget(uid: String, callsign: String, lat: Double, lon: Double, hae: Double): Boolean =
+        synchronized(bloodhoundStateLock) {
+            if (_activeUid.value != uid || !lat.isFinite() || !lon.isFinite() || !hae.isFinite() ||
+                lat !in -90.0..90.0 || lon !in -180.0..180.0
+            ) {
+                Log.w(TAG, "Companion tracking update rejected: inactive or invalid target")
+                return@synchronized false
+            }
+            val key = _activeKey.value ?: return@synchronized false
+            if (key.sourceId != COMPANION_BLOODHOUND_SOURCE_ID) return@synchronized true
+            val item = bloodhoundStore.item(key) ?: return@synchronized false
+            refreshCompanionTarget(item, callsign, lat, lon, hae)
+            true
+        }
+
+    private fun refreshCompanionTarget(item: BloodhoundItem, callsign: String, lat: Double, lon: Double, hae: Double) {
+        val old = item.bhEvent.mapItem.cotEvent
+        val time = maxOf(System.currentTimeMillis(), old.time + 1L)
+        val marker = old.copy(
+            time = time, start = time, stale = time + 300_000L,
+            point = old.point.copy(lat = lat, lon = lon, hae = hae),
+            detail = old.detail.copy(markerCallsign = callsign)
+        )
+        upsertFromEvent(item.bhEvent.copy(mapItem = CotMarkerMapItem(marker), receivedAt = time))
+    }
+
+    private fun reconcileActiveTrackingSource(uid: String) {
+        val activeKey = _activeKey.value ?: return
+        if (activeKey.cotUid != uid || visibleKey(uid) == activeKey) return
+        if (activeKey.sourceId == COMPANION_BLOODHOUND_SOURCE_ID &&
+            visibleKey(uid) != null && _bloodhoundMap.value[uid]?.bhEvent?.remoteAlert?.hasLocation != false
+        ) {
+            // Replace a companion-only snapshot with the real incoming target without ending tracking.
+            activate(uid)
+        } else {
+            setActiveKey(null)
+        }
+    }
 
     fun setInPos(uid: String): BloodhoundItem? = synchronized(bloodhoundStateLock) {
         val activeKey = _activeKey.value

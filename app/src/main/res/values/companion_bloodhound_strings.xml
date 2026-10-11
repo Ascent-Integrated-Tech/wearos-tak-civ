@@ -1,0 +1,3 @@
+<resources>
+    <string name="companion_bloodhound_sync_failed">Bloodhound tracking could not be synchronized with the phone. Check the companion connection.</string>
+</resources>

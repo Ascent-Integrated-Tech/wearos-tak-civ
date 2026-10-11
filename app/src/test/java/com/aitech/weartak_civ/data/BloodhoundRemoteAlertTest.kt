@@ -55,6 +55,20 @@ class BloodhoundRemoteAlertTest {
     private fun newRepository() = BloodhoundRepository(context, dataStore)
 
     @Test
+    fun companionTrackingStopDoesNotCancelOrDismissEmergency() = runBlocking {
+        val repository = newRepository()
+        val now = System.currentTimeMillis()
+        repository.applyEmergencyEvent(alert("remote-alert", now), "TAK", deviceUid = SELF_UID)
+        assertTrue(repository.activateCompanionTarget("remote-alert", "Phone", 38.0, -77.0, 0.0))
+        assertTrue(repository.stopTracking("remote-alert"))
+        assertNull(repository.activeUid.value)
+        assertNotNull(repository.remoteAlerts.value["remote-alert"])
+        assertNotNull(repository.bloodhoundMap.value["remote-alert"])
+        assertTrue(repository.activate("remote-alert").second?.state?.active == true)
+        assertTrue(repository.applyEmergencyEvent(alert("remote-alert", now + 1L), "TAK", deviceUid = SELF_UID))
+    }
+
+    @Test
     @org.robolectric.annotation.Config(application = android.app.Application::class, sdk = [34])
     fun removeAllClearsAllSourcesAndPersistsLocalAlertDismissals() = runBlocking {
         val repository = newRepository()

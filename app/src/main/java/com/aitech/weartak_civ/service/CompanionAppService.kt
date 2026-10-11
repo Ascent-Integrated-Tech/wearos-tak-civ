@@ -38,6 +38,7 @@ import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
@@ -107,8 +108,112 @@ class CompanionAppService : Service() {
         }
     }
 
-    private val bhRepo by lazy {
-        (applicationContext as WearTakApplication).bhRepo
+    private val bhRepo by lazy { (applicationContext as WearTakApplication).bhRepo }
+    private val bloodhoundSyncMutex = Mutex()
+    private val bloodhoundConnectionGeneration = java.util.concurrent.atomic.AtomicLong()
+    private var observedBloodhoundGeneration = 0L
+    private data class BloodhoundFrame(val bytes: ByteArray, val address: String, val generation: Long, val chunkSize: Int)
+    private val bloodhoundFrames = kotlinx.coroutines.channels.Channel<BloodhoundFrame>(64)
+    private val bloodhoundSync by lazy {
+        CompanionBloodhoundSync(
+            activeTarget = {
+                bhRepo.activeTrackingItem()?.let {
+                    CompanionBloodhoundSync.Target(
+                        it.uid, it.target.name ?: it.uid, it.target.point.lat,
+                        it.target.point.lon, it.target.point.hae
+                    )
+                }
+            },
+            startTracking = {
+                if (!BloodhoundService.isRunning.get()) {
+                    Log.w(TAG, "Companion Bloodhound rejected: watch Bloodhound service is not running")
+                    false
+                } else {
+                    bhRepo.activateCompanionTarget(it.uid, it.callsign, it.lat, it.lon, it.hae)
+                }
+            },
+            stopTracking = bhRepo::stopTracking,
+            send = ::sendBloodhoundControl,
+            reportError = { error ->
+                Log.w(TAG, "Companion Bloodhound: $error")
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(
+                        this, getString(R.string.companion_bloodhound_sync_failed), android.widget.Toast.LENGTH_LONG
+                    ).show()
+                }
+            },
+            updateTracking = {
+                bhRepo.updateCompanionTarget(it.uid, it.callsign, it.lat, it.lon, it.hae)
+            }
+        )
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun bloodhoundLinkReady(): Boolean =
+        bleSendReady() && connectedDevice?.bondState == BluetoothDevice.BOND_BONDED
+
+    @SuppressLint("MissingPermission")
+    private fun refreshBloodhoundConnection() {
+        val generation = bloodhoundConnectionGeneration.get()
+        if (observedBloodhoundGeneration != generation) {
+            bloodhoundSync.connectionChanged(false)
+            observedBloodhoundGeneration = generation
+        }
+        bloodhoundSync.connectionChanged(bloodhoundLinkReady())
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startBloodhoundSync() {
+        serviceScope.launch {
+            for (frame in bloodhoundFrames) {
+                sendChunkedNotify(
+                    frame.bytes, frame.chunkSize, expectedAddress = frame.address,
+                    expectedGeneration = frame.generation
+                )
+            }
+        }
+        serviceScope.launch {
+            capRepo.bleConnectionState.collect {
+                bloodhoundSyncMutex.withLock {
+                    refreshBloodhoundConnection()
+                }
+            }
+        }
+        serviceScope.launch {
+            bhRepo.activeUid.collect {
+                bloodhoundSyncMutex.withLock {
+                    refreshBloodhoundConnection()
+                    bloodhoundSync.localTargetChanged()
+                }
+            }
+        }
+        serviceScope.launch {
+            bhRepo.activeBhItemMap.collect {
+                bloodhoundSyncMutex.withLock {
+                    refreshBloodhoundConnection()
+                    bloodhoundSync.localTargetChanged()
+                }
+            }
+        }
+        serviceScope.launch {
+            while (true) {
+                delay(1_000L)
+                bloodhoundSyncMutex.withLock {
+                    refreshBloodhoundConnection()
+                    bloodhoundSync.checkTimeouts()
+                }
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendBloodhoundControl(json: String): Boolean {
+        if (!bloodhoundLinkReady()) return false
+        val address = connectedDevice?.address ?: return false
+        val generation = bloodhoundConnectionGeneration.get()
+        val bytes = "$json\n".toByteArray(Charsets.UTF_8)
+        val maxPayload = maxNotifyPayloadBytes()
+        return bloodhoundFrames.trySend(BloodhoundFrame(bytes, address, generation, maxPayload)).isSuccess
     }
 
     @SuppressLint("MissingPermission")
@@ -186,6 +291,8 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
     private fun forceBleReset(why: String) {
         Log.w(TAG, "forceBleReset: $why")
+        bloodhoundConnectionGeneration.incrementAndGet()
+        rxBuf.setLength(0)
 
         // Drop state
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
@@ -383,6 +490,7 @@ class CompanionAppService : Service() {
         // 5) Start outbound BLE collector & changed settings state
         startBleOutboundCollector()
         startSettingsChangedCollector()
+        startBloodhoundSync()
 
         // 6) Finish setup async
         serviceScope.launch {
@@ -501,6 +609,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
         Log.d(TAG, "CompanionAppService onDestroy()")
+        bloodhoundConnectionGeneration.incrementAndGet()
 
         // 1) Update app-level state FIRST (avoid stale SERVICES_READY in repo)
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
@@ -509,6 +618,7 @@ class CompanionAppService : Service() {
         clearPendingQueue()
 
         // 2) Stop outbound work
+        bloodhoundFrames.close()
         serviceJob.cancel()
 
         // 3) Stop bond monitoring, advertising + close the server + force disconnect
@@ -690,6 +800,8 @@ class CompanionAppService : Service() {
                     removeBondIfPossible(device, "connect_error:${device.address}")
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
+                bloodhoundConnectionGeneration.incrementAndGet()
+                rxBuf.setLength(0)
                 activeAddr = null
                 connectedDevice = null
                 resetNegotiatedMtu()
@@ -711,6 +823,8 @@ class CompanionAppService : Service() {
 
                     activeAddr = device.address
                     connectedDevice = device
+                    bloodhoundConnectionGeneration.incrementAndGet()
+                    rxBuf.setLength(0)
 
                     // reset per-session flags
                     negotiatedMtu = DEFAULT_ATT_MTU
@@ -730,6 +844,8 @@ class CompanionAppService : Service() {
 
 
                     Log.d(TAG, "Active device disconnected: ${device.address}")
+                    bloodhoundConnectionGeneration.incrementAndGet()
+                    rxBuf.setLength(0)
                     activeAddr = null
                     connectedDevice = null
 
@@ -1004,7 +1120,12 @@ class CompanionAppService : Service() {
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private suspend fun sendChunkedNotify(bytes: ByteArray, maxPayload: Int) {
+    private suspend fun sendChunkedNotify(
+        bytes: ByteArray,
+        maxPayload: Int,
+        expectedAddress: String? = null,
+        expectedGeneration: Long? = null
+    ) {
         val device = connectedDevice ?: run {
             Log.d(TAG, "sendChunkedNotify: no connectedDevice")
             return
@@ -1022,6 +1143,13 @@ class CompanionAppService : Service() {
         notifyMutex.withLock {
             var offset = 0
             while (offset < bytes.size) {
+                if (expectedAddress != null &&
+                    (device.address != expectedAddress || connectedDevice != device || !bloodhoundLinkReady() ||
+                        bloodhoundConnectionGeneration.get() != expectedGeneration)
+                ) {
+                    Log.w(TAG, "Dropping Bloodhound control after companion connection changed")
+                    return
+                }
                 val end = minOf(offset + maxPayload, bytes.size)
                 val chunk = bytes.copyOfRange(offset, end)
 
@@ -1155,6 +1283,23 @@ class CompanionAppService : Service() {
             val base = gson.fromJson(json, CompanionAppRepository.EnvelopeBase::class.java)
 
             when (base.type) {
+                "bloodhound_control", "bloodhound_control_result" -> {
+                    val payload = org.json.JSONObject(json).getJSONObject("payload")
+                    val generation = bloodhoundConnectionGeneration.get()
+                    serviceScope.launch {
+                        bloodhoundSyncMutex.withLock {
+                            if (generation != bloodhoundConnectionGeneration.get()) {
+                                Log.w(TAG, "Ignoring Bloodhound command from ended BLE connection")
+                                return@withLock
+                            }
+                            refreshBloodhoundConnection()
+                            bloodhoundSync.localTargetChanged()
+                            if (base.type == "bloodhound_control") bloodhoundSync.receiveControl(payload)
+                            else bloodhoundSync.receiveResult(payload)
+                        }
+                    }
+                }
+
                 "request_watch_info" -> {
                     serviceScope.launch {
                         val env = capRepo.buildWatchInfoEnvelope()

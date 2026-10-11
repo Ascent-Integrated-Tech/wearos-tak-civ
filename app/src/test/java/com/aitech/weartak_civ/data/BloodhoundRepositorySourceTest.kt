@@ -17,12 +17,83 @@ import com.aitech.weartak_civ.cot.CotPoint
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class BloodhoundRepositorySourceTest {
+    @Test
+    fun companionStopPreservesTargetAndDoesNotStopAnotherUid() {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        repository.upsertFromEvent(event(SERVER_A, "Alpha", receivedAt = 100L))
+        repository.activate(UID)
+        assertFalse(repository.stopTracking("unrelated"))
+        assertEquals(UID, repository.activeUid.value)
+        assertTrue(repository.stopTracking(UID))
+        assertNull(repository.activeUid.value)
+        val target = repository.bloodhoundMap.value[UID]
+        assertEquals("Alpha", target?.target?.name)
+        assertEquals(SERVER_A, target?.sourceServerId)
+        assertFalse(target?.state?.active ?: true)
+        assertTrue(repository.activate(UID).second?.state?.active == true)
+    }
+
+    @Test
+    fun companionStartUsesExistingSourceRatherThanOverwritingIt() {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        repository.upsertFromEvent(event(SERVER_A, "Alpha", receivedAt = 100L))
+        assertTrue(repository.activateCompanionTarget(UID, "Phone", 38.0, -77.0, 0.0))
+        assertEquals("Alpha", repository.activeTrackingItem()?.target?.name)
+        assertEquals(SERVER_A, repository.activeTrackingItem()?.sourceServerId)
+        assertEquals(41.0, repository.activeTrackingItem()?.target?.point?.lat)
+        assertTrue(repository.updateCompanionTarget(UID, "Phone update", 39.0, -77.0, 2.0))
+        assertEquals(41.0, repository.activeTrackingItem()?.target?.point?.lat)
+        assertEquals("Alpha", repository.activeTrackingItem()?.target?.name)
+    }
+
+    @Test
+    fun companionStartCreatesMissingTargetAndTrackingOnlyStopKeepsIt() {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        assertTrue(repository.activateCompanionTarget(UID, "Phone", 38.0, -77.0, 12.0))
+        assertEquals(UID, repository.activeUid.value)
+        assertEquals(12.0, repository.activeTrackingItem()?.target?.point?.hae)
+        assertEquals("companion-bloodhound", repository.activeTrackingItem()?.sourceServerId)
+        assertTrue(repository.updateCompanionTarget(UID, "Moving target", 39.0, -78.0, 13.0))
+        assertEquals(39.0, repository.activeTrackingItem()?.target?.point?.lat)
+        assertEquals(UID, repository.activeUid.value)
+        assertTrue(repository.stopTracking(UID))
+        assertEquals("Moving target", repository.bloodhoundMap.value[UID]?.target?.name)
+        assertFalse(repository.updateCompanionTarget(UID, "Ended target", 40.0, -78.0, 13.0))
+        assertNull(repository.bloodhoundMap.value[UID]?.bhEvent?.remoteAlert)
+        assertTrue(repository.activateCompanionTarget(UID, "Restarted target", 40.0, -79.0, 14.0))
+        assertEquals(40.0, repository.activeTrackingItem()?.target?.point?.lat)
+        assertEquals("Restarted target", repository.activeTrackingItem()?.target?.name)
+    }
+
+    @Test
+    fun invalidCompanionTargetDoesNotReplaceLocalTracking() {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        repository.upsertFromEvent(event(SERVER_A, "Alpha", receivedAt = 100L))
+        repository.activate(UID)
+        assertFalse(repository.activateCompanionTarget("bad-target", "Bad", 91.0, -77.0, 0.0))
+        assertEquals(UID, repository.activeUid.value)
+        assertNull(repository.bloodhoundMap.value["bad-target"])
+    }
+
+    @Test
+    fun realTargetCanReplaceCompanionSnapshotWithoutEndingTracking() {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        assertTrue(repository.activateCompanionTarget(UID, "Phone", 38.0, -77.0, 12.0))
+        repository.upsertFromEvent(event(SERVER_A, "Live target", System.currentTimeMillis() + 1_000L))
+        assertEquals(UID, repository.activeUid.value)
+        assertEquals(SERVER_A, repository.activeTrackingItem()?.sourceServerId)
+        assertEquals("Live target", repository.activeTrackingItem()?.target?.name)
+        assertTrue(repository.activeTrackingItem()?.state?.active == true)
+    }
+
     @Test
     fun clearingActiveSourceStopsSelectionAndRevealsRemainingUidCopy() {
         val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
