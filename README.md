@@ -56,6 +56,21 @@ The app requests permissions at runtime. On a physical device, grant only the pe
 
 ## Configuration and operation
 
+### Companion provisioning and optional phone management (WEARTAK-90)
+
+The companion defaults to one-time provisioning: edit the watch callsign and server
+settings, select a `.p12` certificate if needed, and tap **Send to Watch**. Wait for
+the watch's successful save acknowledgement before disconnecting. Certificates and
+server settings remain stored on the watch; a phone is not required afterwards.
+One-time uploads do not lock watch settings or copy the phone's team and role.
+
+**Manage watch settings from this phone** is opt-in. It copies phone identity and
+resynchronizes on reconnect, with watch identity, reporting, and server edits locked.
+A temporary BLE disconnect does not release this management mode. To return to
+one-time provisioning, uncheck the option and send settings again; this releases
+the lock without deleting certificates or reverting the current reporting settings.
+Unpairing instead releases the lock and restores the pre-management reporting settings.
+
 ### WEARTAK-66: Interaction-triggered PLI refresh and identity updates
 
 Changing callsign, team, or role (but not saving the same value), opening/resuming the map,

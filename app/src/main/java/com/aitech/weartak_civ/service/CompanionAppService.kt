@@ -262,6 +262,7 @@ class CompanionAppService : Service() {
             if (action == ACTION_KEY_MISSING) {
                 Log.w(TAG, "Bond key missing for $address active=$activeAddr")
 
+                clearPhoneManagedSettings(address)
                 removeBondIfPossible(device, "key_missing:$address")
                 forceBleReset("key_missing:$address")
                 return
@@ -274,6 +275,7 @@ class CompanionAppService : Service() {
             Log.d(TAG, "Bond state changed for $address: $prevBondState -> $bondState active=$activeAddr")
 
             if (bondState != BluetoothDevice.BOND_NONE || prevBondState == BluetoothDevice.BOND_NONE) return
+            clearPhoneManagedSettings(address)
             if (!isActive(device)) return
 
             Log.w(TAG, "Active companion bond lost for $address; forcing BLE reset")
@@ -358,6 +360,15 @@ class CompanionAppService : Service() {
 
         // 4) Initialize BLE server + GATT service
         initBle()
+        serviceScope.launch {
+            val managedAddress = repo.phoneManagedCompanionAddress.first()
+            val adapter = bluetoothAdapter
+            if (managedAddress != null && adapter?.isEnabled == true) {
+                val peerStillBonded = adapter.bondedDevices
+                    .any { it.address.equals(managedAddress, ignoreCase = true) }
+                if (!peerStillBonded) clearPhoneManagedSettings(managedAddress)
+            }
+        }
 
         // 5) Start outbound BLE collector & changed settings state
         startBleOutboundCollector()
@@ -1033,6 +1044,21 @@ class CompanionAppService : Service() {
 
     suspend fun applySettingsFromCompanion(payload: CompanionAppRepository.SetSettingsPayload) {
         TakServerP12Validator.validate(payload.takServerList)
+        require(payload.reportIntSecs == null || payload.reportIntSecs > 0) {
+            "Reporting interval must be positive"
+        }
+        val sendingPeerAddress = connectedDevice?.address
+
+        val managedPeerAddress = if (payload.phoneManagedSettings) {
+            require((payload.reportIntSecs ?: 0) > 0) {
+                "Phone-managed settings require a positive reporting interval"
+            }
+            require(!payload.callsign.isNullOrBlank() && !payload.team.isNullOrBlank() && !payload.role.isNullOrBlank()) {
+                "Phone-managed settings require callsign, team, and role"
+            }
+            sendingPeerAddress
+                ?: throw IllegalStateException("Cannot apply phone-managed settings without an active companion")
+        } else null
 
         // 1) Store servers
         Log.d(TAG, "applySettingsFromCompanion: storeTakServerList size=${payload.takServerList.size}")
@@ -1050,25 +1076,64 @@ class CompanionAppService : Service() {
         takServerList = storedTakServerList
 //        takServerListState.postValue(takServerList)
 
+        managedPeerAddress?.let { peerAddress ->
+            check(connectedDevice?.address.equals(peerAddress, ignoreCase = true)) {
+                "The companion disconnected before phone-managed settings could be applied"
+            }
+            repo.enablePhoneManagedSettings(peerAddress)
+        }
+        if (!payload.phoneManagedSettings) {
+            sendingPeerAddress?.let { peerAddress ->
+                repo.clearPhoneManagedSettingsForPeer(peerAddress, restorePreviousReporting = false)
+                    ?.let { (dynamicReporting, constantInterval) ->
+                        MainActivity.Constants.enableDynamicReportingStrategy = dynamicReporting
+                        MainActivity.Constants.constantReportingInterval = constantInterval
+                    }
+            }
+        }
+
         // 2) Store reporting interval
         val int = payload.reportIntSecs
         if (int != null && int != 0) {
+            if (payload.phoneManagedSettings) {
+                repo.storeEnableDynamicReportingStrategy(false)
+                MainActivity.Constants.enableDynamicReportingStrategy = false
+            }
             repo.storeConstantReportingInterval(payload.reportIntSecs)
+            MainActivity.Constants.constantReportingInterval = payload.reportIntSecs
         }
 
-        // 3) Store callsign & update the ui.
-        if (payload.callsign == null) return
+        payload.callsign?.let { phoneCallsign ->
+            repo.storeCallsign(phoneCallsign)
+            callsign = phoneCallsign
+            if (connectedDevice == null) {
+                updateBluetoothNameFromCallsign(phoneCallsign)
+            } else {
+                Log.d(TAG, "Callsign applied while connected; will update BT name next advertise")
+            }
+        }
 
-        repo.storeCallsign(payload.callsign)
-        callsign = payload.callsign
-        //TODO: WEAR-450 check this still works
-//        MainActivity.callsignSettingsState.postValue(callsign)
+        payload.team?.let { phoneTeam ->
+            repo.storeTeam(phoneTeam)
+            MainActivity.Constants.team = phoneTeam
+            val names = repo.getTeamNames.first().split(',')
+            val colors = repo.getTeamColors.first().split(',')
+            val teamIndex = names.indexOf(phoneTeam)
+            MainActivity.Constants.teamValue = colors.getOrNull(teamIndex) ?: phoneTeam
+        }
 
-        // Only rename BT adapter when not actively connected
-        if (connectedDevice == null) {
-            updateBluetoothNameFromCallsign(payload.callsign)
-        } else {
-            Log.d(TAG, "Callsign applied while connected; will update BT name next advertise")
+        payload.role?.let { phoneRole ->
+            repo.storeRole(phoneRole)
+            MainActivity.Constants.role = phoneRole
+        }
+    }
+
+    private fun clearPhoneManagedSettings(address: String) {
+        serviceScope.launch {
+            val restoredReporting = repo.clearPhoneManagedSettingsForPeer(address) ?: return@launch
+            MainActivity.Constants.enableDynamicReportingStrategy = restoredReporting.first
+            MainActivity.Constants.constantReportingInterval = restoredReporting.second
+            Log.i(TAG, "Phone-managed watch settings released after companion bond removal")
         }
     }
 

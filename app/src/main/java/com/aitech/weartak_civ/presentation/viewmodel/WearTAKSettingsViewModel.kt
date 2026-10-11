@@ -205,7 +205,17 @@ class WearTAKSettingsViewModel : ViewModel() {
             initialValue = "WEAROS-0"
         )
 
+    val savedPhoneManagedSettings: StateFlow<Boolean> =
+        dataRepository.phoneManagedSettingsEnabled.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = false
+        )
+
+    private fun isPhoneManagedSettingsActive() = savedPhoneManagedSettings.value
+
     fun storeCallsign(newCallsign: String) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeCallsign(newCallsign)
             callsign = newCallsign
@@ -231,6 +241,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeTeam(newTeam: String) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeTeam(newTeam)
             teamValue = newTeam
@@ -255,6 +266,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeRoleCategory(newCategory: String) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeRoleCategory(newCategory)
             category = newCategory
@@ -269,6 +281,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeRole(newRole: String) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeRole(newRole)
             role = newRole
@@ -449,6 +462,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeEnableDynamicReporting(enableDynamicRS: Boolean) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeEnableDynamicReportingStrategy(enableDynamicRS)
             enableDynamicReportingStrategy = enableDynamicRS
@@ -463,6 +477,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeConstantReportingInterval(interval: Int) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeConstantReportingInterval(interval)
             constantReportingInterval = interval
@@ -477,6 +492,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeStationaryReportingInterval(interval: Int) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeStationaryReportingInterval(interval)
             stationaryReportingInterval = interval
@@ -491,6 +507,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeOnFootReportingInterval(interval: Int) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeOnFootReportingInterval(interval)
             onFootReportingInterval = interval
@@ -505,6 +522,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeVehicleReportingInterval(interval: Int) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeVehicleReportingInterval(interval)
             vehicleReportingInterval = interval
@@ -519,6 +537,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeWhileAlertingReportingInterval(interval: Int) {
+        if (isPhoneManagedSettingsActive()) return
         viewModelScope.launch {
             dataRepository.storeWhileAlertingReportingInterval(interval)
             whileAlertingReportingInterval = interval
@@ -620,22 +639,26 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     fun storeTakServerList(newList: List<TakServerItem>) {
+        if (isPhoneManagedSettingsActive() || savedNetworkPreferencesLocked.value) return
         viewModelScope.launch {
             dataRepository.storeTakServerList(newList)
             takServerList = newList
         }
     }
     fun addTakServerItem(item: TakServerItem) {
+        if (isPhoneManagedSettingsActive() || savedNetworkPreferencesLocked.value) return
         viewModelScope.launch {
             dataRepository.addTakServerItem(item)
         }
     }
     fun removeTakServerItem(item: TakServerItem) {
+        if (isPhoneManagedSettingsActive() || savedNetworkPreferencesLocked.value) return
         viewModelScope.launch {
             dataRepository.removeTakServerItem(item)
         }
     }
     fun updateTakServerItem(oldItemIndex: Int, newItem: TakServerItem) {
+        if (isPhoneManagedSettingsActive() || savedNetworkPreferencesLocked.value) return
         viewModelScope.launch {
             if (dataRepository.updateTakServerItem(oldItemIndex, newItem) == DataRepository.TakServerUpdateResult.UPDATED) {
                 takServerList = dataRepository.awaitTakServerList()
