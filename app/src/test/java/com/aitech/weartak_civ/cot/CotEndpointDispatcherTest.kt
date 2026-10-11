@@ -9,6 +9,27 @@ import org.junit.Test
 
 class CotEndpointDispatcherTest {
     @Test
+    fun deletionNeverCallsExternalDispatchOrLegacyCompanionCotWithEveryTransportAvailable() = runBlocking {
+        val calls = mutableListOf<String>()
+        val dispatcher = CotEndpointDispatcher(
+            sendTak = { _, _ -> calls += "TAK" },
+            sendSitx = { calls += "SITX" },
+            sendDitto = { _, _ -> calls += "Ditto" },
+            sendMulticast = { calls += "multicast" },
+            sendPliMulticast = { calls += "PLI multicast" },
+            sendCompanion = { calls += "legacy companion CoT" },
+            sendPlugin = { calls += "plugin" },
+        )
+        listOf(false, true).forEach { ready ->
+            val sent = dispatcher.dispatch(
+                CotOutboundMessage("<deletion-must-not-be-sent/>", CotMessageKind.MARKER_CLEAR,
+                    CotCompanionPayload.Chat(chatSnapshot())),
+                allAvailable.copy(companion = ready, plugin = true))
+            assertEquals(false, sent)
+            assertTrue(calls.isEmpty())
+        }
+    }
+    @Test
     fun dispatchesChatOnlyToReadyCompanion() = runBlocking {
         val calls = mutableListOf<String>()
         val dispatcher = dispatcher(calls)

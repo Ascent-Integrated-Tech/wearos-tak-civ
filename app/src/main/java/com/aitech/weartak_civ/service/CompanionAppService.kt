@@ -163,6 +163,24 @@ class CompanionAppService : Service() {
     }
 
     @SuppressLint("MissingPermission")
+    private fun startPointDeletionRelay() {
+        serviceScope.launch {
+            capRepo.bleConnectionState.collect {
+                repo.companionPointGeneration = bloodhoundConnectionGeneration.get()
+            }
+        }
+        serviceScope.launch {
+            repo.pointDeletionRequests.collect { request ->
+                if (request.revision.generation == bloodhoundConnectionGeneration.get()) {
+                    val json = com.aitech.weartak_civ.data.CompanionPointRevisions
+                        .deletion(request.uid, request.revision.token).toString()
+                    if (!sendBloodhoundControl(json)) Log.w(TAG, "Point deletion write rejected")
+                } else Log.w(TAG, "Point deletion belongs to ended connection")
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
     private fun startBloodhoundSync() {
         serviceScope.launch {
             for (frame in bloodhoundFrames) {
@@ -490,6 +508,7 @@ class CompanionAppService : Service() {
         // 5) Start outbound BLE collector & changed settings state
         startBleOutboundCollector()
         startSettingsChangedCollector()
+        startPointDeletionRelay()
         startBloodhoundSync()
 
         // 6) Finish setup async
@@ -1091,7 +1110,31 @@ class CompanionAppService : Service() {
             return
         }
 
-        val framed = if (json.endsWith("\n")) json else (json + "\n")
+        var outgoing = json
+        val envelope = org.json.JSONObject(json)
+        if (envelope.optString("msgType") == "marker") {
+            if (!bloodhoundLinkReady()) return
+            val payload = envelope.getJSONObject("payload")
+            val time = java.time.Instant.parse(payload.getString("tStart")).toEpochMilli()
+            val stale = java.time.Instant.parse(payload.getString("tStale")).toEpochMilli()
+            // Legacy clear CoT remains on other transports, never import it as a fresh BLE marker.
+            if (stale <= System.currentTimeMillis()) return
+            val uid = payload.getString("uid")
+            if (repo.isDeletedLocalPoint(uid)) {
+                Log.d(TAG, "Ignoring update for deleted local point")
+                return
+            }
+            val token = java.util.UUID.randomUUID().toString()
+            payload.put("revision", token)
+            outgoing = envelope.toString()
+            if (sendBloodhoundControl(outgoing)) {
+                repo.companionPointRevisions.remember(uid,
+                    com.aitech.weartak_civ.data.CompanionPointRevisions.Revision(
+                        token, time, true, bloodhoundConnectionGeneration.get()))
+            } else Log.w(TAG, "Point update write rejected")
+            return
+        }
+        val framed = if (outgoing.endsWith("\n")) outgoing else (outgoing + "\n")
         val bytes = framed.toByteArray(Charsets.UTF_8)
         val maxPayload = maxNotifyPayloadBytes()
 
@@ -1348,8 +1391,30 @@ class CompanionAppService : Service() {
                     }
                 }
 
+                "marker_delete" -> {
+                    val deletion = com.aitech.weartak_civ.data.CompanionPointRevisions.parseDeletion(
+                        org.json.JSONObject(json).optJSONObject("payload"))
+                    if (deletion == null) {
+                        Log.w(TAG, "Ignoring invalid point deletion")
+                    } else {
+                        val generation = bloodhoundConnectionGeneration.get()
+                        val failureHandler = CoroutineExceptionHandler { _, error ->
+                            Log.e(TAG, "Failed to process point deletion", error)
+                        }
+                        serviceScope.launch(failureHandler) {
+                            if (generation != bloodhoundConnectionGeneration.get() || !bloodhoundLinkReady()) {
+                                Log.w(TAG, "Ignoring point deletion from ended/unready connection")
+                                return@launch
+                            }
+                            val applied = repo.receivePointDeletion(deletion.first, deletion.second, generation, bhRepo)
+                            Log.d(TAG, "Point deletion applied=$applied")
+                        }
+                    }
+                }
+
                 "phone_marker_cot" -> {
                     val receivedAt = System.currentTimeMillis()
+                    val generation = bloodhoundConnectionGeneration.get()
                     val payload = org.json.JSONObject(json).optJSONObject("payload")
                     val xml = payload?.optString("cot", "")?.takeIf(String::isNotBlank)
                     val event = xml?.let(CotMessageParser::parseMarkerOrNull)
@@ -1360,12 +1425,22 @@ class CompanionAppService : Service() {
                             Log.e(TAG, "Failed to process phone marker uid=${event.uid}", error)
                         }
                         serviceScope.launch(failureHandler) {
+                            if (generation != bloodhoundConnectionGeneration.get()) {
+                                Log.w(TAG, "Ignoring marker from ended BLE connection")
+                                return@launch
+                            }
                             val applied = repo.receiveMarkerEvent(
                                 event = event,
                                 bloodhoundRepository = bhRepo,
                                 source = "Companion ATAK",
                                 sourceServerId = "companion-phone",
-                                receivedAt = receivedAt
+                                receivedAt = receivedAt,
+                                companionRevision = (payload?.opt("revision") as? String)?.let { token ->
+                                    com.aitech.weartak_civ.data.CompanionPointRevisions.Revision(
+                                        token, event.time,
+                                        repo.droppedMarkerList.value.any { it.uid == event.uid },
+                                        generation)
+                                }
                             )
                             Log.d(TAG, "Phone marker processed uid=${event.uid} applied=$applied")
                         }

@@ -22,7 +22,7 @@ class CotDispatchPolicyTest {
             tak = false, sitx = false, ditto = false, multicast = false,
             companion = false, plugin = true
         )
-        CotMessageKind.entries.forEach { kind ->
+        CotMessageKind.entries.filter { it != CotMessageKind.MARKER_CLEAR }.forEach { kind ->
             val routes = CotDispatchPolicy.routesFor(kind, availability)
             assertEquals(CotRoute.PLUGIN, routes.first())
             assertEquals(1, routes.count { it == CotRoute.PLUGIN })
@@ -53,7 +53,7 @@ class CotDispatchPolicyTest {
             tak = true, sitx = true, ditto = true, multicast = true,
             companion = true, plugin = true
         )
-        CotMessageKind.entries.forEach { kind ->
+        CotMessageKind.entries.filter { it != CotMessageKind.MARKER_CLEAR }.forEach { kind ->
             assertEquals(listOf(CotRoute.PLUGIN, CotRoute.COMPANION),
                 CotDispatchPolicy.routesFor(kind, availability))
         }
@@ -65,7 +65,6 @@ class CotDispatchPolicyTest {
             CotMessageKind.PLI,
             CotMessageKind.CHAT,
             CotMessageKind.MARKER,
-            CotMessageKind.MARKER_CLEAR,
             CotMessageKind.EMERGENCY,
         )
         val connected = CotEndpointAvailability(true, true, true, true, true)
@@ -97,26 +96,12 @@ class CotDispatchPolicyTest {
     }
 
     @Test
-    fun markerClearPreservesLegacyDoubleMulticastWhenCompanionIsDisconnected() {
-        assertEquals(
-            listOf(
-                CotRoute.DITTO,
-                CotRoute.TAK,
-                CotRoute.MULTICAST,
-                CotRoute.MULTICAST,
-                CotRoute.SITX,
-            ),
-            CotDispatchPolicy.routesFor(
-                kind = CotMessageKind.MARKER_CLEAR,
-                availability = CotEndpointAvailability(
-                    tak = true,
-                    sitx = true,
-                    ditto = true,
-                    multicast = true,
-                    companion = false,
-                ),
-            ),
-        )
+    fun markerClearCannotReachAnyCotTransportIncludingPluginsAndCompanion() {
+        listOf(false, true).forEach { companion ->
+            assertEquals(emptyList<CotRoute>(), CotDispatchPolicy.routesFor(
+                CotMessageKind.MARKER_CLEAR,
+                CotEndpointAvailability(true, true, true, true, companion, plugin = true)))
+        }
     }
 
     @Test
