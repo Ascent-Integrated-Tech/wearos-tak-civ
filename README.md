@@ -213,7 +213,17 @@ the alert's Bloodhound details. Alerts appear first in the picker, with the send
 emergency category.
 Choosing navigation does not send an assignment acknowledgement or automated chat.
 
-TAK server, SITX, and companion IPC ingress use the same parser and lifecycle handling.
+TAK server, SITX, companion IPC, and paired companion BLE ingress use the same parser
+and lifecycle handling. The ATAK companion plugin forwards incoming phone emergencies
+and cancellations only while a bonded watch is connected, using a `phone_emergency_cot`
+envelope with original CoT XML in `payload.cot`. BLE alerts appear under source
+`Companion ATAK` and do not require a separate TAK connection on the watch.
+Disconnected alerts are not queued for replay by the plugin.
+Disconnecting does not clear alerts already received by the watch. A cancellation
+received after reconnect removes matching alert copies from both BLE and direct TAK
+ingress; older replayed alerts cannot resurrect them. Local dismissals remain local
+and suppress refreshes until a matching cancellation ends that alert session.
+Asynchronous ingestion failures are logged as processing errors, not successful delivery.
 ATAK's `*-9-1-1` alert UID, parent link, emergency text/type and cancellation flag are
 supported, as are WearTAK's biometric alert details. Own alerts are ignored. Source-owned
 copies are deduplicated by CoT UID; cancellation removes only emergency copies at or before

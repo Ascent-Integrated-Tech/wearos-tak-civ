@@ -38,11 +38,13 @@ import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerP12Validator
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
@@ -53,6 +55,7 @@ import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.NOT
 import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState.ERROR
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
+import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -99,6 +102,10 @@ class CompanionAppService : Service() {
         } catch (_: Throwable) {
             DataRepository(applicationContext)
         }
+    }
+
+    private val bhRepo by lazy {
+        (applicationContext as WearTakApplication).bhRepo
     }
 
     @SuppressLint("MissingPermission")
@@ -1189,6 +1196,30 @@ class CompanionAppService : Service() {
                             sendJsonToCompanion(capRepo.envelopeToJson(currSettingsEnv))
                         } catch (t: Throwable) {
                             Log.w(TAG, "set_settings: failed to send current settings", t)
+                        }
+                    }
+                }
+
+                "phone_emergency_cot" -> {
+                    val receivedAt = System.currentTimeMillis()
+                    val payload = org.json.JSONObject(json).optJSONObject("payload")
+                    val xml = payload?.optString("cot", "")?.takeIf(String::isNotBlank)
+                    val event = xml?.let(CotMessageParser::parseEmergencyOrNull)
+                    if (event == null) {
+                        Log.w(TAG, "Ignoring invalid phone emergency CoT")
+                    } else {
+                        val failureHandler = CoroutineExceptionHandler { _, error ->
+                            Log.e(TAG, "Failed to process phone emergency uid=${event.uid}", error)
+                        }
+                        serviceScope.launch(failureHandler) {
+                            val applied = bhRepo.applyEmergencyEvent(
+                                event = event,
+                                server = "Companion ATAK",
+                                sourceServerId = "companion-phone",
+                                receivedAt = receivedAt,
+                                deviceUid = device_uid
+                            )
+                            Log.d(TAG, "Phone emergency processed uid=${event.uid} applied=$applied")
                         }
                     }
                 }
