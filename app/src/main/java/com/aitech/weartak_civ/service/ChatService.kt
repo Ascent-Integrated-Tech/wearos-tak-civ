@@ -19,6 +19,7 @@ import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
 import com.aitech.weartak_civ.cot.CotMessageParser
+import com.aitech.weartak_civ.cot.ChatInboxMerge
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -187,6 +188,7 @@ class ChatService : Service() {
 
     // update the inbox
     @Subscribe(threadMode = ThreadMode.ASYNC)
+    @Synchronized
     fun onTakChat(event: TakChatEvent) {
         // Direct TAK ingestion supplies parsed rooms; legacy sources still supply raw XML only.
         val incomingRooms = event.parsedRooms ?: CotMessageParser.parseChatRooms(
@@ -200,24 +202,7 @@ class ChatService : Service() {
 
         // 2) Merge into in-memory inbox
         incomingRooms.forEach { incoming ->
-            val existing = chatRoomMap[incoming.uid]
-            if (existing != null) {
-                // Append new messages, and only mark “new” if these messages truly weren’t already in list
-                val mergedMessages = existing.messageList + incoming.messageList
-                val hasNew = incoming.messageList.any { newMsg ->
-                    existing.messageList.none { it.timeReceived == newMsg.timeReceived }
-                }
-                val mergedRoom = existing.copy(
-                    messageList        = mergedMessages,
-                    newMessagesPresent = existing.newMessagesPresent || hasNew,
-                    timeLastOpened     = existing.timeLastOpened,
-                    timeLastClosed     = existing.timeLastClosed
-                )
-                chatRoomMap[incoming.uid] = mergedRoom
-            } else {
-                // Brand‐new room → mark newMessagesPresent = true
-                chatRoomMap[incoming.uid] = incoming.copy(newMessagesPresent = true)
-            }
+            chatRoomMap[incoming.uid] = ChatInboxMerge.merge(chatRoomMap[incoming.uid], incoming)
         }
 
         // 3) Sort & publish once
