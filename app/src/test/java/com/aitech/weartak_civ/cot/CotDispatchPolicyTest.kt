@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.cot
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CotDispatchPolicyTest {
@@ -30,20 +31,52 @@ class CotDispatchPolicyTest {
     }
 
     @Test
-    fun pliPreservesLegacyTakSitxCompanionAndAlwaysMulticastRoutes() {
+    fun pliRoutesOnlyThroughReadyCompanionWhenAvailable() {
         assertEquals(
-            listOf(CotRoute.TAK, CotRoute.SITX, CotRoute.COMPANION, CotRoute.MULTICAST),
+            listOf(CotRoute.COMPANION),
             CotDispatchPolicy.routesFor(
                 kind = CotMessageKind.PLI,
                 availability = CotEndpointAvailability(
                     tak = true,
-                    sitx = false,
+                    sitx = true,
                     ditto = true,
-                    multicast = false,
+                    multicast = true,
                     companion = true,
                 ),
             ),
         )
+    }
+
+    @Test
+    fun readyCompanionPreservesPluginDeliveryWithoutDirectWatchRoutes() {
+        val availability = CotEndpointAvailability(
+            tak = true, sitx = true, ditto = true, multicast = true,
+            companion = true, plugin = true
+        )
+        CotMessageKind.entries.forEach { kind ->
+            assertEquals(listOf(CotRoute.PLUGIN, CotRoute.COMPANION),
+                CotDispatchPolicy.routesFor(kind, availability))
+        }
+    }
+
+    @Test
+    fun allOutboundKindsUseOnlyReadyCompanionAndFallBackAfterDisconnect() {
+        val kinds = listOf(
+            CotMessageKind.PLI,
+            CotMessageKind.CHAT,
+            CotMessageKind.MARKER,
+            CotMessageKind.MARKER_CLEAR,
+            CotMessageKind.EMERGENCY,
+        )
+        val connected = CotEndpointAvailability(true, true, true, true, true)
+        val disconnected = connected.copy(companion = false)
+
+        kinds.forEach { kind ->
+            assertEquals("$kind while companion is ready", listOf(CotRoute.COMPANION),
+                CotDispatchPolicy.routesFor(kind, connected))
+            assertTrue("$kind resumes direct routes after disconnect",
+                CotDispatchPolicy.routesFor(kind, disconnected).any { it != CotRoute.COMPANION })
+        }
     }
 
     @Test
@@ -64,10 +97,9 @@ class CotDispatchPolicyTest {
     }
 
     @Test
-    fun markerClearPreservesLegacyDoubleMulticastAndRouteOrder() {
+    fun markerClearPreservesLegacyDoubleMulticastWhenCompanionIsDisconnected() {
         assertEquals(
             listOf(
-                CotRoute.COMPANION,
                 CotRoute.DITTO,
                 CotRoute.TAK,
                 CotRoute.MULTICAST,
@@ -81,7 +113,7 @@ class CotDispatchPolicyTest {
                     sitx = true,
                     ditto = true,
                     multicast = true,
-                    companion = true,
+                    companion = false,
                 ),
             ),
         )

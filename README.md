@@ -237,6 +237,11 @@ Chat presets in the reply picker submit the selected text immediately to that co
 Typed chat text still uses the existing compose-and-Send flow. The picker keeps the
 conversation UID so incoming list changes cannot redirect a preset to another recipient.
 
+When the companion phone BLE session is ready, outbound PLI, chat, markers, and alerts
+use the phone uplink only; the phone handles onward TAK, SITX, and multicast delivery.
+The watch resumes its directly configured routes when the companion session disconnects.
+The connection complication reports **Phone uplink active** while that route is in use.
+
 `WearTakApplication` initializes shared repositories and the CEP/plugin infrastructure. `DataRepository` is the main persistent state and settings hub, based on DataStore and Kotlin Flows. Newer components use Flow/StateFlow for reactive updates; some existing components communicate through EventBus.
 
 The important runtime path is:
