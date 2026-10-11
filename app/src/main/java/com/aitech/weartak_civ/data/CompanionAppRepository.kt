@@ -280,6 +280,20 @@ class CompanionAppRepository(private val context: Context) {
         val bat: Int?           // battery
     )
 
+    data class ChatReceivedEnvelope(
+        @SerializedName("msgType")
+        val msgType: String? = null,
+        val payload: ChatReceivedPayload? = null,
+    )
+
+    data class ChatReceivedPayload(
+        val uid: String? = null,
+        val senderUid: String? = null,
+        val senderCallsign: String? = null,
+        val msg: String? = null,
+        val receivedAt: Long? = null,
+    )
+
     data class TakServerList(
         val list: List<DataRepository.TakServerItem>
     )

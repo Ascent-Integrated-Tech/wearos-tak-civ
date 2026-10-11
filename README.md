@@ -103,6 +103,11 @@ The app starts essential behavior through its application/bootstrap receivers an
 
 Chat is an online feature; the project does not provide an offline TAK chat queue.
 
+Companion chat uses the existing watch inbox. Replayed message IDs are deduplicated
+per sender, including duplicates within a batch. Messages without IDs use sender,
+receipt timestamp, and text rather than timestamp alone. Incoming messages currently
+use direct sender conversations; group conversation handling is a separate feature.
+
 Outgoing periodic and interaction-triggered PLI expires after twice the active reporting
 interval plus 15 seconds (135 seconds for a 60-second interval). Interaction PLI retains
 the location fix timestamp as the expiry baseline. Alert and marker expiry is unchanged.

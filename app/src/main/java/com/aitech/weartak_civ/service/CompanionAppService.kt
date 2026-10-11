@@ -42,6 +42,8 @@ import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerP12Validator
+import com.aitech.weartak_civ.cot.CompanionChatIngestor
+import com.aitech.weartak_civ.events.TakChatEvent
 import com.google.gson.Gson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -63,6 +65,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import org.greenrobot.eventbus.EventBus
 
 /**
  * CompanionAppService:
@@ -1198,6 +1201,23 @@ class CompanionAppService : Service() {
                             Log.w(TAG, "set_settings: failed to send current settings", t)
                         }
                     }
+                }
+
+                "chat_received" -> {
+                    val payload = gson.fromJson(
+                        json,
+                        CompanionAppRepository.ChatReceivedEnvelope::class.java
+                    )?.payload
+                    val room = try {
+                        CompanionChatIngestor.room(payload, System.currentTimeMillis())
+                    } catch (error: IllegalArgumentException) {
+                        Log.w(TAG, "chat_received: missing message identity, sender, or text")
+                        return
+                    }
+                    val receivedAt = room.messageList.single().timeReceived
+                    EventBus.getDefault().post(
+                        TakChatEvent(rawXml = "", receivedAt = receivedAt, parsedRooms = listOf(room))
+                    )
                 }
 
                 "phone_emergency_cot" -> {

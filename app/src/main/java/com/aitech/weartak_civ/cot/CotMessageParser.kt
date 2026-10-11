@@ -180,6 +180,7 @@ object CotMessageParser {
             val group = chat.getElementsByTagName("chatgrp").item(0) as? Element
             val senderUid = group?.getAttribute("uid0") ?: continue
             val senderCallsign = chat.getAttribute("senderCallsign")
+            val messageId = chat.getAttribute("messageId").takeIf { it.isNotBlank() }
             for (remarkIndex in 0 until remarkElements.length) {
                 val remark = remarkElements.item(remarkIndex) as? Element ?: continue
                 val recipient = remark.getAttribute("to")
@@ -189,7 +190,8 @@ object CotMessageParser {
                         senderCallsign,
                         remark.textContent.trim(),
                         sourceServerId,
-                        receivedAt
+                        receivedAt,
+                        messageId,
                     )
                 }
             }
@@ -246,6 +248,7 @@ object CotMessageParser {
             ?: return emptyList()
         val senderCallsign = """<__chat[^>]*senderCallsign=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
             ?: return emptyList()
+        val messageId = """<__chat[^>]*messageId=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
         return """<remarks[^>]*to=['"]([^'"]+)['"][^>]*>(.*?)</remarks>"""
             .toRegex(RegexOption.DOT_MATCHES_ALL)
             .findAll(rawXml)
@@ -256,7 +259,8 @@ object CotMessageParser {
                     senderCallsign,
                     it.groupValues[2].trim(),
                     sourceServerId,
-                    receivedAt
+                    receivedAt,
+                    messageId
                 )
             }
             .toList()
@@ -267,7 +271,8 @@ object CotMessageParser {
         senderCallsign: String,
         message: String,
         sourceServerId: String?,
-        receivedAt: Long
+        receivedAt: Long,
+        messageId: String? = null
     ) = ChatRoom(
         uid = senderUid,
         title = senderCallsign,
@@ -277,7 +282,8 @@ object CotMessageParser {
                 uid = senderUid,
                 callsign = senderCallsign,
                 timeReceived = receivedAt,
-                sourceServerId = sourceServerId
+                sourceServerId = sourceServerId,
+                messageId = messageId
             )
         ),
         newMessagesPresent = true,
