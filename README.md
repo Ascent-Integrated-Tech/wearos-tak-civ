@@ -209,6 +209,24 @@ stopping navigation to removed targets. Alert dismissals survive restarts and su
 ongoing refreshes until the sender cancels. This does not send cancellation or acknowledgement
 messages, delete ordinary map markers, or prevent new ordinary targets from arriving.
 
+### Phone-to-watch points
+
+Paired companion BLE accepts `phone_marker_cot` envelopes with original marker CoT
+in `payload.cot`. Valid points appear on the map and in Bloodhound under
+`Companion ATAK`, without a separate watch TAK connection. Blank UIDs, invalid
+timestamps, non-finite coordinates and out-of-range latitude/longitude are rejected.
+Original event/start/stale times are retained; missing start or stale defaults to
+event time, as with existing marker ingestion.
+
+BLE, direct TAK and SITX share serialized map/navigation ingestion. Source-owned
+copies are deduplicated by UID using event time before receipt time. A stale
+incoming marker removes only its source's copy at or before that event time,
+including navigation to that removed copy; another source's target remains intact.
+Source-scoped removal watermarks reject older and equal-time replay during the
+watch process lifetime, including BLE reconnects. Disconnecting does not clear
+received points. There is no offline replay queue or new automatic expiry policy.
+Asynchronous repository failures are logged; cancellation is not treated as an error.
+
 ### Remote emergencies
 
 Incoming `b-a-o`, `b-a-o-*`, and ATAK's standard `b-a-g` CoT emergencies share one active

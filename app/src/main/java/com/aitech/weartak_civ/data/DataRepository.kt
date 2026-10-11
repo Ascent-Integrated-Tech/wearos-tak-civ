@@ -27,6 +27,10 @@ import androidx.lifecycle.MutableLiveData
 import androidx.room.Entity
 import androidx.room.PrimaryKey
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.channels.Channel
 import com.aitech.weartak_civ.BuildConfig
@@ -1676,14 +1680,34 @@ class DataRepository(private val context: Context) {
         receivedMarkerStore.clear()
     }
 
+    private val markerIngressMutex = Mutex()
+
+    /** Serializes map and navigation ingestion across BLE and TAK receive paths. */
+    suspend fun receiveMarkerEvent(
+        event: CotMarkerEvent,
+        bloodhoundRepository: BloodhoundRepository,
+        source: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis()
+    ): Boolean = markerIngressMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        if (event.uid.isBlank() || event.time <= 0 || event.start <= 0 || event.stale <= 0) {
+            return@withLock false
+        }
+        val now = System.currentTimeMillis()
+        bloodhoundRepository.applyReceivedMarkerEvent(event, source, sourceServerId, receivedAt, now)
+        applyReceivedMarkerEvent(event, source, sourceServerId, receivedAt, now)
+    }
+
     suspend fun applyReceivedMarkerEvent(
         event: CotMarkerEvent,
         source: String,
         sourceServerId: String? = null,
-        receivedAt: Long = System.currentTimeMillis()
+        receivedAt: Long = System.currentTimeMillis(),
+        now: Long = System.currentTimeMillis()
     ): Boolean {
         val sourceKey = sourceServerId ?: NON_TAK_COT_SOURCE_ID
-        if (event.stale <= System.currentTimeMillis()) {
+        if (event.stale <= now) {
             val removed = receivedMarkerStore.removeIfNotOlder(
                 key = SourceCotKey(sourceKey, event.uid),
                 eventTime = event.time,
@@ -1727,7 +1751,7 @@ class DataRepository(private val context: Context) {
                 "visibleSourceId=${receivedMarkerStore.visibleKey(event.uid)?.sourceId} " +
                 "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
         )
-        return true
+        return result.applied
     }
 
     data class SourceClearSummary(

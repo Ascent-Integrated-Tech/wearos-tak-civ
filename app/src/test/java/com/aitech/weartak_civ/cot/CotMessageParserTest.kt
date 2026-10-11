@@ -35,6 +35,32 @@ class CotMessageParserTest {
     }
 
     @Test
+    fun rejectsMarkersWithInvalidCoordinates() {
+        assertNull(CotMessageParser.parseMarkerOrNull(MARKER_XML.replace("lat='41.0'", "lat='91.0'")))
+        assertNull(CotMessageParser.parseMarkerOrNull(MARKER_XML.replace("lon='-87.0'", "lon='NaN'")))
+        listOf("lat='41.0'", "lon='-87.0'", "hae='100.0'", "ce='4.0'", "le='5.0'").forEach { attribute ->
+            assertNull(CotMessageParser.parseMarkerOrNull(
+                MARKER_XML.replace(attribute, "${attribute.substringBefore('=')}='Infinity'")
+            ))
+        }
+    }
+
+    @Test
+    fun rejectsBlankMarkerUidAndInvalidTimesButPreservesMissingTimeDefaults() {
+        assertNull(CotMessageParser.parseMarkerOrNull(MARKER_XML.replace("uid='marker-1'", "uid=' '")))
+        listOf("time", "start", "stale").forEach { name ->
+            val invalid = MARKER_XML.replace(Regex("$name='[^']*'"), "$name='not-a-time'")
+            assertNull(CotMessageParser.parseMarkerOrNull(invalid))
+            val epoch = MARKER_XML.replace(Regex("\\b$name='[^']*'"), "$name='1970-01-01T00:00:00Z'")
+            assertNull(CotMessageParser.parseMarkerOrNull(epoch))
+        }
+        val withoutDefaults = MARKER_XML.replace(Regex(" (start|stale)='[^']*'"), "")
+        val event = CotMessageParser.parseMarkerOrNull(withoutDefaults)!!
+        assertEquals(event.time, event.start)
+        assertEquals(event.time, event.stale)
+    }
+
+    @Test
     fun parsesEmergencyAlertCategorySenderAndLocation() {
         val event = CotMessageParser.parseEmergencyOrNull(EMERGENCY_XML)
 

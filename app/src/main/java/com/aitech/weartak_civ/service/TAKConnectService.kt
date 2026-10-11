@@ -1283,8 +1283,9 @@ class TAKConnectService: Service() {
                         event: CotMarkerEvent,
                         envelope: TakServerCotEnvelope
                     ) {
-                        val shouldTrack = dataRepository.applyReceivedMarkerEvent(
+                        val shouldTrack = dataRepository.receiveMarkerEvent(
                             event = event,
+                            bloodhoundRepository = bhRepo,
                             source = envelope.sourceServerAddress,
                             sourceServerId = envelope.sourceServerId,
                             receivedAt = envelope.receivedAt
@@ -1304,18 +1305,6 @@ class TAKConnectService: Service() {
                             return
                         }
 
-                        val mapItem = CotMarkerMapItem(event)
-                        bhRepo.updateBloodhoundEvent(
-                            BloodhoundRepository.BloodhoundEvent(
-                                mapItem = mapItem,
-                                server = envelope.sourceServerAddress,
-                                timeIssued = mapItem.link?.productionTime,
-                                timeCompleted = null,
-                                remark = event.detail.remarks ?: "",
-                                sourceServerId = envelope.sourceServerId,
-                                receivedAt = envelope.receivedAt
-                            )
-                        )
                         Log.d(
                             TAG,
                             "Inbound marker delivered to Bloodhound state uid=${event.uid} " +

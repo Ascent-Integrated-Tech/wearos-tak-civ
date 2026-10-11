@@ -1017,24 +1017,15 @@ class SitxTakService : Service() {
 
             if (markerCotEvent != null) {
                 serviceScope.launch {
-                    val shouldTrackMarker = dataRepo.applyReceivedMarkerEvent(
+                    val shouldTrackMarker = dataRepo.receiveMarkerEvent(
                         event = markerCotEvent,
+                        bloodhoundRepository = bhRepo,
                         source = flowTag
                     )
                     if (!shouldTrackMarker) {
                         Log.i(TAG, "Removing stale received marker from map state: ${markerCotEvent.uid}")
                         return@launch
                     }
-                    val mapItem = CotMarkerMapItem(markerCotEvent)
-                    val bhEvent = BloodhoundRepository.BloodhoundEvent(
-                        mapItem = mapItem,
-                        server = flowTag,
-                        timeIssued = mapItem.link?.productionTime,
-                        timeCompleted = null,
-                        remark = markerCotEvent.detail.remarks ?: ""
-                    )
-                    Log.i(TAG, "updateBloodhoundEvent called=$bhEvent")
-                    bhRepo.updateBloodhoundEvent(bhEvent)
                 }
             }
         }
