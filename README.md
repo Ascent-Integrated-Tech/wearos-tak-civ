@@ -201,6 +201,34 @@ does not enable disconnected TAK servers or fan out to other transports.
 
 ## Architecture
 
+### Paired Bloodhound tracking
+
+While the ATAK companion is bonded and BLE-ready, starting Bloodhound tracking on
+either device starts the same CoT target on the other. Ending that shared session on
+either device stops tracking on both, without cancelling the underlying emergency,
+dismissing its alert, or deleting its marker. Closing a screen is not a tracking stop.
+The watch must have its Bloodhound service enabled and running; companion commands
+do not override disabled services or missing permissions.
+
+Commands use `bloodhound_control` envelopes with an `action`, `session_id`, and
+`target_uid`. Starts carry the target callsign and coordinates, allowing the watch to
+create a companion-owned navigation target if the UID is not already available.
+Existing locally received targets are preferred. Start/stop acknowledgements use
+`bloodhound_control_result`; rejection or a missing acknowledgement is surfaced rather
+than claiming synchronization succeeded. Session correlation, bounded ended-session
+history keyed by session and target UID, and echo suppression prevent old commands
+from stopping a replacement track. A repeated stop is acknowledged only for its
+original session/target pair.
+Simultaneous starts converge on the lexicographically smaller session ID.
+An `update` action carries changed target coordinates within the same session, so a
+companion-only target can move without restarting tracking. Updates do not overwrite
+an independently received local CoT target; a real incoming source can replace the
+companion snapshot without ending its tracking session.
+
+Disconnect leaves each device's local tracking unchanged and forgets the shared session.
+Reconnect does not replay an old start or stop; a new tracking action is required to
+synchronize again. This does not depend on the separate phone-to-watch alert forwarding
+feature and does not retransmit alert cancellations.
 The Bloodhound picker has a **Remove All** button above its targets. Its confirmation
 screen offers **Remove All** and **Cancel**; Cancel or dismissing the dialog leaves
 the list unchanged. Remove All removes all
@@ -226,7 +254,6 @@ Source-scoped removal watermarks reject older and equal-time replay during the
 watch process lifetime, including BLE reconnects. Disconnecting does not clear
 received points. There is no offline replay queue or new automatic expiry policy.
 Asynchronous repository failures are logged; cancellation is not treated as an error.
-
 ### Remote emergencies
 
 Incoming `b-a-o`, `b-a-o-*`, and ATAK's standard `b-a-g` CoT emergencies share one active
