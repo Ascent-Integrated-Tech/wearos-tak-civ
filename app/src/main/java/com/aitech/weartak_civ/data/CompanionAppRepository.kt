@@ -425,7 +425,10 @@ class CompanionAppRepository(private val context: Context) {
     data class SetSettingsPayload(
         val takServerList: List<DataRepository.TakServerItem> = emptyList(),
         val reportIntSecs: Int? = null,
-        val callsign: String? = null
+        val callsign: String? = null,
+        val team: String? = null,
+        val role: String? = null,
+        val phoneManagedSettings: Boolean = false,
     )
 
     data class SettingsAckPayload(
@@ -469,7 +472,10 @@ class CompanionAppRepository(private val context: Context) {
         val timeMillis: Long,                       // When the snapshot was taken
         val takServerList: List<TakServerItem>,     // Tak Server Connections
         val reportIntSecs: Int,                     // pli reporting rate
-        val callsign: String                        // callsign right now
+        val callsign: String,                       // callsign right now
+        val team: String,
+        val role: String,
+        val phoneManagedSettings: Boolean,
     )
 
     suspend fun snapshotWearTakSettings(): WearTakSettingsSnapshot {
@@ -477,7 +483,10 @@ class CompanionAppRepository(private val context: Context) {
             timeMillis    = System.currentTimeMillis(),
             takServerList = repo.awaitTakServerList(),
             reportIntSecs = repo.getConstantReportingInterval.first(),
-            callsign      = repo.getCallsign.first()
+            callsign      = repo.getCallsign.first(),
+            team          = repo.getTeam.first(),
+            role          = repo.getRole.first(),
+            phoneManagedSettings = repo.phoneManagedSettingsEnabled.first(),
         )
     }
 
@@ -503,29 +512,43 @@ class CompanionAppRepository(private val context: Context) {
 
 
     /**
-     * Emits when any of callsign / report interval / server list changes.
+     * Emits when phone-managed identity / reporting / server settings change.
      *
      * Important: timeMillis is NOT included in equality comparison, otherwise it would
      * emit constantly. We generate timeMillis only at emit time.
      */
     fun wearTakSettingsFlow(): Flow<WearTakSettingsSnapshot> {
-        return combine(
-            repo.getTakServerListReady,            // Flow<List<TakServerItem>>
-            repo.getConstantReportingInterval,     // StateFlow<Int> or Flow<Int>
-            repo.getCallsign                      // Flow<String>
-        ) { list, interval, callsign ->
+        val profileAndConnectionSettings = combine(
+            repo.getTakServerListReady,
+            repo.getConstantReportingInterval,
+            repo.getCallsign,
+            repo.getTeam,
+            repo.getRole
+        ) { list, interval, callsign, team, role ->
             WearTakSettingsSnapshot(
                 timeMillis = System.currentTimeMillis(),
                 takServerList = list,
                 reportIntSecs = interval,
-                callsign = callsign
+                callsign = callsign,
+                team = team,
+                role = role,
+                phoneManagedSettings = false
             )
+        }
+        return combine(
+            profileAndConnectionSettings,
+            repo.phoneManagedSettingsEnabled
+        ) { snapshot, managed ->
+            snapshot.copy(phoneManagedSettings = managed)
         }
             // Strip timeMillis out of distinct comparison
             .distinctUntilChanged { old, new ->
                 old.callsign == new.callsign &&
                         old.reportIntSecs == new.reportIntSecs &&
-                        old.takServerList == new.takServerList
+                        old.takServerList == new.takServerList &&
+                        old.team == new.team &&
+                        old.role == new.role &&
+                        old.phoneManagedSettings == new.phoneManagedSettings
             }
             .onEach { snapshot -> lastWearTakSettingsSnapshot = snapshot }
             .retryWhen { cause, _ ->

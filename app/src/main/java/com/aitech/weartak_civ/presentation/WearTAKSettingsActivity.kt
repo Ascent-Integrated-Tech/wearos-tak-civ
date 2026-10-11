@@ -307,6 +307,7 @@ fun WearTAKSettingsNav(
     val savedCallsign by settingsVm.savedCallsign.collectAsState()
     val savedTeam by settingsVm.savedTeam.collectAsState()
     val savedRole by settingsVm.savedRole.collectAsState()
+    val phoneManagedSettings by settingsVm.savedPhoneManagedSettings.collectAsState()
 
     val savedBirthYear by settingsVm.savedBirthYear.collectAsState()
     val savedHeightFeet by settingsVm.savedHeightFeet.collectAsState()
@@ -382,6 +383,13 @@ fun WearTAKSettingsNav(
 
     val isDevMode by settingsVm.savedEnableWearTakDevMode.collectAsState()
     val networkPreferencesLocked by settingsVm.savedNetworkPreferencesLocked.collectAsState()
+    val showPhoneManagedNotice = {
+        Toast.makeText(
+            context,
+            context.getString(R.string.phone_managed_by_paired_phone),
+            Toast.LENGTH_SHORT
+        ).show()
+    }
     val enableImmersionAlerts by settingsVm.savedEnableImmersionAlerts.collectAsState()
     val enableLowAtmPressureAlert by settingsVm.savedEnableLowAtmPressureAlert.collectAsState()
     val lowAtmPressureAlertThreshold by settingsVm.savedLowAtmPressureAlertThreshold.collectAsState()
@@ -402,6 +410,40 @@ fun WearTAKSettingsNav(
     val uasTriggerThreshold by settingsVm.savedOnnxUasTriggerThresholdPercent.collectAsState()
     val crmThresholdValues by settingsVm.savedCrmThresholdRanges.collectAsState()
     val wearTakInfo by settingsVm.wearTakInfo.collectAsState()
+
+    LaunchedEffect(phoneManagedSettings, networkPreferencesLocked) {
+        val route = navController.currentDestination?.route.orEmpty()
+        val identityOrReportingRoute = route in setOf(
+            "my_callsign",
+            "my_team",
+            "my_role",
+            "role_category_screen/{index}",
+            "reporting_strategy",
+            "reporting_strategy_select",
+            "constant_reporting_interval_screen",
+            "stationary_reporting_interval_screen",
+            "on_foot_reporting_interval_screen",
+            "vehicle_reporting_interval_screen",
+            "while_alerting_reporting_interval_screen"
+        )
+        val serverRoute = route in setOf(
+            "tak_servers",
+            "new_server_screen",
+            "edit_server_screen/{index}"
+        )
+        if (phoneManagedSettings && identityOrReportingRoute) {
+            navController.navigate("callsign_and_device_preferences") {
+                popUpTo("settings_screen") { inclusive = false }
+                launchSingleTop = true
+            }
+        } else if (serverRoute && (phoneManagedSettings || networkPreferencesLocked)) {
+            val destination = if (networkPreferencesLocked) "settings_screen" else "network_preferences"
+            navController.navigate(destination) {
+                popUpTo("settings_screen") { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
 
     SwipeDismissableNavHost(
         navController = navController,
@@ -533,28 +575,52 @@ fun WearTAKSettingsNav(
                 stringResource(R.string.callsign_and_device_preferences),
                 columnContent = {
                     item {
-                        WearTAKTitleChipWithState(
-                            route = "my_callsign",
-                            title = stringResource(R.string.my_callsign),
-                            state = savedCallsign,
-                            navController = navController
-                        )
+                        if (phoneManagedSettings) {
+                            WearTAKLockedTitleChip(
+                                title = stringResource(R.string.my_callsign),
+                                lockedState = "${savedCallsign} • ${stringResource(R.string.phone_managed)}",
+                                onClick = showPhoneManagedNotice
+                            )
+                        } else {
+                            WearTAKTitleChipWithState(
+                                route = "my_callsign",
+                                title = stringResource(R.string.my_callsign),
+                                state = savedCallsign,
+                                navController = navController
+                            )
+                        }
                     }
                     item {
-                        WearTAKTitleChipWithState(
-                            route = "my_team",
-                            title = stringResource(R.string.my_team),
-                            state = savedTeam,
-                            navController = navController
-                        )
+                        if (phoneManagedSettings) {
+                            WearTAKLockedTitleChip(
+                                title = stringResource(R.string.my_team),
+                                lockedState = "${savedTeam} • ${stringResource(R.string.phone_managed)}",
+                                onClick = showPhoneManagedNotice
+                            )
+                        } else {
+                            WearTAKTitleChipWithState(
+                                route = "my_team",
+                                title = stringResource(R.string.my_team),
+                                state = savedTeam,
+                                navController = navController
+                            )
+                        }
                     }
                     item {
-                        WearTAKTitleChipWithState(
-                            route = "my_role",
-                            title = stringResource(R.string.my_role),
-                            state = savedRole,
-                            navController = navController
-                        )
+                        if (phoneManagedSettings) {
+                            WearTAKLockedTitleChip(
+                                title = stringResource(R.string.my_role),
+                                lockedState = "${savedRole} • ${stringResource(R.string.phone_managed)}",
+                                onClick = showPhoneManagedNotice
+                            )
+                        } else {
+                            WearTAKTitleChipWithState(
+                                route = "my_role",
+                                title = stringResource(R.string.my_role),
+                                state = savedRole,
+                                navController = navController
+                            )
+                        }
                     }
                     item {
                     WearTAKTitleChip(
@@ -569,11 +635,19 @@ fun WearTAKSettingsNav(
                         color = Color.White
                     )}
                     item {
-                        WearTAKTitleChip(
-                            route = "reporting_strategy",
-                            title = stringResource(R.string.reporting_strategy),
-                            navController = navController
-                        )
+                        if (phoneManagedSettings) {
+                            WearTAKLockedTitleChip(
+                                title = stringResource(R.string.reporting_strategy),
+                                lockedState = "${constantReportingInterval}s • ${stringResource(R.string.phone_managed)}",
+                                onClick = showPhoneManagedNotice
+                            )
+                        } else {
+                            WearTAKTitleChip(
+                                route = "reporting_strategy",
+                                title = stringResource(R.string.reporting_strategy),
+                                navController = navController
+                            )
+                        }
                     }
                     item {
                         WearTAKTitleChipWithState(
@@ -621,40 +695,88 @@ fun WearTAKSettingsNav(
             )
         }
         composable("my_callsign") {
-            WearTAKStringEntryPage(
-                navController = navController,
-                label = stringResource(R.string.callsign),
-                item = savedCallsign,
-                confirmFunction = {
-                    settingsVm.storeCallsign(it)
-                },
-            )
-        }
-        composable("my_team") {
-            WearTAKSelectionPage(
-                settingsVm.findTeamIndex(savedTeam),
-                stringResource(R.string.my_team),
-                navController,
-                teamEntriesValuesList.ltEntries,
-                { settingsVm.storeTeam(it) }
-            )
-        }
-        composable("my_role") {
-            WearTAKPageWithBackArrow(
-                stringResource(R.string.my_role),
-                {
-                    itemsIndexed(categoryRolesEntryLists) { index, lrCategory ->
-                        run {
-                            WearTAKTitleChip(
-                                title = lrCategory.category,
-                                route = "role_category_screen/$index",
-                                navController = navController
+            if (phoneManagedSettings) {
+                WearTAKPageWithBackArrow(
+                    stringResource(R.string.my_callsign),
+                    columnContent = {
+                        item {
+                            WearTAKLockedTitleChip(
+                                title = savedCallsign,
+                                lockedState = stringResource(R.string.phone_managed),
+                                onClick = showPhoneManagedNotice
                             )
                         }
-                    }
-                },
-                navController,
-            )
+                    },
+                    navController = navController
+                )
+            } else {
+                WearTAKStringEntryPage(
+                    navController = navController,
+                    label = stringResource(R.string.callsign),
+                    item = savedCallsign,
+                    confirmFunction = {
+                        settingsVm.storeCallsign(it)
+                    },
+                )
+            }
+        }
+        composable("my_team") {
+            if (phoneManagedSettings) {
+                WearTAKPageWithBackArrow(
+                    stringResource(R.string.my_team),
+                    columnContent = {
+                        item {
+                            WearTAKLockedTitleChip(
+                                title = savedTeam,
+                                lockedState = stringResource(R.string.phone_managed),
+                                onClick = showPhoneManagedNotice
+                            )
+                        }
+                    },
+                    navController = navController
+                )
+            } else {
+                WearTAKSelectionPage(
+                    settingsVm.findTeamIndex(savedTeam),
+                    stringResource(R.string.my_team),
+                    navController,
+                    teamEntriesValuesList.ltEntries,
+                    { settingsVm.storeTeam(it) }
+                )
+            }
+        }
+        composable("my_role") {
+            if (phoneManagedSettings) {
+                WearTAKPageWithBackArrow(
+                    stringResource(R.string.my_role),
+                    columnContent = {
+                        item {
+                            WearTAKLockedTitleChip(
+                                title = savedRole,
+                                lockedState = stringResource(R.string.phone_managed),
+                                onClick = showPhoneManagedNotice
+                            )
+                        }
+                    },
+                    navController = navController
+                )
+            } else {
+                WearTAKPageWithBackArrow(
+                    stringResource(R.string.my_role),
+                    {
+                        itemsIndexed(categoryRolesEntryLists) { index, lrCategory ->
+                            run {
+                                WearTAKTitleChip(
+                                    title = lrCategory.category,
+                                    route = "role_category_screen/$index",
+                                    navController = navController
+                                )
+                            }
+                        }
+                    },
+                    navController,
+                )
+            }
         }
         composable(
             "role_category_screen/{index}",
@@ -666,22 +788,38 @@ fun WearTAKSettingsNav(
             }
             val categoryRoleListSetting = categoryRolesEntryLists.getOrNull(index)
             val roleList = categoryRoleListSetting?.roles.orEmpty()
-            WearTAKDoubleSelectionPage(
-                navController = navController,
-                categoryIndex = index,
-                selectedCategoryAndRoleIndex = selectedCategoryAndRoleIndex,
-                onRoleSelected =  { selectedCategoryAndRoleIndex = it },
-                title = stringResource(R.string.role) + "-" + categoryRoleListSetting?.category,
-                list = roleList,
-                confirmFunctionCategory = { selection ->
-                    val entry = categoryRolesEntryLists[selection.first]
+            if (phoneManagedSettings) {
+                WearTAKPageWithBackArrow(
+                    stringResource(R.string.my_role),
+                    columnContent = {
+                        item {
+                            WearTAKLockedTitleChip(
+                                title = savedRole,
+                                lockedState = stringResource(R.string.phone_managed),
+                                onClick = showPhoneManagedNotice
+                            )
+                        }
+                    },
+                    navController = navController
+                )
+            } else {
+                WearTAKDoubleSelectionPage(
+                    navController = navController,
+                    categoryIndex = index,
+                    selectedCategoryAndRoleIndex = selectedCategoryAndRoleIndex,
+                    onRoleSelected =  { selectedCategoryAndRoleIndex = it },
+                    title = stringResource(R.string.role) + "-" + categoryRoleListSetting?.category,
+                    list = roleList,
+                    confirmFunctionCategory = { selection ->
+                        val entry = categoryRolesEntryLists[selection.first]
 
-                    selectedCategoryAndRoleIndex = selection // optimistic UI update
+                        selectedCategoryAndRoleIndex = selection
 
-                    settingsVm.storeRoleCategory(entry.category)
-                    settingsVm.storeRole(entry.roles[selection.second])
-                }
-            )
+                        settingsVm.storeRoleCategory(entry.category)
+                        settingsVm.storeRole(entry.roles[selection.second])
+                    }
+                )
+            }
         }
         composable("my_user_metrics") {
             WearTAKPageWithBackArrow(
@@ -955,61 +1093,61 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.reporting_strategy),
                 columnContent = {
-                    item {
-                        WearTAKTitleChipWithState(
-                            route = "reporting_strategy_select",
-                            title = stringResource(R.string.reporting_strategy),
-                            navController = navController,
-                            state = enableDynamicReporting,
-                            formatState = {
-                                if (enableDynamicReporting) {
-                                    stringResource(R.string.dynamic_reporting)
-                                } else {
-                                    stringResource(R.string.constant_reporting)
-                                }
-                            }
-                        )
-                    }
-                    item {
-                        Spacer(Modifier.height(5.dp))
-                    }
-                    if (enableDynamicReporting) {
-                        item { WearTAKTitleChipWithState(
-                            route = "stationary_reporting_interval_screen",
-                            title = stringResource(
-                                R.string.stationary_reporting_interval
-                            ),
-                            state = stationaryReportingInterval, navController = navController,
-                        ) }
-                        item { WearTAKTitleChipWithState(
-                            route = "on_foot_reporting_interval_screen",
-                            title = stringResource(
-                                R.string.on_foot_reporting_interval
-                            ),
-                            state = onFootReportingInterval, navController = navController,
-                        ) }
-                        item { WearTAKTitleChipWithState(
-                            route = "vehicle_reporting_interval_screen",
-                            title = stringResource(
-                                R.string.vehicle_reporting_interval
-                            ),
-                            state = vehicleReportingInterval, navController = navController,
-                        ) }
-                        item { WearTAKTitleChipWithState(
-                            route = "while_alerting_reporting_interval_screen",
-                            title = stringResource(
-                                R.string.while_alerting_reporting_interval
-                            ),
-                            state = whileAlertingReportingInterval, navController = navController,
-                        ) }
+                    if (phoneManagedSettings) {
+                        item {
+                            WearTAKLockedTitleChip(
+                                title = stringResource(R.string.reporting_strategy),
+                                lockedState = "${constantReportingInterval}s • ${stringResource(R.string.phone_managed)}",
+                                onClick = showPhoneManagedNotice
+                            )
+                        }
                     } else {
-                        item { WearTAKTitleChipWithState(
-                            route = "constant_reporting_interval_screen",
-                            title = stringResource(
-                                R.string.constant_reporting_interval
-                            ),
-                            state = constantReportingInterval, navController = navController,
-                        ) }
+                        item {
+                            WearTAKTitleChipWithState(
+                                route = "reporting_strategy_select",
+                                title = stringResource(R.string.reporting_strategy),
+                                navController = navController,
+                                state = enableDynamicReporting,
+                                formatState = {
+                                    if (enableDynamicReporting) {
+                                        stringResource(R.string.dynamic_reporting)
+                                    } else {
+                                        stringResource(R.string.constant_reporting)
+                                    }
+                                }
+                            )
+                        }
+                        item {
+                            Spacer(Modifier.height(5.dp))
+                        }
+                        if (enableDynamicReporting) {
+                            item { WearTAKTitleChipWithState(
+                                route = "stationary_reporting_interval_screen",
+                                title = stringResource(R.string.stationary_reporting_interval),
+                                state = stationaryReportingInterval, navController = navController,
+                            ) }
+                            item { WearTAKTitleChipWithState(
+                                route = "on_foot_reporting_interval_screen",
+                                title = stringResource(R.string.on_foot_reporting_interval),
+                                state = onFootReportingInterval, navController = navController,
+                            ) }
+                            item { WearTAKTitleChipWithState(
+                                route = "vehicle_reporting_interval_screen",
+                                title = stringResource(R.string.vehicle_reporting_interval),
+                                state = vehicleReportingInterval, navController = navController,
+                            ) }
+                            item { WearTAKTitleChipWithState(
+                                route = "while_alerting_reporting_interval_screen",
+                                title = stringResource(R.string.while_alerting_reporting_interval),
+                                state = whileAlertingReportingInterval, navController = navController,
+                            ) }
+                        } else {
+                            item { WearTAKTitleChipWithState(
+                                route = "constant_reporting_interval_screen",
+                                title = stringResource(R.string.constant_reporting_interval),
+                                state = constantReportingInterval, navController = navController,
+                            ) }
+                        }
                     }
                 },
                 navController,
@@ -1257,11 +1395,19 @@ fun WearTAKSettingsNav(
                 "Network Preferences",
                 columnContent = {
                     item {
-                        WearTAKTitleChip(
-                            route = "tak_servers",
-                            title = stringResource(R.string.tak_servers),
-                            navController = navController
-                        )
+                        if (phoneManagedSettings) {
+                            WearTAKLockedTitleChip(
+                                title = stringResource(R.string.tak_servers),
+                                lockedState = stringResource(R.string.phone_managed),
+                                onClick = showPhoneManagedNotice
+                            )
+                        } else {
+                            WearTAKTitleChip(
+                                route = "tak_servers",
+                                title = stringResource(R.string.tak_servers),
+                                navController = navController
+                            )
+                        }
                     }
                     item {
                         WearTAKTitleChipWithState(

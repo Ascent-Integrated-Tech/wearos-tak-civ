@@ -2155,6 +2155,64 @@ class DataRepository(private val context: Context) {
         prefs[CALLSIGN] ?: ""
     }
 
+    val phoneManagedSettingsEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[PHONE_MANAGED_SETTINGS_ENABLED] ?: false
+    }
+
+    val phoneManagedCompanionAddress: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[PHONE_MANAGED_COMPANION_ADDRESS]
+    }
+
+    suspend fun enablePhoneManagedSettings(companionAddress: String) {
+        require(companionAddress.isNotBlank()) { "Companion address cannot be blank" }
+        context.dataStore.edit { prefs ->
+            if (prefs[PHONE_MANAGED_SETTINGS_ENABLED] != true) {
+                prefs[PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING] =
+                    prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
+                prefs[PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL] =
+                    prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
+            }
+            prefs[PHONE_MANAGED_COMPANION_ADDRESS] = companionAddress
+            prefs[PHONE_MANAGED_SETTINGS_ENABLED] = true
+        }
+    }
+
+    suspend fun clearPhoneManagedSettingsForPeer(
+        companionAddress: String,
+        restorePreviousReporting: Boolean = true
+    ): Pair<Boolean, Int>? {
+        var restoredReporting: Pair<Boolean, Int>? = null
+        context.dataStore.edit { prefs ->
+            val managedAddress = prefs[PHONE_MANAGED_COMPANION_ADDRESS]
+            if (prefs[PHONE_MANAGED_SETTINGS_ENABLED] == true &&
+                managedAddress.equals(companionAddress, ignoreCase = true)
+            ) {
+                val dynamicReporting = if (restorePreviousReporting) {
+                    prefs[PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
+                } else {
+                    prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
+                }
+                val constantInterval = if (restorePreviousReporting) {
+                    prefs[PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
+                } else {
+                    prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
+                }
+                prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] = dynamicReporting
+                prefs[CONSTANT_REPORTING_INTERVAL] = constantInterval
+                prefs[PHONE_MANAGED_SETTINGS_ENABLED] = false
+                prefs.remove(PHONE_MANAGED_COMPANION_ADDRESS)
+                prefs.remove(PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING)
+                prefs.remove(PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL)
+                restoredReporting = dynamicReporting to constantInterval
+            }
+        }
+        restoredReporting?.let { (dynamicReporting, constantInterval) ->
+            _enableDynamicReportingStrategy.emit(dynamicReporting)
+            _constantReportingInterval.emit(constantInterval)
+        }
+        return restoredReporting
+    }
+
     suspend fun storeCallsign(callsign: String) {
         var changed = false
         context.dataStore.edit { prefs ->
@@ -4265,6 +4323,10 @@ class DataRepository(private val context: Context) {
         private val CUSTOM_DEVELOPER_CONFIG_JSON = stringPreferencesKey("custom_developer_config_json")
         private val ENABLE_DYNAMIC_REPORTING_STRATEGY = booleanPreferencesKey("enable_dynamic_reporting_strategy")
         private val CONSTANT_REPORTING_INTERVAL = intPreferencesKey("constant_reporting_interval")
+        private val PHONE_MANAGED_SETTINGS_ENABLED = booleanPreferencesKey("phone_managed_settings_enabled")
+        private val PHONE_MANAGED_COMPANION_ADDRESS = stringPreferencesKey("phone_managed_companion_address")
+        private val PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING = booleanPreferencesKey("phone_managed_previous_dynamic_reporting")
+        private val PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL = intPreferencesKey("phone_managed_previous_constant_interval")
         private val DYNAMIC_REPORTING_INTERVAL = intPreferencesKey("dynamic_reporting_interval")
         private val STATIONARY_REPORTING_INTERVAL = intPreferencesKey("stationary_reporting_interval")
         private val ON_FOOT_REPORTING_INTERVAL = intPreferencesKey("on_foot_reporting_interval")
