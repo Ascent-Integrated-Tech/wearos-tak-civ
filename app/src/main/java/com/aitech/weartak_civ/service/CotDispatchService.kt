@@ -29,7 +29,6 @@ import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.PhysioData
 import com.aitech.weartak_civ.data.DataRepository.SitxServerStatus
-import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.CotCompanionPayload
 import com.aitech.weartak_civ.cot.CotDetail
 import com.aitech.weartak_civ.cot.CotEndpointAvailability
@@ -118,7 +117,7 @@ class CotDispatchService : Service() {
     private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.DroppedMarker>()
     private val pendingMarkerCotList = java.util.concurrent.CopyOnWriteArrayList<DataRepository.DroppedMarker>()
 
-    private val pendingChatMsgQueue = ArrayDeque<ChatMessage>()
+    private val pendingChatMsgQueue = ArrayDeque<DataRepository.SendChatRequest>()
 
     private var combatId: Int = 0
 
@@ -689,8 +688,7 @@ class CotDispatchService : Service() {
                 if (hasConnectedEndpoint()) {
                     sendAllChatMessages(req)
                 } else {
-                    val chatMsg = ChatMessage(message = req.message, uid = req.dstUid, callsign = req.dstChatroom, timeReceived = req.timeMillis)
-                    pendingChatMsgQueue.addLast(chatMsg)
+                    pendingChatMsgQueue.addLast(req)
                     Log.i(TAG, "pendingChatMsgQueue=${pendingChatMsgQueue.size}")
                 }
             }
@@ -713,9 +711,17 @@ class CotDispatchService : Service() {
         return sentAll
     }
 
-    private suspend fun sendChatMessage(chatMsg: ChatMessage): Boolean {
-        val chatSnap = dataRepository.snapshotChatEvent(roomUid = chatMsg.uid, roomTitle = chatMsg.callsign, message = chatMsg.message)
-        val chatCotXml = CotMessageBuilder.chat(chatSnap, callsign, MainActivity.device_uid)
+    private suspend fun sendChatMessage(chatMsg: DataRepository.SendChatRequest): Boolean {
+        val chatSnap = dataRepository.snapshotChatEvent(
+            roomUid = chatMsg.dstUid, roomTitle = chatMsg.dstChatroom, message = chatMsg.message,
+            isGroup = chatMsg.isGroup, participantUids = chatMsg.participantUids
+        )
+        val chatCotXml = try {
+            CotMessageBuilder.chat(chatSnap, callsign, MainActivity.device_uid)
+        } catch (error: IllegalArgumentException) {
+            Log.w(TAG, "Cannot route chat to ${chatSnap.roomUid}: ${error.message}")
+            return false
+        }
         val sent = dispatch(
             CotOutboundMessage(chatCotXml, CotMessageKind.CHAT, CotCompanionPayload.Chat(chatSnap)),
         )
@@ -735,9 +741,8 @@ class CotDispatchService : Service() {
         if (null == chatReq) return
 
         if (sentPendingChatMessages) {
-            val chatMsg = ChatMessage(message = chatReq.message, uid = chatReq.dstUid, callsign = chatReq.dstChatroom, timeReceived = chatReq.timeMillis)
-            if (!sendChatMessage(chatMsg)) {
-                pendingChatMsgQueue.addLast(chatMsg)
+            if (!sendChatMessage(chatReq)) {
+                pendingChatMsgQueue.addLast(chatReq)
                 Log.i(TAG, "pendingChatMsgQueue=${pendingChatMsgQueue.size}")
             }
         }

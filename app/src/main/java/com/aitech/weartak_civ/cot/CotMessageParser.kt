@@ -164,10 +164,7 @@ object CotMessageParser {
         rawXml.contains("<__chat") && rawXml.contains("<remarks")
 
     fun isChatForRecipient(rawXml: String, myUid: String, myCallsign: String): Boolean =
-        rawXml.contains("to=\"$myCallsign\"") ||
-            rawXml.contains("to='$myUid'") ||
-            rawXml.contains("to=\"$myUid\"") ||
-            isAllChatNotSentByMe(rawXml, myCallsign)
+        parseChatRooms(rawXml, myUid, myCallsign).isNotEmpty()
 
     fun parseChatRooms(
         rawXml: String,
@@ -176,10 +173,8 @@ object CotMessageParser {
         sourceServerId: String? = null,
         receivedAt: Long = System.currentTimeMillis()
     ): List<ChatRoom> {
-        val document = parseDocumentOrNull(rawXml)
-        if (document == null) {
-            return parseChatRoomsWithRegex(rawXml, myUid, sourceServerId, receivedAt)
-        }
+        val document = parseDocumentOrNull(rawXml) ?: return emptyList()
+        if (document.documentElement.tagName != "event") return emptyList()
 
         val rooms = mutableListOf<ChatRoom>()
         val chatElements = document.getElementsByTagName("__chat")
@@ -187,31 +182,49 @@ object CotMessageParser {
         for (chatIndex in 0 until chatElements.length) {
             val chat = chatElements.item(chatIndex) as? Element ?: continue
             val group = chat.getElementsByTagName("chatgrp").item(0) as? Element
-            val senderUid = group?.getAttribute("uid0") ?: continue
-            val senderCallsign = chat.getAttribute("senderCallsign")
+            val senderUid = group?.getAttribute("uid0")?.takeIf { it.isNotBlank() } ?: continue
+            if (senderUid == myUid) continue
+            val senderCallsign = chat.getAttribute("senderCallsign").takeIf { it.isNotBlank() } ?: continue
+            val participants = (0 until group.attributes.length).map { group.attributes.item(it) }
+                .filter { it.nodeName.matches(Regex("uid\\d+")) }
+                .map { it.nodeValue }.filter { it.isNotBlank() }.distinct()
+            val conversationUid = chat.getAttribute("id").ifBlank { group.getAttribute("id") }
+            if (group.getAttribute("id").isNotBlank() && group.getAttribute("id") != conversationUid) continue
+            val broadcast = conversationUid == ALL_CHAT_ROOMS
+            val isGroup = conversationUid.isNotBlank() && conversationUid != myUid &&
+                conversationUid != senderUid
+            val title = chat.getAttribute("chatroom").takeIf { it.isNotBlank() }
+            if (isGroup && !broadcast && title == null) continue
             val messageId = chat.getAttribute("messageId").takeIf { it.isNotBlank() }
             for (remarkIndex in 0 until remarkElements.length) {
                 val remark = remarkElements.item(remarkIndex) as? Element ?: continue
                 val recipient = remark.getAttribute("to")
-                if (recipient == myCallsign || recipient == myUid || recipient == ALL_CHAT_ROOMS) {
+                // ATAK group remarks usually have no "to"; chatgrp carries the member UIDs.
+                val addressedToMe = recipient == myCallsign || recipient == myUid
+                val legacyBroadcast = recipient == ALL_CHAT_ROOMS && conversationUid.isBlank()
+                val accepted = when {
+                    broadcast || legacyBroadcast -> true
+                    isGroup -> myUid in participants
+                    else -> addressedToMe || myUid in participants
+                }
+                val text = remark.textContent.trim()
+                if (accepted && text.isNotBlank()) {
                     rooms += chatRoom(
                         senderUid,
                         senderCallsign,
-                        remark.textContent.trim(),
+                        text,
                         sourceServerId,
                         receivedAt,
                         messageId,
+                        if (isGroup) conversationUid else if (legacyBroadcast) ALL_CHAT_ROOMS else senderUid,
+                        if (isGroup) title ?: ALL_CHAT_ROOMS else if (legacyBroadcast) ALL_CHAT_ROOMS else senderCallsign,
+                        isGroup || legacyBroadcast,
+                        if (isGroup && !broadcast) participants else emptyList()
                     )
                 }
             }
         }
         return rooms
-    }
-
-    private fun isAllChatNotSentByMe(rawXml: String, myCallsign: String): Boolean {
-        val toAll = rawXml.contains("to='$ALL_CHAT_ROOMS'") || rawXml.contains("to=\"$ALL_CHAT_ROOMS\"")
-        val sentByMe = rawXml.contains("senderCallsign='$myCallsign'") || rawXml.contains("senderCallsign=\"$myCallsign\"")
-        return toAll && !sentByMe
     }
 
     private fun detailOf(rawXml: String) = CotMarkerDetail(
@@ -247,44 +260,20 @@ object CotMessageParser {
         relation = extractAttribute(rawXml, "link", "relation"),
     )
 
-    private fun parseChatRoomsWithRegex(
-        rawXml: String,
-        myUid: String,
-        sourceServerId: String?,
-        receivedAt: Long
-    ): List<ChatRoom> {
-        val senderUid = """<chatgrp[^>]*uid0=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
-            ?: return emptyList()
-        val senderCallsign = """<__chat[^>]*senderCallsign=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
-            ?: return emptyList()
-        val messageId = """<__chat[^>]*messageId=['"]([^'"]+)['"]""".toRegex().find(rawXml)?.groupValues?.get(1)
-        return """<remarks[^>]*to=['"]([^'"]+)['"][^>]*>(.*?)</remarks>"""
-            .toRegex(RegexOption.DOT_MATCHES_ALL)
-            .findAll(rawXml)
-            .filter { it.groupValues[1] == myUid || it.groupValues[1] == ALL_CHAT_ROOMS }
-            .map {
-                chatRoom(
-                    senderUid,
-                    senderCallsign,
-                    it.groupValues[2].trim(),
-                    sourceServerId,
-                    receivedAt,
-                    messageId
-                )
-            }
-            .toList()
-    }
-
     private fun chatRoom(
         senderUid: String,
         senderCallsign: String,
         message: String,
         sourceServerId: String?,
         receivedAt: Long,
-        messageId: String? = null
+        messageId: String? = null,
+        conversationUid: String = senderUid,
+        conversationTitle: String = senderCallsign,
+        isGroup: Boolean = false,
+        participantUids: List<String> = emptyList()
     ) = ChatRoom(
-        uid = senderUid,
-        title = senderCallsign,
+        uid = conversationUid,
+        title = conversationTitle,
         messageList = listOf(
             ChatMessage(
                 message = message,
@@ -298,6 +287,8 @@ object CotMessageParser {
         newMessagesPresent = true,
         timeLastOpened = 0L,
         timeLastClosed = 0L,
+        isGroup = isGroup,
+        participantUids = participantUids,
     )
 
     private fun parseDocumentOrNull(rawXml: String) = try {

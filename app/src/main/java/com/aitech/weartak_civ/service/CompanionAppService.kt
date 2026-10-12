@@ -1455,7 +1455,7 @@ class CompanionAppService : Service() {
                     val room = try {
                         CompanionChatIngestor.room(payload, System.currentTimeMillis())
                     } catch (error: IllegalArgumentException) {
-                        Log.w(TAG, "chat_received: missing message identity, sender, or text")
+                        Log.w(TAG, "chat_received: ${error.message}")
                         return
                     }
                     val receivedAt = room.messageList.single().timeReceived

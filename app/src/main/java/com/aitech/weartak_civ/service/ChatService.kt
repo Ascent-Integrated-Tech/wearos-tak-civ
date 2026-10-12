@@ -93,31 +93,33 @@ class ChatService : Service() {
         val timeMillis = req.timeMillis
         if (uid.isBlank() || title.isBlank() || message.isBlank()) return
 
-        val existingChatRoom = chatRoomMap[uid]
-        val room = when {
-            existingChatRoom != null -> existingChatRoom
-            seedRoomIfMissing -> ChatRoom(
-                uid = uid,
+        synchronized(chatRoomMap) {
+            val existingChatRoom = chatRoomMap[uid]
+            val room = when {
+                existingChatRoom != null -> existingChatRoom
+                seedRoomIfMissing -> ChatRoom(
+                    uid = uid,
+                    title = title,
+                    messageList = emptyList(),
+                    newMessagesPresent = false,
+                    timeLastOpened = timeMillis,
+                    timeLastClosed = timeMillis
+                )
+                else -> null
+            } ?: return
+
+            val mergedMessages = room.messageList + ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
+            val mergedRoom = room.copy(
                 title = title,
-                messageList = emptyList(),
+                messageList = mergedMessages,
                 newMessagesPresent = false,
-                timeLastOpened = timeMillis,
                 timeLastClosed = timeMillis
             )
-            else -> null
-        } ?: return
-
-        val mergedMessages = room.messageList + ChatMessage(message, MainActivity.device_uid, MainActivity.callsign, timeMillis)
-        val mergedRoom = room.copy(
-            title = title,
-            messageList = mergedMessages,
-            newMessagesPresent = false,
-            timeLastClosed = timeMillis
-        )
-        chatRoomMap[uid] = mergedRoom
-        val sortedInbox = chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
-        publishInboxToRepo()
-        logChatRooms(sortedInbox)
+            chatRoomMap[uid] = mergedRoom
+            val sortedInbox = chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+            publishInboxToRepo()
+            logChatRooms(sortedInbox)
+        }
         dataRepository.sendChatMessage(uid, title, message, timeMillis)
     }
 
@@ -135,9 +137,9 @@ class ChatService : Service() {
         return newChatRoom
     }
 
-    fun resolveChatRoom(uid: String, cs: String): ChatRoom {
+    fun resolveChatRoom(uid: String, cs: String): ChatRoom = synchronized(chatRoomMap) {
         val existingChatRoom = chatRoomMap[uid]
-        return existingChatRoom ?: createChatRoom(uid, cs)
+        existingChatRoom ?: createChatRoom(uid, cs)
     }
 
     override fun onDestroy() {
@@ -188,8 +190,7 @@ class ChatService : Service() {
 
     // update the inbox
     @Subscribe(threadMode = ThreadMode.ASYNC)
-    @Synchronized
-    fun onTakChat(event: TakChatEvent) {
+    fun onTakChat(event: TakChatEvent) = synchronized(chatRoomMap) {
         // Direct TAK ingestion supplies parsed rooms; legacy sources still supply raw XML only.
         val incomingRooms = event.parsedRooms ?: CotMessageParser.parseChatRooms(
             event.rawXml,

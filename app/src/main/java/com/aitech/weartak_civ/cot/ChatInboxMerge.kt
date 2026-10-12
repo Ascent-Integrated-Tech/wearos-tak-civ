@@ -18,9 +18,13 @@ object ChatInboxMerge {
     fun merge(existing: ChatRoom?, incoming: ChatRoom): ChatRoom {
         val known = existing?.messageList.orEmpty().mapTo(mutableSetOf(), ::key)
         val added = incoming.messageList.filter { known.add(key(it)) }
+        if (existing != null && added.isEmpty()) return existing
         return (existing ?: incoming).copy(
+            title = incoming.title,
             messageList = existing?.messageList.orEmpty() + added,
-            newMessagesPresent = existing?.newMessagesPresent == true || added.isNotEmpty()
+            newMessagesPresent = existing?.newMessagesPresent == true || added.isNotEmpty(),
+            isGroup = existing?.isGroup == true || incoming.isGroup,
+            participantUids = incoming.participantUids.ifEmpty { existing?.participantUids.orEmpty() }
         )
     }
 }
