@@ -133,6 +133,7 @@ import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
     private var multicastWifiRequest: MulticastWifiRequest? = null
+    private var connectionServiceJob: Job? = null
 
     class ConnectionAttempt(val generation: Long) {
         var job: Job? = null
@@ -182,10 +183,18 @@ class TAKConnectService: Service() {
 
     override fun onCreate() {
         super.onCreate()
-        serviceStopping = false
+        synchronized(connectionLifecycleLock) {
+            serviceStopping = true
+            closeTakServerSockets()
+            connectionScope.cancel()
+            val job = SupervisorJob()
+            connectionServiceJob = job
+            connectionScope = CoroutineScope(Dispatchers.IO + job)
+            serviceStopping = false
+            isRunning.set(true)
+        }
         Log.w(TAG, "Repo identity = ${System.identityHashCode(dataRepository)}")
         Log.d(TAG, "TAKConnectService onCreate()")
-        isRunning.set(true)
         startForegroundServiceCompat(
             notificationId = TAK_CONNECT_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
@@ -495,17 +504,23 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "TAKConnectService onDestroy()")
-        serviceStopping = true
-        isRunning.set(false)
+        synchronized(connectionLifecycleLock) {
+            // A late teardown must not stop a replacement service's connections.
+            if (connectionServiceJob != null &&
+                connectionScope.coroutineContext[Job] === connectionServiceJob) {
+                serviceStopping = true
+                isRunning.set(false)
+                closeTakServerSockets()
+                stopMulticast()
+            }
+            connectionServiceJob?.cancel()
+        }
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
-        closeTakServerSockets()
-        stopMulticast()
         scope.cancel()
         multicastWifiRequest?.close()
         multicastWifiRequest = null
-        connectionScope.cancel()
         connectJob?.cancel()
         networkManager = null
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -790,7 +805,8 @@ class TAKConnectService: Service() {
         val isAnyTakConnectingLiveData = MutableLiveData<Boolean>(false)
 
         @Volatile var serviceStopping: Boolean = false
-        private val connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        private val connectionLifecycleLock = Any()
+        @Volatile private var connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         private val channelTraceSequence = AtomicInteger(0)
 
         var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
