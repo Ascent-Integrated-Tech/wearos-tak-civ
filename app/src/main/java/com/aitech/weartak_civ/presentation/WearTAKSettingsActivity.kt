@@ -2104,6 +2104,22 @@ fun WearTAKSettingsNav(
             WearTAKSitxStatusAuthorizationScreen(navController, sitxEvent)
         }
 
+        composable("chat_commands") {
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.chat_commands),
+                columnContent = {
+                    item {
+                        WearTAKTitleChip(
+                            route = "chat_command_callsigns",
+                            title = stringResource(R.string.chat_command_callsigns),
+                            navController = navController
+                        )
+                    }
+                },
+                navController,
+            )
+        }
+
         composable("chat_command_callsigns") {
             WearTAKStringEntryPage(
                 navController = navController,
@@ -2809,21 +2825,13 @@ fun WearTAKSettingsNav(
                 stringResource(R.string.plugins),
                 columnContent = {
                     item {
-                        WearTAKToggleChip(
-                            checkedLive = enableChatCommands,
-                            onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
+                        WearTAKSplitToggleChip(
                             title = stringResource(R.string.chat_commands),
-                            description = stringResource(R.string.chat_commands_description)
+                            label = stringResource(if (enableChatCommands) R.string.enabled else R.string.disabled),
+                            checked = enableChatCommands,
+                            onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
+                            onClick = { navController.navigate("chat_commands") }
                         )
-                    }
-                    if (enableChatCommands) {
-                        item {
-                            WearTAKTitleChip(
-                                route = "chat_command_callsigns",
-                                title = stringResource(R.string.chat_command_callsigns),
-                                navController = navController
-                            )
-                        }
                     }
                     itemsIndexed(
                         items = pluginList,
