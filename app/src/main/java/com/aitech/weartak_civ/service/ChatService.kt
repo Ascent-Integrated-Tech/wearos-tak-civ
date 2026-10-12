@@ -15,6 +15,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.text.format.DateFormat
 import android.util.Log
+import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
@@ -62,6 +63,7 @@ class ChatService : Service() {
         _instance = this
         EventBus.getDefault().register(this)
         dataRepository = MainActivity.dataRepository
+        openConversation(ChatDestinations.allRooms(getString(R.string.chat_all_rooms)))
 
         startSendChatReplyCollector()
         startAutomatedChatCollector()
