@@ -19,6 +19,7 @@ import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_COMMANDS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
@@ -904,6 +905,28 @@ fun displaySitxGroupDialog(
             started = SharingStarted.WhileSubscribed(5000),
             initialValue = DEFAULT_ENABLE_COMPANION_APP_SERVICE
         )
+
+    val savedEnableChatCommands: StateFlow<Boolean> =
+        dataRepository.getEnableChatCommands.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = DEFAULT_ENABLE_CHAT_COMMANDS
+        )
+
+    fun storeEnableChatCommands(enable: Boolean) {
+        viewModelScope.launch { dataRepository.storeEnableChatCommands(enable) }
+    }
+
+    val savedChatCommandCallsigns: StateFlow<List<String>> =
+        dataRepository.getChatCommandCallsigns.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun storeChatCommandCallsigns(callsigns: List<String>) {
+        viewModelScope.launch { dataRepository.storeChatCommandCallsigns(callsigns) }
+    }
 
     fun storeEnableCompanionAppService(enable: Boolean) {
         viewModelScope.launch {

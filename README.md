@@ -352,6 +352,45 @@ watch process lifetime, including BLE reconnects. Disconnecting does not clear
 received points. There is no offline replay queue or new automatic expiry policy.
 Asynchronous repository failures are logged; cancellation is not treated as an error.
 
+### WEARTAK-130: chat commands
+
+Settings > Network Preferences > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. Only direct messages from callsigns in **Allowed Callsigns** (comma separated, case-insensitive) are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
+
+Format: `#weartakcommand<name> key=value key2="value with spaces"`
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `setcallsign` | `callsign` (1-32 letters, digits, space, `.`, `_`, `-`) | Sets the callsign. Refused when settings are managed by the phone. |
+| `enrollserver` | `name`, `url` (host name or IP), `port` (default 8089) | Posts a notification on the watch. Tapping it opens the New Server screen pre-filled; the user enters the username and password there and they are stored like any other TAK server. Credentials are never accepted in chat. Refused when network settings are locked or phone-managed. |
+
+Profile commands take the same values as the settings screens (case-insensitive) and validate everything before changing anything, so one bad value changes nothing:
+
+| Command | Argument |
+| --- | --- |
+| `setteam` | `team=<name from the team list>` |
+| `setrole` | `role=<role name>` (the role category is set automatically) |
+| `setheight` | `height=5'8"` (feet 1-8, inches 0-11; `5'8` and `5-8` also work) |
+| `setweight` | `weight=<1-1000>` |
+| `setbirthyear` | `birthyear=<1900-current year>` |
+| `setsex` | `sex=<Male, Female, N/A>` |
+| `setusertype` | `usertype="Coalition Civilian"` |
+| `setpants`, `setwaist` | `pants=<20-50>`, `waist=<20-60>` |
+| `setprofile` | any combination of the fields above plus `callsign` |
+
+The callsign, team and role fields (including in `setprofile`) are refused when settings are managed by the phone.
+
+`#weartakcommandloadprofile name=odin-weartak` applies a preset saved on the watch as `Android/data/<package>/files/presets/<name>.json`. Presets are provisioned with adb and are never part of this repository, because they can hold server credentials:
+
+```json
+{
+  "profile": { "callsign": "ODIN-WEARTAK", "team": "Dark Green", "role": "K9", "height": "5'8\"", "weight": "150" },
+  "servers": [ { "name": "NCTAK", "url": "takserver.nctak.gov", "port": 8089, "username": "user", "password": "secret" } ]
+}
+```
+
+The profile is validated and applied, then each server is added through the normal add-server path (servers already present are skipped). Names are lowercase letters, digits and `-`. The reply says only how many servers were added. Refused when network settings are locked.
+
+The watch replies in chat with the outcome. Callsigns are not authenticated, so anyone on the same server can pick an allowed callsign; this is why server enrollment always needs the user at the watch. Command arguments are never logged.
 ### WEARTAK-112: explicit shared-point deletion
 
 **Local paired-device mirrors only.** A watch deletion removes the selected local

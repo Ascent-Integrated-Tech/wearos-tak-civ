@@ -59,6 +59,8 @@ import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_COMMANDS
+import com.aitech.weartak_civ.command.ChatCommandAuthorizer
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CRM_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
@@ -3502,6 +3504,22 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableChatCommands: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_CHAT_COMMANDS] ?: DEFAULT_ENABLE_CHAT_COMMANDS
+    }
+
+    suspend fun storeEnableChatCommands(enable: Boolean) {
+        context.dataStore.edit { prefs -> prefs[ENABLE_CHAT_COMMANDS] = enable }
+    }
+
+    val getChatCommandCallsigns: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        ChatCommandAuthorizer.parseAllowList(prefs[CHAT_COMMAND_CALLSIGNS].orEmpty())
+    }
+
+    suspend fun storeChatCommandCallsigns(callsigns: List<String>) {
+        context.dataStore.edit { prefs -> prefs[CHAT_COMMAND_CALLSIGNS] = callsigns.joinToString(",") }
+    }
+
     val getEnableWearTakDevMode: Flow<Boolean> =
         context.dataStore.data
             .map { prefs -> prefs[ENABLE_WEARTAK_DEV_MODE] ?: false }
@@ -4456,6 +4474,8 @@ class DataRepository(private val context: Context) {
         private val SELECTED_PHYSIO_METRIC = stringPreferencesKey("selected_physio_metric")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
+        private val ENABLE_CHAT_COMMANDS = booleanPreferencesKey("enable_chat_commands")
+        private val CHAT_COMMAND_CALLSIGNS = stringPreferencesKey("chat_command_callsigns")
         private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
         private val NETWORK_PREFERENCES_LOCKED = booleanPreferencesKey("network_preferences_locked")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")

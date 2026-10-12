@@ -1350,7 +1350,8 @@ class TAKConnectService: Service() {
                 isChatEnabled = { dataRepository.getEnableChatService.first() },
                 isGeofenceEnabled = { geofenceEnabled },
                 deviceUid = { MainActivity.device_uid },
-                deviceCallsign = { MainActivity.callsign }
+                deviceCallsign = { MainActivity.callsign },
+                chatCommandHandler = ChatCommandRuntime.create(context, dataRepository)
             )
         }
 
