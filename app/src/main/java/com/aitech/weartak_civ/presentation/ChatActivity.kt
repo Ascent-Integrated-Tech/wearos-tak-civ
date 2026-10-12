@@ -103,6 +103,7 @@ import android.net.Uri
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.cot.ChatDestinations
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
 import com.aitech.weartak_civ.cot.ChatRoomOrdering
@@ -249,7 +250,15 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         composable("chat_screen") {
             ChatScreen(navController, exitActivity, chatRooms,
                 onAllChatRooms = { picker.allChatRooms(context.getString(R.string.chat_all_rooms)) },
-                onNewChat = picker::newChat)
+                onMap = picker::newChat,
+                onUsers = { navController.navigate("chat_users") })
+        }
+
+        composable("chat_users") {
+            ChatUsersScreen(navController) { contact ->
+                navController.popBackStack()
+                picker.selectedContact(contact)
+            }
         }
 
         composable(
@@ -297,7 +306,8 @@ fun ChatScreen(
     exitActivity: () -> Unit,
     chatRooms: List<ChatRoom>,
     onAllChatRooms: () -> Unit,
-    onNewChat: () -> Unit
+    onMap: () -> Unit,
+    onUsers: () -> Unit
 ) {
     Log.d(TAG, "Chat called")
     val context = LocalContext.current
@@ -327,7 +337,9 @@ fun ChatScreen(
                 )
                 LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
                     item {
-                        ChatPickerActions(onAllChatRooms, onNewChat)
+                        ChatPickerActions(
+                            chatRooms.any { it.uid == ChatDestinations.ALL_CHAT_ROOMS && it.newMessagesPresent },
+                            onAllChatRooms, onMap, onUsers)
                         Spacer(modifier = Modifier.height(5.dp))
                     }
                     itemsIndexed(ChatRoomOrdering.pickerRooms(chatRooms, device_uid),
@@ -365,30 +377,91 @@ fun ChatScreen(
 }
 
 @Composable
-fun ChatPickerActions(onAllChatRooms: () -> Unit, onNewChat: () -> Unit) {
-    Column {
-        Chip(
-            onClick = onAllChatRooms,
-            label = { Text(stringResource(R.string.chat_all_rooms), maxLines = 2) },
-            modifier = Modifier.fillMaxWidth()
-        )
-        Spacer(modifier = Modifier.height(5.dp))
-        Chip(
-            onClick = onNewChat,
-            label = {
-                Text(
-                    stringResource(R.string.chat_select_user),
-                    fontSize = 12.sp,
-                    maxLines = 1,
-                    softWrap = false,
-                    overflow = TextOverflow.Ellipsis
-                )
-            },
-            modifier = Modifier.fillMaxWidth()
-        )
+fun ChatPickerActions(allRoomsUnread: Boolean, onAllChatRooms: () -> Unit, onMap: () -> Unit, onUsers: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(6.dp, Alignment.CenterHorizontally),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        ChatPickerIconButton(onAllChatRooms, R.drawable.ic_chat_group, null, R.string.chat_all_rooms, allRoomsUnread)
+        ChatPickerIconButton(onMap, R.drawable.ic_chat_map, R.drawable.ic_chat_plus, R.string.chat_select_map)
+        ChatPickerIconButton(onUsers, R.drawable.ic_chat_person, R.drawable.ic_chat_plus, R.string.chat_select_user)
     }
 }
 
+@Composable
+private fun ChatPickerIconButton(onClick: () -> Unit, icon: Int, plusIcon: Int?, description: Int, highlighted: Boolean = false) {
+    Box {
+        androidx.wear.compose.material.Button(
+            onClick = onClick,
+            modifier = Modifier.size(width = if (plusIcon == null) 44.dp else 58.dp, height = 44.dp),
+            colors = androidx.wear.compose.material.ButtonDefaults.secondaryButtonColors(),
+            shape = RoundedCornerShape(22.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (plusIcon != null) {
+                    Icon(painterResource(plusIcon), contentDescription = null, modifier = Modifier.size(14.dp))
+                }
+                Icon(painterResource(icon), contentDescription = stringResource(description), modifier = Modifier.size(22.dp))
+            }
+        }
+        if (highlighted) {
+            Image(
+                painter = painterResource(R.drawable.unread_circle),
+                contentDescription = "Unread messages",
+                modifier = Modifier.align(Alignment.TopEnd).size(14.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun ChatUsersScreen(navController: NavController, onUserSelected: (DirectChatContact) -> Unit) {
+    val users by dataRepository.receivedUserList.collectAsState()
+    val people = users.filter { it.uid != device_uid }.sortedBy { it.title.lowercase() }
+    WearTAKCIVTheme {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(colors.background)
+                .padding(bottom = 16.dp, top = 15.dp)
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.9f)
+                    .align(Alignment.TopCenter)
+                    .padding(bottom = 30.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = stringResource(R.string.chat_select_user),
+                    textAlign = TextAlign.Center,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(7.dp)
+                )
+                if (people.isEmpty()) {
+                    Text(stringResource(R.string.chat_no_users), textAlign = TextAlign.Center)
+                }
+                LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
+                    itemsIndexed(people, key = { _, user -> user.uid }) { _, user ->
+                        Chip(
+                            onClick = { onUserSelected(DirectChatContact(user.uid, user.title)) },
+                            label = { Text(user.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(5.dp))
+                    }
+                }
+            }
+            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+                WearTAKBackButton(onClick = { navController.popBackStack() })
+            }
+        }
+    }
+}
 @OptIn(ExperimentalWearMaterialApi::class)
 @Composable
 fun ChatCard(
@@ -867,7 +940,7 @@ fun utcToDate(time: Long): String {
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
 fun ChatScreenPreview() {
-    ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList(), {}, {})
+    ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList(), {}, {}, {})
 }
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)

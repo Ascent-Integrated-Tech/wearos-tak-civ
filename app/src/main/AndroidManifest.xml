@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <permission
-        android:name="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST"
+        android:name="${applicationId}.permission.PLUGIN_BROADCAST"
         android:protectionLevel="signature" />
 
     <uses-feature android:name="android.hardware.type.watch" />
@@ -484,7 +484,7 @@
             android:name=".integration.plugin.PluginOverlayReceiver"
             android:enabled="true"
             android:exported="true"
-            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            android:permission="${applicationId}.permission.PLUGIN_BROADCAST">
             <intent-filter>
                 <action android:name="com.aitech.weartak_civ.PLUGIN_OVERLAY" />
                 <action android:name="com.aitech.weartak_civ.PLUGIN_UNREGISTER" />
@@ -498,7 +498,7 @@
             android:name=".integration.plugin.PluginIngestReceiver"
             android:enabled="true"
             android:exported="true"
-            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            android:permission="${applicationId}.permission.PLUGIN_BROADCAST">
             <intent-filter>
                 <action android:name="com.aitech.weartak_civ.PLUGIN_SAMPLE" />
                 <action android:name="com.aitech.weartak_civ.PLUGIN_INGEST" />
