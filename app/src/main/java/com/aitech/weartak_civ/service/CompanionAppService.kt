@@ -395,10 +395,9 @@ class CompanionAppService : Service() {
             val address = device.address ?: return
 
             if (action == ACTION_KEY_MISSING) {
-                Log.w(TAG, "Bond key missing for $address active=$activeAddr")
-
-                clearPhoneManagedSettings(address)
-                removeBondIfPossible(device, "key_missing:$address")
+                if (!isActive(device)) return
+                // A failed encrypted handshake is not an explicit Android unpair.
+                Log.w(TAG, "Bond key missing for $address; preserving pairing and management")
                 forceBleReset("key_missing:$address")
                 return
             }
@@ -415,20 +414,6 @@ class CompanionAppService : Service() {
 
             Log.w(TAG, "Active companion bond lost for $address; forcing BLE reset")
             forceBleReset("bond_lost:$address")
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun removeBondIfPossible(device: BluetoothDevice, why: String): Boolean {
-        return try {
-            val removed = BluetoothDevice::class.java
-                .getMethod("removeBond")
-                .invoke(device) as? Boolean ?: false
-            Log.w(TAG, "removeBond($why) for ${device.address} -> $removed")
-            removed
-        } catch (t: Throwable) {
-            Log.w(TAG, "removeBond($why) failed for ${device.address}", t)
-            false
         }
     }
 
@@ -811,12 +796,10 @@ class CompanionAppService : Service() {
             super.onConnectionStateChange(device, status, newState)
 
             Log.d(TAG, "onConnectionStateChange: dev=${device.address} status=$status newState=$newState")
-            val sessionEstablished = notificationsEnabled || helloSentForConnection
-
             if (status != BluetoothGatt.GATT_SUCCESS && newState != BluetoothProfile.STATE_CONNECTED) {
-                if (isBonded(device) && !sessionEstablished) {
-                    Log.w(TAG, "Bonded device ${device.address} failed before secure session; removing stale bond")
-                    removeBondIfPossible(device, "connect_error:${device.address}")
+                if (activeAddr != null && !isActive(device)) {
+                    Log.w(TAG, "Ignoring connection error from stale device=${device.address}")
+                    return
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
                 bloodhoundConnectionGeneration.incrementAndGet()
@@ -824,6 +807,8 @@ class CompanionAppService : Service() {
                 activeAddr = null
                 connectedDevice = null
                 resetNegotiatedMtu()
+                clearPendingQueue()
+                disarmHandshakeWatchdog()
                 capRepo.updateBleConnectionState(
                     CompanionAppRepository.BleConnectionState.CONNECTION_FAILED
                 )
@@ -873,10 +858,7 @@ class CompanionAppService : Service() {
                     notificationsEnabled = false
                     helloSentForConnection = false
 
-                    if (isBonded(device) && !sessionEstablished) {
-                        Log.w(TAG, "Bonded device ${device.address} disconnected before secure session; removing stale bond")
-                        removeBondIfPossible(device, "disconnect_before_session:${device.address}")
-                    }
+                    clearPendingQueue()
 
                     capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTED)
                     startAdvertising()

@@ -19,6 +19,32 @@ Some capabilities depend on hardware, permissions, credentials, configuration, a
 
 ## Platform and requirements
 
+### Companion bond retention
+
+Transient missing-key, failed BLE setup, and pre-session disconnect retries retain
+the Android system bond and the matching phone-managed settings. The watch never
+invokes `removeBond` during a retry. An active-peer missing-key event resets transport
+readiness, RX/queued work, and session state before advertising again; unrelated-peer
+events cannot reset the current session. Retained pairing is not message authorization:
+current-peer and bonded-device checks still reject stale/unbonded writes.
+
+A genuine Android `BOND_NONE` transition releases management only through the
+repository's matching-peer operation; an active unpair also resets BLE. Startup still
+checks whether the managing peer is actually bonded. This does not change one-time
+provisioning, explicit ongoing management opt-in, chat, marker deletion, or watch UI.
+
+`CompanionBondRetentionTest` exercises transient retry versus explicit unpair,
+management retention, unrelated-peer isolation, and stale/unbonded write rejection.
+Paired-hardware missing-key recovery, repeated watch restart, and system unpair
+acceptance remain pending. Do not install a feature APK before this change lands
+in canonical `gov/develop`.
+
+Validation (2026-10-12, base `702ee4a`): offline `:app:testDebugUnitTest`
+with `*Companion*`, `*PhoneManagedSettings*`, `*CompanionChat*`, and
+`*CompanionPoint*` selectors passed **75 tests**, including **6 new bond-retention
+tests**, with no failures. Offline `:app:assembleDebug` passed. The APK was not
+installed; paired hardware acceptance is pending.
+
 This is a single-module Wear OS app (`:app`) with package ID `com.aitech.weartak_civ`.
 
 - **Android API levels:** min SDK 34, target SDK 34, compile SDK 35
