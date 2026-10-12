@@ -306,6 +306,14 @@ class DataRepository(private val context: Context) {
                     "serverId=${route.serverId} points=${route.points.size}"
         )
     }
+    fun removeTakRoutesForMission(serverId: String, missionName: String) {
+        _takRoutes.update { routes ->
+            routes.filterValues { route ->
+                !(route.serverId == serverId && route.missionName == missionName)
+            }
+        }
+    }
+
     class TakServerConfigurationRefresh internal constructor() {
         val result = CompletableDeferred<Result<Unit>>()
     }

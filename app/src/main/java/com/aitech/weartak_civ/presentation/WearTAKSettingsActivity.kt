@@ -46,6 +46,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.rounded.Clear
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -2766,6 +2768,14 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.plugins),
                 columnContent = {
+                    item {
+                        WearTAKTitleChip(
+                            route = "data_sync",
+                            title = "Data Sync",
+                            navController = navController
+                        )
+                    }
+
                     itemsIndexed(
                         items = pluginList,
                         key = { _, item -> item.pluginId })
@@ -2896,6 +2906,68 @@ fun WearTAKSettingsNav(
 //                    successBoolean
 //                )
             }
+        }
+        composable("data_sync") {
+            val serverMissions by dataRepository.takMissions.collectAsState()
+
+            WearTAKPageWithBackArrow(
+                "Data Sync",
+                columnContent = {
+                    if (serverMissions.isEmpty()) {
+                        item {
+                            Text("No TAK Server missions available")
+                        }
+                    }
+
+                    serverMissions.forEach { server ->
+                        item {
+                            Text(
+                                text = server.serverName,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+
+                        if (server.missions.isEmpty()) {
+                            item {
+                                Text(
+                                    text = "No missions found",
+                                    modifier = Modifier.padding(8.dp)
+                                )
+                            }
+                        }
+
+                        itemsIndexed(
+                            items = server.missions,
+                            key = { _, missionState -> "${server.serverId}:${missionState.mission.name}" }
+                        ) { _, missionState ->
+                            WearTAKSplitToggleChip(
+                                title = missionState.mission.name,
+                                label = if (missionState.subscribed) {
+                                    "Subscribed"
+                                } else {
+                                    "Not subscribed"
+                                },
+                                checked = missionState.subscribed,
+                                onCheckedChange = { subscribed ->
+                                    if (subscribed) {
+                                        TAKConnectService.subscribeToTakMission(
+                                            serverId = server.serverId,
+                                            missionName = missionState.mission.name
+                                        )
+                                    } else {
+                                        TAKConnectService.unsubscribeFromTakMission(
+                                            serverId = server.serverId,
+                                            missionName = missionState.mission.name
+                                        )
+                                    }
+                                },
+                                onClick = {}
+                            )
+                        }
+                    }
+                },
+                navController
+            )
         }
         //Tool Settings ^^^
 

@@ -808,6 +808,7 @@ class TAKConnectService: Service() {
                     save = { TakServerRegistration.SaveResult.SAVED },
                     connect = { TAK_CONNECT_SERVICE.registerServer(serverId) },
                     ticket = ticket,
+
                 )
             }
 
@@ -1217,6 +1218,10 @@ class TAKConnectService: Service() {
                     missionApi(detail).unsubscribeFromMission(
                         missionName = missionName,
                         clientUid = MainActivity.device_uid
+                    )
+                    dataRepository.removeTakRoutesForMission(
+                        serverId = serverId,
+                        missionName = missionName
                     )
 
                     dataRepository.setMissionSubscribed(
@@ -2676,8 +2681,8 @@ class TAKConnectService: Service() {
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
                     loadTakChannelsAfterConnect(takServerDetail)
+                    loadTakMissionsAfterConnect(takServerDetail)
                     startCotReader(takServerDetail, socket, attempt)
-
                 } catch (e: Exception) {
                     runCatching { attempt.socket?.close() }
                     synchronized(takServerDetail.runtime.lock) {

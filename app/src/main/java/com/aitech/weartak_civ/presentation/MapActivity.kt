@@ -1632,7 +1632,41 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     val dataRepository = remember(context) {
         (context.applicationContext as WearTakApplication).repo
     }
+    val takRoutes by dataRepository.takRoutes.collectAsStateWithLifecycle()
 
+    LaunchedEffect(takRoutes) {
+        Log.d(
+            "MissionRoutes",
+            "Route count: ${takRoutes.size}"
+        )
+
+        takRoutes.forEach { route ->
+            Log.d(
+                "MissionRoutes",
+                "Route: ${route.name}, UID: ${route.uid}, " +
+                        "Points: ${route.points.size}, " +
+                        "Server: ${route.serverId}"
+            )
+        }
+    }
+
+    val missionMapRoutes = remember(takRoutes) {
+        takRoutes.map { route ->
+            RouteCollection(
+                uid = route.uid,
+                name = route.name,
+                color = "Red",
+                points = route.points.map { point ->
+                    RouteItem(
+                        lat = point.latitude,
+                        lon = point.longitude,
+                        hasPoint = point.name != null,
+                        pointTitle = point.name
+                    )
+                }
+            )
+        }
+    }
     //
     var hiddenLayers by remember {
         mutableStateOf(mapPreferences.getStringSet(
@@ -1658,25 +1692,6 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     )
 
 
-    val takRoutes by dataRepository.takRoutes.collectAsStateWithLifecycle()
-
-    val mapRoutes = remember(takRoutes) {
-        takRoutes.map { route ->
-            RouteCollection(
-                uid = route.uid,
-                name = route.name,
-                color = "Red",
-                points = route.points.map { point ->
-                    RouteItem(
-                        lat = point.latitude,
-                        lon = point.longitude,
-                        hasPoint = point.name != null,
-                        pointTitle = point.name
-                    )
-                }
-            )
-        }
-    }
 
     // LAYER MENU CONFIGURATION
     // Connects each menu option to its MapLibre style layer IDs
@@ -2471,7 +2486,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             )
 
             RoutesLayer(
-                routes = mapRoutes,
+                routes = missionMapRoutes,
                 camera = cameraState
             )
         }
