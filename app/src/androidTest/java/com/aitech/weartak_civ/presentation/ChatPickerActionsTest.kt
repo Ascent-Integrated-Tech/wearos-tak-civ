@@ -60,9 +60,9 @@ class ChatPickerActionsTest {
                 onChatContactSelected = { selections += it })
         }
         compose.runOnIdle { users.value = listOf(bob, alice.copy(title = "Alice updated")) }
-        compose.onNodeWithText("Chat with this person").performScrollTo().performClick()
+        compose.onNodeWithText("Open Chat").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(listOf(DirectChatContact("alice", "Alice updated")), selections) }
         compose.runOnIdle { users.value = listOf(bob) }
-        compose.onNodeWithText("Chat with this person").assertIsNotEnabled()
+        compose.onNodeWithText("Open Chat").assertIsNotEnabled()
     }
 }

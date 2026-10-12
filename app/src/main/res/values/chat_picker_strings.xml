@@ -5,7 +5,7 @@
     <string name="chat_open">Open Chat</string>
     <string name="chat_select_person">Select a person on the map</string>
     <string name="chat_select_person_empty">No people on the map yet</string>
-    <string name="chat_select_person_confirm">Chat with this person</string>
+    <string name="chat_select_person_confirm">Open Chat</string>
     <string name="chat_invalid_contact">This person is no longer available for chat.</string>
     <string name="chat_service_unavailable">Chat is unavailable. Enable Chat and try again.</string>
     <string name="chat_conversation_unavailable">Chat conversation is no longer available.</string>
