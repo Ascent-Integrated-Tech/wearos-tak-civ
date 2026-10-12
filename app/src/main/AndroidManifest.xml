@@ -549,6 +549,7 @@
         <activity
             android:name=".presentation.SosActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -560,6 +561,7 @@
         <activity
             android:name=".presentation.MarkerActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -571,6 +573,7 @@
         <activity
             android:name=".presentation.ChatActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ.chat"
             android:theme="@style/MainActivityTheme.Starting">
@@ -582,6 +585,7 @@
         <activity
             android:name=".presentation.CrmReserveActivity"
             android:exported="false"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -593,6 +597,7 @@
         <activity
             android:name=".presentation.PhysioAlertsActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -604,6 +609,7 @@
         <activity
             android:name=".presentation.BloodhoundActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -615,6 +621,7 @@
         <activity
             android:name=".presentation.SettingsActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -626,6 +633,7 @@
         <activity
             android:name=".presentation.WearTAKSettingsActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -637,11 +645,13 @@
         <activity
             android:name=".presentation.ChatContactPickerActivity"
             android:exported="false"
+            android:excludeFromRecents="true"
             android:launchMode="standard"
             android:theme="@style/MainActivityTheme.Starting" />
         <activity
             android:name=".presentation.MapActivity"
             android:exported="true"
+            android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -653,6 +663,7 @@
         <activity
             android:name=".presentation.UserWarnActivity"
             android:exported="false"
+            android:excludeFromRecents="true"
             android:launchMode="singleTop"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting" />
