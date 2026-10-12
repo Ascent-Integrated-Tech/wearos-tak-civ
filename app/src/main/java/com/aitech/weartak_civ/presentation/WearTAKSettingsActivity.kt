@@ -1478,23 +1478,6 @@ fun WearTAKSettingsNav(
                         )
                     }
                     item {
-                        WearTAKToggleChip(
-                            checkedLive = enableChatCommands,
-                            onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
-                            title = stringResource(R.string.chat_commands),
-                            description = stringResource(R.string.chat_commands_description)
-                        )
-                    }
-                    if (enableChatCommands) {
-                        item {
-                            WearTAKTitleChip(
-                                route = "chat_command_callsigns",
-                                title = stringResource(R.string.chat_command_callsigns),
-                                navController = navController
-                            )
-                        }
-                    }
-                    item {
                     WearTAKToggleChip(
                     checkedLive = enableSmsAlerts,
                     onCheckedChange = { settingsVm.storeEnableSmsForAlerts(it) },
@@ -2825,6 +2808,23 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.plugins),
                 columnContent = {
+                    item {
+                        WearTAKToggleChip(
+                            checkedLive = enableChatCommands,
+                            onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
+                            title = stringResource(R.string.chat_commands),
+                            description = stringResource(R.string.chat_commands_description)
+                        )
+                    }
+                    if (enableChatCommands) {
+                        item {
+                            WearTAKTitleChip(
+                                route = "chat_command_callsigns",
+                                title = stringResource(R.string.chat_command_callsigns),
+                                navController = navController
+                            )
+                        }
+                    }
                     itemsIndexed(
                         items = pluginList,
                         key = { _, item -> item.pluginId })
