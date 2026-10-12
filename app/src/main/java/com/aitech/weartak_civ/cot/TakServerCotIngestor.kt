@@ -14,6 +14,8 @@ import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.data.parsers.GeofenceCotParser
 import com.aitech.weartak_civ.events.TakChatEvent
 import kotlinx.coroutines.CancellationException
+import com.aitech.weartak_civ.data.model.TakRoute
+import com.aitech.weartak_civ.data.parsers.TakRouteCotParser
 
 data class TakServerCotEnvelope(
     val sourceServerId: String,
@@ -30,6 +32,7 @@ interface TakServerCotSink {
     suspend fun onEmergency(event: CotEmergencyEvent, envelope: TakServerCotEnvelope) = Unit
     suspend fun onChannelChanged(envelope: TakServerCotEnvelope) = Unit
     suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean = false
+    suspend fun onRoute(route: TakRoute, envelope: TakServerCotEnvelope)
 }
 
 enum class TakServerCotIngestResult {
@@ -38,6 +41,7 @@ enum class TakServerCotIngestResult {
     USER,
     MARKER,
     EMERGENCY,
+    ROUTE,
     CHANNEL_CHANGED,
     CONFIGURATION,
     UNSUPPORTED,
@@ -123,6 +127,25 @@ class TakServerCotIngestor(
             return TakServerCotIngestResult.CHANNEL_CHANGED
         }
 
+        if (CotMessageParser.eventTypeOrNull(rawXml) == ROUTE_EVENT_TYPE) {
+            val route = TakRouteCotParser.parse(
+                rawXml,
+                envelope.sourceServerId
+            )
+
+            if (route == null) {
+                logger(
+                    "Skipping malformed route CoT from serverId=${envelope.sourceServerId}",
+                    null
+                )
+                return TakServerCotIngestResult.MALFORMED
+            }
+
+            sink.onRoute(route, envelope)
+            return TakServerCotIngestResult.ROUTE
+        }
+
+
         if (CotMessageParser.eventTypeOrNull(rawXml)?.let(CotMessageParser::isEmergencyType) == true) {
             val event = CotMessageParser.parseEmergencyOrNull(rawXml)
             if (event == null) {
@@ -181,5 +204,6 @@ class TakServerCotIngestor(
     private companion object {
         const val TAG = "WearTAK-TakServerCotIngestor"
         const val CHANNEL_CHANGE_EVENT_TYPE = "t-x-g-c"
+        const val ROUTE_EVENT_TYPE = "b-m-r"
     }
 }
