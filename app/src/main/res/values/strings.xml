@@ -21,6 +21,11 @@
     <string name="biometrics">Biometrics</string>
     <string name="ditto">Ditto</string>
     <string name="companion_app" translatable="false">Companion Plugin</string>
+    <string name="chat_commands" translatable="false">Commands</string>
+    <string name="chat_commands_description" translatable="false">Allow chat commands</string>
+    <string name="chat_command_callsigns" translatable="false">Allowed Callsigns</string>
+    <string name="chat_command_enroll_title" translatable="false">Add server</string>
+    <string name="chat_command_enroll_text" translatable="false">%1$s: enter your login</string>
     <string name="beta_features">Beta Features</string>
     <string name="beta_features_desc">Show settings for beta features</string>
     <string name="gunshot_detection" translatable="false">Gunshot Detect</string>

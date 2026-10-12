@@ -68,7 +68,11 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateListOf
+import android.content.Intent
 import androidx.compose.runtime.mutableStateOf
+import com.aitech.weartak_civ.command.ChatCommandAuthorizer
+import com.aitech.weartak_civ.command.PendingServerEnrollment
+import com.aitech.weartak_civ.command.ServerEnrollment
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -211,6 +215,7 @@ import kotlin.String
 class WearTAKSettingsActivity : ComponentActivity() {
     companion object Constants {
         const val EXTRA_OPEN_NETWORK_PREFERENCES = "extra_open_network_preferences"
+        const val EXTRA_ENROLLMENT_TOKEN = "extra_enrollment_token"
         val TAG = "WearTAK-" + WearTAKSettingsActivity::class.java.simpleName
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
@@ -263,9 +268,18 @@ class WearTAKSettingsActivity : ComponentActivity() {
             (R.string.udp))
 
     }
+    private var enrollmentToken by mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        enrollmentToken = intent.getStringExtra(EXTRA_ENROLLMENT_TOKEN)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "WearTAKSettingsActivity onCreate()")
+        enrollmentToken = intent.getStringExtra(EXTRA_ENROLLMENT_TOKEN)
 //        WearTAKSettingsActivity.Constants.settingsActivity = this
         enableEdgeToEdge()
         setContent {
@@ -282,6 +296,8 @@ class WearTAKSettingsActivity : ComponentActivity() {
                             EXTRA_OPEN_NETWORK_PREFERENCES,
                             false
                         ),
+                        enrollmentToken = enrollmentToken,
+                        onEnrollmentHandled = { enrollmentToken = null },
                         onExit = { finish() }
                     )
                 }
@@ -296,6 +312,8 @@ fun WearTAKSettingsNav(
     sitxVm: SitxViewModel,
     pluginVm: PluginViewModel,
     openNetworkPreferences: Boolean = false,
+    enrollmentToken: String? = null,
+    onEnrollmentHandled: () -> Unit = {},
     onExit: () -> Unit
 ) {
     val navController = rememberSwipeDismissableNavController()
@@ -358,6 +376,18 @@ fun WearTAKSettingsNav(
     val sitxEvent by settingsVm.lastSitxEvent.collectAsState()
 
     val enableCompanionAppService by settingsVm.savedEnableCompanionAppService.collectAsState()
+    val enableChatCommands by settingsVm.savedEnableChatCommands.collectAsState()
+    val chatCommandCallsigns by settingsVm.savedChatCommandCallsigns.collectAsState()
+    var enrollPrefill by remember { mutableStateOf<ServerEnrollment?>(null) }
+    LaunchedEffect(enrollmentToken) {
+        if (enrollmentToken != null) {
+            PendingServerEnrollment.take(enrollmentToken)?.let {
+                enrollPrefill = it
+                navController.navigate("new_server_screen") { launchSingleTop = true }
+            }
+            onEnrollmentHandled()
+        }
+    }
     val enableSmsAlerts by settingsVm.savedEnableSmsForAlerts.collectAsState()
     val smsNumberList by settingsVm.savedSmsNumbersList.collectAsState()
     val enableDittoService by settingsVm.savedEnableDittoService.collectAsState()
@@ -1448,6 +1478,23 @@ fun WearTAKSettingsNav(
                         )
                     }
                     item {
+                        WearTAKToggleChip(
+                            checkedLive = enableChatCommands,
+                            onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
+                            title = stringResource(R.string.chat_commands),
+                            description = stringResource(R.string.chat_commands_description)
+                        )
+                    }
+                    if (enableChatCommands) {
+                        item {
+                            WearTAKTitleChip(
+                                route = "chat_command_callsigns",
+                                title = stringResource(R.string.chat_command_callsigns),
+                                navController = navController
+                            )
+                        }
+                    }
+                    item {
                     WearTAKToggleChip(
                     checkedLive = enableSmsAlerts,
                     onCheckedChange = { settingsVm.storeEnableSmsForAlerts(it) },
@@ -1622,9 +1669,11 @@ fun WearTAKSettingsNav(
 
         composable("new_server_screen"){
             val isNetworkConnected = remember { mutableStateOf(false) }
-            var name by remember { mutableStateOf("") }
-            var address by remember { mutableStateOf("") }
-            var port by remember { mutableStateOf("8089") }
+            val prefill = remember { enrollPrefill }
+            DisposableEffect(Unit) { onDispose { enrollPrefill = null } }
+            var name by remember { mutableStateOf(prefill?.name.orEmpty()) }
+            var address by remember { mutableStateOf(prefill?.address.orEmpty()) }
+            var port by remember { mutableStateOf(prefill?.port?.toString() ?: "8089") }
             var username by remember { mutableStateOf("") }
             var password by remember { mutableStateOf("") }
             var isP12Cert = false
@@ -2072,6 +2121,16 @@ fun WearTAKSettingsNav(
             WearTAKSitxStatusAuthorizationScreen(navController, sitxEvent)
         }
 
+        composable("chat_command_callsigns") {
+            WearTAKStringEntryPage(
+                navController = navController,
+                item = chatCommandCallsigns.joinToString(","),
+                label = stringResource(R.string.chat_command_callsigns),
+                confirmFunction = {
+                    settingsVm.storeChatCommandCallsigns(ChatCommandAuthorizer.parseAllowList(it))
+                }
+            )
+        }
         composable("sms_number_list"){
             val focusManager = LocalFocusManager.current
             var textfield = ""

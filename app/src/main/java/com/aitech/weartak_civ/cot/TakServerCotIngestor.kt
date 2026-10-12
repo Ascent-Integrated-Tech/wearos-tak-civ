@@ -10,6 +10,8 @@
 package com.aitech.weartak_civ.cot
 
 import android.util.Log
+import com.aitech.weartak_civ.command.ChatCommandParser
+import com.aitech.weartak_civ.command.ChatCommandRequest
 import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.data.parsers.GeofenceCotParser
 import com.aitech.weartak_civ.events.TakChatEvent
@@ -34,6 +36,7 @@ interface TakServerCotSink {
 
 enum class TakServerCotIngestResult {
     CHAT,
+    COMMAND,
     GEOFENCE,
     USER,
     MARKER,
@@ -50,6 +53,7 @@ class TakServerCotIngestor(
     private val isGeofenceEnabled: () -> Boolean,
     private val deviceUid: () -> String,
     private val deviceCallsign: () -> String,
+    private val chatCommandHandler: (suspend (ChatCommandRequest) -> Boolean)? = null,
     private val logger: (String, Throwable?) -> Unit = { message, error ->
         if (error == null) Log.w(TAG, message) else Log.w(TAG, message, error)
     }
@@ -77,6 +81,25 @@ class TakServerCotIngestor(
         }
 
         if (sink.onInboundCot(envelope)) return TakServerCotIngestResult.CONFIGURATION
+
+        if (chatCommandHandler != null && CotMessageParser.isChatMessage(rawXml)) {
+            val direct = CotMessageParser.parseChatRooms(rawXml, deviceUid(), deviceCallsign(), envelope.sourceServerId, envelope.receivedAt)
+                .filter { !it.isGroup }
+                .flatMap { it.messageList }
+                .firstOrNull { it.message.startsWith(ChatCommandParser.PREFIX, ignoreCase = true) }
+            if (direct != null) {
+                val request = ChatCommandRequest(
+                    senderUid = direct.uid,
+                    senderCallsign = direct.callsign,
+                    text = direct.message,
+                    messageId = direct.messageId,
+                    sentAtMs = CotMessageParser.eventTimeOrNull(rawXml) ?: 0L,
+                    receivedAtMs = envelope.receivedAt,
+                    sourceServerId = envelope.sourceServerId
+                )
+                if (chatCommandHandler(request)) return TakServerCotIngestResult.COMMAND
+            }
+        }
 
         if (isChatEnabled() &&
             CotMessageParser.isChatMessage(rawXml) &&
