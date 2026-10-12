@@ -18,6 +18,8 @@ import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.cot.ChatRoomOrdering
+import com.aitech.weartak_civ.cot.ChatDestinations
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.cot.ChatInboxMerge
 import com.aitech.weartak_civ.data.DataRepository
@@ -116,30 +118,27 @@ class ChatService : Service() {
                 timeLastClosed = timeMillis
             )
             chatRoomMap[uid] = mergedRoom
-            val sortedInbox = chatRoomMap.values.sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+            val sortedInbox = getInbox()
             publishInboxToRepo()
             logChatRooms(sortedInbox)
         }
         dataRepository.sendChatMessage(uid, title, message, timeMillis)
     }
 
-    private fun createChatRoom(uid: String, titleCallsign: String): ChatRoom {
-        val newChatRoom = ChatRoom(
-            uid = uid,
-            title = titleCallsign,
-            messageList = emptyList(),
-            newMessagesPresent = false,
-            timeLastClosed = 0L,
-            timeLastOpened = 0L
-        )
-        chatRoomMap[uid] = newChatRoom
-        publishInboxToRepo()
-        return newChatRoom
+    fun resolveChatRoom(uid: String, cs: String): ChatRoom = synchronized(chatRoomMap) {
+        openConversation(ChatDestinations.direct(uid, cs, MainActivity.device_uid))
     }
 
-    fun resolveChatRoom(uid: String, cs: String): ChatRoom = synchronized(chatRoomMap) {
-        val existingChatRoom = chatRoomMap[uid]
-        existingChatRoom ?: createChatRoom(uid, cs)
+    fun openConversation(room: ChatRoom): ChatRoom = synchronized(chatRoomMap) {
+        require(room.uid.isNotBlank() && room.title.isNotBlank()) { "Invalid conversation identity" }
+        val existing = chatRoomMap[room.uid]
+        require(existing == null || existing.isGroup == room.isGroup) { "Conversation type does not match selected recipient" }
+        val resolved = existing?.copy(
+            participantUids = if (room.isGroup) existing.participantUids else room.participantUids
+        ) ?: room
+        chatRoomMap[room.uid] = resolved
+        publishInboxToRepo()
+        resolved
     }
 
     override fun onDestroy() {
@@ -207,8 +206,7 @@ class ChatService : Service() {
         }
 
         // 3) Sort & publish once
-        val sortedInbox = chatRoomMap.values
-            .sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+        val sortedInbox = getInbox()
 
         // 4) Notify the data layer (updates per‐room booleans correctly)
         publishInboxToRepo()
@@ -251,12 +249,10 @@ class ChatService : Service() {
     }
 
     /**
-     * Returns all chat rooms sorted by most‐recent message first.
-     * The last message in each ChatRoom.messageList is assumed newest.
+     * Returns all chat rooms sorted by most recently received remote message.
      */
     fun getInbox(): List<ChatRoom> = synchronized(chatRoomMap) {
-        chatRoomMap.values
-            .sortedByDescending { it.messageList.lastOrNull()?.timeReceived ?: 0L }
+        ChatRoomOrdering.byLatestReceived(chatRoomMap.values, MainActivity.device_uid)
     }
 
     /**

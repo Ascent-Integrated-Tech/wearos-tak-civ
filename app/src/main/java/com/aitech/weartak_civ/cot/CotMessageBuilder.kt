@@ -193,6 +193,8 @@ object CotMessageBuilder {
         val marti = if (snapshot.roomUid == "All Chat Rooms") "" else {
             CotXml.element("marti", content = if (namedGroup) {
                 recipients.joinToString("") { CotXml.element("dest", listOf("uid" to CotXml.escape(it))) }
+            } else if (snapshot.participantUids.isNotEmpty()) {
+                CotXml.element("dest", listOf("uid" to CotXml.escape(snapshot.roomUid)))
             } else CotXml.element("dest", listOf("callsign" to CotXml.escape(snapshot.roomTitle))))
         }
         val detail = chat +

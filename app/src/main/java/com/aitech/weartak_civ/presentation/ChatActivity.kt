@@ -18,6 +18,7 @@ import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -52,6 +53,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -103,6 +105,7 @@ import androidx.compose.runtime.remember
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
+import com.aitech.weartak_civ.cot.ChatRoomOrdering
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
@@ -125,6 +128,14 @@ import kotlin.Long
 import kotlin.String
 
 class ChatActivity : ComponentActivity() {
+    private var conversationIntent by mutableStateOf<Intent?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        conversationIntent = intent
+    }
+
     companion object {
         val TAG = "WearTAK-" + ChatActivity::class.java.simpleName
         const val EXTRA_OPEN_ROOM_UID = "extra_open_room_uid"
@@ -156,6 +167,7 @@ class ChatActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        conversationIntent = intent
         enableEdgeToEdge()
 
         dataRepository = DataRepository(applicationContext)
@@ -164,21 +176,23 @@ class ChatActivity : ComponentActivity() {
             WearTAKCIVTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val context = LocalContext.current
-                    val uid = intent.getStringExtra("user_uid")
-
-                    val callsign = intent.getStringExtra("user_callsign")
-                    var fromMaps = intent.getBooleanExtra("from_maps", false)
+                    val request = conversationIntent ?: intent
+                    val uid = request.getStringExtra("user_uid")
+                    val callsign = request.getStringExtra("user_callsign")
+                    val fromMaps = request.getBooleanExtra("from_maps", false)
                     val settingsVm: WearTAKSettingsViewModel = viewModel()
 
-                    ChatCivApp(
-                        exitActivity = { finishAndRemoveTask() },
-                        context = context,
-                        initialRoomUid = intent.getStringExtra(EXTRA_OPEN_ROOM_UID),
-                        uid = uid,
-                        callsign = callsign,
-                        fromMaps = fromMaps,
-                        settingsVm
-                    )
+                    key(uid, callsign, fromMaps, request.getStringExtra(EXTRA_OPEN_ROOM_UID)) {
+                        ChatCivApp(
+                            exitActivity = { finishAndRemoveTask() },
+                            context = context,
+                            initialRoomUid = request.getStringExtra(EXTRA_OPEN_ROOM_UID),
+                            uid = uid,
+                            callsign = callsign,
+                            fromMaps = fromMaps,
+                            settingsVm
+                        )
+                    }
                 }
             }
         }
@@ -192,16 +206,25 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
     var pendingRoomUid by rememberSaveable { mutableStateOf(initialRoomUid) }
 
     val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
-
-    val hasAnyNew = chatRooms.any { it.newMessagesPresent }
-
-    if (uid != null && callsign != null) {
-        ChatService.getInstance()?.resolveChatRoom(uid, callsign)
+    val openConversation: (ChatRoom) -> ChatRoom = { room ->
+        val service = requireNotNull(ChatService.getInstance()) { "Chat service unavailable" }
+        service.openConversation(room)
     }
+    val errorHandler: (IllegalArgumentException) -> Unit = { error ->
+        Log.w(TAG, "Cannot open selected conversation", error)
+        Toast.makeText(context, if (ChatService.getInstance() == null) R.string.chat_service_unavailable
+            else R.string.chat_invalid_contact, Toast.LENGTH_SHORT).show()
+    }
+    val mapPicker = rememberLauncherForActivityResult(ChatContactContract()) { contact ->
+        ChatPickerFlow(device_uid, openConversation, { pendingRoomUid = it }, {}, errorHandler).selectedContact(contact)
+    }
+    val picker = ChatPickerFlow(device_uid, openConversation, { pendingRoomUid = it },
+        { mapPicker.launch(Unit) }, errorHandler)
 
-    val actualStartDestination = when {
-        fromMaps && uid != null -> "chat_screen_detailed/${Uri.encode(uid)}"
-        else -> "chat_screen"
+    LaunchedEffect(fromMaps, uid, callsign) {
+        if (fromMaps && uid != null && callsign != null) {
+            picker.selectedContact(DirectChatContact(uid, callsign))
+        }
     }
 
     LaunchedEffect(chatRooms, pendingRoomUid) {
@@ -218,13 +241,15 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         navController = navController,
         startDestination =
         if (isLicenseValid()) {
-            actualStartDestination
+            "chat_screen"
         } else {
             "invalid_license_screen"
         }
     ) {
         composable("chat_screen") {
-            ChatScreen(navController, exitActivity, chatRooms)
+            ChatScreen(navController, exitActivity, chatRooms,
+                onAllChatRooms = { picker.allChatRooms(context.getString(R.string.chat_all_rooms)) },
+                onNewChat = picker::newChat)
         }
 
         composable(
@@ -235,13 +260,13 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
             val room = chatRooms.firstOrNull { it.uid == roomUid }
             if (room == null) {
                 LaunchedEffect(roomUid) {
-                    Toast.makeText(context, "Chat conversation is no longer available", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, R.string.chat_conversation_unavailable, Toast.LENGTH_SHORT).show()
                     navController.popBackStack()
                 }
             } else {
                 val sendPreset = rememberChatPresetSender(room) { navController.popBackStack() }
                 TextSelectionScreen(
-                    navController, quickReplyOptions, reply, "New Chat",
+                    navController, quickReplyOptions, reply, stringResource(R.string.chat_new),
                     { navController.popBackStack() },
                     { navController.popBackStack() },
                     onOptionSelected = sendPreset,
@@ -270,7 +295,9 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
 fun ChatScreen(
     navController: NavController,
     exitActivity: () -> Unit,
-    chatRooms: List<ChatRoom>
+    chatRooms: List<ChatRoom>,
+    onAllChatRooms: () -> Unit,
+    onNewChat: () -> Unit
 ) {
     Log.d(TAG, "Chat called")
     val context = LocalContext.current
@@ -299,9 +326,14 @@ fun ChatScreen(
                     modifier = Modifier.padding(7.dp)
                 )
                 LazyColumn(horizontalAlignment = Alignment.CenterHorizontally) {
-                    itemsIndexed(chatRooms) { index, room ->
+                    item {
+                        ChatPickerActions(onAllChatRooms, onNewChat)
+                        Spacer(modifier = Modifier.height(5.dp))
+                    }
+                    itemsIndexed(ChatRoomOrdering.pickerRooms(chatRooms, device_uid),
+                        key = { _, room -> room.uid }) { index, room ->
                         // room.messageList is the List<ChatMessage>
-                        val lastMessage = room.messageList.lastOrNull()
+                        val lastMessage = room.messageList.maxByOrNull { it.timeReceived }
                         val lastMessageTime = lastMessage?.timeReceived ?: 0L
                         val lastMessageText = lastMessage?.message.orEmpty()
 
@@ -329,6 +361,31 @@ fun ChatScreen(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun ChatPickerActions(onAllChatRooms: () -> Unit, onNewChat: () -> Unit) {
+    Column {
+        Chip(
+            onClick = onAllChatRooms,
+            label = { Text(stringResource(R.string.chat_all_rooms), maxLines = 2) },
+            modifier = Modifier.fillMaxWidth()
+        )
+        Spacer(modifier = Modifier.height(5.dp))
+        Chip(
+            onClick = onNewChat,
+            label = {
+                Text(
+                    stringResource(R.string.chat_select_user),
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
+                )
+            },
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
 
@@ -810,7 +867,7 @@ fun utcToDate(time: Long): String {
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)
 @Composable
 fun ChatScreenPreview() {
-    ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList())
+    ChatScreen(rememberSwipeDismissableNavController(), {}, emptyList(), {}, {})
 }
 
 @Preview(widthDp = 192, heightDp = 400, showBackground = true)

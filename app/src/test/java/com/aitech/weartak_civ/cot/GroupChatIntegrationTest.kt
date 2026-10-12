@@ -125,6 +125,51 @@ class GroupChatIntegrationTest {
         assertFalse(direct.isGroup)
     }
 
+    @Test fun pickerCreatedDestinationsProducePrivateUidRoutingOrExplicitBroadcastOnBothTransports() = runBlocking {
+        val repository = repo()
+        val direct = ChatDestinations.direct("alice", "Alice & Friends", "watch")
+        val all = ChatDestinations.allRooms("All Chat Rooms")
+        repository.setChatRooms(listOf(direct, all))
+        val cap = CompanionAppRepository(RuntimeEnvironment.getApplication())
+        for (room in listOf(direct, all)) {
+            val snapshot = repository.snapshotChatEvent(room.uid, room.title, "Initiated from watch")
+            val reply = CotMessageBuilder.chat(snapshot, "WATCH", "watch")
+            val envelope = cap.buildChatEnvelopeFromSnapshot(snapshot)
+            assertEquals(room.uid, envelope.payload.rmUid)
+            val wire = Gson().toJsonTree(envelope).asJsonObject.getAsJsonObject("payload")
+            assertEquals(room.uid, wire.get("roomUid").asString)
+            assertEquals(room.title, wire.get("roomTitle").asString)
+            assertEquals("Initiated from watch", wire.get("msg").asString)
+            if (room.isGroup) {
+                assertFalse(wire.has("recipientUid"))
+                assertFalse(wire.has("replyTo"))
+            } else {
+                assertEquals(room.uid, wire.get("recipientUid").asString)
+                assertEquals(room.uid, wire.get("replyTo").asString)
+            }
+            assertEquals(room.isGroup, envelope.payload.isGroup)
+            if (room.isGroup) {
+                assertTrue(elements(reply, "dest").isEmpty())
+                assertTrue(CotMessageParser.parseChatRooms(reply, "outsider", "OTHER").single().isGroup)
+            } else {
+                assertEquals("alice", elements(reply, "dest").single().getAttribute("uid"))
+                assertFalse(elements(reply, "dest").single().hasAttribute("callsign"))
+                val received = CotMessageParser.parseChatRooms(reply, "alice", "Alice & Friends").single()
+                assertEquals("watch", received.uid)
+                assertFalse(received.isGroup)
+                assertTrue(CotMessageParser.parseChatRooms(reply, "outsider", "OTHER").isEmpty())
+            }
+            var sent: CotCompanionPayload? = null
+            val dispatcher = CotEndpointDispatcher(
+                sendTak = { _, _ -> fail("No duplicate standalone send") }, sendSitx = {},
+                sendDitto = { _, _ -> }, sendMulticast = { fail("No multicast") },
+                sendPliMulticast = {}, sendCompanion = { sent = it })
+            assertTrue(dispatcher.dispatch(CotOutboundMessage(reply, CotMessageKind.CHAT,
+                CotCompanionPayload.Chat(snapshot)), CotEndpointAvailability(true, false, false, true, true)))
+            assertEquals(snapshot, (sent as CotCompanionPayload.Chat).snapshot)
+        }
+    }
+
     @Test fun namedGroupWithNoRecipientsFailsRatherThanBroadcasting() = runBlocking<Unit> {
         val repository = repo()
         repository.setChatRooms(listOf(ChatRoom("team", "Team", emptyList(), false, 0, 0, isGroup = true)))

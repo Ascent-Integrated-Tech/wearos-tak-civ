@@ -35,4 +35,24 @@ class CompanionChatIngestorTest {
         assertEquals(200L, CompanionChatIngestor.room(payload().copy(receivedAt = 0), 200)
             .messageList.single().timeReceived)
     }
+
+    @Test fun malformedCanonicalSenderNeverFallsBackToMessageIdAsDirectDestination() {
+        for (sender in listOf(null, "", " ")) {
+            val canonical = payload().copy(
+                uid = "GeoChat.phone.alice.message-123",
+                senderUid = sender,
+                conversationUid = "alice",
+                conversationTitle = "Alice",
+                isGroup = false
+            )
+            assertThrows(IllegalArgumentException::class.java) {
+                CompanionChatIngestor.room(canonical, 200)
+            }
+        }
+        val valid = payload().copy(uid = "event-message-id", senderUid = "alice",
+            conversationUid = "phone", conversationTitle = "Phone", isGroup = false)
+        val room = CompanionChatIngestor.room(valid, 200)
+        assertEquals("alice", room.uid)
+        assertEquals("event-message-id", room.messageList.single().messageId)
+    }
 }

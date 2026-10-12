@@ -279,7 +279,11 @@ class CompanionAppRepository(private val context: Context) {
         val cs: String,         // callsign
         val hr: Int?,           // heart rate
         val bat: Int?,          // battery
-        val isGroup: Boolean = false
+        val isGroup: Boolean = false,
+        val roomUid: String = rmUid,
+        val roomTitle: String = rmTitle,
+        val recipientUid: String? = if (isGroup) null else roomUid,
+        val replyTo: String? = recipientUid
     )
 
     data class ChatReceivedEnvelope(

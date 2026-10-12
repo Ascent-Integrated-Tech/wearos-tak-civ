@@ -10,6 +10,7 @@ package com.aitech.weartak_civ.presentation
 
 import android.annotation.SuppressLint
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import android.util.Log
 import android.widget.Toast
@@ -137,6 +138,7 @@ import org.maplibre.compose.expressions.dsl.eq
 import org.maplibre.compose.expressions.dsl.image
 import org.maplibre.compose.expressions.dsl.asString
 import org.maplibre.compose.util.ClickResult
+import android.app.Activity
 import android.content.Context
 import androidx.compose.foundation.border
 import org.json.JSONObject
@@ -168,13 +170,10 @@ import androidx.wear.compose.material.Icon
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
-import com.aitech.weartak_civ.cot.ChatRoom
-import com.aitech.weartak_civ.cot.findChatRoomFromUserUid
 import com.aitech.weartak_civ.data.BloodhoundRepository.BloodhoundItem
-import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.service.BloodhoundService
-import com.aitech.weartak_civ.service.ChatService
+import com.aitech.weartak_civ.cot.ChatDestinations
 import org.maplibre.compose.expressions.dsl.asNumber
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.heightIn
@@ -216,7 +215,7 @@ import kotlin.math.pow
 
 // MAP ACTIVITY SETUP
 // Creates the map screen and loads the main MapApp composable
-class MapActivity : ComponentActivity() {
+open class MapActivity : ComponentActivity() {
 
     companion object Constants {
         val TAG = "WearTAK-" + MapActivity::class.java.simpleName
@@ -241,7 +240,11 @@ class MapActivity : ComponentActivity() {
                 val context = LocalContext.current
                 val mapVm: MapViewModel = viewModel ()
 
-                MapCivApp({finishAndRemoveTask()}, context, mapVm)
+                val selectingChatContact = intent.getBooleanExtra(ChatContactContract.EXTRA_SELECT_CHAT_CONTACT, false)
+                MapCivApp({ if (selectingChatContact) finish() else finishAndRemoveTask() }, context, mapVm, selectingChatContact) { contact ->
+                    setResult(Activity.RESULT_OK, ChatContactContract.result(contact))
+                    finish()
+                }
             }
         }
     }
@@ -249,7 +252,13 @@ class MapActivity : ComponentActivity() {
 
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
-fun MapCivApp(exitActivity: () -> Unit, context: Context, mapVm: MapViewModel) {
+fun MapCivApp(
+    exitActivity: () -> Unit,
+    context: Context,
+    mapVm: MapViewModel,
+    selectingChatContact: Boolean = false,
+    onChatContactSelected: (DirectChatContact) -> Unit = {}
+) {
     val app = context.applicationContext as WearTakApplication
 
     val dataRepository = remember(app) { app.repo }
@@ -260,22 +269,22 @@ fun MapCivApp(exitActivity: () -> Unit, context: Context, mapVm: MapViewModel) {
     val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
-    val chatRooms by dataRepository.chatRoomsFlow.collectAsState(initial = emptyList())
 
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = "map_screen"
     ) {
         composable("map_screen" ) {
-            MapApp({ exitActivity() }, navController, mapVm)
+            MapApp({ exitActivity() }, navController, mapVm, selectingChatContact)
         }
 
         composable(
-            "selected_user/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
+            "selected_user/{uid}",
+            arguments = listOf(navArgument("uid") { type = NavType.StringType })
         ) { backStackEntry ->
-            val index = backStackEntry.arguments?.getInt("index") ?: -1
-            SelectedUser(navController, index, receivedUserListSetting, chatRooms, context)
+            val selectedUid = backStackEntry.arguments?.getString("uid")
+            SelectedUser(navController, selectedUid, receivedUserListSetting, context,
+                selectingChatContact, onChatContactSelected)
         }
     }
 }
@@ -1415,7 +1424,8 @@ fun LayerChannelsPopup(
 // MAIN MAP SCREEN
 // Connects repository data, map layers, popups, and controls
 @Composable
-fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapViewModel) {
+fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapViewModel,
+           selectingChatContact: Boolean = false) {
     // Access the application repository used by the map
     val context = LocalContext.current
 
@@ -2221,24 +2231,21 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             }
 
             // Displays users that match the selected filters
-            if (showUsers) {
+            if (showUsers || selectingChatContact) {
                 UsersOnMap(
 
                     // Filters users by team and role
                     users = receivedMapUsers.filter {
-                        it.team in visibleUserTeams &&
-                                (
-                                        it.role in visibleUserRoles ||
-                                                it.role in visibleUserRolesLEO
-                                        )
+                        if (selectingChatContact) {
+                            it.uid.isNotBlank() && it.uid != MainActivity.device_uid &&
+                                it.uid != ChatDestinations.ALL_CHAT_ROOMS && it.title.isNotBlank()
+                        } else {
+                            it.team in visibleUserTeams &&
+                                (it.role in visibleUserRoles || it.role in visibleUserRolesLEO)
+                        }
                     },
                     onUserClick = { id, _ ->
-                        val index = receivedUserListSetting.indexOfFirst { it.uid == id }
-                        navController.navigate("selected_user/$index"){
-                            popUpTo(("selected_user/$index")) {
-                                inclusive = true
-                            }
-                        }
+                        navController.navigate("selected_user/${Uri.encode(id)}") { launchSingleTop = true }
                     },
                     camera = cameraState
                 )
@@ -2250,6 +2257,17 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                 userLat = lat,
                 userLon = lon,
                 camera = cameraState
+            )
+        }
+
+        if (selectingChatContact) {
+            Text(
+                text = stringResource(if (receivedMapUsers.none { it.uid != MainActivity.device_uid })
+                    R.string.chat_select_person_empty else R.string.chat_select_person),
+                textAlign = TextAlign.Center,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 20.dp, start = 35.dp, end = 35.dp)
+                    .background(Color.Black.copy(alpha = 0.75f), RoundedCornerShape(8.dp)).padding(4.dp),
+                fontSize = 12.sp
             )
         }
 
@@ -2281,7 +2299,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             },
 
             // Controls whether optional map controls are hidden
-            hideControls = hideControls,
+            hideControls = if (selectingChatContact) false else hideControls,
 
             // Zooms out one level
             onZoomOut = {
@@ -2498,15 +2516,17 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 @Composable
 fun SelectedUser(
     navController: NavController,
-    index: Int,
+    selectedUid: String?,
     receivedUserSetting: List<DataRepository.ReceivedUser>,
-    chatRooms: List<ChatRoom>,
     context: Context,
+    selectingChatContact: Boolean = false,
+    onChatContactSelected: (DirectChatContact) -> Unit = {},
 ) {
     Log.i(TAG, "User list: $receivedUserSetting")
-    var uid by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.uid.orEmpty()) }
-    var title by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.title.orEmpty()) }
-    var team by remember { mutableStateOf(receivedUserSetting.getOrNull(index)?.team.orEmpty()) }
+    val user = receivedUserSetting.firstOrNull { it.uid == selectedUid }
+    val uid = user?.uid.orEmpty()
+    val title = user?.title.orEmpty()
+    val team = user?.team.orEmpty()
 
 // MAP UI STATE
 // Controls popups, overlays, filters, and map buttons
@@ -2536,7 +2556,8 @@ fun SelectedUser(
                     modifier = Modifier.size(25.dp),
                 )
                 androidx.compose.material3.Text(
-                    text = title.ellipsizeMarkerTitle(14),
+                    text = if (user == null) stringResource(R.string.chat_invalid_contact)
+                        else title.ellipsizeMarkerTitle(14),
                     fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
                     textAlign = TextAlign.Center,
                     fontWeight = FontWeight.SemiBold,
@@ -2551,17 +2572,29 @@ fun SelectedUser(
 
                 Chip(
                     onClick = {
+                        val contact = try {
+                            resolveChatContact(selectedUid, receivedUserSetting, MainActivity.device_uid)
+                        } catch (error: IllegalArgumentException) {
+                            Log.w(TAG, "Invalid selected chat contact", error)
+                            Toast.makeText(context, R.string.chat_invalid_contact, Toast.LENGTH_SHORT).show()
+                            return@Chip
+                        }
+                        if (selectingChatContact) {
+                            onChatContactSelected(contact)
+                        } else {
                             val intent = Intent(context, ChatActivity::class.java).apply {
-                                putExtra("user_uid", uid)
-                                putExtra("user_callsign", title)
+                                putExtra("user_uid", contact.uid)
+                                putExtra("user_callsign", contact.callsign)
                                 putExtra("from_maps", true)
                             }
                             context.startActivity(intent)
-
-                        navController.popBackStack()
+                            navController.popBackStack()
+                        }
                     },
-                    enabled = true,
-                    label = { Text(text = "Open Chat") },
+                    enabled = user != null && uid.isNotBlank() && title.isNotBlank() &&
+                        uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS,
+                    label = { Text(stringResource(if (selectingChatContact)
+                        R.string.chat_select_person_confirm else R.string.chat_open)) },
                     colors = ChipDefaults.chipColors(
                         backgroundColor = Color.DarkGray,
                         contentColor = Color.White,
