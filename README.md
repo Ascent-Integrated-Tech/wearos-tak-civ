@@ -119,14 +119,44 @@ device UID. Other private conversations and own-sender echoes are filtered out.
 `All Chat Rooms` is a single explicit broadcast conversation, not a sender DM.
 
 With a matching companion plugin, `chat_received` retains `conversationUid`,
-`conversationTitle`, `isGroup`, and `participantUids`. Replies carry `rmUid`,
-`rmTitle`, and `isGroup`; the phone resolves the existing ATAK group and its current
+`conversationTitle`, `isGroup`, and `participantUids`. Replies carry canonical `roomUid`,
+`roomTitle`, `isGroup`, `msg`, and `cs`, plus legacy `rmUid`/`rmTitle` aliases.
+Direct replies additionally carry `recipientUid`/`replyTo` with the same target UID;
+group/broadcast replies omit these direct-only fields. The phone accepts `text` as
+an alias of `msg`, rejects conflicting aliases, and resolves the existing ATAK group and its current
 recipients. Missing/unwritable groups and empty recipient sets fail with phone logs,
 without a broadcast fallback. Legacy envelopes without an explicit group flag remain
 sender DMs. Existing direct chat and the explicit All Chat Rooms action remain supported.
 Inbox navigation follows room UID rather than a changing list index.
 
-This adds receive/reply support, not watch group creation, private-messenger support,
+The chat picker has two entry actions above the existing conversations:
+**All Chat Rooms** opens the canonical broadcast room, including before any message
+has arrived. **Select User for Chat** opens the map: tap a person and confirm **Chat with this
+person** to create/open a private conversation in the original picker activity and
+add it to the normal chat-room list. Cancel/back
+creates no room and sends nothing. Selection temporarily shows the people layer
+regardless of saved team/role filters without changing those preferences; markers
+and alerts are not private-chat recipients. Live UID lookup prevents list reordering
+from changing the selected person, and removed/self/invalid contacts cannot be selected.
+Chat must be enabled and running; an unavailable service is reported.
+Standalone initiated private chats route by recipient UID, not callsign. Companion
+private sends resolve a real ATAK IndividualContact with a GeoChat endpoint and use
+ATAK's native targeted chat API, preserving native phone conversation history.
+Unknown/self/broadcast-like direct contacts are rejected, never broadcast.
+Picker order is All Chat Rooms pinned first, Select User for Chat second, then
+direct/named-group rooms by their latest received remote message descending.
+Incoming messages update this order dynamically; local sends and older replayed
+messages do not promote a room. Empty rooms follow rooms with received messages.
+The broadcast room appears only in its pinned entry, not again in the sorted list.
+BLE uses version-1 `msgType: chat_received` inbound and `msgType: chat` outbound,
+with a `payload` object and message ID in `msgUid`/`payload.uid`. Inbound retains
+`senderUid`, `senderCallsign`, `msg`, and `receivedAt` (epoch milliseconds).
+`isGroup` absent/false stays direct-compatible; no group-owner field is needed.
+The Android WearOS BLE path does not advertise Garmin `relay_status.chatGroups`:
+only a verified group-aware Garmin transport adapter may announce that capability
+for its matching session. BLE enqueue remains unacknowledged chat delivery.
+
+This supports existing groups and initiating direct/broadcast chats, not named watch group creation, private-messenger support,
 or historical ATAK chat synchronization. The companion relays incoming remote ATAK
 messages while connected; phone-authored outgoing messages and phone-attributed watch
 echoes are not mirrored back. BLE enqueue is not an end-to-end delivery acknowledgement.
@@ -141,6 +171,13 @@ screen is open. Check room/read state and the reply destination. Remove/empty th
 group before a companion reply and verify the phone logs a rejection with no unrelated
 delivery. Disconnect/reconnect BLE and confirm existing chats resume without promising
 offline history. Smoke-test paired-local point deletion to confirm WEARTAK-112 behavior.
+In both modes, start from an empty inbox: open All Chat Rooms and send by keyboard
+and preset, checking native send-to-all behavior. Tap Select User for Chat, cancel first, then
+select one person (also with the saved people layer disabled), confirm, and send.
+Only that person must receive the private chat; on companion also check ATAK's direct
+conversation history. Reorder incoming contacts while the person detail is open,
+then remove the selected contact and check that confirmation becomes unavailable.
+Confirm existing room history/read state survives reopening either entry action.
 
 Outgoing periodic and interaction-triggered PLI expires after twice the active reporting
 interval plus 15 seconds (135 seconds for a 60-second interval). Interaction PLI retains
