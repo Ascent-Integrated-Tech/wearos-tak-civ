@@ -174,9 +174,23 @@ class CompanionAppService : Service() {
                 if (request.revision.generation == bloodhoundConnectionGeneration.get()) {
                     val json = com.aitech.weartak_civ.data.CompanionPointRevisions
                         .deletion(request.uid, request.revision.token).toString()
-                    if (!sendBloodhoundControl(json)) Log.w(TAG, "Point deletion write rejected")
+                    if (!sendBloodhoundControl(json)) {
+                        Log.w(TAG, "Point deletion write rejected")
+                        repo.pointDeletionAcks.timedOut(request.uid, request.revision.token, request.revision.generation)
+                            ?.let { repo.reportPointDeletionResult(it) }
+                    } else {
+                        trackPointDeletion(request.uid, request.revision.token, request.revision.generation)
+                    }
                 } else Log.w(TAG, "Point deletion belongs to ended connection")
             }
+        }
+    }
+
+    private fun trackPointDeletion(uid: String, token: String, generation: Long) {
+        repo.pointDeletionAcks.sent(uid, token, generation)
+        serviceScope.launch {
+            delay(POINT_DELETION_ACK_TIMEOUT_MS)
+            repo.pointDeletionAcks.timedOut(uid, token, generation)?.let { repo.reportPointDeletionResult(it) }
         }
     }
 
@@ -1390,8 +1404,24 @@ class CompanionAppService : Service() {
                             }
                             val applied = repo.receivePointDeletion(deletion.first, deletion.second, generation, bhRepo)
                             Log.d(TAG, "Point deletion applied=$applied")
+                            if (generation == bloodhoundConnectionGeneration.get()) {
+                                val ack = com.aitech.weartak_civ.data.CompanionPointRevisions
+                                    .deletionAck(deletion.first, deletion.second, applied).toString()
+                                if (!sendBloodhoundControl(ack)) Log.w(TAG, "Point deletion ack write rejected")
+                            }
                         }
                     }
+                }
+
+                "marker_delete_ack" -> {
+                    val ack = com.aitech.weartak_civ.data.CompanionPointRevisions.parseDeletionAck(
+                        org.json.JSONObject(json).optJSONObject("payload"))
+                    val result = ack?.let {
+                        repo.pointDeletionAcks.acknowledged(it.first, it.second,
+                            bloodhoundConnectionGeneration.get(), it.third)
+                    }
+                    if (result == null) Log.w(TAG, "Ignoring unknown point deletion ack")
+                    else repo.reportPointDeletionResult(result)
                 }
 
                 "phone_marker_cot" -> {
@@ -1482,6 +1512,7 @@ class CompanionAppService : Service() {
 
     companion object {
         private val TAG = "WearTAK-" + CompanionAppService::class.java.simpleName
+        private const val POINT_DELETION_ACK_TIMEOUT_MS = 10_000L
         private const val ACTION_KEY_MISSING = "android.bluetooth.device.action.KEY_MISSING"
         private const val NOTIFICATION_ID = 999  // change per service
         val isRunning: AtomicBoolean = AtomicBoolean(false)

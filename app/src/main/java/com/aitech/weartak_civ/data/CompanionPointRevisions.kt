@@ -23,6 +23,21 @@ class CompanionPointRevisions {
         fun deletion(uid: String, token: String) = JSONObject()
             .put("msg_type", "marker_delete")
             .put("payload", JSONObject().put("targetUid", uid).put("revision", token))
+        fun deletionAck(uid: String, token: String, applied: Boolean) = JSONObject()
+            .put("msg_type", "marker_delete_ack")
+            .put("payload", JSONObject().put("targetUid", uid).put("revision", token)
+                .put("result", if (applied) RESULT_APPLIED else RESULT_REJECTED))
+        fun parseDeletionAck(payload: JSONObject?): Triple<String, String, Boolean>? {
+            val (uid, token) = parseDeletion(payload) ?: return null
+            val applied = when (payload?.opt("result")) {
+                RESULT_APPLIED -> true
+                RESULT_REJECTED -> false
+                else -> return null
+            }
+            return Triple(uid, token, applied)
+        }
+        const val RESULT_APPLIED = "applied"
+        const val RESULT_REJECTED = "rejected"
         fun parseDeletion(payload: JSONObject?): Pair<String, String>? {
             val uid = payload?.opt("targetUid") as? String ?: return null
             val token = payload.opt("revision") as? String ?: return null

@@ -411,7 +411,15 @@ still receive points but cannot authorize explicit deletion.
 Deletion means **remove the exact shared revision**, not delete every copy of a UID.
 Only the current bonded, services-ready BLE connection can send/apply this envelope.
 There is no timestamp fabrication, CoT `t-x-d-d` importer invocation, network delete
-broadcast, ACK, offline queue, startup snapshot, or reconnect replay.
+broadcast, offline queue, startup snapshot, or reconnect replay.
+The receiver answers each well-formed deletion with a `marker_delete_ack` envelope
+(`targetUid`, `revision`, `result` of `applied` or `rejected`) on the same connection.
+The sender matches it to the pending deletion for that exact uid, revision and
+connection generation, and records the outcome (`PointDeletionAcks`). A deletion with
+no matching ack within 10 seconds is recorded as timed out, and an unknown, duplicate or
+previous-connection ack is ignored. An ack confirms only that the peer applied or
+rejected the deletion, not delivery to any TAK server. Peers that predate this ack
+never answer, so their deletions report a timeout.
 The revision must match a supported marker exchanged in this connection. New
 shared updates replace it; unknown, duplicate, superseded, malformed, and
 previous-connection deletions are inert and logged without payload contents.
