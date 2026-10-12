@@ -760,7 +760,7 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.markerDropRequests.collect { req ->
                 Log.i(TAG, "Received drop request...")
-                val waitingForUpdatedLocation = if ((null != req.lat) && (null != req.lon)) false else !isLocationFresh()
+                val waitingForUpdatedLocation = if ((null != req.lat) && (null != req.lon)) false else !isLocationFresh() && !phoneSuppliesLocation()
                 val droppedMarker = DataRepository.DroppedMarker(cotType = DataRepository.MarkerCotType.DROP, uid = req.uid.ifEmpty{ UUID.randomUUID().toString() }, markerType = req.markerType,
                     title = finalMarkerTitle(req.title), remark = req.remark, timeDropped = req.timeMillis,
                     location = dataRepository.snapshotMarkerLocation(req.uid, req.lat, req.lon, req.timeMillis), enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
@@ -792,7 +792,7 @@ class CotDispatchService : Service() {
                 } else if (markerDrop.cotType == DataRepository.MarkerCotType.CLEAR) {
                     Log.w(TAG, "Cannot edit a marker that has already scheduled to be cleared. Ignoring this...")
                 } else {
-                    val waitingForUpdatedLocation = req.updateLocation || markerDrop.waitingForUpdatedLocation
+                    val waitingForUpdatedLocation = (req.updateLocation || markerDrop.waitingForUpdatedLocation) && !phoneSuppliesLocation()
                     val editedMarkerDrop = markerDrop.copy(cotType = DataRepository.MarkerCotType.EDIT, markerType = req.markerType, title = finalMarkerTitle(req.title),
                         remark = req.remark, timeDropped = req.timeMillis, location = markerDrop.location,
                         enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
@@ -1064,6 +1064,9 @@ class CotDispatchService : Service() {
             plugin = pluginAvailable(),
         )
 
+    // A paired phone stamps watch actions with its own location, so the watch fix is not needed.
+    private suspend fun phoneSuppliesLocation(): Boolean = companionAppAvailable()
+
     private suspend fun sitxAvailable(): Boolean {
         val enabled = dataRepository.getEnableSitxService.first()
         val connected = dataRepository.sitxStatus.value == SitxServerStatus.CONNECTED
@@ -1270,6 +1273,7 @@ class CotDispatchService : Service() {
         Log.i(TAG, "pendingMarkerDropQueue.size=$queueSize")
         val newPendingMarkerDropList = mutableListOf<DataRepository.DroppedMarker>()
         val isLocationFresh = isLocationFresh()
+        val phoneSuppliesLocation = phoneSuppliesLocation()
         for ((i, item) in pendingMarkerCotList.withIndex()) {
             if (item.cotType == DataRepository.MarkerCotType.CLEAR) {
                 handleClearMarkerUid(item.uid)
@@ -1288,6 +1292,9 @@ class CotDispatchService : Service() {
                     Log.i(TAG, "sendPendingMarkerCots: waitingForUpdatedLocation is true but location is fresh. Updating...")
                     marker = marker.copy(location = dataRepository.snapshotLocation(), waitingForUpdatedLocation = false)
                     dataRepository.changeDroppedMarkerLocationByUid(marker.uid, marker.location)
+                } else if (phoneSuppliesLocation) {
+                    Log.i(TAG, "sendPendingMarkerCots: location is stale but the paired phone supplies location. Sending...")
+                    marker = marker.copy(waitingForUpdatedLocation = false)
                 } else {
                     Log.i(TAG, "sendPendingMarkerCots: waitingForUpdatedLocation is true and location is stale. Skipping...")
                     newPendingMarkerDropList.add(item)
