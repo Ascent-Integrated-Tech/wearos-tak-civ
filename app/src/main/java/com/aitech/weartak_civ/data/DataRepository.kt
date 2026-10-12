@@ -1692,6 +1692,15 @@ class DataRepository(private val context: Context) {
     val pointDeletionRequests: SharedFlow<PointDeletionRequest> = _pointDeletionRequests
     private val _remotePointDeletions = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val remotePointDeletions: SharedFlow<String> = _remotePointDeletions
+    val pointDeletionAcks = PointDeletionAcks()
+    private val _pointDeletionResults = MutableSharedFlow<PointDeletionAcks.Result>(extraBufferCapacity = 64)
+    /** Whether the paired phone acknowledged and applied a deletion this watch sent. */
+    val pointDeletionResults: SharedFlow<PointDeletionAcks.Result> = _pointDeletionResults
+
+    fun reportPointDeletionResult(result: PointDeletionAcks.Result) {
+        Log.i(TAG, "Point deletion uid=${result.uid} outcome=${result.outcome}")
+        _pointDeletionResults.tryEmit(result)
+    }
 
     fun notifyLocalPointDeletion(uid: String) {
         // The receiver of this request checks readiness and its connection generation.
