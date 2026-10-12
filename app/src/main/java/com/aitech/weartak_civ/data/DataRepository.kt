@@ -2788,13 +2788,17 @@ class DataRepository(private val context: Context) {
         val time: CotEventTime,
         val location: LocationSnapshot?,    // might be null if you want to allow it
         val physio: PhysioSnapshot?,
-        val system: SystemSnapshot
+        val system: SystemSnapshot,
+        val isGroup: Boolean = false,
+        val participantUids: List<String> = emptyList()
     )
 
     suspend fun snapshotChatEvent(
         roomUid: String,
         roomTitle: String,
-        message: String
+        message: String,
+        isGroup: Boolean = false,
+        participantUids: List<String> = emptyList()
     ): ChatEventSnapshot {
 
         val timeSnap = CotEventTimeFactory.now(
@@ -2805,6 +2809,7 @@ class DataRepository(private val context: Context) {
         val systemSnap = snapshotSystem()
         val physioSnap = snapshotPhysio()
         val msgUid = UUID.randomUUID().toString()
+        val room = chatRoomsFlow.value.firstOrNull { it.uid == roomUid }
 
         return ChatEventSnapshot(
             uid        = msgUid,
@@ -2814,7 +2819,9 @@ class DataRepository(private val context: Context) {
             time       = timeSnap,
             location   = locSnap,
             physio     = physioSnap,
-            system     = systemSnap
+            system     = systemSnap,
+            isGroup    = isGroup || roomUid == "All Chat Rooms" || room?.isGroup == true,
+            participantUids = room?.participantUids ?: participantUids
         )
     }
 
@@ -2882,7 +2889,9 @@ class DataRepository(private val context: Context) {
         val dstUid: String,
         val dstChatroom: String,
         val message: String,
-        val timeMillis: Long
+        val timeMillis: Long,
+        val isGroup: Boolean = false,
+        val participantUids: List<String> = emptyList()
     )
 
     private val _chatRequestFromUI = MutableSharedFlow<SendChatRequest>(extraBufferCapacity = 64)
@@ -2917,7 +2926,10 @@ class DataRepository(private val context: Context) {
     val chatRequestSend: SharedFlow<SendChatRequest> = _chatRequestSend
 
     suspend fun sendChatMessage(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
-        _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
+        val room = chatRoomsFlow.value.firstOrNull { it.uid == dstUid }
+        _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis,
+            isGroup = dstUid == "All Chat Rooms" || room?.isGroup == true,
+            participantUids = room?.participantUids.orEmpty()))
         requestInteractionPliRefresh(PliRefreshReason.CHAT_SENT)
     }
 

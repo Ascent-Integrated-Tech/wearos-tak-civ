@@ -105,8 +105,42 @@ Chat is an online feature; the project does not provide an offline TAK chat queu
 
 Companion chat uses the existing watch inbox. Replayed message IDs are deduplicated
 per sender, including duplicates within a batch. Messages without IDs use sender,
-receipt timestamp, and text rather than timestamp alone. Incoming messages currently
-use direct sender conversations; group conversation handling is a separate feature.
+receipt timestamp, and text rather than timestamp alone.
+
+### WEARTAK-118: Existing group conversations
+
+Standalone TAK chat uses `__chat.id`/`chatroom` and the `chatgrp.uidN` member list:
+named groups containing the watch merge all senders into one room, and replies keep
+the room ID/title while targeting the most recently received member UIDs with
+`marti/dest uid`. Groups without known reply recipients are rejected and logged,
+never converted to a generic broadcast. Membership is learned from received chat,
+not a group-management service; create/update groups in ATAK and include the watch's
+device UID. Other private conversations and own-sender echoes are filtered out.
+`All Chat Rooms` is a single explicit broadcast conversation, not a sender DM.
+
+With a matching companion plugin, `chat_received` retains `conversationUid`,
+`conversationTitle`, `isGroup`, and `participantUids`. Replies carry `rmUid`,
+`rmTitle`, and `isGroup`; the phone resolves the existing ATAK group and its current
+recipients. Missing/unwritable groups and empty recipient sets fail with phone logs,
+without a broadcast fallback. Legacy envelopes without an explicit group flag remain
+sender DMs. Existing direct chat and the explicit All Chat Rooms action remain supported.
+Inbox navigation follows room UID rather than a changing list index.
+
+This adds receive/reply support, not watch group creation, private-messenger support,
+or historical ATAK chat synchronization. The companion relays incoming remote ATAK
+messages while connected; phone-authored outgoing messages and phone-attributed watch
+echoes are not mirrored back. BLE enqueue is not an end-to-end delivery acknowledgement.
+
+Hardware acceptance (not yet performed): use two remote ATAK senders and one outsider.
+In standalone mode include the watch UID in an existing named group, send from both
+members, verify one room with both callsigns, and reply by preset and keyboard; only
+members should receive the reply. Repeat with the paired phone UID in companion mode
+and both updated builds. In each mode test direct chat alongside the group, All Chat
+Rooms, replay/duplicate delivery, and a new room arriving while a group detail/reply
+screen is open. Check room/read state and the reply destination. Remove/empty the ATAK
+group before a companion reply and verify the phone logs a rejection with no unrelated
+delivery. Disconnect/reconnect BLE and confirm existing chats resume without promising
+offline history. Smoke-test paired-local point deletion to confirm WEARTAK-112 behavior.
 
 Outgoing periodic and interaction-triggered PLI expires after twice the active reporting
 interval plus 15 seconds (135 seconds for a 60-second interval). Interaction PLI retains

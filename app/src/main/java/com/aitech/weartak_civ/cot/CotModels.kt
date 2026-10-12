@@ -16,6 +16,8 @@ data class ChatRoom(
     var newMessagesPresent: Boolean,
     val timeLastOpened: Long,
     var timeLastClosed: Long,
+    val isGroup: Boolean = false,
+    val participantUids: List<String> = emptyList(),
 )
 
 fun findChatRoomFromUserUid(userUid: String, chatRooms: List<ChatRoom>): Int =
@@ -154,32 +156,17 @@ class CotDetail(elementName: String = "detail") {
     private fun appendXml(output: Appendable) {
         output.append('<').append(elementName)
         attributes.forEach { (name, value) ->
-            output.append(' ').append(name).append("='").append(escapeXml(value)).append('\'')
+            output.append(' ').append(name).append("='").append(CotXml.escape(value)).append('\'')
         }
         val text = innerText
         when {
-            text != null -> output.append('>').append(escapeXml(text)).append("</").append(elementName).append('>')
+            text != null -> output.append('>').append(CotXml.escape(text)).append("</").append(elementName).append('>')
             children.isEmpty() -> output.append("/>")
             else -> {
                 output.append('>')
                 children.forEach { it.appendXml(output) }
                 output.append("</").append(elementName).append('>')
             }
-        }
-    }
-
-    private fun escapeXml(value: String): String = buildString(value.length + 16) {
-        value.forEach { character ->
-            append(
-                when (character) {
-                    '&' -> "&amp;"
-                    '<' -> "&lt;"
-                    '>' -> "&gt;"
-                    '"' -> "&quot;"
-                    '\'' -> "&apos;"
-                    else -> character
-                },
-            )
         }
     }
 }

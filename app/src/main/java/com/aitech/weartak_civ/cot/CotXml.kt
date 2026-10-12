@@ -4,6 +4,21 @@ package com.aitech.weartak_civ.cot
 internal object CotXml {
     const val DECLARATION = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?>"
 
+    fun escape(value: String): String = buildString(value.length + 16) {
+        value.forEach { character ->
+            append(
+                when (character) {
+                    '&' -> "&amp;"
+                    '<' -> "&lt;"
+                    '>' -> "&gt;"
+                    '"' -> "&quot;"
+                    '\'' -> "&apos;"
+                    else -> character
+                },
+            )
+        }
+    }
+
     fun element(
         name: String,
         attributes: List<Pair<String, Any?>> = emptyList(),

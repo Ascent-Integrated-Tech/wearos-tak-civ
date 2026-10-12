@@ -103,7 +103,6 @@ import androidx.compose.runtime.remember
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
-import com.aitech.weartak_civ.cot.findChatRoomFromUserUid
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
@@ -196,14 +195,12 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
 
     val hasAnyNew = chatRooms.any { it.newMessagesPresent }
 
-    var fromMapIndex = 0
     if (uid != null && callsign != null) {
         ChatService.getInstance()?.resolveChatRoom(uid, callsign)
-        fromMapIndex = findChatRoomFromUserUid(uid, chatRooms)
     }
 
     val actualStartDestination = when {
-        fromMaps -> "chat_screen_detailed/$fromMapIndex"
+        fromMaps && uid != null -> "chat_screen_detailed/${Uri.encode(uid)}"
         else -> "chat_screen"
     }
 
@@ -212,7 +209,7 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         val roomIndex = chatRooms.indexOfFirst { it.uid == roomUid }
         val currentDestination = navController.currentBackStackEntry?.destination?.route
         if (roomIndex >= 0 && currentDestination == "chat_screen") {
-            navController.navigate("chat_screen_detailed/$roomIndex")
+            navController.navigate("chat_screen_detailed/${Uri.encode(roomUid)}")
             pendingRoomUid = null
         }
     }
@@ -254,12 +251,11 @@ fun ChatCivApp(exitActivity: () -> Unit, context: Context, initialRoomUid: Strin
         }
 
         composable(
-            "chat_screen_detailed/{index}",
-            arguments = listOf(navArgument("index") { type = NavType.IntType })
+            "chat_screen_detailed/{roomUid}",
+            arguments = listOf(navArgument("roomUid") { type = NavType.StringType })
         ) { backStackEntry ->
-            val index = backStackEntry.arguments?.getInt("index") ?: -1
-            Log.d(TAG, "chat_screen_detailed index: $index")
-            ChatScreenDetailed(navController, index, context, chatRooms)
+            val roomUid = backStackEntry.arguments?.getString("roomUid")
+            ChatScreenDetailed(navController, roomUid, context, chatRooms)
         }
 
         composable("invalid_license_screen") {
@@ -316,7 +312,7 @@ fun ChatScreen(
                             message = lastMessageText,
                             newMessagesPresent = room.newMessagesPresent,
                             onClick = {
-                                navController.navigate("chat_screen_detailed/$index")
+                                navController.navigate("chat_screen_detailed/${Uri.encode(room.uid)}")
                             }
                         )
                         Spacer(modifier = Modifier.height(5.dp))
@@ -401,12 +397,12 @@ fun ChatCard(
 @Composable
 fun ChatScreenDetailed(
     navController: NavController,
-    index: Int,
+    roomUid: String?,
     context: Context,
     chatRooms: List<ChatRoom>
 ) {
     WearTAKCIVTheme {
-        val room = chatRooms.getOrNull(index)
+        val room = chatRooms.firstOrNull { it.uid == roomUid }
         val chatRoomTitle = room?.title.orEmpty()
         val messageList = room?.messageList.orEmpty()
         val roomId = room?.uid
@@ -414,7 +410,7 @@ fun ChatScreenDetailed(
         val sendPreset = room?.let { rememberChatPresetSender(it) }
 
         // Mark this room as read when entering detail
-        LaunchedEffect(key1 = index) {
+        LaunchedEffect(key1 = roomId) {
             if (roomId != null) {
                 dataRepository.markRoomRead(roomId)
             }

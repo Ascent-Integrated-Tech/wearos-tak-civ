@@ -220,6 +220,7 @@ class CompanionAppRepository(private val context: Context) {
             uid        = snapshot.uid,
             rmUid    = snapshot.roomUid,
             rmTitle  = snapshot.roomTitle,
+            isGroup  = snapshot.isGroup,
             msg        = bleMsg,
             tStart     = timeSnap.startCot,
             tStale     = timeSnap.staleCot,
@@ -277,7 +278,8 @@ class CompanionAppRepository(private val context: Context) {
         val tStale: String,     // start time zulu
         val cs: String,         // callsign
         val hr: Int?,           // heart rate
-        val bat: Int?           // battery
+        val bat: Int?,          // battery
+        val isGroup: Boolean = false
     )
 
     data class ChatReceivedEnvelope(
@@ -292,6 +294,10 @@ class CompanionAppRepository(private val context: Context) {
         val senderCallsign: String? = null,
         val msg: String? = null,
         val receivedAt: Long? = null,
+        val conversationUid: String? = null,
+        val conversationTitle: String? = null,
+        val isGroup: Boolean? = null,
+        val participantUids: List<String>? = null,
     )
 
     data class TakServerList(

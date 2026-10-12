@@ -176,19 +176,31 @@ object CotMessageBuilder {
             "lat" to (location?.lat ?: 0.0), "lon" to (location?.lon ?: 0.0), "hae" to (location?.hae ?: 0.0),
             "ce" to normalizedError(location?.ce, 999_999f), "le" to normalizedError(location?.le, 999_999f),
         )
-        val chatGroup = CotXml.element("chatgrp", listOf("uid0" to senderUid, "uid1" to snapshot.roomUid, "id" to snapshot.roomUid))
+        require(snapshot.roomUid.isNotBlank() && snapshot.roomTitle.isNotBlank()) { "Missing chat destination" }
+        val namedGroup = snapshot.isGroup && snapshot.roomUid != "All Chat Rooms"
+        val recipients = if (namedGroup) {
+            snapshot.participantUids.filter { it.isNotBlank() && it != senderUid && it != snapshot.roomUid }.distinct()
+                .also { require(it.isNotEmpty()) { "Group chat has no known recipients" } }
+        } else listOf(snapshot.roomUid)
+        val chatGroup = CotXml.element("chatgrp",
+            listOf("uid0" to CotXml.escape(senderUid), "id" to CotXml.escape(snapshot.roomUid)) +
+                recipients.mapIndexed { index, uid -> "uid${index + 1}" to CotXml.escape(uid) })
         val chat = CotXml.element("__chat", listOf(
-            "parent" to "RootContactGroup", "groupOwner" to "false", "messageId" to messageId,
-            "chatroom" to snapshot.roomTitle, "id" to snapshot.roomUid, "senderCallsign" to senderCallsign,
+            "parent" to "RootContactGroup", "groupOwner" to "false", "messageId" to CotXml.escape(messageId),
+            "chatroom" to CotXml.escape(snapshot.roomTitle), "id" to CotXml.escape(snapshot.roomUid),
+            "senderCallsign" to CotXml.escape(senderCallsign),
         ), chatGroup)
         val marti = if (snapshot.roomUid == "All Chat Rooms") "" else {
-            CotXml.element("marti", content = CotXml.element("dest", listOf("callsign" to snapshot.roomTitle)))
+            CotXml.element("marti", content = if (namedGroup) {
+                recipients.joinToString("") { CotXml.element("dest", listOf("uid" to CotXml.escape(it))) }
+            } else CotXml.element("dest", listOf("callsign" to CotXml.escape(snapshot.roomTitle))))
         }
         val detail = chat +
-                CotXml.element("link", listOf("uid" to senderUid, "type" to "a-f-G-U-C", "relation" to "p-p")) +
-                CotXml.element("remarks", listOf("source" to senderUid, "to" to snapshot.roomUid, "time" to time), snapshot.message) + marti
+                CotXml.element("link", listOf("uid" to CotXml.escape(senderUid), "type" to "a-f-G-U-C", "relation" to "p-p")) +
+                CotXml.element("remarks", listOf("source" to CotXml.escape(senderUid), "to" to CotXml.escape(snapshot.roomUid), "time" to time),
+                    CotXml.escape(snapshot.message)) + marti
         return CotXml.event(listOf(
-            "version" to "2.0", "uid" to "GeoChat.$senderUid.${snapshot.roomUid}.$messageId", "type" to "b-t-f",
+            "version" to "2.0", "uid" to CotXml.escape("GeoChat.$senderUid.${snapshot.roomUid}.$messageId"), "type" to "b-t-f",
             "time" to time, "start" to time, "stale" to time, "how" to "h-g-i-g-o", "access" to "Undefined",
         ), point, detail)
     }
