@@ -1023,10 +1023,11 @@ fun RoutesLayer(
     routes: List<RouteCollection>,
     camera: CameraState,
 ) {
+    if (routes.isEmpty()) return
     val featureCollection = remember(routes) {
         routes.toFeatureCollection()
     }
-
+    if (featureCollection.features.isEmpty()) return
     val source = rememberGeoJsonSource(
         data = GeoJsonData.Features(featureCollection)
     )
@@ -1656,32 +1657,26 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
         )
     )
 
-    val defaultRouteTestPoints = listOf(
-        RouteCollection(
-            uid = "000",
-            name = "Route 1",
-            color = "Red",
-            points = listOf(
-                RouteItem(41.88530878701452, -87.66696421190201, true, "start"),
-                RouteItem(41.896042995521924, -87.66730753465578),
-                RouteItem(41.8959791067602, -87.6697107939322),
-                RouteItem(41.89419019548383, -87.6697107939322, true, "pit stop"),
-                RouteItem(41.89422214076742, -87.67207113786438),
-                RouteItem(41.89329572105578, -87.67211405320862, true, "end"),
+
+    val takRoutes by dataRepository.takRoutes.collectAsStateWithLifecycle()
+
+    val mapRoutes = remember(takRoutes) {
+        takRoutes.map { route ->
+            RouteCollection(
+                uid = route.uid,
+                name = route.name,
+                color = "Red",
+                points = route.points.map { point ->
+                    RouteItem(
+                        lat = point.latitude,
+                        lon = point.longitude,
+                        hasPoint = point.name != null,
+                        pointTitle = point.name
+                    )
+                }
             )
-        ),
-        RouteCollection(
-            uid = "001",
-            name = "Route 2",
-            color = "Blue",
-            points = listOf(
-                RouteItem(41.886782286379194, -87.67679882945833, true, "start"),
-                RouteItem(41.886833269845525, -87.67434198975624),
-                RouteItem(41.88601115648934, -87.67429918767084),
-                RouteItem(41.886081259591215, -87.67192795213953, true, "end"),
-            )
-        ),
-    )
+        }
+    }
 
     // LAYER MENU CONFIGURATION
     // Connects each menu option to its MapLibre style layer IDs
@@ -2476,9 +2471,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             )
 
             RoutesLayer(
-                routes = defaultRouteTestPoints,
+                routes = mapRoutes,
                 camera = cameraState
-
             )
         }
 

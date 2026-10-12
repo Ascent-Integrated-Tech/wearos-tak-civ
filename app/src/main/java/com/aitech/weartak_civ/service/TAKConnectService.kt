@@ -63,6 +63,7 @@ import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.integration.plugin.PluginCotIngress
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.manager.MulticastWifiRequest
+import kotlinx.coroutines.flow.StateFlow
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
@@ -305,6 +306,7 @@ class TAKConnectService: Service() {
                         "isP12=${detail.isP12Cert} hasP12=${!detail.p12Cert.isNullOrBlank()}"
                 )
             }
+            _takServerRuntimeDetails.value = takServerDetails.toList()
             refreshDuplicateEndpointSuppression()
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
             esriEndpoint = dataRepository.getEsriEndpoint.first()
@@ -362,6 +364,16 @@ class TAKConnectService: Service() {
         }
     }
 
+    suspend fun registerServer(serverId: String) {
+        reloadProvisionedTakServers()
+
+        val detail = getTakServerDetail(serverId)
+            ?: error("Saved TAK server is unavailable")
+
+        detail.numConnAttempts = 0
+        getClientCertificateAndConnect(detail)
+    }
+
     private suspend fun reloadProvisionedTakServers() {
         val storedServers = dataRepository.tryAwaitTakServerList()
             ?: error("Persisted TAK server list is unavailable")
@@ -406,6 +418,7 @@ class TAKConnectService: Service() {
         takServerDetails = refreshed.toMutableList()
         takServerDetailsById.clear()
         refreshed.forEach { detail -> takServerDetailsById[detail.serverId] = detail }
+        _takServerRuntimeDetails.value = refreshed.toList()
         refreshDuplicateEndpointSuppression()
         setIsAnyNetworkConnected()
         setIsAnyNetworkConnecting()
@@ -784,7 +797,31 @@ class TAKConnectService: Service() {
 
         var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
         private val takServerDetailsById = ConcurrentHashMap<String, TakServerDetail>()
+        val serverRegistration = TakServerRegistration()
+        fun retryServerRegistration() {
+            val serverId = serverRegistration.state.value.serverId ?: return
+            val ticket = serverRegistration.prepare(serverId)
 
+            val job = connectionScope.launch {
+                serverRegistration.saveAndConnect(
+                    serverId,
+                    save = { TakServerRegistration.SaveResult.SAVED },
+                    connect = { TAK_CONNECT_SERVICE.registerServer(serverId) },
+                    ticket = ticket,
+                )
+            }
+
+            job.invokeOnCompletion { error ->
+                if (error != null) {
+                    serverRegistration.failPending(ticket)
+                }
+            }
+        }
+        private val _takServerRuntimeDetails =
+            MutableStateFlow<List<TakServerDetail>>(emptyList())
+
+        val takServerRuntimeDetails: StateFlow<List<TakServerDetail>> =
+            _takServerRuntimeDetails
         fun getTakServerDetail(serverId: String): TakServerDetail? =
             TakServerId.normalizeOrNull(serverId)?.let(takServerDetailsById::get)
 
@@ -1214,6 +1251,8 @@ class TAKConnectService: Service() {
                 }
             }
         }
+
+
         private suspend fun syncSubscribedMissions(
             serverId: String
         ) {
@@ -1734,6 +1773,19 @@ class TAKConnectService: Service() {
                 deviceUid = { MainActivity.device_uid },
                 deviceCallsign = { MainActivity.callsign }
             )
+        }
+
+        suspend fun handleInboundCot(rawXml: String, source: String) {
+            val envelope = TakServerCotEnvelope(
+                sourceServerId = source,
+                sourceServerAddress = source,
+                receivedAt = System.currentTimeMillis(),
+                rawXml = rawXml
+            )
+
+            val result = cotIngestor.ingest(envelope)
+
+            Log.d(TAG, "Plugin CoT ingested source=$source result=$result")
         }
 
         private val TAK_CONNECT_SERVICE = TAKConnectService()
