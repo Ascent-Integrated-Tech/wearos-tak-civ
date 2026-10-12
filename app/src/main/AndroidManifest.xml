@@ -531,7 +531,7 @@
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:persistableMode="persistNever"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -550,7 +550,7 @@
             android:name=".presentation.SosActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -562,7 +562,7 @@
             android:name=".presentation.MarkerActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -575,7 +575,7 @@
             android:exported="true"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:taskAffinity="com.aitech.weartak_civ.chat"
+            android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -586,7 +586,7 @@
             android:name=".presentation.CrmReserveActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -598,7 +598,7 @@
             android:name=".presentation.PhysioAlertsActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -610,7 +610,7 @@
             android:name=".presentation.BloodhoundActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -622,7 +622,7 @@
             android:name=".presentation.SettingsActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -634,7 +634,7 @@
             android:name=".presentation.WearTAKSettingsActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -652,7 +652,7 @@
             android:name=".presentation.MapActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
