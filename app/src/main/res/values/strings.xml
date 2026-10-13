@@ -765,6 +765,8 @@
     <string name="custom_pdl">Custom PDL</string>
     <string name="use_default_community_identity">Use default community identity</string>
     <string name="enter_your_own_identity">Enter your own identity</string>
+    <string name="no_custom_pdl_saved">No custom PDL saved</string>
+    <string name="ditto_community_subtitle">Community</string>
     <string name="pdl_help">PDL Help</string>
     <string name="pdl_help_summary">How to copy &amp; paste a custom PDL</string>
     <string name="pdl_help_instructions">1. Send only the PDL in a chat message. Do not add other text, spaces, or characters.\n\n2. On the watch, press and hold the message, then release it. A toast confirms the PDL was copied.\n\n3. Open Custom PDL. Before opening the keyboard, press and hold the text field, then tap Paste.</string>

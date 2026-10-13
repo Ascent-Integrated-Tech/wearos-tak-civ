@@ -392,6 +392,7 @@ fun WearTAKSettingsNav(
     val smsNumberList by settingsVm.savedSmsNumbersList.collectAsState()
     val enableDittoService by settingsVm.savedEnableDittoService.collectAsState()
     val dittoPdlSource by dataRepository.getDittoPdlSource.collectAsState(initial = DittoPdlSource.COMMUNITY)
+    val dittoCustomPdl by dataRepository.getDittoCustomPdl.collectAsState(initial = "")
     val enableTabletCommandEndpoint by settingsVm.savedEnableTabletCommandEndpoint.collectAsState()
     val tabletCommandEndpoint by settingsVm.savedTabletCommandEndpoint.collectAsState()
     val tabletCommandAPIKey by settingsVm.savedTabletCommandApikey.collectAsState()
@@ -1499,25 +1500,6 @@ fun WearTAKSettingsNav(
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
                             thickness = 1.dp,
                             color = Color.White
-                        )
-                    }
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableDittoService,
-                            onCheckedChange = { settingsVm.storeEnableDittoService(it) },
-                            title = stringResource(R.string.ditto),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
-                    item {
-                        WearTAKTitleChipWithState(
-                            route = "ditto_pdl",
-                            title = stringResource(R.string.ditto_identity),
-                            state = when (dittoPdlSource) {
-                                DittoPdlSource.COMMUNITY -> stringResource(R.string.community_pdl)
-                                DittoPdlSource.CUSTOM -> stringResource(R.string.custom_pdl)
-                            },
-                            navController = navController
                         )
                     }
                     item {
@@ -2833,6 +2815,20 @@ fun WearTAKSettingsNav(
                             onClick = { navController.navigate("chat_commands") }
                         )
                     }
+                    item {
+                        WearTAKSplitToggleChip(
+                            title = stringResource(R.string.ditto),
+                            label = when (dittoPdlSource) {
+                                DittoPdlSource.COMMUNITY -> stringResource(R.string.ditto_community_subtitle)
+                                DittoPdlSource.CUSTOM -> dittoCustomPdl.ifBlank {
+                                    stringResource(R.string.no_custom_pdl_saved)
+                                }
+                            },
+                            checked = enableDittoService,
+                            onCheckedChange = { settingsVm.storeEnableDittoService(it) },
+                            onClick = { navController.navigate("ditto_pdl") }
+                        )
+                    }
                     itemsIndexed(
                         items = pluginList,
                         key = { _, item -> item.pluginId })
@@ -3423,7 +3419,7 @@ fun <T> WearTAKSelectableChip(
                 } else MaterialTheme.shapes.large
     )
 }
-//Used for when an item needs both enable/disable functionality, and additional behavior when selected. Currently only used for tak servers
+// Used for items that combine an enable toggle with a separate configuration action.
 @Composable
 fun WearTAKSplitToggleChip(
     appIcon: @Composable () -> Unit = {}, //Optional icon
@@ -3652,6 +3648,7 @@ fun DittoPdlSelectionPage(
 ) {
     val scope = rememberCoroutineScope()
     val showPdlHelp = remember { mutableStateOf(false) }
+    val savedCustomPdl by dataRepository.getDittoCustomPdl.collectAsState(initial = "")
     val communityTitle = stringResource(R.string.community_pdl)
     val customTitle = stringResource(R.string.custom_pdl)
     val pdlOptions = listOf(communityTitle, customTitle)
@@ -3670,7 +3667,7 @@ fun DittoPdlSelectionPage(
                         }
                     },
                     title = communityTitle,
-                    secondaryTitle = stringResource(R.string.use_default_community_identity),
+                    secondaryTitle = stringResource(R.string.community_pdl),
                     combined = true,
                     list = pdlOptions
                 )
@@ -3683,7 +3680,9 @@ fun DittoPdlSelectionPage(
                         navController.navigate("ditto_custom_pdl")
                     },
                     title = customTitle,
-                    secondaryTitle = stringResource(R.string.enter_your_own_identity),
+                    secondaryTitle = savedCustomPdl.ifBlank {
+                        stringResource(R.string.no_custom_pdl_saved)
+                    },
                     combined = true,
                     list = pdlOptions
                 )

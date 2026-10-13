@@ -4,6 +4,11 @@ WearTAK-CIV is a standalone Wear OS application that connects a watch to the Tea
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
+Configure Ditto under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
+tap the Ditto row to select Community or configure a custom PDL in Ditto Identity. The row subtitle shows
+Community or the saved custom PDL, truncated to fit. Ditto is off by default on fresh installs, and saved
+enablement settings are preserved. PDL Help provides scrollable instructions for copying and pasting a custom identity.
+
 ## What it does
 
 - Connects to TAK endpoints and sends and receives CoT traffic.
