@@ -14,12 +14,17 @@ import com.aitech.weartak_civ.events.TakChatEvent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import com.aitech.weartak_civ.data.model.TakRoute
 import org.junit.Test
 
 class TakServerCotIngestorTest {
     private class RecordingSink : TakServerCotSink {
         val chats = mutableListOf<TakChatEvent>()
         val geofences = mutableListOf<GeofenceCot>()
+        override suspend fun onRoute(
+            route: TakRoute,
+            envelope: TakServerCotEnvelope
+        ) = Unit
         val users = mutableListOf<Pair<CotUserPositionEvent, TakServerCotEnvelope>>()
         val markers = mutableListOf<Pair<CotMarkerEvent, TakServerCotEnvelope>>()
         val emergencies = mutableListOf<Pair<CotEmergencyEvent, TakServerCotEnvelope>>()

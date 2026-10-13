@@ -3,6 +3,7 @@ package com.aitech.weartak_civ.cot
 import android.app.Application
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.google.gson.Gson
@@ -53,6 +54,7 @@ class GroupChatIntegrationTest {
         val rooms = mutableListOf<ChatRoom>()
         val sink = object : TakServerCotSink {
             override suspend fun onChat(event: TakChatEvent) { rooms += event.parsedRooms.orEmpty() }
+            override suspend fun onRoute(route: TakRoute, envelope: TakServerCotEnvelope) {}
             override suspend fun onGeofence(geofence: com.aitech.weartak_civ.data.model.GeofenceCot) {}
             override suspend fun onUser(event: CotUserPositionEvent, envelope: TakServerCotEnvelope) {}
             override suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope) {}
