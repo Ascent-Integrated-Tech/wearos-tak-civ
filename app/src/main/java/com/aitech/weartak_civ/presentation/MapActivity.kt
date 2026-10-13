@@ -1118,6 +1118,32 @@ fun RoutesLayer(
     )
 }
 
+private val missionRouteColors = listOf(
+    "Red",
+    "Blue",
+    "Green",
+    "Orange",
+    "Purple",
+    "Cyan",
+    "Yellow",
+    "Magenta",
+    "Teal"
+)
+
+private fun getMissionRouteColor(
+    serverId: String,
+    missionName: String?
+): String {
+    val missionKey = "$serverId:${missionName ?: ""}"
+
+    val index = Math.floorMod(
+        missionKey.hashCode(),
+        missionRouteColors.size
+    )
+
+    return missionRouteColors[index]
+}
+
 // MAP STYLE FILTERING
 // Removes hidden style layers before loading the map
 fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): String {
@@ -1655,7 +1681,10 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             RouteCollection(
                 uid = route.uid,
                 name = route.name,
-                color = "Red",
+                color = getMissionRouteColor(
+                    serverId = route.serverId,
+                    missionName = route.missionName
+                ),
                 points = route.points.map { point ->
                     RouteItem(
                         lat = point.latitude,

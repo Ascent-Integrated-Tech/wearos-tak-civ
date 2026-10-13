@@ -1078,6 +1078,33 @@ class TAKConnectService: Service() {
                 )
             }
         }
+
+        private suspend fun refreshAvailableMissions(
+            serverId: String
+        ) {
+            val detail = getTakServerDetail(serverId) ?: return
+
+            try {
+                val missions = missionApi(detail).getAllMissions()
+
+                dataRepository.updateTakMissions(
+                    serverId = detail.serverId,
+                    serverName = detail.name,
+                    serverAddress = detail.address,
+                    missions = missions
+                )
+
+                Log.d(
+                    TAG,
+                    "Mission refresh: found ${missions.size} missions"
+                )
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.e(TAG, "Mission refresh failed for $serverId", error)
+            }
+        }
+
         private suspend fun loadTakMissions(
             detail: TakServerDetail
         ) {
@@ -1262,6 +1289,8 @@ class TAKConnectService: Service() {
             serverId: String
         ) {
             while (currentCoroutineContext().isActive) {
+                // Refresh available missions, including newly created ones
+                refreshAvailableMissions(serverId)
                 val subscribedMissions =
                     dataRepository.getSubscribedMissions(serverId)
 
