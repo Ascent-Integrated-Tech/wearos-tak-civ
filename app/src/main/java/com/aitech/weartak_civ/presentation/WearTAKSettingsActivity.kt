@@ -2777,6 +2777,14 @@ fun WearTAKSettingsNav(
 
         }
         composable("plugins") {
+            val menuEntries = (
+                listOf(
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, stringResource(R.string.chat_commands)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.DITTO, stringResource(R.string.ditto)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.EVERYWHERE_COMMS, stringResource(R.string.everywhere_comms)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.SOMEWEAR_LABS, stringResource(R.string.somewear_labs)),
+                ) + pluginList.map { PluginMenuEntry.Installed(it) }
+            ).alphabetizedPluginEntries()
             val lifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
@@ -2806,72 +2814,83 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.plugins),
                 columnContent = {
-                    item {
-                        WearTAKSplitToggleChip(
-                            title = stringResource(R.string.chat_commands),
-                            label = stringResource(if (enableChatCommands) R.string.enabled else R.string.disabled),
-                            checked = enableChatCommands,
-                            onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
-                            onClick = { navController.navigate("chat_commands") }
-                        )
-                    }
-                    item {
-                        WearTAKSplitToggleChip(
-                            title = stringResource(R.string.ditto),
-                            label = when (dittoPdlSource) {
-                                DittoPdlSource.COMMUNITY -> stringResource(R.string.ditto_community_subtitle)
-                                DittoPdlSource.CUSTOM -> dittoCustomPdl.ifBlank {
-                                    stringResource(R.string.no_custom_pdl_saved)
-                                }
-                            },
-                            checked = enableDittoService,
-                            onCheckedChange = { settingsVm.storeEnableDittoService(it) },
-                            onClick = { navController.navigate("ditto_pdl") }
-                        )
-                    }
-                    itemsIndexed(
-                        items = pluginList,
-                        key = { _, item -> item.pluginId })
-                    { index, item ->
-                        run {
-                            WearTAKSwipeToRevealChip(
-                                onPrimaryActionClick = {
-                                    pluginitem.value = item
-                                    shouldShowDialog.value = true
-                                },
-                                onSecondaryActionClick = {
-                                    pluginitem.value = item
-                                    showPopup.value = true
-                                 },
-                                chipType = {
+                    itemsIndexed(items = menuEntries, key = { _, entry -> entry.key }) { _, entry ->
+                        when (entry) {
+                            is PluginMenuEntry.BuiltIn -> when (entry.kind) {
+                                BuiltInPlugin.COMMANDS -> {
                                     WearTAKSplitToggleChip(
-                                        appIcon = {
-                                            item.icon.let {
-                                                AndroidView(
-                                                    modifier = Modifier
-                                                        .size(25.dp)
-                                                        .padding(end = 3.dp),
-                                                    factory = { context ->
-                                                        ImageView(context).apply {
-                                                            setImageDrawable(it)
-                                                        }
-                                                    }
-                                                )
-                                            }
-                                          },
-                                        title = item.title,
-                                        label = item.loadingStatus.toString(),
-                                        checked = item.isLoaded,
-                                        onCheckedChange = {
-                                            when (it) {
-                                                true -> pluginVm.loadPlugin(item.pluginId)
-                                                false -> pluginVm.unloadPlugin(item.pluginId)
+                                        title = entry.title,
+                                        label = stringResource(if (enableChatCommands) R.string.enabled else R.string.disabled),
+                                        checked = enableChatCommands,
+                                        onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
+                                        onClick = { navController.navigate("chat_commands") }
+                                    )
+                                }
+                                BuiltInPlugin.DITTO -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = when (dittoPdlSource) {
+                                            DittoPdlSource.COMMUNITY -> stringResource(R.string.ditto_community_subtitle)
+                                            DittoPdlSource.CUSTOM -> dittoCustomPdl.ifBlank {
+                                                stringResource(R.string.no_custom_pdl_saved)
                                             }
                                         },
-                                        onClick = { it.first.launch { it.second.animateTo(targetValue = RevealValue.RightRevealing) } },
+                                        checked = enableDittoService,
+                                        onCheckedChange = { settingsVm.storeEnableDittoService(it) },
+                                        onClick = { navController.navigate("ditto_pdl") }
                                     )
-                                },
-                            )
+                                }
+                                BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.SOMEWEAR_LABS -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = false,
+                                        onCheckedChange = {},
+                                        onClick = {},
+                                    )
+                                }
+                            }
+                            is PluginMenuEntry.Installed -> {
+                                val item = entry.plugin
+                                WearTAKSwipeToRevealChip(
+                                    onPrimaryActionClick = {
+                                        pluginitem.value = item
+                                        shouldShowDialog.value = true
+                                    },
+                                    onSecondaryActionClick = {
+                                        pluginitem.value = item
+                                        showPopup.value = true
+                                    },
+                                    chipType = {
+                                        WearTAKSplitToggleChip(
+                                            appIcon = {
+                                                item.icon.let {
+                                                    AndroidView(
+                                                        modifier = Modifier
+                                                            .size(25.dp)
+                                                            .padding(end = 3.dp),
+                                                        factory = { context ->
+                                                            ImageView(context).apply {
+                                                                setImageDrawable(it)
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            title = item.title,
+                                            label = item.loadingStatus.toString(),
+                                            checked = item.isLoaded,
+                                            onCheckedChange = {
+                                                when (it) {
+                                                    true -> pluginVm.loadPlugin(item.pluginId)
+                                                    false -> pluginVm.unloadPlugin(item.pluginId)
+                                                }
+                                            },
+                                            onClick = { it.first.launch { it.second.animateTo(targetValue = RevealValue.RightRevealing) } },
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 },
