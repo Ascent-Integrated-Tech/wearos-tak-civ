@@ -14,11 +14,12 @@ class PluginMenuEntryTest {
             PluginMenuEntry.BuiltIn(BuiltInPlugin.DITTO, "Ditto"),
             PluginMenuEntry.BuiltIn(BuiltInPlugin.EVERYWHERE_COMMS, "Everywhere Comms"),
             installed("alpha", "alpha"),
+            PluginMenuEntry.BuiltIn(BuiltInPlugin.GOTENNA, "GoTenna"),
             PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, "Commands"),
         )
 
         assertEquals(
-            listOf("alpha", "Commands", "Ditto", "Everywhere Comms", "Somewear Labs", "zulu"),
+            listOf("alpha", "Commands", "Ditto", "Everywhere Comms", "GoTenna", "Somewear Labs", "zulu"),
             entries.alphabetizedPluginEntries().map { it.title },
         )
         assertEquals("Somewear Labs", entries.first().title)
