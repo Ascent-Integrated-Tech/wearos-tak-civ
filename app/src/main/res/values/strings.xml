@@ -28,8 +28,8 @@
     <string name="chat_command_enroll_text" translatable="false">%1$s: enter your login</string>
     <string name="beta_features">Beta Features</string>
     <string name="beta_features_desc">Show settings for beta features</string>
-    <string name="gunshot_detection" translatable="false">Gunshot Detect</string>
-    <string name="uas_detection" translatable="false">UAS Detect</string>
+    <string name="gunshot_detection" translatable="false">DART</string>
+    <string name="uas_detection" translatable="false">FALCON</string>
     <string name="audio_detection_trigger_threshold">Trigger Threshold</string>
     <string name="gunshot_trigger_threshold">Gunshot Trigger Threshold</string>
     <string name="uas_trigger_threshold">UAS Trigger Threshold</string>
@@ -696,9 +696,10 @@
     <string name="weartak_preferences">WearTAK Preferences</string>
     <string name="callsign_and_device_preferences">Callsign and Device Preferences</string>
     <string name="network_preferences">Network Preferences</string>
-    <string name="network_settings_lock">Network Settings Lock</string>
-    <string name="network_settings_lock_description">Prevent wearer access to Network Settings</string>
-    <string name="network_settings_locked">Network settings locked</string>
+    <string name="network_settings_lock">Network Preferences Lock</string>
+    <string name="network_settings_locked">Network Preferences locked</string>
+    <string name="admin_preferences">Admin Preferences</string>
+    <string name="developer_preferences">Developer Preferences</string>
     <string name="locked">Locked</string>
     <string name="phone_managed">Phone managed</string>
     <string name="phone_managed_by_paired_phone">These settings are managed by the paired phone</string>

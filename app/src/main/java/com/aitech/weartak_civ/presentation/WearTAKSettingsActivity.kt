@@ -435,12 +435,11 @@ fun WearTAKSettingsNav(
     val pluginList by pluginVm.plugins.collectAsState()
 
     val enableGunshotDetection by settingsVm.savedEnableOnnxGunshotService.collectAsState()
-    settingsVm.storeEnableOnnxGunshotService(false)
     val gunshotTriggerThreshold by settingsVm.savedOnnxGunshotTriggerThresholdPercent.collectAsState()
     val enableUasDetection by settingsVm.savedEnableOnnxUasService.collectAsState()
-    settingsVm.storeEnableOnnxGunshotService(false)
     val uasTriggerThreshold by settingsVm.savedOnnxUasTriggerThresholdPercent.collectAsState()
     val crmThresholdValues by settingsVm.savedCrmThresholdRanges.collectAsState()
+    val enableCrm by settingsVm.savedEnableCrmService.collectAsState()
     val wearTakInfo by settingsVm.wearTakInfo.collectAsState()
 
     LaunchedEffect(phoneManagedSettings, networkPreferencesLocked) {
@@ -544,40 +543,27 @@ fun WearTAKSettingsNav(
                                     navController = navController
                                 )
                             }
-                            if (isDevMode) {
-                                item {
-                                    WearTAKTitleChip(
-                                        title = "Beta Features",
-                                        route = "beta_features",
-                                        navController = navController
-                                    )
-                                }
-                                item {
-                                    WearTAKTitleChipWithState(
-                                        title = "Dev Debug Tools",
-                                        route = "debug_tools",
-                                        state = "View network and build information",
-                                        navController = navController
-                                    )
-                                }
+                            item {
+                                WearTAKTitleChip(
+                                    title = stringResource(R.string.admin_preferences),
+                                    route = "admin_preferences",
+                                    enabled = isDevMode,
+                                    navController = navController
+                                )
+                            }
+                            item {
+                                WearTAKTitleChip(
+                                    title = stringResource(R.string.developer_preferences),
+                                    route = "debug_tools",
+                                    enabled = isDevMode,
+                                    navController = navController
+                                )
                             }
                             item {
                                 WearTAKDebugVersionText(
                                     wearTakInfo = wearTakInfo,
                                     devModeEnabled = isDevMode,
-                                    onDebugToggled = { enabled ->
-                                        // Optional: if you want to immediately test something when debug is enabled
-                                        if (enabled) {
-                                            // e.g., trigger a manual battery-alert test hook
-                                            // triggerTestBatteryAlert()
-                                        } else {
-                                            if (enableGunshotDetection){
-                                                settingsVm.storeEnableOnnxGunshotService(false)
-                                            }
-                                            if (enableUasDetection){
-                                                settingsVm.storeEnableOnnxUasService(false)
-                                            }
-                                        }
+                                    onDebugToggled = {
                                         setAirplaneMode("0")
                                     },
                                     settingsVm = settingsVm
@@ -2805,8 +2791,11 @@ fun WearTAKSettingsNav(
             val menuEntries = (
                 listOf(
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, stringResource(R.string.chat_commands)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.CRM, "CRM"),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.DART, stringResource(R.string.gunshot_detection)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DITTO, stringResource(R.string.ditto)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.EVERYWHERE_COMMS, stringResource(R.string.everywhere_comms)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.FALCON, stringResource(R.string.uas_detection)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.GOTENNA, stringResource(R.string.gotenna)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.SENSOR_MANAGER, stringResource(R.string.sensor_manager)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.SOMEWEAR_LABS, stringResource(R.string.somewear_labs)),
@@ -2874,6 +2863,33 @@ fun WearTAKSettingsNav(
                                         checked = enableSensorManager,
                                         onCheckedChange = { settingsVm.storeEnableSensorManager(it) },
                                         onClick = { navController.navigate("sensor_manager") }
+                                    )
+                                }
+                                BuiltInPlugin.DART -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableGunshotDetection,
+                                        onCheckedChange = { settingsVm.storeEnableOnnxGunshotService(it) },
+                                        onClick = { navController.navigate("gunshot_detection") }
+                                    )
+                                }
+                                BuiltInPlugin.FALCON -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableUasDetection,
+                                        onCheckedChange = { settingsVm.storeEnableOnnxUasService(it) },
+                                        onClick = { navController.navigate("uav_detection") }
+                                    )
+                                }
+                                BuiltInPlugin.CRM -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableCrm,
+                                        onCheckedChange = { settingsVm.storeEnableCrmService(it) },
+                                        onClick = { navController.navigate("crm_thresholds") }
                                     )
                                 }
                                 BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.GOTENNA, BuiltInPlugin.SOMEWEAR_LABS -> {
@@ -3017,58 +3033,27 @@ fun WearTAKSettingsNav(
         }
         //Tool Settings ^^^
 
-        //Beta Features vvv
-            composable("beta_features") {
-                if (isDevMode) {
-                    WearTAKPageWithBackArrow(
-                        "Beta Features",
-                        columnContent = {
-                            item {
-                                WearTAKToggleChip(
-                                    checkedLive = networkPreferencesLocked,
-                                    onCheckedChange = { settingsVm.storeNetworkPreferencesLocked(it) },
-                                    title = stringResource(R.string.network_settings_lock),
-                                    description = stringResource(R.string.network_settings_lock_description)
-                                )
-                            }
-                            item {
-                                WearTAKTitleChip(
-                                    route = "gunshot_detection",
-                                    title = stringResource(R.string.gunshot_detection),
-                                    navController = navController
-                                )
-                            }
-                            item {
-                                WearTAKTitleChip(
-                                    route = "uav_detection",
-                                    title = stringResource(R.string.uas_detection),
-                                    navController = navController
-                                )
-                            }
-                            item {
-                                WearTAKTitleChip(
-                                    route = "crm_thresholds",
-                                    title = "CRM Thresholds",
-                                    navController = navController
-                                )
-                            }
-                        },
-                        navController,
-                    )
-                }
-            }
+        //Admin Preferences vvv
+        composable("admin_preferences") {
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.admin_preferences),
+                columnContent = {
+                    item {
+                        WearTAKToggleChip(
+                            checkedLive = networkPreferencesLocked,
+                            onCheckedChange = { settingsVm.storeNetworkPreferencesLocked(it) },
+                            title = stringResource(R.string.network_settings_lock),
+                        )
+                    }
+                },
+                navController,
+            )
+        }
+        //Admin Preferences ^^^
         composable("gunshot_detection") {
             WearTAKPageWithBackArrow(
                 stringResource(R.string.gunshot_detection),
                 columnContent = {
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableGunshotDetection,
-                            onCheckedChange = { settingsVm.storeEnableOnnxGunshotService(it) },
-                            title = stringResource(R.string.gunshot_detection),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
                     item {
                         WearTAKTitleChipWithState(
                             route = "gunshot_trigger_threshold",
@@ -3097,14 +3082,6 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.uas_detection),
                 columnContent = {
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableUasDetection,
-                            onCheckedChange = { settingsVm.storeEnableOnnxUasService(it)},
-                            title =stringResource(R.string.uas_detection),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
                     item {
                         WearTAKTitleChipWithState(
                             route = "uav_trigger_threshold",
@@ -3182,7 +3159,6 @@ fun WearTAKSettingsNav(
         composable("debug_tools") {
             DebugScreen(navController)
         }
-        //Beta Features ^^^
     }
 }
 
@@ -3318,14 +3294,15 @@ fun WearTAKTitleChip(
     title: String, // Text on the chip
     route: String, //where chip will direct to in navhost
     onClick: () -> Unit = {}, // Optional additional behavior when clicked
-    navController: NavController //Navcontroller passed from navhost
+    navController: NavController, //Navcontroller passed from navhost
+    enabled: Boolean = true // When false the chip is shown greyed out and cannot be opened
 ){
     Chip(
         onClick = {
             onClick()
             navController.navigate(route)
         },
-        enabled = true,
+        enabled = enabled,
         label = { Text(text = title) },
         colors = ChipDefaults.chipColors(
             backgroundColor = Color.DarkGray,
@@ -3413,16 +3390,16 @@ fun WearTAKToggleChip(
     onCheckedChange: (Boolean) -> Unit, //What function/behavior should be called when toggle changes
     appIcon: @Composable () -> Unit = {}, //Optional icon
     title: String, //Upper text of chip
-    description: String, //Lower text of chip
+    description: String = "", //Lower text of chip; omitted when empty
 ) {
     ToggleChip(
         modifier = Modifier
             .fillMaxWidth(),
 //            .padding(bottom = 7.dp),
         label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
-        secondaryLabel = {
-            Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        },
+        secondaryLabel = if (description.isNotEmpty()) {
+            { Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        } else null,
         appIcon = {appIcon()},
         checked = checkedLive == true,
         colors =

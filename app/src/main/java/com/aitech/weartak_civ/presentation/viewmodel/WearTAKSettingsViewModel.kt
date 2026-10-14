@@ -13,6 +13,7 @@ import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_CRM_POOR_MAX_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CRM_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
@@ -1439,6 +1440,20 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeOnnxUasTriggerThresholdPercent(thresholdPercent)
             onnxUasTriggerThresholdPercent = thresholdPercent
+        }
+    }
+
+    val savedEnableCrmService: StateFlow<Boolean> =
+        dataRepository.getEnableCrmService.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = DEFAULT_ENABLE_CRM_SERVICE
+        )
+
+    fun storeEnableCrmService(enable: Boolean) {
+        viewModelScope.launch {
+            dataRepository.storeEnableCrmService(enable)
+            MainActivity.enableCrmService = enable
         }
     }
 
