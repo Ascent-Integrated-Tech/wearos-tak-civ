@@ -917,6 +917,17 @@ fun displaySitxGroupDialog(
         viewModelScope.launch { dataRepository.storeEnableChatCommands(enable) }
     }
 
+    val savedEnableSensorManager: StateFlow<Boolean> =
+        dataRepository.getEnableSensorManager.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
+    fun storeEnableSensorManager(enable: Boolean) {
+        viewModelScope.launch { dataRepository.storeEnableSensorManager(enable) }
+    }
+
     val savedChatCommandCallsigns: StateFlow<List<String>> =
         dataRepository.getChatCommandCallsigns.stateIn(
             scope = viewModelScope,

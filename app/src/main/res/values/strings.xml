@@ -769,6 +769,9 @@
     <string name="ditto_community_subtitle">Community</string>
     <string name="everywhere_comms" translatable="false">Everywhere Comms</string>
     <string name="gotenna" translatable="false">GoTenna</string>
+    <string name="sensor_manager">Sensor Manager</string>
+    <string name="scan_sensor">Scan</string>
+    <string name="sensor_manager_preview">Button is Placeholder</string>
     <string name="somewear_labs" translatable="false">Somewear Labs</string>
     <string name="unfunded_request">Unfunded Request</string>
     <string name="pdl_help">PDL Help</string>

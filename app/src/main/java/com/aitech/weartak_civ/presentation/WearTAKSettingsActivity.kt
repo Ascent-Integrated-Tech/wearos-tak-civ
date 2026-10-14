@@ -377,6 +377,7 @@ fun WearTAKSettingsNav(
 
     val enableCompanionAppService by settingsVm.savedEnableCompanionAppService.collectAsState()
     val enableChatCommands by settingsVm.savedEnableChatCommands.collectAsState()
+    val enableSensorManager by settingsVm.savedEnableSensorManager.collectAsState()
     val chatCommandCallsigns by settingsVm.savedChatCommandCallsigns.collectAsState()
     var enrollPrefill by remember { mutableStateOf<ServerEnrollment?>(null) }
     LaunchedEffect(enrollmentToken) {
@@ -2097,6 +2098,30 @@ fun WearTAKSettingsNav(
                             navController = navController
                         )
                     }
+
+                },
+                navController,
+            )
+        }
+
+        composable("sensor_manager") {
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.sensor_manager),
+                columnContent = {
+                    item {
+                        Text(stringResource(R.string.unfunded_request), modifier = Modifier.padding(8.dp))
+                    }
+                    item {
+                        Text(stringResource(R.string.sensor_manager_preview), modifier = Modifier.padding(8.dp))
+                    }
+                    item {
+                        Chip(
+                            onClick = {},
+                            label = { Text(stringResource(R.string.scan_sensor)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ChipDefaults.chipColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
+                        )
+                    }
                 },
                 navController,
             )
@@ -2783,6 +2808,7 @@ fun WearTAKSettingsNav(
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DITTO, stringResource(R.string.ditto)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.EVERYWHERE_COMMS, stringResource(R.string.everywhere_comms)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.GOTENNA, stringResource(R.string.gotenna)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.SENSOR_MANAGER, stringResource(R.string.sensor_manager)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.SOMEWEAR_LABS, stringResource(R.string.somewear_labs)),
                 ) + pluginList.map { PluginMenuEntry.Installed(it) }
             ).alphabetizedPluginEntries()
@@ -2839,6 +2865,15 @@ fun WearTAKSettingsNav(
                                         checked = enableDittoService,
                                         onCheckedChange = { settingsVm.storeEnableDittoService(it) },
                                         onClick = { navController.navigate("ditto_pdl") }
+                                    )
+                                }
+                                BuiltInPlugin.SENSOR_MANAGER -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableSensorManager,
+                                        onCheckedChange = { settingsVm.storeEnableSensorManager(it) },
+                                        onClick = { navController.navigate("sensor_manager") }
                                     )
                                 }
                                 BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.GOTENNA, BuiltInPlugin.SOMEWEAR_LABS -> {

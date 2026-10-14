@@ -3517,6 +3517,14 @@ class DataRepository(private val context: Context) {
         prefs[ENABLE_CHAT_COMMANDS] ?: DEFAULT_ENABLE_CHAT_COMMANDS
     }
 
+    val getEnableSensorManager: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_SENSOR_MANAGER] ?: false
+    }
+
+    suspend fun storeEnableSensorManager(enable: Boolean) {
+        context.dataStore.edit { prefs -> prefs[ENABLE_SENSOR_MANAGER] = enable }
+    }
+
     suspend fun storeEnableChatCommands(enable: Boolean) {
         context.dataStore.edit { prefs -> prefs[ENABLE_CHAT_COMMANDS] = enable }
     }
@@ -4484,6 +4492,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
         private val ENABLE_CHAT_COMMANDS = booleanPreferencesKey("enable_chat_commands")
+        private val ENABLE_SENSOR_MANAGER = booleanPreferencesKey("enable_sensor_manager")
         private val CHAT_COMMAND_CALLSIGNS = stringPreferencesKey("chat_command_callsigns")
         private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
         private val NETWORK_PREFERENCES_LOCKED = booleanPreferencesKey("network_preferences_locked")

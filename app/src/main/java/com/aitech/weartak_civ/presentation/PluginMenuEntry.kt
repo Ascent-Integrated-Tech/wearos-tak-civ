@@ -7,6 +7,7 @@ internal enum class BuiltInPlugin {
     DITTO,
     EVERYWHERE_COMMS,
     GOTENNA,
+    SENSOR_MANAGER,
     SOMEWEAR_LABS,
 }
 
