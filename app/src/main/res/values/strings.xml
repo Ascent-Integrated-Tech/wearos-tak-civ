@@ -392,6 +392,9 @@
     <string name="stationary_reporting_interval_title" translatable="false">Stationary Reporting Interval (Dynamic Reporting Strategy)</string>
     <string name="stationary_reporting_interval_description" translatable="false">Interval in seconds for GPS and COT updates when user is stationary (part of Dynamic Reporting Strategy)</string>
     <string name="stationary_reporting_interval_default" translatable="false">3600</string>
+    <string name="tak_server_keepalive_seconds_title" translatable="false">TAK Server Keepalive (seconds)</string>
+    <string name="tak_server_keepalive_seconds_description" translatable="false">Seconds of silence from TAK Server before the watch sends a t-x-c-t ping. The connection is reset if nothing is received within 30 seconds after that. Minimum 15. Set 0 to disable. Applies on next connection.</string>
+    <string name="tak_server_keepalive_seconds_default" translatable="false">60</string>
 
     <string name="enable_sms_title" translatable="false">Enable SMS for Alerts</string>
     <string name="enable_sms_description" translatable="false">Boolean that determines if SMS will be sent on detection of alerts.</string>

@@ -117,6 +117,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
@@ -2220,6 +2221,8 @@ class TAKConnectService: Service() {
             socket: SSLSocket,
             attempt: ConnectionAttempt
         ) {
+            val lastRxMs = AtomicLong(System.currentTimeMillis())
+            val keepaliveJob = startKeepaliveWatchdog(takServerDetail, socket, attempt, lastRxMs)
             // start a background COT‐reader on the same socket
             val job = connectionScope.launch {
                 try {
@@ -2238,6 +2241,7 @@ class TAKConnectService: Service() {
                                 // Timeout just re-checks enabled state and cancellation.
                                 continue
                             } ?: break
+                            lastRxMs.set(System.currentTimeMillis())
 
                             for (rawXml in framer.append(line)) {
                                 val envelope = TakServerCotEnvelope(
@@ -2278,6 +2282,7 @@ class TAKConnectService: Service() {
                 } catch (e: Exception) {
                     Log.e(TAG, "COT listener loop failed", e)
                 } finally {
+                    keepaliveJob?.cancel()
                     runCatching { socket.close() }
                     var shouldReconnect = false
                     synchronized(takServerDetail.runtime.lock) {
@@ -2305,6 +2310,44 @@ class TAKConnectService: Service() {
                     takServerDetail.runtime.readerJob = job
                 } else {
                     job.cancel()
+                    keepaliveJob?.cancel()
+                }
+            }
+        }
+
+        private fun startKeepaliveWatchdog(
+            takServerDetail: TakServerDetail,
+            socket: SSLSocket,
+            attempt: ConnectionAttempt,
+            lastRxMs: AtomicLong
+        ): Job? {
+            val keepalive = TakServerKeepalive(TakServerKeepalive.configuredSilenceSeconds(context))
+            if (!keepalive.enabled) {
+                Log.i(TAG, "TAK keepalive disabled by managed config serverId=${takServerDetail.serverId}")
+                return null
+            }
+            return connectionScope.launch {
+                var lastPingMs = 0L
+                while (isActive) {
+                    delay(TakServerKeepalive.CHECK_INTERVAL_MS)
+                    if (!isCurrent(takServerDetail, attempt) || socket.isClosed) break
+                    val now = System.currentTimeMillis()
+                    when (keepalive.next(now, lastRxMs.get(), lastPingMs)) {
+                        TakServerKeepalive.Action.PING -> {
+                            lastPingMs = now
+                            Log.d(TAG, "TAK keepalive ping serverId=${takServerDetail.serverId} " +
+                                "silenceMs=${now - lastRxMs.get()}")
+                            sendData(takServerDetail, TakServerKeepalive.pingCot(MainActivity.device_uid, now), true, now)
+                        }
+                        TakServerKeepalive.Action.RECONNECT -> {
+                            Log.w(TAG, "TAK keepalive timeout serverId=${takServerDetail.serverId} " +
+                                "silenceMs=${now - lastRxMs.get()}; resetting connection")
+                            // Closing unblocks the reader, whose finally block schedules the reconnect.
+                            runCatching { socket.close() }
+                            break
+                        }
+                        TakServerKeepalive.Action.NONE -> Unit
+                    }
                 }
             }
         }
