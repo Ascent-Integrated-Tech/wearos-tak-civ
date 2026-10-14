@@ -90,6 +90,8 @@ data class TakSignedCertificates(
 
 /** Enrollment transport retains the platform's HTTPS trust and hostname checks. */
 object TakEnrollment {
+    private val authorityName = Regex("ca[0-9]*")
+
     fun selectTrustAnchors(keyStore: KeyStore): List<X509Certificate> {
         val aliases = keyStore.aliases().toList()
         val keyAlias = aliases.firstOrNull { keyStore.isKeyEntry(it) }
@@ -179,7 +181,7 @@ object TakEnrollment {
             val node = ObjectMapper().readTree(trimmed)
             require(node.isObject)
             node.fields().asSequence().associate { (name, value) ->
-                if (name == "signedCert" || name.matches(Regex("ca[0-9]+"))) {
+                if (name == "signedCert" || name.matches(authorityName)) {
                     require(value.isTextual || value.isNull)
                 }
                 name to if (value.isTextual) value.asText() else ""
@@ -191,7 +193,7 @@ object TakEnrollment {
             for (i in 0 until elements.length) {
                 val element = elements.item(i) as Element
                 val name = element.localName
-                if (name == "signedCert" || name.matches(Regex("ca[0-9]+"))) {
+                if (name == "signedCert" || name.matches(authorityName)) {
                     require(name !in result)
                     result[name] = element.textContent
                 }
@@ -200,8 +202,9 @@ object TakEnrollment {
         }
         val leaf = values["signedCert"]?.takeIf { it.isNotBlank() }
             ?: throw IllegalArgumentException("Missing signed certificate")
-        val authorities = values.keys.filter { it.matches(Regex("ca[0-9]+")) }
-            .sortedWith(compareBy<String> { BigInteger(it.substring(2)) }.thenBy { it })
+        val authorities = values.keys.filter { it.matches(authorityName) }
+            .sortedWith(compareBy<String> { it != "ca" }
+                .thenBy { BigInteger(it.substring(2).ifEmpty { "0" }) }.thenBy { it })
             .mapNotNull { name -> values[name]?.takeIf { it.isNotBlank() }?.let { name to parseCert(it) } }
         return TakSignedCertificates(parseCert(leaf), authorities)
     }
