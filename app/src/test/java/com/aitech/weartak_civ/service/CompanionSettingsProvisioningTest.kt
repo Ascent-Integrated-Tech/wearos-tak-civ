@@ -22,6 +22,23 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class CompanionSettingsProvisioningTest {
+    @Test fun gatewayProfileWritesFailBeforeTouchingRepository() = runBlocking {
+        val service = CompanionAppService()
+        val cap = mockk<CompanionAppRepository>()
+        val gateway = com.aitech.weartak_civ.cot.CompanionGatewaySession()
+        gateway.negotiate(org.json.JSONObject().put("version", 1).put("session", "gateway-session"))
+        every { cap.gateway } returns gateway
+        CompanionAppService::class.java.getDeclaredField("capRepo\$delegate").apply {
+            isAccessible = true
+            set(service, lazyOf(cap))
+        }
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { service.applySettingsFromCompanion(CompanionAppRepository.SetSettingsPayload(
+                takServerList = emptyList(), phoneManagedSettings = false, callsign = "PHONE"
+            )) }
+        }
+        Unit
+    }
     @Test fun p12UploadStoresCredentialsWithoutEnablingManagementAndCanReleaseExistingLock() = runBlocking {
         val activity = mockk<MainActivity>()
         every { activity.applicationContext } returns RuntimeEnvironment.getApplication()
@@ -52,6 +69,9 @@ class CompanionSettingsProvisioningTest {
             }
         }
         inject("repo\$delegate", lazyOf(repo))
+        val cap = mockk<CompanionAppRepository>()
+        every { cap.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
+        inject("capRepo\$delegate", lazyOf(cap))
         inject("connectedDevice", device)
         TAKConnectService.isRunning.set(false)
         service.applySettingsFromCompanion(payload)

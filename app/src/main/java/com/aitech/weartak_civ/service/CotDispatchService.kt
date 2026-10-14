@@ -1065,7 +1065,8 @@ class CotDispatchService : Service() {
         )
 
     // A paired phone stamps watch actions with its own location, so the watch fix is not needed.
-    private suspend fun phoneSuppliesLocation(): Boolean = companionAppAvailable()
+    private suspend fun phoneSuppliesLocation(): Boolean =
+        companionAppAvailable() && capRepo.gateway.session == null
 
     private suspend fun sitxAvailable(): Boolean {
         val enabled = dataRepository.getEnableSitxService.first()
@@ -1073,8 +1074,22 @@ class CotDispatchService : Service() {
         return enabled && connected
     }
 
-    private suspend fun dispatch(message: CotOutboundMessage): Boolean =
-        endpointDispatcher.dispatch(message, endpointAvailability())
+    private suspend fun dispatch(message: CotOutboundMessage): Boolean {
+        if (capRepo.gateway.session != null && companionAppAvailable() &&
+            message.kind in listOf(
+                CotMessageKind.PLI, CotMessageKind.MARKER,
+                CotMessageKind.CHAT, CotMessageKind.EMERGENCY
+            )) {
+            val accepted = capRepo.offerGatewayCot(message.xml)
+            if (!accepted) Log.w(TAG, "Gateway output queue full; CoT not sent")
+            return accepted
+        }
+        if (capRepo.gateway.session != null) {
+            // Non-map traffic keeps its existing independent endpoints, never the gateway.
+            return endpointDispatcher.dispatch(message, endpointAvailability().copy(companion = false))
+        }
+        return endpointDispatcher.dispatch(message, endpointAvailability())
+    }
 
     private suspend fun handleClearMarkerUid(uid: String) {
         if (dataRepository.deleteDroppedPointLocally(uid, bhRepo)) {

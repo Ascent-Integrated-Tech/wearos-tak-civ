@@ -114,6 +114,15 @@ class CompanionAppService : Service() {
     private var observedBloodhoundGeneration = 0L
     private data class BloodhoundFrame(val bytes: ByteArray, val address: String, val generation: Long, val chunkSize: Int)
     private val bloodhoundFrames = kotlinx.coroutines.channels.Channel<BloodhoundFrame>(64)
+    private data class GatewayIncoming(val token: String, val generation: Long, val xml: String)
+    private val gatewayIncoming = kotlinx.coroutines.channels.Channel<GatewayIncoming>(64)
+    private fun gatewayError(token: String?, message: String) {
+        Log.w(TAG, message)
+        if (token == null || token != capRepo.gateway.session) return
+        val json = org.json.JSONObject().put("msgType", "gateway_error")
+            .put("session", token).put("error", message).toString()
+        if (!sendBloodhoundControl(json)) Log.w(TAG, "Gateway error notification queue full")
+    }
     private val bloodhoundSync by lazy {
         CompanionBloodhoundSync(
             activeTarget = {
@@ -159,7 +168,7 @@ class CompanionAppService : Service() {
             bloodhoundSync.connectionChanged(false)
             observedBloodhoundGeneration = generation
         }
-        bloodhoundSync.connectionChanged(bloodhoundLinkReady())
+        bloodhoundSync.connectionChanged(bloodhoundLinkReady() && capRepo.gateway.session == null)
     }
 
     @SuppressLint("MissingPermission")
@@ -198,6 +207,12 @@ class CompanionAppService : Service() {
     private fun startBloodhoundSync() {
         serviceScope.launch {
             for (frame in bloodhoundFrames) {
+                if (capRepo.gateway.session != null) {
+                    val message = org.json.JSONObject(frame.bytes.toString(Charsets.UTF_8))
+                    val type = message.optString("msgType")
+                    if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) continue
+                    if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) continue
+                }
                 sendChunkedNotify(
                     frame.bytes, frame.chunkSize, expectedAddress = frame.address,
                     expectedGeneration = frame.generation
@@ -215,6 +230,7 @@ class CompanionAppService : Service() {
             bhRepo.activeUid.collect {
                 bloodhoundSyncMutex.withLock {
                     refreshBloodhoundConnection()
+                    if (capRepo.gateway.session != null) return@withLock
                     bloodhoundSync.localTargetChanged()
                 }
             }
@@ -223,6 +239,7 @@ class CompanionAppService : Service() {
             bhRepo.activeBhItemMap.collect {
                 bloodhoundSyncMutex.withLock {
                     refreshBloodhoundConnection()
+                    if (capRepo.gateway.session != null) return@withLock
                     bloodhoundSync.localTargetChanged()
                 }
             }
@@ -232,6 +249,7 @@ class CompanionAppService : Service() {
                 delay(1_000L)
                 bloodhoundSyncMutex.withLock {
                     refreshBloodhoundConnection()
+                    if (capRepo.gateway.session != null) return@withLock
                     bloodhoundSync.checkTimeouts()
                 }
             }
@@ -240,6 +258,12 @@ class CompanionAppService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun sendBloodhoundControl(json: String): Boolean {
+        if (capRepo.gateway.session != null) {
+            val message = org.json.JSONObject(json)
+            val type = message.optString("msgType")
+            if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return false
+            if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) return false
+        }
         if (!bloodhoundLinkReady()) return false
         val address = connectedDevice?.address ?: return false
         val generation = bloodhoundConnectionGeneration.get()
@@ -324,7 +348,7 @@ class CompanionAppService : Service() {
     private fun forceBleReset(why: String) {
         Log.w(TAG, "forceBleReset: $why")
         bloodhoundConnectionGeneration.incrementAndGet()
-        rxBuf.setLength(0)
+        rxBuf.clear()
 
         // Drop state
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
@@ -561,6 +585,39 @@ class CompanionAppService : Service() {
     @SuppressLint("MissingPermission")
     private fun startBleOutboundCollector() {
         serviceScope.launch {
+            for (frame in gatewayIncoming) {
+                if (frame.token != capRepo.gateway.session ||
+                    frame.generation != bloodhoundConnectionGeneration.get()) continue
+                try {
+                    receiveGatewayMap(frame.xml, frame.token, frame.generation)
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    gatewayError(frame.token, "Gateway import failed: ${error.message}")
+                }
+            }
+        }
+        serviceScope.launch {
+            for ((token, xml) in capRepo.gatewayCotEvents) {
+                if (token != capRepo.gateway.session) continue
+                val deadline = System.currentTimeMillis() + 10_000L
+                while (token == capRepo.gateway.session && !capRepo.gateway.ready &&
+                    bloodhoundLinkReady() && System.currentTimeMillis() < deadline) {
+                    delay(100L)
+                }
+                if (token != capRepo.gateway.session || !capRepo.gateway.ready || !bloodhoundLinkReady()) {
+                    Log.w(TAG, "Gateway CoT not sent because session negotiation did not complete")
+                    continue
+                }
+                try {
+                    if (!sendBloodhoundControl(capRepo.gateway.envelope(xml))) {
+                        Log.w(TAG, "Gateway notification queue full; CoT dropped")
+                    }
+                } catch (error: RuntimeException) {
+                    Log.w(TAG, "Unsupported gateway outbound CoT", error)
+                }
+            }
+        }
+        serviceScope.launch {
             capRepo.outboundBleCotEvents.collect { event ->
                 if (!capRepo.companionAppReady.value) {
                     Log.i(TAG, "Companion not ready; queueing BLE event $event")
@@ -618,6 +675,61 @@ class CompanionAppService : Service() {
         }
     }
 
+    internal suspend fun receiveGatewayMap(xml: String, token: String, generation: Long) {
+        if (!capRepo.gateway.ready || token != capRepo.gateway.session ||
+            generation != bloodhoundConnectionGeneration.get()) return
+        require(com.aitech.weartak_civ.cot.CompanionGatewaySession.supported(xml)) { "Unsupported gateway CoT" }
+        val identity = repo.snapshotSystem()
+        if (token != capRepo.gateway.session || generation != bloodhoundConnectionGeneration.get()) return
+        val position = CotMessageParser.parseUserPositionOrNull(xml)
+        if (position != null) {
+            if (position.uid != identity.deviceId &&
+                capRepo.gateway.acceptEvent(position.uid, position.time))
+                repo.applyReceivedUserEvent(position, "Gateway ATAK", "companion-gateway")
+            return
+        }
+        if (CotMessageParser.isChatMessage(xml)) {
+            val rooms = CotMessageParser.parseChatRooms(
+                xml, identity.deviceId, identity.callsign, "companion-gateway"
+            )
+            if (rooms.isNotEmpty()) {
+                val uid = CotMessageParser.eventUidOrNull(xml)
+                    ?: throw IllegalArgumentException("Gateway chat UID missing")
+                val time = CotMessageParser.eventTimeOrNull(xml)
+                    ?: throw IllegalArgumentException("Gateway chat time invalid")
+                if (capRepo.gateway.acceptEvent(uid, time)) {
+                    org.greenrobot.eventbus.EventBus.getDefault().post(
+                        com.aitech.weartak_civ.events.TakChatEvent(
+                            rawXml = xml,
+                            sourceServerId = "companion-gateway",
+                            receivedAt = System.currentTimeMillis(),
+                            parsedRooms = rooms
+                        )
+                    )
+                }
+            }
+            return
+        }
+        val emergency = CotMessageParser.parseEmergencyOrNull(xml)
+        if (emergency != null) {
+            if (!emergency.isFrom(identity.deviceId) &&
+                capRepo.gateway.acceptEvent(emergency.uid, emergency.time)) {
+                bhRepo.applyEmergencyEvent(
+                    event = emergency,
+                    server = "Gateway ATAK",
+                    sourceServerId = "companion-gateway",
+                    receivedAt = System.currentTimeMillis(),
+                    deviceUid = identity.deviceId
+                )
+            }
+            return
+        }
+        val marker = CotMessageParser.parseMarkerOrNull(xml)
+            ?: throw IllegalArgumentException("Unsupported gateway map CoT")
+        if (capRepo.gateway.acceptEvent(marker.uid, marker.time))
+            repo.receiveMarkerEvent(marker, bhRepo, "Gateway ATAK", "companion-gateway")
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "CompanionAppService onStartCommand()")
         // TODO: handle explicit ACTION_* if you use start/stop intents
@@ -637,6 +749,7 @@ class CompanionAppService : Service() {
 
         // 2) Stop outbound work
         bloodhoundFrames.close()
+        gatewayIncoming.close()
         serviceJob.cancel()
 
         // 3) Stop bond monitoring, advertising + close the server + force disconnect
@@ -817,7 +930,7 @@ class CompanionAppService : Service() {
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
                 bloodhoundConnectionGeneration.incrementAndGet()
-                rxBuf.setLength(0)
+                rxBuf.clear()
                 activeAddr = null
                 connectedDevice = null
                 resetNegotiatedMtu()
@@ -842,7 +955,7 @@ class CompanionAppService : Service() {
                     activeAddr = device.address
                     connectedDevice = device
                     bloodhoundConnectionGeneration.incrementAndGet()
-                    rxBuf.setLength(0)
+                    rxBuf.clear()
 
                     // reset per-session flags
                     negotiatedMtu = DEFAULT_ATT_MTU
@@ -863,7 +976,7 @@ class CompanionAppService : Service() {
 
                     Log.d(TAG, "Active device disconnected: ${device.address}")
                     bloodhoundConnectionGeneration.incrementAndGet()
-                    rxBuf.setLength(0)
+                    rxBuf.clear()
                     activeAddr = null
                     connectedDevice = null
 
@@ -933,22 +1046,12 @@ class CompanionAppService : Service() {
                 return
             }
 
-            val chunk = value.toString(Charsets.UTF_8)
             Log.d(TAG, "RX from companion chunk bytes=${value.size}")
-
-            rxBuf.append(chunk)
-
-            // 1) Process newline-delimited frames
-            while (true) {
-                val idx = rxBuf.indexOf("\n")
-                if (idx < 0) break
-
-                val line = rxBuf.substring(0, idx).trim()
-                rxBuf.delete(0, idx + 1)
-
-                if (line.isNotEmpty()) {
-                    handleCompanionLine(line)
-                }
+            try {
+                for (line in rxBuf.accept(value)) handleCompanionLine(line)
+            } catch (error: IllegalStateException) {
+                gatewayError(capRepo.gateway.session, error.message ?: "Invalid BLE frame")
+                forceBleReset("oversized BLE JSON frame")
             }
 
         }
@@ -1084,6 +1187,10 @@ class CompanionAppService : Service() {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendJsonToCompanion(json: String) {
+        if (capRepo.gateway.session != null) {
+            Log.i(TAG, "Suppressed legacy companion output during Gateway session")
+            return
+        }
         if (!capRepo.companionAppReady.value) {
             Log.d(TAG, "Companion not ready (state=${capRepo.bleConnectionState.value}); dropping JSON")
             return
@@ -1165,6 +1272,12 @@ class CompanionAppService : Service() {
         expectedAddress: String? = null,
         expectedGeneration: Long? = null
     ) {
+        if (capRepo.gateway.session != null) {
+            val message = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
+            val type = message.optString("msgType")
+            if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return
+            if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) return
+        }
         val device = connectedDevice ?: run {
             Log.d(TAG, "sendChunkedNotify: no connectedDevice")
             return
@@ -1180,8 +1293,14 @@ class CompanionAppService : Service() {
 
         // Prevent interleaving chunks from multiple messages
         notifyMutex.withLock {
+            val message = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
+            val type = message.optString("msgType")
+            val gatewayToken = if (type.startsWith("gateway_")) message.optString("session") else null
+            if (capRepo.gateway.session != null &&
+                type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return
             var offset = 0
             while (offset < bytes.size) {
+                if (gatewayToken != null && gatewayToken != capRepo.gateway.session) return
                 if (expectedAddress != null &&
                     (device.address != expectedAddress || connectedDevice != device || !bloodhoundLinkReady() ||
                         bloodhoundConnectionGeneration.get() != expectedGeneration)
@@ -1217,9 +1336,10 @@ class CompanionAppService : Service() {
 
         Log.d(TAG, "sendChunkedNotify: sent ${bytes.size} bytes in chunks (maxPayload=$maxPayload)")
     }
-    private val rxBuf = StringBuilder(4096)
+    private val rxBuf = com.aitech.weartak_civ.cot.CompanionJsonFramer()
 
     suspend fun applySettingsFromCompanion(payload: CompanionAppRepository.SetSettingsPayload) {
+        check(capRepo.gateway.session == null) { "Profile writes forbidden in gateway session" }
         TakServerP12Validator.validate(payload.takServerList)
         require(payload.reportIntSecs == null || payload.reportIntSecs > 0) {
             "Reporting interval must be positive"
@@ -1320,6 +1440,37 @@ class CompanionAppService : Service() {
 
         try {
             val base = gson.fromJson(json, CompanionAppRepository.EnvelopeBase::class.java)
+            if (base.type == "gateway_hello") {
+                require(bloodhoundLinkReady()) { "Gateway requires bonded ready transport" }
+                val ack = capRepo.gateway.negotiate(org.json.JSONObject(json))
+                serviceScope.launch {
+                    bloodhoundSyncMutex.withLock { refreshBloodhoundConnection() }
+                    val sys = repo.snapshotSystem()
+                    if (capRepo.gateway.session != ack.getString("session") || !bloodhoundLinkReady()) return@launch
+                    ack.put("uid", sys.deviceId).put("callsign", sys.callsign)
+                        .put("team", sys.team).put("role", sys.role)
+                    if (!sendBloodhoundControl(ack.toString())) {
+                        capRepo.gateway.reset()
+                        bloodhoundSyncMutex.withLock { refreshBloodhoundConnection() }
+                        Log.w(TAG, "Gateway negotiation acknowledgement queue full")
+                    } else if (!capRepo.gateway.confirm(ack.getString("session"))) {
+                        Log.w(TAG, "Discarding acknowledgement for ended gateway session")
+                    }
+                }
+                return
+            }
+            if (base.type == "gateway_cot") {
+                val token = capRepo.gateway.session
+                val xml = capRepo.gateway.accepts(org.json.JSONObject(json))
+                val generation = bloodhoundConnectionGeneration.get()
+                if (token == null || !gatewayIncoming.trySend(GatewayIncoming(token, generation, xml)).isSuccess)
+                    gatewayError(token, "Gateway import queue full (64)")
+                return
+            }
+            if (capRepo.gateway.session != null) {
+                Log.w(TAG, "Gateway rejected non-map/profile command: ${base.type}")
+                return
+            }
 
             when (base.type) {
                 "bloodhound_control", "bloodhound_control_result" -> {
@@ -1507,6 +1658,7 @@ class CompanionAppService : Service() {
 
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to parse RX JSON bytes=${json.toByteArray().size}", t)
+            gatewayError(capRepo.gateway.session, "Gateway receive error: ${t.message}")
         }
     }
 

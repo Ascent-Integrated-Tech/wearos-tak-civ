@@ -98,7 +98,16 @@ class CompanionAppRepository(private val context: Context) {
             )
 
     fun updateBleConnectionState(state: BleConnectionState) {
+        if (state != BleConnectionState.SERVICES_READY) gateway.reset()
         _bleConnectionState.value = state
+    }
+
+    val gateway = com.aitech.weartak_civ.cot.CompanionGatewaySession()
+    val gatewayCotEvents = kotlinx.coroutines.channels.Channel<Pair<String, String>>(64)
+
+    fun offerGatewayCot(xml: String): Boolean {
+        val token = gateway.session ?: return false
+        return gatewayCotEvents.trySend(token to xml).isSuccess
     }
 
     data class Envelope<T>(

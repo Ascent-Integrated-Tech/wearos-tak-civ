@@ -536,6 +536,15 @@ use the phone uplink only; the phone handles onward TAK, SITX, and multicast del
 The watch resumes its directly configured routes when the companion session disconnects.
 The connection complication reports **Phone uplink active** while that route is in use.
 
+The phone's Multiwatch Gateway uses a transient, session-qualified BLE negotiation; it
+does not add a watch mode selector or settings UI. During that session the watch keeps
+its own UID, callsign, team, role, report interval, and server/P12 configuration and does
+not accept phone profile writes. Gateway CoT is limited to supported map points, user
+positions, emergency/cancellation events, and GeoChat. Incoming chats are checked against
+the watch's own UID/callsign and explicit recipients; unsupported CoT and profile/control
+messages are rejected. The Gateway session and duplicate-event ledger clear when BLE is
+no longer services-ready, after which the existing directly configured routes resume.
+
 `WearTakApplication` initializes shared repositories and the CEP/plugin infrastructure. `DataRepository` is the main persistent state and settings hub, based on DataStore and Kotlin Flows. Newer components use Flow/StateFlow for reactive updates; some existing components communicate through EventBus.
 
 The important runtime path is:

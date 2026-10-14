@@ -67,6 +67,7 @@ class InteractionIdentityPliTest {
             realRepo.snapshotInteractionPli(firstArg())
         }
         val companion = mockk<CompanionAppRepository>()
+        every { companion.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
         every { companion.companionAppReady } returns MutableStateFlow(false)
         val sent = LinkedBlockingQueue<CotOutboundMessage>()
         val dispatcher = mockk<CotEndpointDispatcher>()
