@@ -6,6 +6,7 @@ internal enum class BuiltInPlugin {
     COMMANDS,
     DITTO,
     EVERYWHERE_COMMS,
+    GOTENNA,
     SOMEWEAR_LABS,
 }
 

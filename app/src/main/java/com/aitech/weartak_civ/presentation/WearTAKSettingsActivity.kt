@@ -2782,6 +2782,7 @@ fun WearTAKSettingsNav(
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, stringResource(R.string.chat_commands)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DITTO, stringResource(R.string.ditto)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.EVERYWHERE_COMMS, stringResource(R.string.everywhere_comms)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.GOTENNA, stringResource(R.string.gotenna)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.SOMEWEAR_LABS, stringResource(R.string.somewear_labs)),
                 ) + pluginList.map { PluginMenuEntry.Installed(it) }
             ).alphabetizedPluginEntries()
@@ -2840,7 +2841,7 @@ fun WearTAKSettingsNav(
                                         onClick = { navController.navigate("ditto_pdl") }
                                     )
                                 }
-                                BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.SOMEWEAR_LABS -> {
+                                BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.GOTENNA, BuiltInPlugin.SOMEWEAR_LABS -> {
                                     WearTAKSplitToggleChip(
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
