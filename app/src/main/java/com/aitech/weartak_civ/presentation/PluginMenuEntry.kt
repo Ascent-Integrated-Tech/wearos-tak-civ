@@ -4,8 +4,11 @@ import com.aitech.weartak_civ.integration.plugin.PluginUI
 
 internal enum class BuiltInPlugin {
     COMMANDS,
+    CRM,
+    DART,
     DITTO,
     EVERYWHERE_COMMS,
+    FALCON,
     GOTENNA,
     SENSOR_MANAGER,
     SOMEWEAR_LABS,

@@ -17,10 +17,13 @@ class PluginMenuEntryTest {
             PluginMenuEntry.BuiltIn(BuiltInPlugin.GOTENNA, "GoTenna"),
             PluginMenuEntry.BuiltIn(BuiltInPlugin.SENSOR_MANAGER, "Sensor Manager"),
             PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, "Commands"),
+            PluginMenuEntry.BuiltIn(BuiltInPlugin.FALCON, "FALCON"),
+            PluginMenuEntry.BuiltIn(BuiltInPlugin.DART, "DART"),
+            PluginMenuEntry.BuiltIn(BuiltInPlugin.CRM, "CRM"),
         )
 
         assertEquals(
-            listOf("alpha", "Commands", "Ditto", "Everywhere Comms", "GoTenna", "Sensor Manager", "Somewear Labs", "zulu"),
+            listOf("alpha", "Commands", "CRM", "DART", "Ditto", "Everywhere Comms", "FALCON", "GoTenna", "Sensor Manager", "Somewear Labs", "zulu"),
             entries.alphabetizedPluginEntries().map { it.title },
         )
         assertEquals("Somewear Labs", entries.first().title)
