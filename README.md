@@ -229,8 +229,10 @@ This fallback does not change the CoT stream or enrollment connection. A Data Sy
 Username/password enrollment uses HTTPS port **8446** (`tls/config`, then
 `tls/signClient/v2`) with normal platform certificate and hostname validation.
 Configuration failures stop enrollment before CSR generation/signing. Signing
-responses may be JSON or XML with a required `signedCert` and optional numbered
-`caN` certificates; chains are leaf-first, then CAs in numeric order.
+responses may be JSON or XML with a required `signedCert`, OpenTAKServer's optional
+unnumbered `ca`, and optional numbered `caN` certificates (Base64 DER or PEM).
+Authorities are retained as trusted entries; chains are leaf-first, then `ca`,
+then numbered CAs in numeric order. Malformed nonblank CA values are rejected.
 Registration errors identify the failed stage and distinguish HTTP 401
 authentication rejection, other HTTP statuses (including 403), TLS, connectivity,
 and invalid certificate data. Retry clears the previous error for that server.
