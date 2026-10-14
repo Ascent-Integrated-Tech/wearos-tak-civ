@@ -139,7 +139,7 @@ object CotMessageParser {
             type == "a-f-G-E" || type.startsWith("a-f-G-E-")
 
     fun isMarkerType(type: String): Boolean =
-        MarkerType.entries.any { it.type == type } || type == "b-m-p-s-p-i"
+        MarkerType.entries.any { it.type == type } || type == "b-m-p-s-p-i" || type == "a-u-A-M-F-Q"
 
     fun eventTypeOrNull(rawXml: String): String? = eventAttribute(rawXml, "type")
 

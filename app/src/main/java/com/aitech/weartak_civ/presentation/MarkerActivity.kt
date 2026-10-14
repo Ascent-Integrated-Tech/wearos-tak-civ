@@ -899,6 +899,7 @@ fun markerIconFromString(markerType: String): Painter {
         MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral)
         MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral)
         "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
+        "a-u-A-M-F-Q" -> painterResource(R.drawable.ic_track_uas)
         else ->  //TODO: Change to error icon
             painterResource(R.drawable.unknown)
     }
@@ -912,6 +913,7 @@ fun markerTextFromString(markerType: String): String {
         MarkerType.FRIENDLY.type -> "Friendly"
         MarkerType.HOSTILE.type -> "Hostile"
         MarkerType.NEUTRAL.type -> "Neutral"
+        "a-u-A-M-F-Q" -> "UAV"
         else -> "ERROR"
     }
     return markerString
