@@ -27,6 +27,7 @@ class CompanionBloodhoundCollectorsTest {
         val connection = MutableStateFlow(CompanionAppRepository.BleConnectionState.NOT_CONNECTED)
         val repository = mockk<BloodhoundRepository>()
         val companion = mockk<CompanionAppRepository>()
+        every { companion.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
         val sync = mockk<CompanionBloodhoundSync>(relaxed = true)
         every { repository.activeUid } returns activeUid
         every { repository.activeBhItemMap } returns activeItem

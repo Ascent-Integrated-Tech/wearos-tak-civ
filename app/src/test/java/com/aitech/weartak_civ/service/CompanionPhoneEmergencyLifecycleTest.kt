@@ -85,6 +85,7 @@ class CompanionPhoneEmergencyLifecycleTest {
         every { device.address } returns "AA:BB"
         every { device.bondState } returns BluetoothDevice.BOND_BONDED
         val capRepo = mockk<CompanionAppRepository>(relaxed = true)
+        every { capRepo.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
         inject(service, "capRepo\$delegate", lazyOf(capRepo))
         inject(service, "activeAddr", "AA:BB")
         inject(service, "connectedDevice", device)
@@ -128,6 +129,9 @@ class CompanionPhoneEmergencyLifecycleTest {
             jobs.add(job)
             inject(it, "serviceScope", CoroutineScope(job + StandardTestDispatcher(scheduler)))
             inject(it, "bhRepo\$delegate", lazyOf(repository))
+            val cap = mockk<CompanionAppRepository>(relaxed = true)
+            every { cap.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
+            inject(it, "capRepo\$delegate", lazyOf(cap))
         }
     }
 
