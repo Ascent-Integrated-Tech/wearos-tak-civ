@@ -67,6 +67,7 @@ import com.aitech.weartak_civ.presentation.MapActivity.Constants.maroon
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.orange
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.purple
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.teal
+
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.provider.RepoLocationProvider
 import kotlinx.coroutines.delay
@@ -199,6 +200,8 @@ import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
+import com.aitech.weartak_civ.presentation.viewmodel.RoutePointDetails
+import com.aitech.weartak_civ.presentation.viewmodel.RoutePointsDetailsView
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
@@ -1022,6 +1025,7 @@ fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
 fun RoutesLayer(
     routes: List<RouteCollection>,
     camera: CameraState,
+    onPointClick: (String, Int) -> Unit
 ) {
     if (routes.isEmpty()) return
     val featureCollection = remember(routes) {
@@ -1115,6 +1119,30 @@ fun RoutesLayer(
         } else {
             const(0.dp)
         },
+        // Detect when a route point is tapped
+        onClick = { features ->
+
+            // Get the clicked route point
+            val feature = features.firstOrNull()
+                ?: return@CircleLayer ClickResult.Pass
+
+            // Get the route UID
+            val routeUid = feature.getStringProperty("routeUid").orEmpty()
+
+            // Get the point index from the GeoJSON properties
+            val pointIndex = feature.properties
+                ?.get("pointIndex")
+                ?.toString()
+                ?.toIntOrNull() ?: -1
+
+            // Open the selected point
+            if (routeUid.isNotBlank() && pointIndex >= 0) {
+                onPointClick(routeUid, pointIndex)
+                ClickResult.Consume
+            } else {
+                ClickResult.Pass
+            }
+        }
     )
 }
 
@@ -1817,6 +1845,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     val userLocationState = rememberUserLocationState(locationProvider)
     // Show the coordinate popup for the user location puck
     var showPopup by remember { mutableStateOf(false) }
+    var selectedRoutePoint by remember {mutableStateOf<RoutePointDetails?>(null)}
 
     // Show or hide connected users
     var showUsers by remember { mutableStateOf(mapPreferences.getBoolean(
@@ -2516,7 +2545,51 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
             RoutesLayer(
                 routes = missionMapRoutes,
-                camera = cameraState
+                camera = cameraState,
+
+                // Called when a route point is clicked
+                onPointClick = { routeUid, pointIndex ->
+
+                    // Find the selected route
+                    val route = missionMapRoutes.firstOrNull {
+                        it.uid == routeUid
+                    }
+
+                    // Find the selected point
+                    val point = route?.points?.getOrNull(pointIndex)
+
+                    // Make sure the point has valid coordinates
+                    if (route != null && point?.lat != null && point.lon != null) {
+
+                        // Save the selected point to display its details
+                        val originalRoute = takRoutes.firstOrNull {
+                            it.uid == routeUid
+                        }
+
+                        Log.d(
+                            "RouteSender",
+                            "Route: ${originalRoute?.name}, Sender: ${originalRoute?.sender}"
+                        )
+
+                        selectedRoutePoint = RoutePointDetails(
+                            routeUid = route.uid,
+                            pointIndex = pointIndex,
+                            title = point.pointTitle.orEmpty(),
+                            latitude = point.lat,
+                            longitude = point.lon,
+                            droppedBy = originalRoute?.sender?.let { senderUid ->
+                                receivedUserListSetting.firstOrNull { user ->
+                                    user.uid == senderUid &&
+                                            user.sourceServerId == originalRoute.serverId
+                                }?.title ?: senderUid
+                            },
+                            missionName = originalRoute?.missionName,
+                            serverId = originalRoute?.serverId.orEmpty()
+                        )
+                    }
+                }
+
+
             )
         }
 
@@ -2767,6 +2840,79 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                 },
                 mapVm,
                 takServers = takChannels
+            )
+        }
+        // Show details when a route point is selected
+        // Show details when a route point is selected
+        selectedRoutePoint?.let { point ->
+            RoutePointsDetailsView(
+                pointName = point.title.ifBlank { "Route Point" },
+                latitude = point.latitude,
+                longitude = point.longitude,
+                sender = point.droppedBy,
+                missionName = point.missionName,
+
+                onChat = {
+                    val senderUid = takRoutes
+                        .firstOrNull { it.uid == point.routeUid }
+                        ?.sender
+
+                    val contact = try {
+                        resolveChatContact(
+                            senderUid,
+                            receivedUserListSetting,
+                            MainActivity.device_uid
+                        )
+                    } catch (error: IllegalArgumentException) {
+                        Log.w(TAG, "Cannot open route sender chat", error)
+                        Toast.makeText(
+                            context,
+                            R.string.chat_invalid_contact,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        null
+                    }
+
+                    if (contact != null) {
+                        val intent = Intent(context, ChatActivity::class.java).apply {
+                            putExtra("user_uid", contact.uid)
+                            putExtra("user_callsign", contact.callsign)
+                            putExtra("from_maps", true)
+                        }
+
+                        context.startActivity(intent)
+                        selectedRoutePoint = null
+                    }
+                },
+
+                onBloodhound = {
+                    // Create a unique UID for the selected route point
+                    val pointUid =
+                        "route-point-${point.serverId}-${point.routeUid}-${point.pointIndex}"
+
+                    // Add the route point as a Bloodhound target
+                    bhRepo.addMarkerTarget(
+                        uid = pointUid,
+                        title = point.title.ifBlank { "Route Point" },
+                        markerType = "b-m-p-s-m",
+                        lat = point.latitude,
+                        lon = point.longitude,
+                        time = System.currentTimeMillis()
+                    )
+
+                    // Activate Bloodhound
+                    bhRepo.requestActivateBloodhound(pointUid)
+
+                    // Refresh the Bloodhound complication
+                    requestBloodhoundComplicationUpdate(context)
+
+                    // Close the point details
+                    selectedRoutePoint = null
+                },
+
+                onBack = {
+                    selectedRoutePoint = null
+                }
             )
         }
 

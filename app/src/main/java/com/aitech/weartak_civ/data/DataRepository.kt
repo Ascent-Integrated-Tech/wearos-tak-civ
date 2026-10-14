@@ -277,14 +277,23 @@ class DataRepository(private val context: Context) {
     private val _takChannels = MutableStateFlow<List<TakServerChannels>>(emptyList())
     val takChannels: StateFlow<List<TakServerChannels>> = _takChannels.asStateFlow()
 
+    // Store the missions for each connected TAK Server
+    // Each server has its own mission list and mission states
     private val _takMissions =
         MutableStateFlow<List<TakServerMissions>>(emptyList())
 
+    // Expose mission updates to the rest of the app
+    // Keep the underlying list editable only inside the repository
     val takMissions: StateFlow<List<TakServerMissions>> =
         _takMissions.asStateFlow()
 
+    // Store routes using the server ID and route UID as the key
+    // This keeps routes from different TAK Servers separate
+    // Routes with the same UID on different servers can be stored independently
     private val _takRoutes = MutableStateFlow<Map<Pair<String, String>, TakRoute>>(emptyMap())
 
+    // Expose stored routes as a list for the rest of the app
+    // Convert the internal map into a list whenever routes change
     val takRoutes: StateFlow<List<TakRoute>> =
         _takRoutes
             .map { it.values.toList() }
@@ -293,22 +302,38 @@ class DataRepository(private val context: Context) {
                 started = SharingStarted.Eagerly,
                 initialValue = emptyList()
             )
+
+    // Add a new route or update an existing route
+    // A route is identified by its server ID and UID
     fun upsertTakRoute(route: TakRoute) {
+
+        // Build a unique key for this route on its TAK Server
         val key = route.serverId to route.uid
 
+        // Update the route map with the latest route data
+        // An existing route with the same key will be replaced
+        // Other stored routes will remain unchanged
         _takRoutes.update { current ->
             current + (key to route)
         }
 
+        // Log the stored route information for debugging
         Log.d(
             TAG,
             "Route stored uid=${route.uid} name=${route.name} " +
                     "serverId=${route.serverId} points=${route.points.size}"
         )
     }
+
+    // Remove routes that belong to a specific mission on a specific server
+    // Keep routes from other missions and TAK Servers
     fun removeTakRoutesForMission(serverId: String, missionName: String) {
+
+        // Filter the route map to remove matching mission routes
         _takRoutes.update { routes ->
             routes.filterValues { route ->
+
+                // Remove only routes matching both the server ID and mission name
                 !(route.serverId == serverId && route.missionName == missionName)
             }
         }
@@ -340,14 +365,22 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // Mark a TAK Server's mission list as loading
+    // Keep any missions already stored while the new request runs
     fun updateTakMissionLoading(
         serverId: String,
         serverName: String,
         serverAddress: String
     ) {
+
+        // Update the mission data for the requested server
         _takMissions.update { current ->
+
+            // Find any existing mission data for this server
             val previous = current.firstOrNull { it.serverId == serverId }
 
+            // Create an updated server entry with a loading status
+            // Keep the previous mission list so it does not disappear during refresh
             val updated = TakServerMissions(
                 serverId = serverId,
                 serverName = serverName,
@@ -356,32 +389,51 @@ class DataRepository(private val context: Context) {
                 status = TakMissionStatus.LOADING
             )
 
+            // Replace this server's old entry with the loading entry
+            // Leave all other servers unchanged
             current.filterNot { it.serverId == serverId } + updated
         }
     }
 
+    // Save the latest missions returned by a TAK Server
+    // Keep existing mission states when the same missions are returned again
     fun updateTakMissions(
         serverId: String,
         serverName: String,
         serverAddress: String,
         missions: List<TakMission>
     ) {
+
+        // Update only the mission list belonging to this server
         _takMissions.update { current ->
+
+            // Find previously stored missions for this server
             val previousServer =
                 current.firstOrNull { it.serverId == serverId }
 
+            // Build a state entry for every mission returned by the server
             val missionStates = missions.map { mission ->
+
+                // Check whether this mission was already stored
+                // Match missions by their names within this server
                 val previousState =
                     previousServer
                         ?.missions
                         ?.firstOrNull { it.mission.name == mission.name }
 
                 if (previousState != null) {
+
+                    // Keep the existing mission state
+                    // Replace the mission details with the latest server response
+                    // This preserves fields such as subscription and sync progress
                     previousState.copy(
                         mission = mission,
 
-                    )
+                        )
                 } else {
+
+                    // Create a new state for a mission that was not stored before
+                    // Mark the new mission as ready
                     TakMissionState(
                         mission = mission,
                         status = TakMissionStatus.READY
@@ -389,11 +441,15 @@ class DataRepository(private val context: Context) {
                 }
             }
 
+            // Create the updated mission entry for this TAK Server
             val updated = TakServerMissions(
                 serverId = serverId,
                 serverName = serverName,
                 serverAddress = serverAddress,
                 missions = missionStates,
+
+                // Mark the server as empty when no missions were returned
+                // Otherwise mark its mission list as ready
                 status = if (missionStates.isEmpty()) {
                     TakMissionStatus.EMPTY
                 } else {
@@ -401,20 +457,29 @@ class DataRepository(private val context: Context) {
                 }
             )
 
+            // Replace only this server's mission data
             current.filterNot { it.serverId == serverId } + updated
         }
     }
 
+    // Store an error when the mission list fails to load
+    // Keep previously loaded missions available in the repository
     fun updateTakMissionError(
         serverId: String,
         serverName: String,
         serverAddress: String,
         message: String
     ) {
+
+        // Update the error state for the requested TAK Server
         _takMissions.update { current ->
+
+            // Find the existing server entry if one is available
             val previous =
                 current.firstOrNull { it.serverId == serverId }
 
+            // Create a server entry with the error status and message
+            // Preserve any missions that were already loaded
             val updated = TakServerMissions(
                 serverId = serverId,
                 serverName = serverName,
@@ -424,28 +489,46 @@ class DataRepository(private val context: Context) {
                 errorMessage = message
             )
 
+            // Replace the matching server entry without affecting other servers
             current.filterNot { it.serverId == serverId } + updated
         }
     }
+
+    // Update whether a mission is subscribed or unsubscribed
+    // Only change the mission on the matching TAK Server
     fun setMissionSubscribed(
         serverId: String,
         missionName: String,
         subscribed: Boolean
     ) {
+
+        // Go through the stored TAK Servers
         _takMissions.update { servers ->
             servers.map { server ->
+
+                // Skip servers that do not match the requested server ID
                 if (server.serverId != serverId) {
                     server
                 } else {
+
+                    // Update the mission list for the matching server
                     server.copy(
                         missions = server.missions.map { state ->
+
+                            // Find the mission being subscribed or unsubscribed
                             if (state.mission.name == missionName) {
+
+                                // Save the new subscription value
+                                // Reset the mission status to idle
+                                // Clear any previous error message
                                 state.copy(
                                     subscribed = subscribed,
                                     status = TakMissionStatus.IDLE,
                                     errorMessage = null
                                 )
                             } else {
+
+                                // Leave other missions unchanged
                                 state
                             }
                         }
@@ -455,18 +538,29 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // Mark a mission as actively syncing
+    // Clear its previous error when a new sync starts
     fun setMissionSyncing(
         serverId: String,
         missionName: String
     ) {
+
+        // Find the matching server and mission
         _takMissions.update { servers ->
             servers.map { server ->
+
+                // Do not change mission states on other servers
                 if (server.serverId != serverId) {
                     server
                 } else {
                     server.copy(
                         missions = server.missions.map { state ->
+
+                            // Update only the requested mission
                             if (state.mission.name == missionName) {
+
+                                // Mark the mission as syncing
+                                // Remove any error from an earlier attempt
                                 state.copy(
                                     status = TakMissionStatus.SYNCING,
                                     errorMessage = null
@@ -481,20 +575,33 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // Mark a mission sync as complete
+    // Save when the sync finished and which changes were processed
     fun setMissionSyncComplete(
         serverId: String,
         missionName: String,
         processedChangeKeys: Set<String>,
         syncTime: Long
     ) {
+
+        // Update the matching mission on the requested server
         _takMissions.update { servers ->
             servers.map { server ->
+
+                // Leave other TAK Servers unchanged
                 if (server.serverId != serverId) {
                     server
                 } else {
                     server.copy(
                         missions = server.missions.map { state ->
+
+                            // Find the mission that finished syncing
                             if (state.mission.name == missionName) {
+
+                                // Return the mission to idle after syncing
+                                // Record the latest sync time
+                                // Keep track of processed changes for future syncs
+                                // Clear the previous error message
                                 state.copy(
                                     status = TakMissionStatus.IDLE,
                                     lastSyncTime = syncTime,
@@ -511,19 +618,30 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // Mark a mission sync as failed
+    // Save the error so the app can show what went wrong
     fun setMissionSyncError(
         serverId: String,
         missionName: String,
         message: String
     ) {
+
+        // Find the matching server and mission
         _takMissions.update { servers ->
             servers.map { server ->
+
+                // Skip mission lists belonging to other servers
                 if (server.serverId != serverId) {
                     server
                 } else {
                     server.copy(
                         missions = server.missions.map { state ->
+
+                            // Update only the mission that failed
                             if (state.mission.name == missionName) {
+
+                                // Set the error status
+                                // Store the message from the failed sync
                                 state.copy(
                                     status = TakMissionStatus.ERROR,
                                     errorMessage = message
@@ -538,9 +656,15 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // Get all subscribed missions for one TAK Server
+    // Only subscribed missions should be included in this result
     fun getSubscribedMissions(
         serverId: String
     ): List<TakMissionState> {
+
+        // Find the matching server
+        // Filter its missions to those marked as subscribed
+        // Return an empty list if the server is not found
         return takMissions.value
             .firstOrNull { it.serverId == serverId }
             ?.missions
@@ -548,33 +672,53 @@ class DataRepository(private val context: Context) {
             .orEmpty()
     }
 
+    // Remove a TAK Server's mission data from the repository
+    // Leave mission data from other servers untouched
     fun removeTakServerMissions(
         serverId: String
     ) {
+
+        // Remove the server entry matching the given ID
         _takMissions.update { current ->
             current.filterNot {
                 it.serverId == serverId
             }
         }
     }
+
+    // Store the information needed to restore a mission subscription
+    // Keep the server ID so missions from different servers stay separate
+    // Save the last sync time and processed changes for future syncs
     data class PersistedMissionSubscription(
         val serverId: String,
         val missionName: String,
         val lastSyncTime: Long? = null,
         val processedChangeKeys: Set<String> = emptySet()
     )
+
+    // DataStore key used to save mission subscriptions
     private val TAK_MISSION_SUBSCRIPTIONS =
         stringPreferencesKey("tak_mission_subscriptions")
+
+    // Define the list type used when converting saved JSON back into objects
     private val missionSubscriptionListType =
         object : TypeToken<List<PersistedMissionSubscription>>() {}.type
 
+    // Read saved mission subscriptions from DataStore
+    // Convert the saved JSON into subscription objects
     val persistedMissionSubscriptions: Flow<List<PersistedMissionSubscription>> =
         context.dataStore.data.map { prefs ->
+
+            // Get the JSON string saved under the mission subscription key
             val json = prefs[TAK_MISSION_SUBSCRIPTIONS]
 
+            // Return an empty list if nothing has been saved
             if (json.isNullOrBlank()) {
                 emptyList()
             } else {
+
+                // Try to convert the JSON into saved mission subscriptions
+                // Return an empty list if the saved data cannot be parsed
                 runCatching {
                     gson.fromJson<List<PersistedMissionSubscription>>(
                         json,
@@ -583,25 +727,38 @@ class DataRepository(private val context: Context) {
                 }.getOrDefault(emptyList())
             }
         }
+
+    // Save the full subscription list to DataStore
+    // Convert the subscription objects into JSON before storing them
     private suspend fun storeMissionSubscriptions(
         subscriptions: List<PersistedMissionSubscription>
     ) {
+
+        // Update the saved mission subscription value
         context.dataStore.edit { prefs ->
             prefs[TAK_MISSION_SUBSCRIPTIONS] =
                 gson.toJson(subscriptions, missionSubscriptionListType)
         }
     }
+
+    // Save a mission subscription so it can be restored later
+    // Avoid adding the same mission twice for the same server
     suspend fun persistMissionSubscribed(
         serverId: String,
         missionName: String
     ) {
+
+        // Read the current saved subscriptions
         val current = persistedMissionSubscriptions.first()
 
+        // Check whether this server and mission combination is already saved
         if (current.none {
                 it.serverId == serverId &&
                         it.missionName == missionName
             }
         ) {
+
+            // Add the new mission subscription to the saved list
             storeMissionSubscriptions(
                 current + PersistedMissionSubscription(
                     serverId = serverId,
@@ -611,12 +768,17 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    // Remove a mission subscription from DataStore
+    // Keep all other saved mission subscriptions
     suspend fun persistMissionUnsubscribed(
         serverId: String,
         missionName: String
     ) {
+
+        // Read the current saved subscriptions
         val current = persistedMissionSubscriptions.first()
 
+        // Remove only the subscription matching this server and mission
         storeMissionSubscriptions(
             current.filterNot {
                 it.serverId == serverId &&
@@ -625,53 +787,80 @@ class DataRepository(private val context: Context) {
         )
     }
 
+    // Save the latest sync progress for a subscribed mission
+    // Keep the last sync time and processed changes between app sessions
     suspend fun persistMissionSyncProgress(
         serverId: String,
         missionName: String,
         lastSyncTime: Long,
         processedChangeKeys: Set<String>
     ) {
+
+        // Read all currently saved mission subscriptions
         val current = persistedMissionSubscriptions.first()
 
+        // Update the saved progress for the matching mission
         val updated = current.map { subscription ->
+
+            // Match both the server ID and mission name
+            // This prevents updating the same mission name on another server
             if (
                 subscription.serverId == serverId &&
                 subscription.missionName == missionName
             ) {
+
+                // Save the new sync time and processed change keys
                 subscription.copy(
                     lastSyncTime = lastSyncTime,
                     processedChangeKeys = processedChangeKeys
                 )
             } else {
+
+                // Keep other saved subscriptions unchanged
                 subscription
             }
         }
 
+        // Write the updated subscription list back to DataStore
         storeMissionSubscriptions(updated)
     }
+
+    // Restore saved mission subscriptions after loading missions from a server
+    // Match saved subscriptions to missions currently available on that server
     suspend fun restorePersistedMissionState(
         serverId: String
     ) {
+
+        // Read saved subscriptions for the requested TAK Server
         val persisted = persistedMissionSubscriptions.first()
             .filter { it.serverId == serverId }
 
+        // Stop if there are no saved subscriptions for this server
         if (persisted.isEmpty()) {
             return
         }
 
+        // Update the in-memory mission states using the saved subscriptions
         _takMissions.update { servers ->
             servers.map { server ->
+
+                // Leave other TAK Servers unchanged
                 if (server.serverId != serverId) {
                     server
                 } else {
                     server.copy(
                         missions = server.missions.map { state ->
 
+                            // Look for a saved subscription with the same mission name
                             val saved = persisted.firstOrNull {
                                 it.missionName == state.mission.name
                             }
 
                             if (saved != null) {
+
+                                // Restore the subscribed state
+                                // Restore the last sync time and processed changes
+                                // Set the mission to idle and clear any previous error
                                 state.copy(
                                     subscribed = true,
                                     lastSyncTime = saved.lastSyncTime,
@@ -680,6 +869,8 @@ class DataRepository(private val context: Context) {
                                     errorMessage = null
                                 )
                             } else {
+
+                                // Leave missions without a saved subscription unchanged
                                 state
                             }
                         }

@@ -1079,14 +1079,25 @@ class TAKConnectService: Service() {
             }
         }
 
+
+
+        // Refresh the available Data Sync missions for one TAK Server
+        // Each server has its own mission list so the server ID is used to find the right connection
+        // The refreshed list is saved in the repository for the rest of the app to access
         private suspend fun refreshAvailableMissions(
             serverId: String
         ) {
+            // Find the connection details for the requested server
+            // Stop if the server is no longer available
             val detail = getTakServerDetail(serverId) ?: return
 
             try {
+                // Create the mission API client and request the latest mission list
+                // This gets all missions the connected client is allowed to see
                 val missions = missionApi(detail).getAllMissions()
 
+                // Update the repository with the latest missions
+                // Include server information so missions from different servers stay separate
                 dataRepository.updateTakMissions(
                     serverId = detail.serverId,
                     serverName = detail.name,
@@ -1094,20 +1105,28 @@ class TAKConnectService: Service() {
                     missions = missions
                 )
 
+                // Log how many missions were returned
                 Log.d(
                     TAG,
                     "Mission refresh: found ${missions.size} missions"
                 )
             } catch (error: CancellationException) {
+                // Let coroutine cancellation stop the operation normally
                 throw error
             } catch (error: Exception) {
+                // Log API or connection failures without stopping other server operations
                 Log.e(TAG, "Mission refresh failed for $serverId", error)
             }
         }
 
+        // Load the mission list when the watch connects to a TAK Server
+        // Restore previous mission subscriptions after the list is downloaded
+        // Start syncing subscribed missions so their content stays updated
         private suspend fun loadTakMissions(
             detail: TakServerDetail
         ) {
+            // Tell the repository that this server's missions are loading
+            // This allows the app to track the loading state
             dataRepository.updateTakMissionLoading(
                 serverId = detail.serverId,
                 serverName = detail.name,
@@ -1121,6 +1140,8 @@ class TAKConnectService: Service() {
             )
 
             try {
+                // Log the server and client details used during mission requests
+                // Useful when checking which device is requesting mission access
                 Log.d(
                     TAG,
                     "MISSION AUTH " +
@@ -1129,25 +1150,28 @@ class TAKConnectService: Service() {
                             "clientUid=${MainActivity.device_uid}"
                 )
 
+                // Request the available Data Sync missions from the server
+                // The response is converted into mission models by the API layer
                 val missions = missionApi(detail).getAllMissions()
 
+                // Save the mission models under the correct TAK Server
+                // This makes the mission list available to other parts of the app
                 dataRepository.updateTakMissions(
                     serverId = detail.serverId,
                     serverName = detail.name,
                     serverAddress = detail.address,
                     missions = missions
                 )
+
+                // Restore any mission subscriptions saved from an earlier connection
+                // This lets the watch remember which missions were joined previously
                 dataRepository.restorePersistedMissionState(
                     serverId = detail.serverId
                 )
+
+                // Start checking subscribed missions for new changes and CoT content
                 syncSubscribedMissions(detail.serverId)
-//            // TEMP: auto-subscribe to test2 for backend testing
-//                if (detail.address == "tak.weartak.com") {
-//                    subscribeToTakMission(
-//                        serverId = detail.serverId,
-//                        missionName = "test2"
-//                    )
-//                }
+
                 Log.i(
                     TAG,
                     "Mission load complete serverId=${detail.serverId} " +
@@ -1155,8 +1179,10 @@ class TAKConnectService: Service() {
                 )
 
             } catch (error: CancellationException) {
+                // Preserve normal cancellation behavior
                 throw error
             } catch (error: Exception) {
+                // Store the failure so the mission state can show what went wrong
                 dataRepository.updateTakMissionError(
                     serverId = detail.serverId,
                     serverName = detail.name,
@@ -1172,15 +1198,23 @@ class TAKConnectService: Service() {
             }
         }
 
+
+        // Join a Data Sync mission on a specific TAK Server
+        // The watch must subscribe before treating the mission as joined locally
+        // After subscribing, the mission is synced to retrieve its available content
         fun subscribeToTakMission(
             serverId: String,
             missionName: String
         ) {
+            // Find the TAK Server that owns the mission
+            // Stop if the server connection details are missing
             val detail = getTakServerDetail(serverId) ?: run {
                 Log.e(TAG, "TAK Server not found for serverId=$serverId")
                 return
             }
 
+            // Run the subscription request in the connection coroutine scope
+            // This avoids blocking the caller while the network request runs
             connectionScope.launch {
                 try {
                     Log.i(
@@ -1188,16 +1222,23 @@ class TAKConnectService: Service() {
                         "Mission subscribe starting serverId=$serverId mission=$missionName"
                     )
 
+                    // Send a subscription request to the TAK Server
+                    // The device UID identifies which client is joining the mission
                     missionApi(detail).subscribeToMission(
                         missionName = missionName,
                         clientUid = MainActivity.device_uid
                     )
 
+                    // Mark the mission as subscribed in the current repository state
+                    // Other parts of the app can use this to determine joined missions
                     dataRepository.setMissionSubscribed(
                         serverId = serverId,
                         missionName = missionName,
                         subscribed = true
                     )
+
+                    // Save the subscription so it can be restored after reconnecting
+                    // Keep the subscription tied to its original TAK Server
                     dataRepository.persistMissionSubscribed(
                         serverId = serverId,
                         missionName = missionName
@@ -1208,14 +1249,18 @@ class TAKConnectService: Service() {
                         "Mission subscribe complete serverId=$serverId mission=$missionName"
                     )
 
+                    // Immediately check the joined mission for content
+                    // This allows routes and other CoT events to be retrieved after joining
                     syncTakMission(
                         serverId = serverId,
                         missionName = missionName
                     )
 
                 } catch (error: CancellationException) {
+                    // Allow cancellation to stop the coroutine
                     throw error
                 } catch (error: Exception) {
+                    // Save the error without marking a failed subscription as successful
                     dataRepository.setMissionSyncError(
                         serverId = serverId,
                         missionName = missionName,
@@ -1231,31 +1276,45 @@ class TAKConnectService: Service() {
             }
         }
 
+        // Leave a Data Sync mission on a specific TAK Server
+        // Remove locally stored routes associated with the mission
+        // Clear the saved subscription so the mission is not automatically restored
         fun unsubscribeFromTakMission(
             serverId: String,
             missionName: String
         ) {
+            // Find the TAK Server that owns the mission
             val detail = getTakServerDetail(serverId) ?: run {
                 Log.e(TAG, "TAK Server not found for serverId=$serverId")
                 return
             }
 
+            // Run the unsubscribe request without blocking the caller
             connectionScope.launch {
                 try {
+                    // Tell the TAK Server that this device is leaving the mission
+                    // The client UID identifies which subscription should be removed
                     missionApi(detail).unsubscribeFromMission(
                         missionName = missionName,
                         clientUid = MainActivity.device_uid
                     )
+
+                    // Remove routes associated with the mission from local storage
+                    // Include the server ID so routes on other servers are not affected
                     dataRepository.removeTakRoutesForMission(
                         serverId = serverId,
                         missionName = missionName
                     )
 
+                    // Update the local mission state to show that the device has left
                     dataRepository.setMissionSubscribed(
                         serverId = serverId,
                         missionName = missionName,
                         subscribed = false
                     )
+
+                    // Remove the saved subscription from persistent storage
+                    // This prevents the mission from being restored as joined later
                     dataRepository.persistMissionUnsubscribed(
                         serverId = serverId,
                         missionName = missionName
@@ -1267,8 +1326,10 @@ class TAKConnectService: Service() {
                     )
 
                 } catch (error: CancellationException) {
+                    // Allow cancellation to stop the coroutine
                     throw error
                 } catch (error: Exception) {
+                    // Record the error if the server does not complete the unsubscribe request
                     dataRepository.setMissionSyncError(
                         serverId = serverId,
                         missionName = missionName,
@@ -1285,15 +1346,27 @@ class TAKConnectService: Service() {
         }
 
 
+        // Keep subscribed missions updated while the server connection is active
+        // Check for newly available missions and updates to existing missions
+        // Each server is handled separately to prevent mixing mission content
         private suspend fun syncSubscribedMissions(
             serverId: String
         ) {
+            // Continue syncing until the coroutine is cancelled
+            // Stopping the connection coroutine also stops this polling loop
             while (currentCoroutineContext().isActive) {
-                // Refresh available missions, including newly created ones
+
+                // Refresh the available mission list from this TAK Server
+                // This allows newly created missions to appear in the repository
                 refreshAvailableMissions(serverId)
+
+                // Find missions currently marked as subscribed on this server
+                // Unsubscribed missions do not need their content downloaded
                 val subscribedMissions =
                     dataRepository.getSubscribedMissions(serverId)
 
+                // Check each subscribed mission for updated content
+                // The mission name identifies which Data Sync mission to request
                 subscribedMissions.forEach { state ->
                     syncTakMission(
                         serverId = serverId,
@@ -1301,48 +1374,96 @@ class TAKConnectService: Service() {
                     )
                 }
 
+                // Wait 20 seconds before starting the next check
+                // This prevents the app from constantly sending mission API requests
                 delay(20_000L)
             }
         }
 
+
+        // Sync the content of one subscribed Data Sync mission
+        // Check the server for changes since previous syncs
+        // Download CoT when new changes exist or the mission has no stored routes
+        // Send downloaded events through the existing CoT processing system
         private suspend fun syncTakMission(
             serverId: String,
             missionName: String
         ) {
+            // Find the server connection used for this mission
+            // Stop if the server details are unavailable
             val detail = getTakServerDetail(serverId) ?: run {
                 Log.e(TAG, "TAK Server not found for serverId=$serverId")
                 return
             }
 
+            // Find the mission in the repository under the correct server
+            // Mission names alone are not enough because different servers may use the same name
+            // Stop if the requested mission is missing from the repository
             val state = dataRepository.takMissions.value
                 .firstOrNull { it.serverId == serverId }
                 ?.missions
                 ?.firstOrNull { it.mission.name == missionName }
                 ?: return
 
-
-
+            // Only sync missions that the watch has joined
+            // This prevents downloading content for missions that are not subscribed
             if (!state.subscribed) return
 
+            // Mark the mission as syncing before making network requests
+            // The repository can use this state to show that an update is in progress
             dataRepository.setMissionSyncing(
                 serverId = serverId,
                 missionName = missionName
             )
 
             try {
+                // Create the mission API client for the matching TAK Server
+                // The client uses the server's existing TLS configuration
                 val api = missionApi(detail)
-                val changes = api.getMissionChanges(missionName)
 
+                // Request the mission change history from the TAK Server
+                // Changes can indicate that mission content was added or updated
+                val changes = api.getMissionChanges(missionName)
+                val creatorByRouteUid = changes
+                    .filter {
+                        it.type == "ADD_CONTENT" &&
+                                !it.contentUid.isNullOrBlank() &&
+                                !it.creatorUid.isNullOrBlank()
+                    }
+                    .associate {
+                        it.contentUid!! to it.creatorUid!!
+                    }
+                val routeSenders = changes
+                    .filter { it.type == "ADD_CONTENT" }
+                    .mapNotNull { change ->
+                        val routeUid = change.contentUid
+                        val senderUid = change.creatorUid
+
+                        if (routeUid != null && senderUid != null) {
+                            routeUid to senderUid
+                        } else {
+                            null
+                        }
+                    }
+                    .toMap()
+
+                // Compare the returned changes against previously processed changes
+                // Each change has a key based on its type, content UID, and timestamp
+                // Only changes without a matching saved key are treated as new
                 val newChanges = changes.filter {
                     it.changeKey() !in state.processedChangeKeys
                 }
 
+                // Log the total number of changes and how many are new
                 Log.i(
                     TAG,
                     "Mission sync serverId=$serverId mission=$missionName " +
                             "changes=${changes.size} new=${newChanges.size}"
                 )
 
+                // Log the routes currently stored in the repository
+                // Useful for checking whether downloaded routes were saved correctly
+                // Also shows whether each route has a mission name associated with it
                 Log.d(
                     TAG,
                     "Stored routes for mission=$missionName: " +
@@ -1350,58 +1471,117 @@ class TAKConnectService: Service() {
                                 "${it.name} uid=${it.uid} mission=${it.missionName}"
                             }
                 )
-                // Download existing content on the first sync,
-                // or whenever the mission has new changes.
+
+                // Decide whether the mission's CoT content needs to be downloaded
+                // Download if no route is stored for this server and mission
+                // Also download if the server reports any unprocessed changes
+                // Otherwise skip downloading the same mission content again
                 if (
                     dataRepository.takRoutes.value.none {
                         it.serverId == serverId && it.missionName == missionName
-                    } || newChanges.isNotEmpty()) {
+                    } || newChanges.isNotEmpty()
+                ) {
+
+                    // Request the current CoT content from the Data Sync mission
+                    // The response can contain multiple CoT events in one XML payload
                     val cot = api.getMissionCot(missionName)
 
+                    // Log the downloaded payload size for debugging
                     Log.i(
                         TAG,
                         "Mission content downloaded serverId=$serverId " +
                                 "mission=$missionName bytes=${cot.toByteArray().size}"
                     )
 
+                    // Separate the mission XML into individual CoT event messages
+                    // Each event needs to be processed on its own by the CoT ingestor
                     val events = extractMissionCotEvents(cot)
 
+                    // Log how many CoT events were extracted from the mission
                     Log.d(
                         TAG,
                         "Mission CoT events found=${events.size}"
                     )
 
+                    // Process every CoT event downloaded from the mission
+                    // This reuses the same parser used for live TAK Server messages
                     for (eventXml in events) {
+
+                        // Wrap the event with information about its source server
+                        // Include the server address and the time the event was received
+                        // This helps downstream handlers keep data separated by server
                         val envelope = TakServerCotEnvelope(
                             sourceServerId = serverId,
                             sourceServerAddress = detail.address,
                             receivedAt = System.currentTimeMillis(),
                             rawXml = eventXml
                         )
+
+                        // Log the extracted XML to help inspect the CoT structure
                         Log.d("MISSION_TEST", "Extracted event XML=$eventXml")
 
+                        // Pass the event to the existing CoT ingestor
+                        // Route events are identified by their b-m-r event type
+                        // TakRouteCotParser converts valid route XML into a TakRoute
+                        // The route is then passed to the onRoute handler
                         val result = cotIngestor.ingest(envelope)
 
+                        // Log whether the event was processed as a route or another CoT type
+                        // Malformed or unsupported events are also reported here
                         Log.d(
                             TAG,
                             "Mission CoT processed mission=$missionName " +
                                     "result=$result"
                         )
                     }
+
                 } else {
+                    // Skip the CoT download when a route is already stored
+                    // and the mission has no newly reported changes
                     Log.d(
                         TAG,
                         "Mission sync skipped: route already loaded, no new changes"
                     )
-
                 }
 
+
+
+                // Attach mission creator information to matching routes
+                dataRepository.takRoutes.value
+                    .filter { route ->
+                        route.serverId == serverId &&
+                                creatorByRouteUid.containsKey(route.uid) &&
+                                (route.missionName == null || route.missionName == missionName)
+                    }
+                    .forEach { route ->
+                        val creatorUid = creatorByRouteUid[route.uid] ?: return@forEach
+
+                        if (route.sender != creatorUid || route.missionName != missionName) {
+                            dataRepository.upsertTakRoute(
+                                route.copy(
+                                    sender = creatorUid,
+                                    missionName = missionName
+                                )
+                            )
+
+                            Log.d(
+                                TAG,
+                                "Route sender updated: route=${route.name}, creatorUid=$creatorUid"
+                            )
+                        }
+                    }
+
+                // Add newly processed change keys to the existing set
+                // These keys are used during the next sync to identify new changes
                 val processedKeys =
                     state.processedChangeKeys +
                             newChanges.map { it.changeKey() }
 
+                // Record the time when this sync finished
                 val syncTime = System.currentTimeMillis()
 
+                // Mark the mission sync as complete in the repository
+                // Save the latest sync time and processed change keys in memory
                 dataRepository.setMissionSyncComplete(
                     serverId = serverId,
                     missionName = missionName,
@@ -1409,6 +1589,9 @@ class TAKConnectService: Service() {
                     syncTime = syncTime
                 )
 
+                // Save the sync progress for future sessions
+                // This helps the app recognize changes that were already processed
+                // The progress is stored separately for each server and mission
                 dataRepository.persistMissionSyncProgress(
                     serverId = serverId,
                     missionName = missionName,
@@ -1417,8 +1600,12 @@ class TAKConnectService: Service() {
                 )
 
             } catch (error: CancellationException) {
+                // Let coroutine cancellation stop the sync normally
                 throw error
+
             } catch (error: Exception) {
+                // Record the failure so the repository knows this sync did not complete
+                // Keep the error associated with the correct server and mission
                 dataRepository.setMissionSyncError(
                     serverId = serverId,
                     missionName = missionName,
@@ -1434,25 +1621,42 @@ class TAKConnectService: Service() {
         }
 
 
+
+        // Split downloaded Data Sync XML into separate CoT event messages
+        // A mission response can contain multiple event elements
+        // Each event is turned into its own XML string for the normal CoT ingestor
         private fun extractMissionCotEvents(xml: String): List<String> {
+
+            // Store the individual CoT XML messages found in the response
             val events = mutableListOf<String>()
 
+            // Create an XML pull parser to read the response one tag at a time
+            // This allows individual events to be found inside a larger XML document
             val parser = XmlPullParserFactory.newInstance()
                 .newPullParser()
 
+            // Disable namespace processing and provide the XML response as input
             parser.setFeature(
                 XmlPullParser.FEATURE_PROCESS_NAMESPACES,
                 false
             )
             parser.setInput(StringReader(xml))
 
+            // Start reading from the first XML parser event
             var eventType = parser.eventType
 
+            // Continue reading until the end of the XML document
             while (eventType != XmlPullParser.END_DOCUMENT) {
+
+                // Look for the start of a CoT event element
+                // Each event element will be extracted as a separate XML message
                 if (
                     eventType == XmlPullParser.START_TAG &&
                     parser.name == "event"
                 ) {
+
+                    // Create a new string writer to hold this CoT event
+                    // Create an XML serializer to rebuild the event as valid XML
                     val writer = StringWriter()
                     val serializer = XmlPullParserFactory.newInstance()
                         .newSerializer()
@@ -1460,16 +1664,23 @@ class TAKConnectService: Service() {
                     serializer.setOutput(writer)
                     serializer.startDocument("UTF-8", null)
 
+                    // Track how deeply nested the XML tags are
+                    // The event is complete when the depth returns to zero
+                    // This keeps nested tags inside the correct CoT event
                     var depth = 0
 
                     do {
                         when (parser.eventType) {
+
+                            // Copy each opening XML tag into the new event
                             XmlPullParser.START_TAG -> {
                                 serializer.startTag(
                                     parser.namespace,
                                     parser.name
                                 )
 
+                                // Copy all attributes from the original tag
+                                // This preserves fields such as type, UID, coordinates, and callsign
                                 for (i in 0 until parser.attributeCount) {
                                     serializer.attribute(
                                         parser.getAttributeNamespace(i),
@@ -1478,50 +1689,69 @@ class TAKConnectService: Service() {
                                     )
                                 }
 
+                                // Increase depth when entering a new XML element
                                 depth++
                             }
 
+                            // Copy the closing XML tag into the new event
                             XmlPullParser.END_TAG -> {
                                 serializer.endTag(
                                     parser.namespace,
                                     parser.name
                                 )
+
+                                // Decrease depth when leaving an XML element
                                 depth--
                             }
 
+                            // Preserve text stored inside XML elements
                             XmlPullParser.TEXT -> {
                                 serializer.text(parser.text)
                             }
 
+                            // Preserve any CDATA sections inside the event
                             XmlPullParser.CDSECT -> {
                                 serializer.cdsect(parser.text)
                             }
                         }
 
+                        // Move to the next parser event while still inside this CoT event
                         if (depth > 0) {
                             parser.next()
                         }
+
                     } while (depth > 0)
 
+                    // Finish rebuilding this CoT event as its own XML document
                     serializer.endDocument()
+
+                    // Add the completed XML string to the list of extracted events
                     events.add(writer.toString())
                 }
 
+                // Continue looking for more CoT events in the mission response
                 eventType = parser.next()
             }
 
+            // Return all extracted events for individual processing
             return events
         }
 
 
-
+        // Create a key that identifies one mission change
+        // Combines the change type, affected content UID, and timestamp
+        // Used during syncing to avoid treating previously processed changes as new
         private fun TakMissionChange.changeKey(): String {
+
+            // Replace missing optional values with empty strings
+            // Join the fields into one string for comparison against saved keys
             return listOf(
                 type,
                 contentUid.orEmpty(),
                 timestamp.orEmpty()
             ).joinToString("|")
         }
+
 
         private fun channelApi(detail: TakServerDetail): TakChannelApi {
             check(detail.isEnabled && detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT) {
@@ -1545,7 +1775,14 @@ class TAKConnectService: Service() {
             )
         }
 
+
+        // Create the REST API client used for Data Sync mission requests
+        // Use the same server connection details and TLS settings already configured
+        // Each client is associated with one TAK Server
         private fun missionApi(detail: TakServerDetail): TakMissionApi {
+
+            // Make sure the server is enabled and its CoT connection is active
+            // Mission requests should only be made through a connected server
             check(
                 detail.isEnabled &&
                         detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT
@@ -1553,14 +1790,21 @@ class TAKConnectService: Service() {
                 "TAK Server is not connected"
             }
 
+            // Get the SSL context configured for this server
+            // This contains the TLS configuration needed for secure connections
+            // Stop if the required context is unavailable
             val sslContext = checkNotNull(detail.channelSslContext) {
                 "TAK Server API TLS context is unavailable"
             }
 
+            // Get the trust manager used to validate the server certificate
+            // Stop if the trust manager has not been configured
             val trustManager = checkNotNull(detail.channelTrustManager) {
                 "TAK Server API trust manager is unavailable"
             }
 
+            // Create the mission API client using the server address and TLS settings
+            // Server identity is also included to keep requests tied to the correct server
             return TakMissionApi(
                 address = detail.address,
                 sslContext = sslContext,
@@ -1569,6 +1813,20 @@ class TAKConnectService: Service() {
                 serverName = detail.name
             )
         }
+
+
+        // Start loading Data Sync missions after a TAK Server connects
+        // Launch the loading process in the background without blocking connection setup
+        // The loading function also restores subscriptions and begins mission syncing
+        private fun loadTakMissionsAfterConnect(
+            detail: TakServerDetail
+        ) {
+            // Run the mission loading process in the connection coroutine scope
+            connectionScope.launch {
+                loadTakMissions(detail)
+            }
+        }
+
 
         private fun channelStatus(empty: Boolean): TakChannelStatus =
             if (empty) TakChannelStatus.EMPTY else TakChannelStatus.READY
@@ -1591,13 +1849,6 @@ class TAKConnectService: Service() {
             }
         }
 
-        private fun loadTakMissionsAfterConnect(
-            detail: TakServerDetail
-        ) {
-            connectionScope.launch {
-                loadTakMissions(detail)
-            }
-        }
 
 
         private suspend fun reconcileServerChannelChange(serverId: String) {
@@ -1767,12 +2018,23 @@ class TAKConnectService: Service() {
                         )
                     }
 
+
+                    // Handle routes received from incoming TAK CoT messages
+                    // Routes may come through the normal CoT connection or mission sync
+                    // The CoT ingestor has already identified and parsed the route
                     override suspend fun onRoute(
                         route: TakRoute,
                         envelope: TakServerCotEnvelope
                     ) {
+
+                        // Add the parsed route to the repository
+                        // Update the existing route if its identity is already stored
+                        // The route includes its UID, name, points, and source server
                         dataRepository.upsertTakRoute(route)
 
+                        // Log the route details after it has been stored
+                        // The point count helps verify that route coordinates were extracted
+                        // Server and mission fields help identify where the route came from
                         Log.d(
                             TAG,
                             "Route received: uid=${route.uid}, " +
@@ -1782,6 +2044,7 @@ class TAKConnectService: Service() {
                                     "mission=${route.missionName}"
                         )
                     }
+
 
                     override suspend fun onEmergency(
                         event: com.aitech.weartak_civ.cot.CotEmergencyEvent,
