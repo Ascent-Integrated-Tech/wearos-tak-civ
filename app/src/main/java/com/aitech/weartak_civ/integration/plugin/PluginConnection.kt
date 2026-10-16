@@ -151,7 +151,9 @@ class PluginConnection(
             hostPackageName = app.packageName,
             hostUid = android.os.Process.myUid(),
             pluginIdExpected = pluginPackage,
-            hostExtras = android.os.Bundle(),
+            hostExtras = android.os.Bundle().apply {
+                putBoolean(HostControlImpl.HOST_EXTRA_COT_ROUTING_V1, true)
+            },
         )
         try {
             iface.initializePluginV2(init, control, controlV2)

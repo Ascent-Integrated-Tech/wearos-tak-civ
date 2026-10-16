@@ -899,7 +899,9 @@ fun markerIconFromString(markerType: String): Painter {
         MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral)
         MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral)
         "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
-        "a-u-A-M-F-Q" -> painterResource(R.drawable.ic_track_uas)
+        "a-f-A-M-F-Q" -> painterResource(R.drawable.drone_icon_friendly)
+        "a-u-A-M-F-Q" -> painterResource(R.drawable.drone_icon)
+        "a-h-A-M-F-Q" -> painterResource(R.drawable.drone_icon_hostile)
         else ->  //TODO: Change to error icon
             painterResource(R.drawable.unknown)
     }
@@ -913,7 +915,9 @@ fun markerTextFromString(markerType: String): String {
         MarkerType.FRIENDLY.type -> "Friendly"
         MarkerType.HOSTILE.type -> "Hostile"
         MarkerType.NEUTRAL.type -> "Neutral"
-        "a-u-A-M-F-Q" -> "UAV"
+        "a-f-A-M-F-Q" -> "Friendly UAV"
+        "a-u-A-M-F-Q" -> "Unknown UAV"
+        "a-h-A-M-F-Q" -> "Hostile UAV"
         else -> "ERROR"
     }
     return markerString
