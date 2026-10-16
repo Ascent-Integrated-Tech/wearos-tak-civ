@@ -160,6 +160,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -942,6 +943,11 @@ fun displaySitxGroupDialog(
 
     fun storeEnableCompanionAppService(enable: Boolean) {
         viewModelScope.launch {
+            if (!enable) {
+                dataRepository.phoneManagedCompanionAddress.first()?.let { peer ->
+                    dataRepository.clearPhoneManagedSettingsForPeer(peer, restorePreviousReporting = false)
+                }
+            }
             dataRepository.storeEnableCompanionAppService(enable)
             enableCompanionAppService = enable
         }

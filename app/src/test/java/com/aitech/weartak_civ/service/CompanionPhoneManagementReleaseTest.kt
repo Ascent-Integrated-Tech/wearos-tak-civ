@@ -1,0 +1,417 @@
+package com.aitech.weartak_civ.service
+
+import android.app.Application
+import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGattCharacteristic
+import android.bluetooth.BluetoothGattServer
+import androidx.datastore.preferences.core.edit
+import com.aitech.weartak_civ.cot.CompanionGatewaySession
+import com.aitech.weartak_civ.data.CompanionAppRepository
+import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.presentation.MainActivity
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.every
+import io.mockk.mockk
+import io.mockk.slot
+import io.mockk.verify
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import org.json.JSONObject
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+import java.util.UUID
+import java.util.concurrent.atomic.AtomicLong
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class, sdk = [34])
+class CompanionPhoneManagementReleaseTest {
+    private val service = CompanionAppService()
+    private val scheduler = TestCoroutineScheduler()
+    private val job = SupervisorJob()
+    private val coroutineErrors = mutableListOf<Throwable>()
+    private lateinit var repo: DataRepository
+    private lateinit var capRepo: CompanionAppRepository
+    private lateinit var peer: BluetoothDevice
+    private lateinit var gattServer: BluetoothGattServer
+    private lateinit var txCharacteristic: BluetoothGattCharacteristic
+    private var bonded = true
+    private var ready = true
+
+    @Before fun setup() = runBlocking {
+        val app = RuntimeEnvironment.getApplication()
+        MainActivity.device_uid = "test-watch"
+        MainActivity.versionNumber = "test"
+        MainActivity.mainActivity = mockk { every { applicationContext } returns app }
+        repo = DataRepository(app)
+        repo.legacyDataStore().edit { it.clear() }
+        peer = mockk()
+        every { peer.address } returns "AA:BB"
+        every { peer.bondState } answers {
+            if (bonded) BluetoothDevice.BOND_BONDED else BluetoothDevice.BOND_NONE
+        }
+        capRepo = mockk(relaxed = true)
+        every { capRepo.gateway } returns CompanionGatewaySession()
+        every { capRepo.companionAppReady } answers { MutableStateFlow(ready) }
+        every { capRepo.envelopeToJson(any<CompanionAppRepository.Envelope<Any>>()) } returns
+            """{"msgType":"settings_request"}"""
+        inject("repo\$delegate", lazyOf(repo))
+        inject("capRepo\$delegate", lazyOf(capRepo))
+        val scope = CoroutineScope(job + StandardTestDispatcher(scheduler) +
+            CoroutineExceptionHandler { _, error -> coroutineErrors.add(error) })
+        inject("serviceScope", scope)
+        inject("notifyScope", scope)
+        inject("connectedDevice", peer)
+        inject("notificationsEnabled", true)
+        gattServer = mockk(relaxed = true)
+        txCharacteristic = mockk(relaxed = true)
+        inject("gattServer", gattServer)
+        inject("txCharacteristic", txCharacteristic)
+    }
+
+    @After fun cleanup() {
+        job.cancel()
+        scheduler.runCurrent()
+        coroutineErrors.firstOrNull()?.let { throw AssertionError("Service coroutine failed", it) }
+    }
+
+    @Test fun releaseAckPreservesProvisionedValuesAndIsIdempotent() = runBlocking {
+        repo.storeEnableDynamicReportingStrategy(true)
+        repo.storeConstantReportingInterval(60)
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.storeEnableDynamicReportingStrategy(false)
+        repo.storeConstantReportingInterval(15)
+        repo.storeCallsign("Provisioned")
+
+        repeat(2) {
+            val id = UUID.randomUUID().toString()
+            handle(JSONObject().put("requestId", id))
+            val response = awaitAck()
+            assertEquals("phone_management_release_ack", response.getString("msgType"))
+            assertEquals(id, response.getJSONObject("payload").getString("requestId"))
+            assertTrue(response.getJSONObject("payload").getBoolean("ok"))
+        }
+        assertFalse(repo.phoneManagedSettingsEnabled.first())
+        assertFalse(repo.getEnableDynamicReportingStrategy.first())
+        assertEquals(15, repo.getConstantReportingInterval.first())
+        assertEquals("Provisioned", repo.getCallsign.first())
+    }
+
+    @Test fun releaseRejectsWrongPeerInvalidUuidAndStaleMutationFence() = runBlocking {
+        repo.enablePhoneManagedSettings("CC:DD")
+        handle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        assertFalse(awaitAck().getJSONObject("payload").getBoolean("ok"))
+
+        repo.enablePhoneManagedSettings("AA:BB")
+        handle(JSONObject().put("requestId", "1-1-1-1-1"))
+        val invalidIdAck = awaitAck().getJSONObject("payload")
+        assertFalse(invalidIdAck.getBoolean("ok"))
+        assertTrue(invalidIdAck.has("error"))
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { repo.clearPhoneManagedSettingsForPeer("AA:BB", false) { false } }
+        }
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+    }
+
+    @Test fun rejectedManagementActivationLeavesSettingsUnmanagedWithoutOwner() = runBlocking {
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { repo.enablePhoneManagedSettings("AA:BB") { false } }
+        }
+
+        assertFalse(repo.phoneManagedSettingsEnabled.first())
+        assertNull(repo.phoneManagedCompanionAddress.first())
+    }
+
+    @Test fun newSubscriptionAllowsManagedSettingsAndFencesReleasedGeneration() = runBlocking {
+        repo.enablePhoneManagedSettings("AA:BB")
+        val releasedGeneration = generation().get()
+        handle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        assertTrue(awaitAck().getJSONObject("payload").getBoolean("ok"))
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { service.applySettingsFromCompanion(managedSettings(), releasedGeneration) }
+        }
+
+        service.beginCompanionSubscription()
+        val currentGeneration = generation().get()
+        assertNotEquals(releasedGeneration, currentGeneration)
+
+        val serviceRepo = mockk<DataRepository>(relaxed = true)
+        val mayEnable = slot<() -> Boolean>()
+        coEvery { serviceRepo.storeProvisionedTakServerList(any()) } returns mockk(relaxed = true)
+        coEvery { serviceRepo.awaitTakServerList() } returns emptyList()
+        coEvery {
+            serviceRepo.enablePhoneManagedSettings("AA:BB", capture(mayEnable))
+        } returns Unit
+        every { serviceRepo.getTeamNames } returns MutableStateFlow("Cyan,Red")
+        every { serviceRepo.getTeamColors } returns MutableStateFlow("Blue,Red")
+        inject("repo\$delegate", lazyOf(serviceRepo))
+        service.applySettingsFromCompanion(managedSettings(), currentGeneration)
+        coVerify(exactly = 1) { serviceRepo.enablePhoneManagedSettings("AA:BB", any()) }
+        assertTrue(mayEnable.captured())
+        repo.enablePhoneManagedSettings("AA:BB", mayEnable.captured)
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+        assertEquals("AA:BB", repo.phoneManagedCompanionAddress.first())
+
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking {
+                repo.enablePhoneManagedSettings("CC:DD") {
+                    generation().get() == releasedGeneration
+                }
+            }
+        }
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+        assertEquals("AA:BB", repo.phoneManagedCompanionAddress.first())
+    }
+
+    @Test fun duplicateSubscriptionInvalidatesSettingsQueuedForPreviousSession() = runBlocking {
+        repo.storeCallsign("Before")
+        val firstSubscriptionGeneration = generation().get()
+        val settingsMutex = field("phoneManagementSettingsMutex") as kotlinx.coroutines.sync.Mutex
+        settingsMutex.lock()
+
+        rawHandle("set_settings", JSONObject().put("payload", JSONObject()
+            .put("takServerList", org.json.JSONArray())
+            .put("reportIntSecs", 60)
+            .put("callsign", "Stale")
+            .put("team", "Red")
+            .put("role", "Team Member")
+            .put("phoneManagedSettings", true)))
+        scheduler.runCurrent()
+
+        service.beginCompanionSubscription()
+        val secondSubscriptionGeneration = generation().get()
+        service.beginCompanionSubscription()
+        assertNotEquals(firstSubscriptionGeneration, secondSubscriptionGeneration)
+        assertNotEquals(secondSubscriptionGeneration, generation().get())
+
+        settingsMutex.unlock()
+        scheduler.runCurrent()
+
+        assertEquals("Before", repo.getCallsign.first())
+        assertFalse(repo.phoneManagedSettingsEnabled.first())
+        assertNull(repo.phoneManagedCompanionAddress.first())
+        verify(exactly = 0) {
+            gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false)
+        }
+    }
+
+    @Test fun lateAutomaticManagedSettingsSnapshotCannotRelockReleasedSession() = runBlocking {
+        repo.enablePhoneManagedSettings("AA:BB")
+        val settingsMutex = field("phoneManagementSettingsMutex") as kotlinx.coroutines.sync.Mutex
+        settingsMutex.lock()
+        handle("set_settings", JSONObject().put("payload", JSONObject()
+            .put("takServerList", org.json.JSONArray())
+            .put("reportIntSecs", 30)
+            .put("callsign", "PHONE")
+            .put("team", "Cyan")
+            .put("role", "Team Member")
+            .put("phoneManagedSettings", true)))
+        rawHandle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        scheduler.runCurrent()
+        settingsMutex.unlock()
+
+        assertTrue(awaitAck().getJSONObject("payload").getBoolean("ok"))
+        assertFalse(repo.phoneManagedSettingsEnabled.first())
+    }
+
+    @Test fun unbondedOrEndedGenerationCannotReleaseOrAcknowledge() = runBlocking {
+        repo.enablePhoneManagedSettings("AA:BB")
+        inject("notificationsEnabled", false)
+        handle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        assertNull(ack())
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+
+        inject("notificationsEnabled", true)
+        ready = false
+        handle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        assertNull(ack())
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+
+        ready = true
+        bonded = false
+        handle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        assertNull(ack())
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+
+        bonded = true
+        rawHandle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        generation().incrementAndGet()
+        scheduler.runCurrent()
+        assertNull(ack())
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+    }
+
+    @Test fun delayedSettingsRequestIsDiscardedAfterConnectionGenerationChanges() {
+        val buildStarted = CompletableDeferred<Unit>()
+        val finishBuild = CompletableDeferred<Unit>()
+        val envelope = settingsEnvelope()
+        coEvery { capRepo.buildWatchSettingsEnvelope() } coAnswers {
+            buildStarted.complete(Unit)
+            finishBuild.await()
+            envelope
+        }
+
+        rawHandle("request_settings", JSONObject())
+        scheduler.runCurrent()
+        assertTrue(buildStarted.isCompleted)
+
+        generation().incrementAndGet()
+        finishBuild.complete(Unit)
+        scheduler.runCurrent()
+
+        coVerify(exactly = 1) { capRepo.buildWatchSettingsEnvelope() }
+        verify(exactly = 0) {
+            gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false)
+        }
+    }
+
+    @Test fun currentSettingsRequestSendsSnapshot() {
+        coEvery { capRepo.buildWatchSettingsEnvelope() } returns settingsEnvelope()
+
+        rawHandle("request_settings", JSONObject())
+        scheduler.runCurrent()
+
+        coVerify(exactly = 1) { capRepo.buildWatchSettingsEnvelope() }
+        verify(exactly = 1) {
+            gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false)
+        }
+    }
+
+    @Test fun settingsWaitingForMutexAreNotAppliedAfterConnectionGenerationChanges() = runBlocking {
+        repo.storeCallsign("Before")
+        repo.storeConstantReportingInterval(15)
+        val settingsMutex = field("phoneManagementSettingsMutex") as kotlinx.coroutines.sync.Mutex
+        settingsMutex.lock()
+
+        rawHandle("set_settings", JSONObject().put("payload", JSONObject()
+            .put("takServerList", org.json.JSONArray())
+            .put("reportIntSecs", 60)
+            .put("callsign", "Stale")
+            .put("team", "Red")
+            .put("role", "Team Member")
+            .put("phoneManagedSettings", false)))
+        scheduler.runCurrent()
+
+        generation().incrementAndGet()
+        settingsMutex.unlock()
+        scheduler.runCurrent()
+
+        assertEquals("Before", repo.getCallsign.first())
+        assertEquals(15, repo.getConstantReportingInterval.first())
+        verify(exactly = 0) {
+            gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false)
+        }
+    }
+
+    @Test fun queuedJsonNotificationIsNotDeliveredAfterConnectionGenerationChanges() = runBlocking {
+        val notifyMutex = field("notifyMutex") as kotlinx.coroutines.sync.Mutex
+        notifyMutex.lock()
+        service.sendJsonToCompanion("""{"msgType":"status"}""")
+        scheduler.runCurrent()
+
+        generation().incrementAndGet()
+        notifyMutex.unlock()
+        scheduler.runCurrent()
+
+        verify(exactly = 0) {
+            gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false)
+        }
+    }
+
+    private fun handle(payload: JSONObject) {
+        handle("release_phone_management", payload)
+    }
+
+    private fun handle(type: String, payload: JSONObject) {
+        rawHandle(type, payload)
+        scheduler.runCurrent()
+    }
+
+    private fun rawHandle(payload: JSONObject) {
+        rawHandle("release_phone_management", payload)
+    }
+
+    private fun rawHandle(type: String, payload: JSONObject) {
+        val method = CompanionAppService::class.java.getDeclaredMethod(
+            "handleCompanionLine", String::class.java
+        ).apply { isAccessible = true }
+        method.invoke(
+            service,
+            JSONObject().put("msg_type", type).put("payload", payload).toString()
+        )
+    }
+
+    private fun generation(): AtomicLong = field("bloodhoundConnectionGeneration") as AtomicLong
+
+    private fun managedSettings() = CompanionAppRepository.SetSettingsPayload(
+        takServerList = emptyList(),
+        reportIntSecs = 30,
+        callsign = "PHONE",
+        team = "Cyan",
+        role = "Team Member",
+        phoneManagedSettings = true
+    )
+
+    private fun settingsEnvelope() = CompanionAppRepository.Envelope(
+        vers = 1,
+        msgType = "settings_request",
+        msgUid = UUID.randomUUID().toString(),
+        t = "test",
+        src = "wearos",
+        payload = CompanionAppRepository.WearTakSettingsSnapshot(
+            timeMillis = 0L,
+            takServerList = emptyList(),
+            reportIntSecs = 30,
+            callsign = "PHONE",
+            team = "Cyan",
+            role = "Team Member",
+            phoneManagedSettings = false
+        )
+    )
+
+    private fun inject(name: String, value: Any) {
+        CompanionAppService::class.java.getDeclaredField(name).apply {
+            isAccessible = true
+            set(service, value)
+        }
+    }
+
+    private fun awaitAck(): JSONObject {
+        repeat(200) {
+            scheduler.runCurrent()
+            ack()?.let { return it }
+            Thread.sleep(10)
+        }
+        throw AssertionError("Management release acknowledgement was not queued")
+    }
+
+    private fun ack(): JSONObject? {
+        val frame = (field("bloodhoundFrames") as Channel<*>).tryReceive().getOrNull() ?: return null
+        val bytes = frame.javaClass.getDeclaredField("bytes").apply { isAccessible = true }.get(frame) as ByteArray
+        return JSONObject(bytes.toString(Charsets.UTF_8))
+    }
+
+    private fun field(name: String): Any =
+        CompanionAppService::class.java.getDeclaredField(name).apply {
+            isAccessible = true
+        }.get(service) ?: error("Missing service field: $name")
+}

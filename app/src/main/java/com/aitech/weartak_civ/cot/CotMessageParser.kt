@@ -23,9 +23,60 @@ object CotMessageParser {
     private const val ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD"
     private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
 
+    /** Live remote PLI, not a dropped a-* point or a reflected watch position. */
+    fun parseCompanionUserOrNull(
+        rawXml: String,
+        watchUid: String,
+        phoneUid: String
+    ): CotUserPositionEvent? {
+        if (watchUid.isBlank() || phoneUid.isBlank() ||
+            phoneUid.length > 512 || phoneUid.any(Char::isISOControl)
+        ) return null
+        val document = parseDocumentOrNull(rawXml) ?: return null
+        val root = document.documentElement ?: return null
+        if (root.tagName != "event") return null
+        val details = root.getElementsByTagName("detail")
+        if (details.length > 1) return null
+        val detail = details.item(0) as? Element
+        if (detail != null) {
+            val identities = detail.getElementsByTagName("uid")
+            for (index in 0 until identities.length) {
+                if ((identities.item(index) as Element).getAttribute("Droid") in setOf(watchUid, phoneUid)) {
+                    return null
+                }
+            }
+            if (detail.getElementsByTagName("emergency").length > 0) return null
+            // WearTAK's own PLI carries biometrics/device identity even if an upstream UID is rewritten.
+            val devices = detail.getElementsByTagName("device")
+            for (index in 0 until devices.length) {
+                val device = devices.item(index) as Element
+                if (device.getElementsByTagName("model").item(0)?.textContent == "WEAROS" ||
+                    device.getElementsByTagName("uid").item(0)?.textContent in setOf(watchUid, phoneUid)
+                ) return null
+            }
+        }
+        val type = root.getAttribute("type")
+        if (!type.startsWith("a-")) return null
+        val event = parseUserPosition(rawXml, type) ?: return null
+        if (event.uid != root.getAttribute("uid")) return null
+        if (event.uid.isBlank() || event.uid.length > 512 || event.uid.any(Char::isISOControl) ||
+            event.uid == watchUid || event.uid == phoneUid ||
+            event.time <= 0 || event.start <= 0 || event.stale <= 0 ||
+            !event.point.lat.isFinite() || event.point.lat !in -90.0..90.0 ||
+            !event.point.lon.isFinite() || event.point.lon !in -180.0..180.0 ||
+            !event.point.hae.isFinite() || !event.point.ce.isFinite() || !event.point.le.isFinite() ||
+            event.detail.creator?.uid in setOf(watchUid, phoneUid)
+        ) return null
+        return event
+    }
+
     fun parseUserPositionOrNull(rawXml: String): CotUserPositionEvent? {
         val type = eventAttribute(rawXml, "type") ?: return null
         if (!isUserPositionType(type)) return null
+        return parseUserPosition(rawXml, type)
+    }
+
+    private fun parseUserPosition(rawXml: String, type: String): CotUserPositionEvent? {
         val uid = eventAttribute(rawXml, "uid") ?: return null
         val time = eventAttribute(rawXml, "time") ?: return null
         val start = eventAttribute(rawXml, "start") ?: time

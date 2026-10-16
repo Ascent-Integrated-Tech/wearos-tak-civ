@@ -125,6 +125,9 @@ class CompanionPhoneEmergencyLifecycleTest {
     private fun newService(repository: BloodhoundRepository): CompanionAppService {
         device_uid = "watch-self"
         return CompanionAppService().also {
+            val users = mockk<com.aitech.weartak_civ.data.DataRepository>()
+            every { users.clearCompanionUsers() } returns Unit
+            inject(it, "repo\$delegate", lazyOf(users))
             val job = SupervisorJob()
             jobs.add(job)
             inject(it, "serviceScope", CoroutineScope(job + StandardTestDispatcher(scheduler)))
