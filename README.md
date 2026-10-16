@@ -56,6 +56,17 @@ with `*Companion*`, `*PhoneManagedSettings*`, `*CompanionChat*`, and
 tests**, with no failures. Offline `:app:assembleDebug` passed. The APK was not
 installed; paired hardware acceptance is pending.
 
+### WEARTAK-160: Single-watch phone-user map relay
+
+The single-watch companion link relays remote user PLI in
+`phone_user_cot` payloads `{cot: XML, phoneUid: nonblank}`. A
+`phone_user_remove` payload `{targetUid, phoneUid}` removes only the matching
+companion-owned map copy. WearOS stores this copy separately
+from network CoT with the same UID, expires stale positions, clears the
+companion snapshot when its BLE generation ends, and caps it at 512 users.
+Only live `a-*` PLI with a TAK user identity is accepted; dropped points,
+emergencies, and the watch or phone's own identity are rejected.
+
 This is a single-module Wear OS app (`:app`) with package ID `com.aitech.weartak_civ`.
 
 - **Android API levels:** min SDK 34, target SDK 34, compile SDK 35
@@ -107,6 +118,26 @@ A temporary BLE disconnect does not release this management mode. To return to
 one-time provisioning, uncheck the option and send settings again; this releases
 the lock without deleting certificates or reverting the current reporting settings.
 Unpairing instead releases the lock and restores the pre-management reporting settings.
+
+### WEARTAK-161: Explicitly releasing phone management
+
+Turning off **Companion App** in watch settings first clears the phone-managed
+settings lock for its recorded companion peer, then disables the companion service.
+This stop action preserves the current reporting strategy and interval, along with
+provisioned servers, certificates, callsign, team, and role. A transient BLE
+disconnect or service restart does not unlock settings; Android unpairing continues
+to release management and restore the reporting values saved before management began.
+The release transaction serializes settings writes and fences managed updates for
+that BLE generation, so a delayed settings push cannot relock the watch before its
+release acknowledgement; management can be enabled again after reconnecting.
+Settings snapshots, acknowledgements, and queued notifications retain their original
+peer and connection generation. Work from an ended connection is discarded rather
+than delivered to a replacement session. Management activation rechecks its session
+and release fence inside the DataStore transaction, including after server refresh.
+An accepted notification subscription starts a new logical companion generation:
+Samsung may keep the shared physical Bluetooth link alive while ATAK closes and
+reopens its GATT client. Reconnect therefore does not depend on a physical
+disconnect callback to clear the previous session's management-release fence.
 
 ### WEARTAK-66: Interaction-triggered PLI refresh and identity updates
 

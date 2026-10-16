@@ -111,6 +111,40 @@ class CompanionAppService : Service() {
     private val bhRepo by lazy { (applicationContext as WearTakApplication).bhRepo }
     private val bloodhoundSyncMutex = Mutex()
     private val bloodhoundConnectionGeneration = java.util.concurrent.atomic.AtomicLong()
+    private val companionUserLock = Any()
+    private fun advanceCompanionGeneration() = synchronized(companionUserLock) {
+        bloodhoundConnectionGeneration.incrementAndGet()
+        repo.clearCompanionUsers()
+    }
+    internal fun beginCompanionSubscription() {
+        // Samsung can reopen a GATT client without disconnecting the shared physical link.
+        advanceCompanionGeneration()
+        rxBuf.clear()
+        capRepo.gateway.reset()
+        helloSentForConnection = false
+        Log.i(TAG, "New companion subscription generation=${bloodhoundConnectionGeneration.get()}")
+    }
+    private val phoneManagementSettingsMutex = Mutex()
+    private val phoneManagementReleaseGeneration = java.util.concurrent.atomic.AtomicLong(-1L)
+    @SuppressLint("MissingPermission")
+    private fun currentPeer(address: String, generation: Long): Boolean =
+        bloodhoundConnectionGeneration.get() == generation &&
+            connectedDevice?.address.equals(address, ignoreCase = true) && bloodhoundLinkReady()
+
+    internal suspend fun releasePhoneManagement(address: String, generation: Long): Boolean {
+        check(currentPeer(address, generation)) { "Companion connection is not ready" }
+        val reporting = repo.clearPhoneManagedSettingsForPeer(address, restorePreviousReporting = false) {
+            currentPeer(address, generation)
+        }
+        reporting?.let {
+            MainActivity.Constants.enableDynamicReportingStrategy = it.first
+            MainActivity.Constants.constantReportingInterval = it.second
+        }
+        val unmanaged = !repo.phoneManagedSettingsEnabled.first()
+        check(currentPeer(address, generation)) { "Companion connection changed during management release" }
+        return unmanaged
+    }
+
     private var observedBloodhoundGeneration = 0L
     private data class BloodhoundFrame(val bytes: ByteArray, val address: String, val generation: Long, val chunkSize: Int)
     private val bloodhoundFrames = kotlinx.coroutines.channels.Channel<BloodhoundFrame>(64)
@@ -160,6 +194,10 @@ class CompanionAppService : Service() {
     @SuppressLint("MissingPermission")
     private fun bloodhoundLinkReady(): Boolean =
         bleSendReady() && connectedDevice?.bondState == BluetoothDevice.BOND_BONDED
+
+    @SuppressLint("MissingPermission")
+    private fun isCurrentSingleWatch(address: String, generation: Long): Boolean =
+        currentPeer(address, generation) && capRepo.gateway.session == null
 
     @SuppressLint("MissingPermission")
     private fun refreshBloodhoundConnection() {
@@ -347,7 +385,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
     private fun forceBleReset(why: String) {
         Log.w(TAG, "forceBleReset: $why")
-        bloodhoundConnectionGeneration.incrementAndGet()
+        advanceCompanionGeneration()
         rxBuf.clear()
 
         // Drop state
@@ -532,6 +570,13 @@ class CompanionAppService : Service() {
         startBleOutboundCollector()
         startSettingsChangedCollector()
         startPointDeletionRelay()
+        repo.clearCompanionUsers()
+        serviceScope.launch {
+            while (true) {
+                delay(1_000)
+                synchronized(companionUserLock) { repo.pruneCompanionUsers() }
+            }
+        }
         startBloodhoundSync()
 
         // 6) Finish setup async
@@ -739,7 +784,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
         Log.d(TAG, "CompanionAppService onDestroy()")
-        bloodhoundConnectionGeneration.incrementAndGet()
+        advanceCompanionGeneration()
 
         // 1) Update app-level state FIRST (avoid stale SERVICES_READY in repo)
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
@@ -929,7 +974,7 @@ class CompanionAppService : Service() {
                     return
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
-                bloodhoundConnectionGeneration.incrementAndGet()
+                advanceCompanionGeneration()
                 rxBuf.clear()
                 activeAddr = null
                 connectedDevice = null
@@ -954,7 +999,7 @@ class CompanionAppService : Service() {
 
                     activeAddr = device.address
                     connectedDevice = device
-                    bloodhoundConnectionGeneration.incrementAndGet()
+                    advanceCompanionGeneration()
                     rxBuf.clear()
 
                     // reset per-session flags
@@ -975,7 +1020,7 @@ class CompanionAppService : Service() {
 
 
                     Log.d(TAG, "Active device disconnected: ${device.address}")
-                    bloodhoundConnectionGeneration.incrementAndGet()
+                    advanceCompanionGeneration()
                     rxBuf.clear()
                     activeAddr = null
                     connectedDevice = null
@@ -1108,6 +1153,7 @@ class CompanionAppService : Service() {
             Log.d(TAG, "CCCD write from ${device.address}, enable=$enableNoti disable=$disableNoti")
 
             if (enableNoti) {
+                beginCompanionSubscription()
                 notificationsEnabled = true
                 disarmHandshakeWatchdog()
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.SERVICES_READY)
@@ -1187,6 +1233,15 @@ class CompanionAppService : Service() {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendJsonToCompanion(json: String) {
+        sendJsonForPeer(json, connectedDevice?.address, bloodhoundConnectionGeneration.get())
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun sendJsonForPeer(json: String, address: String?, generation: Long) {
+        if (address == null || !currentPeer(address, generation)) {
+            Log.w(TAG, "Dropping companion JSON for ended/unready connection")
+            return
+        }
         if (capRepo.gateway.session != null) {
             Log.i(TAG, "Suppressed legacy companion output during Gateway session")
             return
@@ -1240,9 +1295,8 @@ class CompanionAppService : Service() {
         val framed = if (outgoing.endsWith("\n")) outgoing else (outgoing + "\n")
         val bytes = framed.toByteArray(Charsets.UTF_8)
         val maxPayload = maxNotifyPayloadBytes()
-
         notifyScope.launch {
-            sendChunkedNotify(bytes, maxPayload)
+            sendChunkedNotify(bytes, maxPayload, address, generation)
         }
 
         /*
@@ -1338,8 +1392,14 @@ class CompanionAppService : Service() {
     }
     private val rxBuf = com.aitech.weartak_civ.cot.CompanionJsonFramer()
 
-    suspend fun applySettingsFromCompanion(payload: CompanionAppRepository.SetSettingsPayload) {
+    suspend fun applySettingsFromCompanion(
+        payload: CompanionAppRepository.SetSettingsPayload,
+        expectedGeneration: Long = bloodhoundConnectionGeneration.get()
+    ) {
         check(capRepo.gateway.session == null) { "Profile writes forbidden in gateway session" }
+        check(!payload.phoneManagedSettings || phoneManagementReleaseGeneration.get() != expectedGeneration) {
+            "Phone management was released for this companion session"
+        }
         TakServerP12Validator.validate(payload.takServerList)
         require(payload.reportIntSecs == null || payload.reportIntSecs > 0) {
             "Reporting interval must be positive"
@@ -1374,10 +1434,17 @@ class CompanionAppService : Service() {
 //        takServerListState.postValue(takServerList)
 
         managedPeerAddress?.let { peerAddress ->
+            check(phoneManagementReleaseGeneration.get() != expectedGeneration) {
+                "Phone management was released for this companion session"
+            }
             check(connectedDevice?.address.equals(peerAddress, ignoreCase = true)) {
                 "The companion disconnected before phone-managed settings could be applied"
             }
-            repo.enablePhoneManagedSettings(peerAddress)
+            repo.enablePhoneManagedSettings(peerAddress) {
+                bloodhoundConnectionGeneration.get() == expectedGeneration &&
+                    phoneManagementReleaseGeneration.get() != expectedGeneration &&
+                    connectedDevice?.address.equals(peerAddress, ignoreCase = true)
+            }
         }
         if (!payload.phoneManagedSettings) {
             sendingPeerAddress?.let { peerAddress ->
@@ -1473,6 +1540,83 @@ class CompanionAppService : Service() {
             }
 
             when (base.type) {
+                "phone_user_cot", "phone_user_remove" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    if (!isCurrentSingleWatch(address, generation)) return
+                    val payload = org.json.JSONObject(json).getJSONObject("payload")
+                    val phoneUid = payload.opt("phoneUid") as? String
+                    require(!phoneUid.isNullOrBlank() && phoneUid.length <= 512 &&
+                        !phoneUid.any(Char::isISOControl)
+                    ) { "Invalid phone UID" }
+                    if (base.type == "phone_user_remove") {
+                        val uid = payload.opt("targetUid") as? String
+                        require(!uid.isNullOrBlank() && uid.length <= 512 && !uid.any(Char::isISOControl) &&
+                            uid != device_uid && uid != phoneUid
+                        ) { "Invalid user removal UID" }
+                        synchronized(companionUserLock) {
+                            if (isCurrentSingleWatch(address, generation)) repo.removeCompanionUser(uid)
+                        }
+                    } else {
+                        val xml = payload.get("cot") as? String
+                            ?: throw IllegalArgumentException("User CoT must be XML text")
+                        require(xml.length <= 131_072) { "User CoT too large" }
+                        val event = CotMessageParser.parseCompanionUserOrNull(xml, device_uid, phoneUid)
+                        if (event == null) {
+                            Log.w(TAG, "Ignoring invalid/self companion user PLI")
+                            return
+                        }
+                        synchronized(companionUserLock) {
+                            if (isCurrentSingleWatch(address, generation)) {
+                                repo.receiveCompanionUserEvent(event, System.currentTimeMillis())
+                            }
+                        }
+                    }
+                }
+
+                "release_phone_management" -> {
+                    val payload = org.json.JSONObject(json).getJSONObject("payload")
+                    val requestId = payload.opt("requestId") as? String
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    if (!currentPeer(address, generation)) return
+                    serviceScope.launch {
+                        var error: String? = null
+                        val validId = requestId != null &&
+                            requestId.matches(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))
+                        if (validId) phoneManagementReleaseGeneration.set(generation)
+                        val ok = if (!validId) {
+                            error = "Invalid requestId UUID"
+                            false
+                        } else try {
+                            phoneManagementSettingsMutex.withLock {
+                                releasePhoneManagement(address, generation).also {
+                                    if (!it) error = "Settings are managed by a different companion"
+                                }
+                            }
+                        } catch (failure: IllegalStateException) {
+                            if (failure is kotlinx.coroutines.CancellationException) throw failure
+                            error = failure.message
+                            false
+                        } catch (failure: java.io.IOException) {
+                            error = failure.message ?: "Unable to persist management release"
+                            false
+                        }
+                        if (!currentPeer(address, generation)) return@launch
+                        val ackPayload = org.json.JSONObject()
+                            .put("requestId", requestId ?: org.json.JSONObject.NULL).put("ok", ok)
+                        error?.let { ackPayload.put("error", it) }
+                        val ack = org.json.JSONObject().put("msgType", "phone_management_release_ack")
+                            .put("payload", ackPayload)
+                        val frame = BloodhoundFrame(
+                            "$ack\n".toByteArray(Charsets.UTF_8), address, generation, maxNotifyPayloadBytes()
+                        )
+                        if (!bloodhoundFrames.trySend(frame).isSuccess) {
+                            Log.w(TAG, "Management release acknowledgement queue full")
+                        }
+                    }
+                }
+
                 "bloodhound_control", "bloodhound_control_result" -> {
                     val payload = org.json.JSONObject(json).getJSONObject("payload")
                     val generation = bloodhoundConnectionGeneration.get()
@@ -1498,26 +1642,37 @@ class CompanionAppService : Service() {
                 }
 
                 "request_settings" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
                     serviceScope.launch {
+                        if (!currentPeer(address, generation)) {
+                            Log.w(TAG, "Ignoring settings request from ended/unready connection")
+                            return@launch
+                        }
                         val env = capRepo.buildWatchSettingsEnvelope()
-                        sendJsonToCompanion(capRepo.envelopeToJson(env))
+                        if (!currentPeer(address, generation)) {
+                            Log.w(TAG, "Discarding settings snapshot for ended connection")
+                            return@launch
+                        }
+                        Log.i(TAG, "Sending settings snapshot generation=$generation")
+                        sendJsonForPeer(capRepo.envelopeToJson(env), address, generation)
                     }
                 }
 
                 "set_settings" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
                     serviceScope.launch {
                         try {
-                            val msg = gson.fromJson(
-                                json,
-                                CompanionAppRepository.SetSettingsMessage::class.java
-                            )
-
-                            // store the settings
-                            applySettingsFromCompanion(msg.payload)
+                            val msg = gson.fromJson(json, CompanionAppRepository.SetSettingsMessage::class.java)
+                            phoneManagementSettingsMutex.withLock {
+                                check(currentPeer(address, generation)) { "Settings belong to an ended companion connection" }
+                                applySettingsFromCompanion(msg.payload, generation)
+                            }
 
                             // ACK with the current settings (msgType)
                             val ackEnv = capRepo.buildSettingsAck(ok = true)
-                            sendJsonToCompanion(capRepo.envelopeToJson(ackEnv))                 // ACKNOWLEDGEMENT
+                            sendJsonForPeer(capRepo.envelopeToJson(ackEnv), address, generation)
 
                         } catch (t: Throwable) {
                             Log.w(TAG, "set_settings: failed to parse/apply", t)
@@ -1526,12 +1681,12 @@ class CompanionAppService : Service() {
                                 ok = false,
                                 error = t.message ?: "parse/apply error"
                             )
-                            sendJsonToCompanion(capRepo.envelopeToJson(ackEnv))
+                            sendJsonForPeer(capRepo.envelopeToJson(ackEnv), address, generation)
                         }
                         // whenever we are commanded to write setting values, we always send back over the actual settings to the plugin to ensure true sync.
                         try {
                             val currSettingsEnv = capRepo.buildWatchSettingsEnvelope()
-                            sendJsonToCompanion(capRepo.envelopeToJson(currSettingsEnv))
+                            sendJsonForPeer(capRepo.envelopeToJson(currSettingsEnv), address, generation)
                         } catch (t: Throwable) {
                             Log.w(TAG, "set_settings: failed to send current settings", t)
                         }

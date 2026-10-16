@@ -193,6 +193,7 @@ import com.aitech.weartak_civ.events.PliRefreshReason
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private const val NON_TAK_COT_SOURCE_ID = "non-tak"
+internal const val COMPANION_USER_SOURCE_ID = "companion-phone-users"
 
 // Identifies which PDL the user selected
 enum class DittoPdlSource {
@@ -1524,6 +1525,38 @@ class DataRepository(private val context: Context) {
     )
     val receivedUserList: StateFlow<List<ReceivedUser>> = receivedUserStore.visibleItems
 
+    fun receiveCompanionUserEvent(event: CotUserPositionEvent, receivedAt: Long): Boolean {
+        pruneCompanionUsers(receivedAt)
+        val key = SourceCotKey(COMPANION_USER_SOURCE_ID, event.uid)
+        if (event.stale <= receivedAt) {
+            receivedUserStore.item(key)?.takeIf { it.timeReceived <= event.time }?.let {
+                receivedUserStore.remove(key)
+            }
+            return false
+        }
+        val copies = receivedUserStore.allItems.value.filterKeys { it.sourceId == COMPANION_USER_SOURCE_ID }
+        if (key !in copies && copies.size >= 512) {
+            copies.minByOrNull { it.value.receivedAt }?.key?.let(receivedUserStore::remove)
+        }
+        return applyReceivedUserEventNow(event, "Companion ATAK", COMPANION_USER_SOURCE_ID, receivedAt)
+    }
+
+    fun removeCompanionUser(uid: String) {
+        receivedUserStore.remove(SourceCotKey(COMPANION_USER_SOURCE_ID, uid))
+    }
+
+    fun clearCompanionUsers() {
+        receivedUserStore.removeSource(COMPANION_USER_SOURCE_ID)
+    }
+
+    fun pruneCompanionUsers(now: Long = System.currentTimeMillis()) {
+        receivedUserStore.allItems.value.forEach { (key, user) ->
+            if (key.sourceId == COMPANION_USER_SOURCE_ID && user.staleTime <= now) {
+                receivedUserStore.remove(key)
+            }
+        }
+    }
+
     suspend fun upsertReceivedUser(item: ReceivedUser): SourceCotUpsertResult =
         receivedUserStore.upsertWithResult(item)
 
@@ -1540,14 +1573,23 @@ class DataRepository(private val context: Context) {
         source: String,
         sourceServerId: String? = null,
         receivedAt: Long = System.currentTimeMillis()
+    ): Boolean = applyReceivedUserEventNow(event, source, sourceServerId, receivedAt)
+
+    private fun applyReceivedUserEventNow(
+        event: CotUserPositionEvent,
+        source: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis()
     ): Boolean {
         val sourceKey = sourceServerId ?: NON_TAK_COT_SOURCE_ID
         if (event.stale <= System.currentTimeMillis()) {
-            val removed = receivedUserStore.removeIfNotOlder(
-                key = SourceCotKey(sourceKey, event.uid),
-                eventTime = event.time,
-                receivedAt = receivedAt
-            )
+            val key = SourceCotKey(sourceKey, event.uid)
+            val removed = if (sourceKey == COMPANION_USER_SOURCE_ID) {
+                receivedUserStore.item(key)?.takeIf { it.timeReceived <= event.time }
+                    ?.let { receivedUserStore.remove(key) }
+            } else {
+                receivedUserStore.removeIfNotOlder(key, event.time, receivedAt)
+            }
             Log.d(
                 TAG,
                 "Map state user stale uid=${event.uid} sourceServerId=$sourceServerId eventTime=${event.time} " +
@@ -1580,7 +1622,7 @@ class DataRepository(private val context: Context) {
             sourceServerId = sourceServerId,
             receivedAt = receivedAt
         )
-        val result = upsertReceivedUser(item)
+        val result = receivedUserStore.upsertWithResult(item)
         Log.d(
             TAG,
             "Map state user upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
@@ -2280,9 +2322,13 @@ class DataRepository(private val context: Context) {
         prefs[PHONE_MANAGED_COMPANION_ADDRESS]
     }
 
-    suspend fun enablePhoneManagedSettings(companionAddress: String) {
+    suspend fun enablePhoneManagedSettings(
+        companionAddress: String,
+        mayEnable: () -> Boolean = { true }
+    ) {
         require(companionAddress.isNotBlank()) { "Companion address cannot be blank" }
         context.dataStore.edit { prefs ->
+            check(mayEnable()) { "Companion connection changed before management activation" }
             if (prefs[PHONE_MANAGED_SETTINGS_ENABLED] != true) {
                 prefs[PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING] =
                     prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
@@ -2296,10 +2342,12 @@ class DataRepository(private val context: Context) {
 
     suspend fun clearPhoneManagedSettingsForPeer(
         companionAddress: String,
-        restorePreviousReporting: Boolean = true
+        restorePreviousReporting: Boolean = true,
+        mayClear: () -> Boolean = { true }
     ): Pair<Boolean, Int>? {
         var restoredReporting: Pair<Boolean, Int>? = null
         context.dataStore.edit { prefs ->
+            check(mayClear()) { "Companion connection changed before management release" }
             val managedAddress = prefs[PHONE_MANAGED_COMPANION_ADDRESS]
             if (prefs[PHONE_MANAGED_SETTINGS_ENABLED] == true &&
                 managedAddress.equals(companionAddress, ignoreCase = true)
