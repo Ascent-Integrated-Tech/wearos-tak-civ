@@ -8,7 +8,7 @@ class TriggerTimer(
     // Phase 1: wall-clock sustain — stores the ms when the condition first became true.
     // Replaces the tick-count `activeFor` field so sustain is rate-independent.
     private var conditionTrueStartMs: Long? = null
-    private var lastFireAt = 0L
+    private var lastFireAt: Long? = null
     private var warnFiredThisEpisode = false
 
     /**
@@ -35,8 +35,8 @@ class TriggerTimer(
         }
 
         val elapsedSec = conditionTrueStartMs?.let { (now - it) / 1000L } ?: 0L
-        val mature = elapsedSec >= effectiveSustainSec
-        val cooldown = (now - lastFireAt) >= holdDownSec * 1000
+        val mature = isTrue && elapsedSec >= effectiveSustainSec
+        val cooldown = lastFireAt?.let { (now - it) >= holdDownSec * 1000 } ?: true
         val mainFired = mature && cooldown
 
         val warnSec = sustainWarnSec
@@ -58,7 +58,7 @@ class TriggerTimer(
 
     fun reset() {
         conditionTrueStartMs = null
-        lastFireAt = 0L
+        lastFireAt = null
         warnFiredThisEpisode = false
     }
 }
