@@ -13,9 +13,9 @@ import org.xml.sax.InputSource
 
 class CotMessageBuilderTest {
     @Test
-    fun pliMatchesLegacyStructure() {
+    fun pliMatchesLegacyStructureWithStatus() {
         val actual = CotMessageBuilder.pli(pliSnapshot(), CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", false, "<hail/>"))
-        val legacy = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='watch-1' type='a-f-G-U-C' time='$START' start='$START' stale='$STALE' how='m-g'><point lat='41.000000' lon='-87.000000' hae='100.0' ce='4' le='5'/><detail><remarks>Exert:0.25%;HR:72;SkinTemp:98.6</remarks><contact endpoint='*:-1:stcp' callsign='EAGLE'/><__group role='Team Member' name='Cyan'/><track course='45' speed='3'/><hail/></detail></event>"
+        val legacy = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='watch-1' type='a-f-G-U-C' time='$START' start='$START' stale='$STALE' how='m-g'><point lat='41.000000' lon='-87.000000' hae='100.0' ce='4' le='5'/><detail><status readiness='true' battery='80'/><remarks>Exert:0.25%;HR:72;SkinTemp:98.6</remarks><contact endpoint='*:-1:stcp' callsign='EAGLE'/><__group role='Team Member' name='Cyan'/><track course='45' speed='3'/><hail/></detail></event>"
         assertEquals(project(legacy), project(actual))
     }
 
