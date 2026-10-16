@@ -34,6 +34,8 @@ class FakeWearTakPlugin(
         private set
     var initializePluginV2Calls = 0
         private set
+    var lastInit: com.weartak.plugin.sdk.model.PluginInitParcel? = null
+        private set
     var stopCalls = 0
         private set
     var shutdownCalls = 0
@@ -65,6 +67,7 @@ class FakeWearTakPlugin(
         controlV2: IWearTakPluginHostControlV2?,
     ) {
         initializePluginV2Calls++
+        lastInit = init
         lifecycleCalls += "initializePluginV2"
     }
 

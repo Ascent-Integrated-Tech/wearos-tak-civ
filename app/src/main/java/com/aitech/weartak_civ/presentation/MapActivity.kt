@@ -393,6 +393,8 @@ fun grayMarkerIconFromString(markerType: String): Painter {
         MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral_gray)
         MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral_gray)
         "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
+        "a-f-A-M-F-Q", "a-u-A-M-F-Q", "a-h-A-M-F-Q" ->
+            painterResource(R.drawable.ic_track_uas_no_gps)
         else ->  //TODO: Change to error icon
             painterResource(R.drawable.unknown_gray)
     }

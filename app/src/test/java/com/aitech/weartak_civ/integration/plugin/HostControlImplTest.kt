@@ -62,6 +62,24 @@ class HostControlImplTest {
             control.requestCotDispatch(request)
             coVerify(exactly = 2) { TAKConnectService.handleInboundCot(xml, "plugin:com.plugin.pkg") }
             verify(exactly = 1) { TAKConnectService.sendDataTAKServers(xml, true) }
+
+            every { request.payload } returns Bundle().apply {
+                putString("xml", xml)
+                putBoolean(HostControlImpl.KEY_INGEST_LOCAL, false)
+                putBoolean(HostControlImpl.KEY_RELAY_TO_NETWORK, true)
+            }
+            control.requestCotDispatch(request)
+            coVerify(exactly = 2) { TAKConnectService.handleInboundCot(xml, "plugin:com.plugin.pkg") }
+            verify(exactly = 2) { TAKConnectService.sendDataTAKServers(xml, true) }
+
+            every { request.payload } returns Bundle().apply {
+                putString("xml", xml)
+                putBoolean(HostControlImpl.KEY_INGEST_LOCAL, true)
+                putBoolean(HostControlImpl.KEY_RELAY_TO_NETWORK, false)
+            }
+            control.requestCotDispatch(request)
+            coVerify(exactly = 3) { TAKConnectService.handleInboundCot(xml, "plugin:com.plugin.pkg") }
+            verify(exactly = 2) { TAKConnectService.sendDataTAKServers(xml, true) }
         } finally {
             unmockkObject(TAKConnectService.Companion)
         }

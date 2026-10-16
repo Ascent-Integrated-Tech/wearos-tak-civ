@@ -23,6 +23,17 @@ class CotMessageParserTest {
     }
 
     @Test
+    fun parsesSupportedUavAffiliationsAsGenericMarkersAndStillRejectsUnsupportedTypes() {
+        listOf("a-f-A-M-F-Q", "a-u-A-M-F-Q", "a-h-A-M-F-Q").forEach { type ->
+            val uas = CotMessageParser.parseMarkerOrNull(MARKER_XML.replace("type='a-h-G'", "type='$type'"))
+            assertNotNull(uas)
+            assertEquals(type, uas!!.type)
+            assertTrue(CotMessageParser.isMarkerType(type))
+        }
+        assertFalse(CotMessageParser.isMarkerType("a-f-A-Z-unsupported"))
+    }
+
+    @Test
     fun parsesPliAndRejectsItAsAMarker() {
         val event = CotMessageParser.parseUserPositionOrNull(PLI_XML)
         assertNotNull(event)
