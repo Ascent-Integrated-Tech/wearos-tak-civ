@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothGattServer
 import androidx.datastore.preferences.core.edit
 import com.aitech.weartak_civ.cot.CompanionGatewaySession
 import com.aitech.weartak_civ.data.CompanionAppRepository
+import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.coEvery
@@ -335,6 +336,75 @@ class CompanionPhoneManagementReleaseTest {
         verify(exactly = 0) {
             gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false)
         }
+    }
+
+    @Test fun disableDeliversStopAfterDiscardingQueuedDiagnosticsWithWorkerPaused() {
+        val session = prepareDiagnosticDisable()
+        val chunks = mutableListOf<ByteArray>()
+        every { txCharacteristic.setValue(capture(chunks)) } returns true
+        every { gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false) } returns true
+
+        disableDiagnostics()
+        invokeDiagnosticMethod("refreshLocationDiagnosticsSession")
+
+        // Start the worker only after disable has returned: it cannot rescue a drained stop.
+        startDiagnosticFrameWorker()
+        scheduler.runCurrent()
+        assertFalse("Disable must leave a stop frame for the notification worker", chunks.isEmpty())
+        val delivered = JSONObject(chunks.fold(ByteArray(0)) { bytes, chunk -> bytes + chunk }
+            .toString(Charsets.UTF_8))
+        assertEquals(LocationDiagnosticsProtocol.STOP, delivered.getString("msgType"))
+        assertEquals(session, delivered.getString("session"))
+        assertNotNull(LocationDiagnosticsProtocol.parse(delivered, LocationDiagnosticsProtocol.STOP, session))
+        assertNull((field("locationDiagnosticFrames") as Channel<*>).tryReceive().getOrNull())
+    }
+
+    @Test fun disabledSessionStopCannotReachReplacementConnection() {
+        prepareDiagnosticDisable()
+        disableDiagnostics()
+        generation().incrementAndGet()
+
+        startDiagnosticFrameWorker()
+        scheduler.runCurrent()
+
+        verify(exactly = 0) { gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false) }
+    }
+
+    private fun prepareDiagnosticDisable(): String {
+        val diagnostics = mockk<BondedLocationDiagnostics>(relaxed = true)
+        inject("locationDiagnostics\$delegate", lazyOf(diagnostics))
+        inject("negotiatedMtu", 517)
+        inject("locationDiagnosticsEnabled", true)
+        invokeDiagnosticMethod("refreshLocationDiagnosticsSession")
+        val session = field("locationDiagnosticsSession") as String
+        assertFalse((field("locationDiagnosticFrames") as Channel<*>).isEmpty)
+        return session
+    }
+
+    private fun disableDiagnostics() {
+        inject("locationDiagnosticsEnabled", false)
+        CompanionAppService::class.java.getDeclaredMethod(
+            "stopLocationDiagnosticsSession", String::class.java
+        ).apply { isAccessible = true }.invoke(service, "disabled")
+        val diagnostics = (field("locationDiagnostics\$delegate") as Lazy<*>).value as BondedLocationDiagnostics
+        verify(exactly = 1) { diagnostics.stop() }
+    }
+
+    private fun startDiagnosticFrameWorker() {
+        val bloodhound = mockk<BloodhoundRepository>(relaxed = true)
+        every { bloodhound.activeUid } returns MutableStateFlow(null)
+        every { bloodhound.activeBhItemMap } returns MutableStateFlow(null)
+        every { bloodhound.activeTrackingItem() } returns null
+        every { capRepo.bleConnectionState } returns
+            MutableStateFlow(CompanionAppRepository.BleConnectionState.NOT_CONNECTED)
+        inject("bhRepo\$delegate", lazyOf(bloodhound))
+        invokeDiagnosticMethod("startBloodhoundSync")
+    }
+
+    private fun invokeDiagnosticMethod(name: String) {
+        CompanionAppService::class.java.getDeclaredMethod(name).apply {
+            isAccessible = true
+        }.invoke(service)
     }
 
     private fun handle(payload: JSONObject) {

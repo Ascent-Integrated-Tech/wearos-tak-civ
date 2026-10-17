@@ -146,10 +146,25 @@ class CompanionAppService : Service() {
     }
 
     private var observedBloodhoundGeneration = 0L
-    private data class BloodhoundFrame(val bytes: ByteArray, val address: String, val generation: Long, val chunkSize: Int)
+    private data class BloodhoundFrame(
+        val bytes: ByteArray,
+        val address: String,
+        val generation: Long,
+        val chunkSize: Int,
+        val diagnostic: Boolean = false
+    )
     private val bloodhoundFrames = kotlinx.coroutines.channels.Channel<BloodhoundFrame>(64)
+    private val locationDiagnosticFrames =
+        kotlinx.coroutines.channels.Channel<BloodhoundFrame>(kotlinx.coroutines.channels.Channel.CONFLATED)
     private data class GatewayIncoming(val token: String, val generation: Long, val xml: String)
     private val gatewayIncoming = kotlinx.coroutines.channels.Channel<GatewayIncoming>(64)
+    @Volatile private var locationDiagnosticsEnabled = false
+    @Volatile private var locationDiagnosticsSession: String? = null
+    @Volatile private var locationDiagnosticsGeneration: Long = -1L
+    @Volatile private var locationDiagnosticsReportJob: kotlinx.coroutines.Job? = null
+    private val locationDiagnostics by lazy {
+        (applicationContext as WearTakApplication).locationDiagnostics
+    }
     private fun gatewayError(token: String?, message: String) {
         Log.w(TAG, message)
         if (token == null || token != capRepo.gateway.session) return
@@ -214,6 +229,7 @@ class CompanionAppService : Service() {
         serviceScope.launch {
             capRepo.bleConnectionState.collect {
                 repo.companionPointGeneration = bloodhoundConnectionGeneration.get()
+                refreshLocationDiagnosticsSession()
             }
         }
         serviceScope.launch {
@@ -244,16 +260,33 @@ class CompanionAppService : Service() {
     @SuppressLint("MissingPermission")
     private fun startBloodhoundSync() {
         serviceScope.launch {
-            for (frame in bloodhoundFrames) {
+            while (true) {
+                val frame = bloodhoundFrames.tryReceive().getOrNull()
+                    ?: kotlinx.coroutines.selects.select {
+                        bloodhoundFrames.onReceiveCatching { it.getOrNull() }
+                        locationDiagnosticFrames.onReceiveCatching { it.getOrNull() }
+                    }
+                    ?: continue
                 if (capRepo.gateway.session != null) {
                     val message = org.json.JSONObject(frame.bytes.toString(Charsets.UTF_8))
                     val type = message.optString("msgType")
                     if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) continue
                     if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) continue
                 }
+                if (frame.diagnostic) {
+                    val message = org.json.JSONObject(frame.bytes.toString(Charsets.UTF_8))
+                    val type = message.optString("msgType")
+                    val stopAfterDisable = type ==
+                        com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.STOP &&
+                        !locationDiagnosticsEnabled && locationDiagnosticsSession == null
+                    if (!isCurrentSingleWatch(frame.address, frame.generation) ||
+                        (!stopAfterDisable &&
+                            locationDiagnosticsSession != message.optString("session"))
+                    ) continue
+                }
                 sendChunkedNotify(
                     frame.bytes, frame.chunkSize, expectedAddress = frame.address,
-                    expectedGeneration = frame.generation
+                    expectedGeneration = frame.generation, diagnostics = frame.diagnostic
                 )
             }
         }
@@ -293,6 +326,157 @@ class CompanionAppService : Service() {
             }
         }
     }
+
+    private fun startLocationDiagnostics() {
+        serviceScope.launch {
+            repo.getBondedLocationDiagnosticsEnabled.collect { enabled ->
+                locationDiagnosticsEnabled = enabled
+                if (!enabled) stopLocationDiagnosticsSession("disabled")
+                else refreshLocationDiagnosticsSession()
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    @Synchronized
+    private fun refreshLocationDiagnosticsSession() {
+        if (!locationDiagnosticsEnabled || !bloodhoundLinkReady() ||
+            capRepo.gateway.session != null
+        ) {
+            stopLocationDiagnosticsSession("connection not eligible")
+            return
+        }
+        val generation = bloodhoundConnectionGeneration.get()
+        if (locationDiagnosticsSession != null && locationDiagnosticsGeneration == generation) return
+
+        val session = com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.newSession()
+        locationDiagnosticsSession = session
+        locationDiagnosticsGeneration = generation
+        val address = connectedDevice?.address ?: return
+        val frame = BloodhoundFrame(
+            "${com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.hello(session)}\n"
+                .toByteArray(Charsets.UTF_8),
+            address,
+            generation,
+            maxNotifyPayloadBytes(),
+            diagnostic = true
+        )
+        if (!locationDiagnosticFrames.trySend(frame).isSuccess) {
+            Log.w(TAG, "Location diagnostics capability queue unavailable")
+            stopLocationDiagnosticsSession("capability queue unavailable")
+        }
+    }
+
+    @Synchronized
+    private fun stopLocationDiagnosticsSession(reason: String) {
+        val session = locationDiagnosticsSession
+        val generation = locationDiagnosticsGeneration
+        val address = connectedDevice?.address
+        val wasActive = session != null
+        locationDiagnosticsReportJob?.cancel()
+        locationDiagnosticsReportJob = null
+        locationDiagnosticsSession = null
+        locationDiagnosticsGeneration = -1L
+        locationDiagnostics.stop()
+        // Repeated inactive-session cleanup must not drain a stop awaiting the sender.
+        if (wasActive) {
+            while (locationDiagnosticFrames.tryReceive().isSuccess) Unit
+        }
+        if (reason == "disabled" && session != null && address != null &&
+            generation == bloodhoundConnectionGeneration.get() &&
+            bloodhoundLinkReady() && capRepo.gateway.session == null
+        ) {
+            val stop = com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.stop(session)
+            val bytes = "$stop\n".toByteArray(Charsets.UTF_8)
+            val frame = BloodhoundFrame(
+                bytes, address, generation, maxNotifyPayloadBytes(), diagnostic = true
+            )
+            if (!locationDiagnosticFrames.trySend(frame).isSuccess) {
+                Log.w(TAG, "Location diagnostics stop notification could not be queued")
+            }
+        }
+        if (wasActive) Log.i(TAG, "Bonded location diagnostics stopped: $reason")
+    }
+
+    @SuppressLint("MissingPermission")
+    @Synchronized
+    private fun sendLocationDiagnosticSnapshot() {
+        val session = locationDiagnosticsSession ?: return
+        val address = connectedDevice?.address ?: return
+        val generation = bloodhoundConnectionGeneration.get()
+        if (!locationDiagnosticsEnabled || !isCurrentSingleWatch(address, generation) ||
+            generation != locationDiagnosticsGeneration
+        ) return
+        val json = try {
+            locationDiagnostics.watchSnapshot(session)
+        } catch (error: IllegalStateException) {
+            Log.i(TAG, "Skipping diagnostics snapshot after session end", error)
+            return
+        }
+        val bytes = "$json\n".toByteArray(Charsets.UTF_8)
+        if (bytes.size > com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.MAX_MESSAGE_BYTES) {
+            Log.w(TAG, "Location diagnostics snapshot exceeded protocol size limit")
+            return
+        }
+        val frame = BloodhoundFrame(bytes, address, generation, maxNotifyPayloadBytes(), diagnostic = true)
+        if (!locationDiagnosticFrames.trySend(frame).isSuccess) {
+            Log.w(TAG, "Location diagnostics snapshot dropped because its bounded queue is full")
+        }
+    }
+
+    private fun handleLocationDiagnosticsMessage(json: String, type: String): Boolean {
+        if (type !in setOf(
+                com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.CAPABILITY,
+                com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.SNAPSHOT,
+                com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.STOP
+            )
+        ) return false
+        val address = connectedDevice?.address ?: return true
+        val generation = bloodhoundConnectionGeneration.get()
+        val expected = locationDiagnosticsSession ?: return true
+        if (!locationDiagnosticsEnabled || !isCurrentSingleWatch(address, generation) ||
+            generation != locationDiagnosticsGeneration
+        ) return true
+        val valid = try {
+            com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.parse(
+                org.json.JSONObject(json), type, expected
+            )
+        } catch (error: org.json.JSONException) {
+            Log.w(TAG, "Ignoring malformed bonded location diagnostics message", error)
+            return true
+        } ?: run {
+            Log.w(TAG, "Ignoring invalid bonded location diagnostics message")
+            return true
+        }
+        if (type == com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.STOP) {
+            stopLocationDiagnosticsSession("peer disabled diagnostics")
+        } else if (type == com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.CAPABILITY) {
+            if (!valid.optBoolean("supported", false)) {
+                stopLocationDiagnosticsSession("peer does not support diagnostics")
+                return true
+            }
+            if (!locationDiagnosticsFramesReady(address, generation)) return true
+            locationDiagnostics.start(expected)
+            locationDiagnosticsReportJob?.cancel()
+            locationDiagnosticsReportJob = serviceScope.launch {
+                while (locationDiagnosticsSession == expected &&
+                    locationDiagnosticsGeneration == generation &&
+                    locationDiagnosticsEnabled
+                ) {
+                    sendLocationDiagnosticSnapshot()
+                    delay(LOCATION_DIAGNOSTICS_REPORT_INTERVAL_MS)
+                }
+            }
+        } else if (!locationDiagnostics.acceptPhoneSnapshot(valid, expected)) {
+            Log.w(TAG, "Ignoring malformed or stale phone diagnostics snapshot")
+        }
+        return true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun locationDiagnosticsFramesReady(address: String, generation: Long): Boolean =
+        locationDiagnosticsEnabled && generation == bloodhoundConnectionGeneration.get() &&
+            isCurrentSingleWatch(address, generation) && capRepo.gateway.session == null
 
     @SuppressLint("MissingPermission")
     private fun sendBloodhoundControl(json: String): Boolean {
@@ -570,6 +754,7 @@ class CompanionAppService : Service() {
         startBleOutboundCollector()
         startSettingsChangedCollector()
         startPointDeletionRelay()
+        startLocationDiagnostics()
         repo.clearCompanionUsers()
         serviceScope.launch {
             while (true) {
@@ -794,6 +979,8 @@ class CompanionAppService : Service() {
 
         // 2) Stop outbound work
         bloodhoundFrames.close()
+        locationDiagnosticFrames.close()
+        stopLocationDiagnosticsSession("service stopped")
         gatewayIncoming.close()
         serviceJob.cancel()
 
@@ -1324,7 +1511,8 @@ class CompanionAppService : Service() {
         bytes: ByteArray,
         maxPayload: Int,
         expectedAddress: String? = null,
-        expectedGeneration: Long? = null
+        expectedGeneration: Long? = null,
+        diagnostics: Boolean = false
     ) {
         if (capRepo.gateway.session != null) {
             val message = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
@@ -1345,8 +1533,16 @@ class CompanionAppService : Service() {
             return
         }
 
-        // Prevent interleaving chunks from multiple messages
-        notifyMutex.withLock {
+        // Diagnostics are best-effort and never wait behind operational output.
+        val acquired = if (diagnostics) notifyMutex.tryLock() else {
+            notifyMutex.lock()
+            true
+        }
+        if (!acquired) {
+            Log.d(TAG, "Dropping diagnostics notification while operational traffic is active")
+            return
+        }
+        try {
             val message = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
             val type = message.optString("msgType")
             val gatewayToken = if (type.startsWith("gateway_")) message.optString("session") else null
@@ -1386,6 +1582,8 @@ class CompanionAppService : Service() {
                 // Small pacing delay avoids buffer overruns on some stacks
                 if (offset < bytes.size) delay(NOTIFY_CHUNK_DELAY_MS)
             }
+        } finally {
+            notifyMutex.unlock()
         }
 
         Log.d(TAG, "sendChunkedNotify: sent ${bytes.size} bytes in chunks (maxPayload=$maxPayload)")
@@ -1538,6 +1736,7 @@ class CompanionAppService : Service() {
                 Log.w(TAG, "Gateway rejected non-map/profile command: ${base.type}")
                 return
             }
+            if (handleLocationDiagnosticsMessage(json, base.type)) return
 
             when (base.type) {
                 "phone_user_cot", "phone_user_remove" -> {
@@ -1819,6 +2018,7 @@ class CompanionAppService : Service() {
 
     companion object {
         private val TAG = "WearTAK-" + CompanionAppService::class.java.simpleName
+        private const val LOCATION_DIAGNOSTICS_REPORT_INTERVAL_MS = 30_000L
         private const val POINT_DELETION_ACK_TIMEOUT_MS = 10_000L
         private const val ACTION_KEY_MISSING = "android.bluetooth.device.action.KEY_MISSING"
         private const val NOTIFICATION_ID = 999  // change per service
