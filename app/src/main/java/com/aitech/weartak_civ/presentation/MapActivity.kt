@@ -67,6 +67,7 @@ import com.aitech.weartak_civ.presentation.MapActivity.Constants.maroon
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.orange
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.purple
 import com.aitech.weartak_civ.presentation.MapActivity.Constants.teal
+
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.provider.RepoLocationProvider
 import kotlinx.coroutines.delay
@@ -199,13 +200,23 @@ import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
+import com.aitech.weartak_civ.presentation.viewmodel.RoutePointDetails
+import com.aitech.weartak_civ.presentation.viewmodel.RoutePointsDetailsView
+import com.aitech.weartak_civ.presentation.viewmodel.findRoutePoint
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_DISCONNECTED_STRING
 import com.fasterxml.jackson.databind.util.CompactStringObjectMap
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import org.bouncycastle.oer.its.ieee1609dot2.basetypes.Latitude
+import org.bouncycastle.oer.its.ieee1609dot2.basetypes.Longitude
 import org.json.JSONArray
+import org.maplibre.android.style.layers.CircleLayer
+import org.maplibre.spatialk.geojson.MultiLineString
+import org.maplibre.spatialk.geojson.MultiPoint
 import java.io.Serializable
 import kotlin.math.abs
 import kotlin.math.floor
@@ -930,6 +941,245 @@ fun BhoundMap(
     )
 }
 
+data class RouteCollection(
+    val serverId: String,
+    val uid: String,
+    val name: String,
+    val color: String,
+    val points: List<RouteItem>
+)
+
+data class RouteItem(
+    val lat: Double?,
+    val lon: Double?,
+    val hasPoint: Boolean = false,
+    val pointTitle: String? = null
+)
+
+fun RouteCollection.toLineString(): LineString? {
+    val positions = points
+        .mapNotNull { point ->
+            val lat = point.lat
+            val lon = point.lon
+
+            if (lat != null && lon != null) {
+                Position(lon, lat) // longitude FIRST
+            } else {
+                null
+            }
+        }
+
+    return if (positions.size >= 2) {
+        LineString(positions)
+    } else {
+        null
+    }
+}
+
+fun RouteCollection.toFeature(): Feature<LineString, JsonObject?>? {
+    val lineString = toLineString() ?: return null
+
+    return Feature(
+        geometry = lineString,
+        properties = buildJsonObject {
+            put("serverId", serverId)
+            put("uid", uid)
+            put("name", name)
+            put("color", color)
+        }
+    )
+}
+
+fun List<RouteCollection>.toFeatureCollection():
+        FeatureCollection<LineString, JsonObject?> {
+
+    val features = mapNotNull { route ->
+        route.toFeature()
+    }
+
+    return FeatureCollection(features)
+}
+
+fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
+    return points.mapIndexedNotNull { index, item ->
+
+        val lat = item.lat
+        val lon = item.lon
+
+        if (
+            item.hasPoint &&
+            lat != null &&
+            lon != null
+        ) {
+            Feature(
+                geometry = Point(Position(lon, lat)),
+                properties = buildJsonObject {
+                    put("serverId", serverId)
+                    put("routeUid", uid)
+                    put("pointIndex", index)
+                    put("title", item.pointTitle ?: "")
+                    put("color", color)
+                }
+            )
+        } else {
+            null
+        }
+    }
+}
+
+@Composable
+fun RoutesLayer(
+    routes: List<RouteCollection>,
+    camera: CameraState,
+    onPointClick: (String, String, Int) -> Unit
+) {
+    if (routes.isEmpty()) return
+    val featureCollection = remember(routes) {
+        routes.toFeatureCollection()
+    }
+    if (featureCollection.features.isEmpty()) return
+    val source = rememberGeoJsonSource(
+        data = GeoJsonData.Features(featureCollection)
+    )
+
+    val pointFeatures = remember(routes) {
+        routes.flatMap { route ->
+            route.toPointFeatures()
+        }
+    }
+    val pointFeatureCollection = remember(pointFeatures) {
+        FeatureCollection(pointFeatures)
+    }
+
+    val pointSource = rememberGeoJsonSource(
+        data = GeoJsonData.Features(pointFeatureCollection)
+    )
+
+    val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
+
+    LineLayer(
+        id = "routes-layer",
+        source = source,
+        color = switch(
+            //TODO: WEAR-47 - Add ability for hex coloring
+            condition(eq(get("color").asString(), const("White"), c), const(Color.White)),
+            condition(eq(get("color").asString(), const("Yellow"), c), const(Color.Yellow)),
+            condition(eq(get("color").asString(), const("Orange"), c), const(orange)),
+            condition(eq(get("color").asString(), const("Magenta"), c), const(Color.Magenta)),
+            condition(eq(get("color").asString(), const("Red"), c), const(Color.Red)),
+            condition(eq(get("color").asString(), const("Maroon"), c), const(maroon)),
+            condition(eq(get("color").asString(), const("Purple"), c), const(purple)),
+            condition(eq(get("color").asString(), const("Dark Blue"), c), const(dark_blue)),
+            condition(eq(get("color").asString(), const("Blue"), c), const(Color.Blue)),
+            condition(eq(get("color").asString(), const("Cyan"), c), const(Color.Cyan)),
+            condition(eq(get("color").asString(), const("Teal"), c), const(teal)),
+            condition(eq(get("color").asString(), const("Green"), c), const(Color.Green)),
+            condition(eq(get("color").asString(), const("Dark Green"), c), const(dark_green)),
+            condition(eq(get("color").asString(), const("Brown"), c), const(brown)),
+            fallback = const(Color.White),
+        ),
+        width = const(4.dp)
+    )
+    SymbolLayer(
+        id = "route-points-text-layer",
+        source = pointSource,
+        textAllowOverlap = const(true),
+        textIgnorePlacement = const(true),
+        textOptional = const(true),
+        textField = if (camera.position.zoom > 10.0) {
+            get("title").asString()
+        } else {
+            const("")
+        },
+        textSize = const(0.45.em),
+        textMaxWidth = const(4.em),
+        textAnchor = const(SymbolAnchor.Bottom),
+        textColor = const(Color.White),
+        textHaloColor = const(Color.Black),
+        textHaloWidth =const(2.dp),
+        textOffset = offset(0f.em, (-1f).em),
+    )
+
+    org.maplibre.compose.layers.CircleLayer(
+        id = "route-points-layer",
+        source = pointSource,
+        color = switch(
+            //TODO: WEAR-47 - Add ability for hex coloring
+            condition(eq(get("color").asString(), const("White"), c), const(Color.White)),
+            condition(eq(get("color").asString(), const("Yellow"), c), const(Color.Yellow)),
+            condition(eq(get("color").asString(), const("Orange"), c), const(orange)),
+            condition(eq(get("color").asString(), const("Magenta"), c), const(Color.Magenta)),
+            condition(eq(get("color").asString(), const("Red"), c), const(Color.Red)),
+            condition(eq(get("color").asString(), const("Maroon"), c), const(maroon)),
+            condition(eq(get("color").asString(), const("Purple"), c), const(purple)),
+            condition(eq(get("color").asString(), const("Dark Blue"), c), const(dark_blue)),
+            condition(eq(get("color").asString(), const("Blue"), c), const(Color.Blue)),
+            condition(eq(get("color").asString(), const("Cyan"), c), const(Color.Cyan)),
+            condition(eq(get("color").asString(), const("Teal"), c), const(teal)),
+            condition(eq(get("color").asString(), const("Green"), c), const(Color.Green)),
+            condition(eq(get("color").asString(), const("Dark Green"), c), const(dark_green)),
+            condition(eq(get("color").asString(), const("Brown"), c), const(brown)),
+            fallback = const(Color.White)),
+        radius = if (camera.position.zoom > 10.0) {
+            const(5.dp)
+        } else {
+            const(0.dp)
+        },
+        // Detect when a route point is tapped
+        onClick = { features ->
+
+            // Get the clicked route point
+            val feature = features.firstOrNull()
+                ?: return@CircleLayer ClickResult.Pass
+
+            // Get the route UID
+            val routeUid = feature.getStringProperty("routeUid").orEmpty()
+            val serverId = feature.getStringProperty("serverId").orEmpty()
+
+            // Get the point index from the GeoJSON properties
+            val pointIndex = feature.properties
+                ?.get("pointIndex")
+                ?.toString()
+                ?.toIntOrNull() ?: -1
+
+            // Open the selected point
+            if (serverId.isNotBlank() && routeUid.isNotBlank() && pointIndex >= 0) {
+                onPointClick(serverId, routeUid, pointIndex)
+                ClickResult.Consume
+            } else {
+                Log.w("MissionRoutes", "Route point feature is missing its server, route or point identity")
+                ClickResult.Pass
+            }
+        }
+    )
+}
+
+private val missionRouteColors = listOf(
+    "Red",
+    "Blue",
+    "Green",
+    "Orange",
+    "Purple",
+    "Cyan",
+    "Yellow",
+    "Magenta",
+    "Teal"
+)
+
+private fun getMissionRouteColor(
+    serverId: String,
+    missionName: String?
+): String {
+    val missionKey = "$serverId:${missionName ?: ""}"
+
+    val index = Math.floorMod(
+        missionKey.hashCode(),
+        missionRouteColors.size
+    )
+
+    return missionRouteColors[index]
+}
+
 // MAP STYLE FILTERING
 // Removes hidden style layers before loading the map
 fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): String {
@@ -1444,7 +1694,45 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     val dataRepository = remember(context) {
         (context.applicationContext as WearTakApplication).repo
     }
+    val takRoutes by dataRepository.takRoutes.collectAsStateWithLifecycle()
 
+    LaunchedEffect(takRoutes) {
+        Log.d(
+            "MissionRoutes",
+            "Route count: ${takRoutes.size}"
+        )
+
+        takRoutes.forEach { route ->
+            Log.d(
+                "MissionRoutes",
+                "Route: ${route.name}, UID: ${route.uid}, " +
+                        "Points: ${route.points.size}, " +
+                        "Server: ${route.serverId}"
+            )
+        }
+    }
+
+    val missionMapRoutes = remember(takRoutes) {
+        takRoutes.map { route ->
+            RouteCollection(
+                serverId = route.serverId,
+                uid = route.uid,
+                name = route.name,
+                color = getMissionRouteColor(
+                    serverId = route.serverId,
+                    missionName = route.missionName
+                ),
+                points = route.points.map { point ->
+                    RouteItem(
+                        lat = point.latitude,
+                        lon = point.longitude,
+                        hasPoint = point.name != null,
+                        pointTitle = point.name
+                    )
+                }
+            )
+        }
+    }
     //
     var hiddenLayers by remember {
         mutableStateOf(mapPreferences.getStringSet(
@@ -1468,6 +1756,8 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             zoom = 15.5,
         )
     )
+
+
 
     // LAYER MENU CONFIGURATION
     // Connects each menu option to its MapLibre style layer IDs
@@ -1564,6 +1854,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     val userLocationState = rememberUserLocationState(locationProvider)
     // Show the coordinate popup for the user location puck
     var showPopup by remember { mutableStateOf(false) }
+    var selectedRoutePoint by remember {mutableStateOf<RoutePointDetails?>(null)}
 
     // Show or hide connected users
     var showUsers by remember { mutableStateOf(mapPreferences.getBoolean(
@@ -2260,6 +2551,29 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                 userLon = lon,
                 camera = cameraState
             )
+
+            RoutesLayer(
+                routes = missionMapRoutes,
+                camera = cameraState,
+
+                onPointClick = { serverId, routeUid, pointIndex ->
+                    val point = findRoutePoint(takRoutes, serverId, routeUid, pointIndex)
+                    if (point != null) {
+                        selectedRoutePoint = point.copy(
+                            droppedBy = point.droppedBy?.let { senderUid ->
+                                receivedUserListSetting.firstOrNull { user ->
+                                    user.uid == senderUid &&
+                                            user.sourceServerId == serverId
+                                }?.title ?: senderUid
+                            }
+                        )
+                    } else {
+                        Log.w(TAG, "Selected route point is no longer available")
+                    }
+                }
+
+
+            )
         }
 
         if (selectingChatContact) {
@@ -2509,6 +2823,79 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                 },
                 mapVm,
                 takServers = takChannels
+            )
+        }
+        // Show details when a route point is selected
+        // Show details when a route point is selected
+        selectedRoutePoint?.let { point ->
+            RoutePointsDetailsView(
+                pointName = point.title.ifBlank { "Route Point" },
+                latitude = point.latitude,
+                longitude = point.longitude,
+                sender = point.droppedBy,
+                missionName = point.missionName,
+
+                onChat = {
+                    val senderUid = takRoutes
+                        .firstOrNull { it.serverId == point.serverId && it.uid == point.routeUid }
+                        ?.sender
+
+                    val contact = try {
+                        resolveChatContact(
+                            senderUid,
+                            receivedUserListSetting.filter { it.sourceServerId == point.serverId },
+                            MainActivity.device_uid
+                        )
+                    } catch (error: IllegalArgumentException) {
+                        Log.w(TAG, "Cannot open route sender chat", error)
+                        Toast.makeText(
+                            context,
+                            R.string.chat_invalid_contact,
+                            Toast.LENGTH_SHORT
+                        ).show()
+                        null
+                    }
+
+                    if (contact != null) {
+                        val intent = Intent(context, ChatActivity::class.java).apply {
+                            putExtra("user_uid", contact.uid)
+                            putExtra("user_callsign", contact.callsign)
+                            putExtra("from_maps", true)
+                        }
+
+                        context.startActivity(intent)
+                        selectedRoutePoint = null
+                    }
+                },
+
+                onBloodhound = {
+                    // Create a unique UID for the selected route point
+                    val pointUid =
+                        "route-point-${point.serverId}-${point.routeUid}-${point.pointIndex}"
+
+                    // Add the route point as a Bloodhound target
+                    bhRepo.addMarkerTarget(
+                        uid = pointUid,
+                        title = point.title.ifBlank { "Route Point" },
+                        markerType = "b-m-p-s-m",
+                        lat = point.latitude,
+                        lon = point.longitude,
+                        time = System.currentTimeMillis()
+                    )
+
+                    // Activate Bloodhound
+                    bhRepo.requestActivateBloodhound(pointUid)
+
+                    // Refresh the Bloodhound complication
+                    requestBloodhoundComplicationUpdate(context)
+
+                    // Close the point details
+                    selectedRoutePoint = null
+                },
+
+                onBack = {
+                    selectedRoutePoint = null
+                }
             )
         }
 

@@ -33,6 +33,7 @@ ui = "1.11.3"
 foundation = "1.11.2"
 foundationLayoutVersion = "1.11.2"
 
+
 [libraries]
 compose-navigation = { module = "androidx.wear.compose:compose-navigation", version.ref = "composeNavigation" }
 onnxruntime-android = { group = "com.microsoft.onnxruntime", name = "onnxruntime-android", version.ref = "onnxruntime" }

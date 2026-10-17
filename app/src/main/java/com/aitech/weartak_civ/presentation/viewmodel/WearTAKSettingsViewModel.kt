@@ -668,7 +668,8 @@ class WearTAKSettingsViewModel : ViewModel() {
             }
         }
     }
-    val serverRegistrationState = TAKConnectService.serverRegistration.state
+    val serverRegistrationState: StateFlow<TakServerRegistration.State> =
+        TAKConnectService.serverRegistration.state
     val takServerRuntimeDetails = TAKConnectService.takServerRuntimeDetails
 
     fun saveAndRegisterTakServer(item: TakServerItem, index: Int? = null) {

@@ -229,6 +229,7 @@ dependencies {
     implementation libs.androidx.foundation.layout
     implementation libs.androidx.foundation
 
+
     def room_version = "2.7.2"
     implementation "androidx.room:room-runtime:$room_version"
     ksp "androidx.room:room-compiler:$room_version"
