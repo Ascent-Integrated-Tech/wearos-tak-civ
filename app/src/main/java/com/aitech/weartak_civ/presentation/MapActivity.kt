@@ -202,6 +202,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.RoutePointDetails
 import com.aitech.weartak_civ.presentation.viewmodel.RoutePointsDetailsView
+import com.aitech.weartak_civ.presentation.viewmodel.findRoutePoint
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTING_STRING
@@ -939,6 +940,7 @@ fun BhoundMap(
 }
 
 data class RouteCollection(
+    val serverId: String,
     val uid: String,
     val name: String,
     val color: String,
@@ -978,6 +980,7 @@ fun RouteCollection.toFeature(): Feature<LineString, JsonObject?>? {
     return Feature(
         geometry = lineString,
         properties = buildJsonObject {
+            put("serverId", serverId)
             put("uid", uid)
             put("name", name)
             put("color", color)
@@ -1009,6 +1012,7 @@ fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
             Feature(
                 geometry = Point(Position(lon, lat)),
                 properties = buildJsonObject {
+                    put("serverId", serverId)
                     put("routeUid", uid)
                     put("pointIndex", index)
                     put("title", item.pointTitle ?: "")
@@ -1025,7 +1029,7 @@ fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
 fun RoutesLayer(
     routes: List<RouteCollection>,
     camera: CameraState,
-    onPointClick: (String, Int) -> Unit
+    onPointClick: (String, String, Int) -> Unit
 ) {
     if (routes.isEmpty()) return
     val featureCollection = remember(routes) {
@@ -1128,6 +1132,7 @@ fun RoutesLayer(
 
             // Get the route UID
             val routeUid = feature.getStringProperty("routeUid").orEmpty()
+            val serverId = feature.getStringProperty("serverId").orEmpty()
 
             // Get the point index from the GeoJSON properties
             val pointIndex = feature.properties
@@ -1136,10 +1141,11 @@ fun RoutesLayer(
                 ?.toIntOrNull() ?: -1
 
             // Open the selected point
-            if (routeUid.isNotBlank() && pointIndex >= 0) {
-                onPointClick(routeUid, pointIndex)
+            if (serverId.isNotBlank() && routeUid.isNotBlank() && pointIndex >= 0) {
+                onPointClick(serverId, routeUid, pointIndex)
                 ClickResult.Consume
             } else {
+                Log.w("MissionRoutes", "Route point feature is missing its server, route or point identity")
                 ClickResult.Pass
             }
         }
@@ -1707,6 +1713,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     val missionMapRoutes = remember(takRoutes) {
         takRoutes.map { route ->
             RouteCollection(
+                serverId = route.serverId,
                 uid = route.uid,
                 name = route.name,
                 color = getMissionRouteColor(
@@ -2547,45 +2554,19 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                 routes = missionMapRoutes,
                 camera = cameraState,
 
-                // Called when a route point is clicked
-                onPointClick = { routeUid, pointIndex ->
-
-                    // Find the selected route
-                    val route = missionMapRoutes.firstOrNull {
-                        it.uid == routeUid
-                    }
-
-                    // Find the selected point
-                    val point = route?.points?.getOrNull(pointIndex)
-
-                    // Make sure the point has valid coordinates
-                    if (route != null && point?.lat != null && point.lon != null) {
-
-                        // Save the selected point to display its details
-                        val originalRoute = takRoutes.firstOrNull {
-                            it.uid == routeUid
-                        }
-
-                        Log.d(
-                            "RouteSender",
-                            "Route: ${originalRoute?.name}, Sender: ${originalRoute?.sender}"
-                        )
-
-                        selectedRoutePoint = RoutePointDetails(
-                            routeUid = route.uid,
-                            pointIndex = pointIndex,
-                            title = point.pointTitle.orEmpty(),
-                            latitude = point.lat,
-                            longitude = point.lon,
-                            droppedBy = originalRoute?.sender?.let { senderUid ->
+                onPointClick = { serverId, routeUid, pointIndex ->
+                    val point = findRoutePoint(takRoutes, serverId, routeUid, pointIndex)
+                    if (point != null) {
+                        selectedRoutePoint = point.copy(
+                            droppedBy = point.droppedBy?.let { senderUid ->
                                 receivedUserListSetting.firstOrNull { user ->
                                     user.uid == senderUid &&
-                                            user.sourceServerId == originalRoute.serverId
+                                            user.sourceServerId == serverId
                                 }?.title ?: senderUid
-                            },
-                            missionName = originalRoute?.missionName,
-                            serverId = originalRoute?.serverId.orEmpty()
+                            }
                         )
+                    } else {
+                        Log.w(TAG, "Selected route point is no longer available")
                     }
                 }
 
@@ -2854,13 +2835,13 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
                 onChat = {
                     val senderUid = takRoutes
-                        .firstOrNull { it.uid == point.routeUid }
+                        .firstOrNull { it.serverId == point.serverId && it.uid == point.routeUid }
                         ?.sender
 
                     val contact = try {
                         resolveChatContact(
                             senderUid,
-                            receivedUserListSetting,
+                            receivedUserListSetting.filter { it.sourceServerId == point.serverId },
                             MainActivity.device_uid
                         )
                     } catch (error: IllegalArgumentException) {

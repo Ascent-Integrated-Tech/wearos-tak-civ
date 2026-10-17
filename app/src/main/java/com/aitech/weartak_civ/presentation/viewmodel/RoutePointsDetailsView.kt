@@ -18,6 +18,7 @@ import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
 import androidx.compose.foundation.shape.RoundedCornerShape
+import com.aitech.weartak_civ.data.model.TakRoute
 
 data class RoutePointDetails(
     val routeUid: String,
@@ -29,6 +30,27 @@ data class RoutePointDetails(
     val missionName: String? = null,
     val serverId: String = ""
 )
+
+fun findRoutePoint(
+    routes: List<TakRoute>,
+    serverId: String,
+    routeUid: String,
+    pointIndex: Int
+): RoutePointDetails? {
+    val route = routes.firstOrNull { it.serverId == serverId && it.uid == routeUid } ?: return null
+    val point = route.points.getOrNull(pointIndex) ?: return null
+    return RoutePointDetails(
+        routeUid = route.uid,
+        pointIndex = pointIndex,
+        title = point.name.orEmpty(),
+        latitude = point.latitude,
+        longitude = point.longitude,
+        droppedBy = route.sender,
+        missionName = route.missionName,
+        serverId = route.serverId
+    )
+}
+
 @Composable
 fun RoutePointsDetailsView(
     pointName: String,

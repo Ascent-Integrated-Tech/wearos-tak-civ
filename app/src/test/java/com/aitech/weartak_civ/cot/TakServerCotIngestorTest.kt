@@ -9,6 +9,7 @@
 
 package com.aitech.weartak_civ.cot
 
+import android.app.Application
 import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.events.TakChatEvent
 import kotlinx.coroutines.test.runTest
@@ -16,15 +17,23 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import com.aitech.weartak_civ.data.model.TakRoute
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class, sdk = [34])
 class TakServerCotIngestorTest {
     private class RecordingSink : TakServerCotSink {
         val chats = mutableListOf<TakChatEvent>()
         val geofences = mutableListOf<GeofenceCot>()
+        val routes = mutableListOf<Pair<TakRoute, TakServerCotEnvelope>>()
         override suspend fun onRoute(
             route: TakRoute,
             envelope: TakServerCotEnvelope
-        ) = Unit
+        ) {
+            routes += route to envelope
+        }
         val users = mutableListOf<Pair<CotUserPositionEvent, TakServerCotEnvelope>>()
         val markers = mutableListOf<Pair<CotMarkerEvent, TakServerCotEnvelope>>()
         val emergencies = mutableListOf<Pair<CotEmergencyEvent, TakServerCotEnvelope>>()
@@ -64,6 +73,45 @@ class TakServerCotIngestorTest {
         override suspend fun onChannelChanged(envelope: TakServerCotEnvelope) {
             channelChanges += envelope
         }
+    }
+
+    @Test
+    fun deliversRoutesWithTheOriginalSourceAndOrderedPoints() = runTest {
+        val sink = RecordingSink()
+        val ingestor = ingestor(sink)
+        val xml = """
+            <event uid="shared-route" type="b-m-r"><detail>
+                <contact callsign="Test route"/>
+                <link point="34.0,-117.0,100" callsign="Start"/>
+                <link point="35.0,-118.0,200" callsign="Finish"/>
+            </detail></event>
+        """.trimIndent()
+        val first = envelope(xml, 100L)
+        val second = first.copy(sourceServerId = "other-server", receivedAt = 101L)
+
+        assertEquals(TakServerCotIngestResult.ROUTE, ingestor.ingest(first))
+        assertEquals(TakServerCotIngestResult.ROUTE, ingestor.ingest(second))
+        assertEquals(listOf(first, second), sink.routes.map { it.second })
+        assertEquals(listOf(SERVER_ID, "other-server"), sink.routes.map { it.first.serverId })
+        sink.routes.forEach { (route, _) ->
+            assertEquals("shared-route", route.uid)
+            assertEquals(listOf("Start", "Finish"), route.points.map { it.name })
+            assertEquals(listOf(34.0, 35.0), route.points.map { it.latitude })
+        }
+    }
+
+    @Test
+    fun malformedRouteDoesNotPreventTheNextValidRoute() = runTest {
+        val sink = RecordingSink()
+        val logs = mutableListOf<String>()
+        val ingestor = ingestor(sink, logs)
+        val empty = "<event uid='route' type='b-m-r'><detail/></event>"
+        val valid = "<event uid='route' type='b-m-r'><detail><link point='34,-117'/></detail></event>"
+
+        assertEquals(TakServerCotIngestResult.MALFORMED, ingestor.ingest(envelope(empty, 100L)))
+        assertEquals(TakServerCotIngestResult.ROUTE, ingestor.ingest(envelope(valid, 101L)))
+        assertEquals(1, sink.routes.size)
+        assertTrue(logs.any { it.contains("malformed route") })
     }
 
     @Test
