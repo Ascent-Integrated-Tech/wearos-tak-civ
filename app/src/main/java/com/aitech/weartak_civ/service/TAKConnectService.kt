@@ -18,6 +18,7 @@ import android.content.pm.PackageInfo
 import android.content.pm.PackageManager
 import android.net.Network
 import android.net.ConnectivityManager
+import android.net.wifi.WifiManager
 import android.os.Handler
 import android.os.Looper
 import android.os.IBinder
@@ -249,6 +250,7 @@ class TAKConnectService: Service() {
     private fun startMulticastCollector() {
         val wifiRequest = MulticastWifiRequest(
             getSystemService(ConnectivityManager::class.java),
+            applicationContext.getSystemService(WifiManager::class.java),
             Handler(Looper.getMainLooper())
         )
         multicastWifiRequest = wifiRequest

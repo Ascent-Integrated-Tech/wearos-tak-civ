@@ -333,9 +333,18 @@ has been discovered. The Wi-Fi access point must permit multicast between client
 Multicast tracks local Wi-Fi independently of Android's default internet connection,
 so cellular routing changes do not stop receivers on a connected radio Wi-Fi network.
 While multicast is enabled, WearTAK requests local Wi-Fi so Wear OS does not shut it down
-for lack of network demand. The request does not require internet and is released when
-multicast is disabled or the TAK connection service stops. Keeping Wi-Fi connected can
-increase battery use; this does not keep the screen awake or guarantee screen-off delivery.
+for lack of network demand, and holds a high-performance Wi-Fi lock to reduce radio
+power-saving interruptions where supported by the OS. The request does not require
+internet. Both the request and lock are released when multicast is disabled or the TAK
+connection service stops. This uses the existing multicast toggle, increases battery use,
+and does not keep the screen or CPU awake. It does not pin an SSID/BSSID, prevent roaming,
+override OS power restrictions, or guarantee screen-off delivery. Multicast sockets remain
+bound to the Wi-Fi network and are recreated when that network changes.
+On Android 14 and newer, the OS maps high-performance locks to low-latency mode,
+which only takes effect with the screen on and the app in the foreground. The active
+local Wi-Fi request still remains in place with the screen off; this is not an OS
+power-policy bypass. Connection loss, validation/suspension capability changes and
+interface changes are logged without including SSIDs, credentials or IP addresses.
 Reception supports both XML CoT and binary TAK Protocol v1 datagrams, including GeoChat
 and ATAK contacts using friendly equipment/vehicle position types.
 Multicast position broadcasts advertise the GeoChat UDP endpoint so ATAK can send direct
