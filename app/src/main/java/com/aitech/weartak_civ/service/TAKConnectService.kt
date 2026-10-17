@@ -43,6 +43,7 @@ import com.aitech.weartak_civ.data.model.TakChannel
 import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.data.takserver.TakChannelApi
+import com.fasterxml.jackson.databind.ObjectMapper
 import com.aitech.weartak_civ.data.takserver.TakChannelState
 import com.aitech.weartak_civ.data.takserver.TakSanHostnameVerifier
 import com.aitech.weartak_civ.data.takserver.TakServerEndpointIdentity
@@ -56,12 +57,14 @@ import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_ADDED_VIA_UI
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
+import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.integration.plugin.PluginCotIngress
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.manager.MulticastWifiRequest
+import kotlinx.coroutines.flow.StateFlow
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
@@ -81,13 +84,12 @@ import com.aitech.weartak_civ.data.takserver.TakFailureCategory
 import com.aitech.weartak_civ.data.takserver.TakEnrollmentException
 import com.aitech.weartak_civ.data.takserver.TakSignedCertificates
 import kotlinx.coroutines.CancellationException
+import com.aitech.weartak_civ.data.model.TakMissionChange
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -103,13 +105,22 @@ import org.bouncycastle.pkcs.jcajce.JcaPKCS10CertificationRequestBuilder
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
+import org.w3c.dom.Document
+import org.xml.sax.InputSource
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.IOException
+import org.xmlpull.v1.XmlPullParser
+import org.xmlpull.v1.XmlPullParserFactory
+import org.xmlpull.v1.XmlSerializer
+import java.io.StringReader
+import java.io.StringWriter
 import java.io.InputStream
 import java.io.InputStreamReader
 import java.net.SocketTimeoutException
 import java.security.*
+import java.security.cert.Certificate
+import java.security.cert.CertificateFactory
 import java.security.cert.X509Certificate
 import java.util.Base64
 import java.util.Date
@@ -124,10 +135,17 @@ import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManagerFactory
+import com.aitech.weartak_civ.data.takserver.TakMissionApi
 import javax.net.ssl.X509TrustManager
+import com.aitech.weartak_civ.data.model.TakMissionStatus
+import com.aitech.weartak_civ.data.model.TakMissionState
+import com.aitech.weartak_civ.data.model.TakServerMissions
+import kotlinx.coroutines.currentCoroutineContext
+import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.aitech.weartak_civ.data.takserver.TakServerRegistration
@@ -152,6 +170,12 @@ class TAKConnectService: Service() {
         var terminated: Boolean = false
     }
 
+    class SignClientResponse {
+        var signedCert: String? = null
+        var ca0: String? = null
+        var ca1: String? = null // getters/setters not strictly needed for basic usage
+    }
+
     data class NameValueEntry(
         var name: String,
         var value: String
@@ -171,13 +195,12 @@ class TAKConnectService: Service() {
         var numConnAttempts : Int = 0,
         val connectionStatus : AtomicInteger = AtomicInteger(TAK_SERVER_DISCONNECTED),
         val connectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_DISCONNECTED_STRING),
-        val failureLiveData: MutableLiveData<TakConnectionFailure?> = MutableLiveData(null),
         val keyStore : KeyStore = KeyStore.getInstance("PKCS12"),
         var privateKey: PrivateKey? = null,
         var secureSocket : SSLSocket? = null,
         var channelSslContext: SSLContext? = null,
-        var channelTrustManager: X509TrustManager? = null,
         var channelHostnameVerifier: HostnameVerifier? = null,
+        var channelTrustManager: X509TrustManager? = null,
         val channelMutex: Mutex = Mutex(),
         val runtime: ConnectionRuntime = ConnectionRuntime(),
         var duplicateEndpointSuppressed: Boolean = false,
@@ -185,18 +208,10 @@ class TAKConnectService: Service() {
 
     override fun onCreate() {
         super.onCreate()
-        synchronized(connectionLifecycleLock) {
-            serviceStopping = true
-            closeTakServerSockets()
-            connectionScope.cancel()
-            val job = SupervisorJob()
-            connectionServiceJob = job
-            connectionScope = CoroutineScope(Dispatchers.IO + job)
-            serviceStopping = false
-            isRunning.set(true)
-        }
+        serviceStopping = false
         Log.w(TAG, "Repo identity = ${System.identityHashCode(dataRepository)}")
         Log.d(TAG, "TAKConnectService onCreate()")
+        isRunning.set(true)
         startForegroundServiceCompat(
             notificationId = TAK_CONNECT_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
@@ -274,51 +289,25 @@ class TAKConnectService: Service() {
                 dataRepository.multicastPort) { net, enable, address, port ->
                 MulticastConfig(net, enable, address, port)
             }.distinctUntilChanged().collectLatest{ cfg ->
-                val network = cfg.net
-                val address = cfg.address
-                val port = cfg.port
-                val shouldRun = cfg.enable == true && network != null &&
-                        !address.isNullOrBlank() && port != null
+                val shouldRun = cfg.enable != null && cfg.enable && cfg.net != null &&
+                        !cfg.address.isNullOrBlank() && cfg.port != null
                 Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
-                if (cfg.enable == true && network != null && !address.isNullOrBlank() && port != null) {
-                    while (currentCoroutineContext().isActive) {
-                        try {
-                            WifiMulticastReceiver.open(applicationContext, network, address, port).use { receiver ->
-                                if (!NetworkUtils.MulticastPublisher.start(network, address, port)) {
-                                    throw IOException("Multicast publisher could not start")
-                                }
-                                dataRepository.setMulticastPublisherRunning(true)
-                                dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
-                                Log.i(TAG, "Multicast sender and receivers ready on Wi-Fi")
-                                receiver.receive { envelope ->
-                                    val result = cotIngestor.ingest(envelope)
-                                    Log.d(TAG, "Inbound multicast CoT source=${envelope.sourceServerId} result=$result")
-                                }
-                            }
-                        } catch (error: IOException) {
-                            Log.e(TAG, "Multicast I/O failed; retrying in 5 seconds", error)
-                        } catch (error: IllegalArgumentException) {
-                            Log.e(TAG, "Invalid multicast configuration", error)
-                            return@collectLatest
-                        } catch (error: SecurityException) {
-                            Log.e(TAG, "Multicast permission denied", error)
-                            return@collectLatest
-                        } finally {
-                            stopMulticast()
-                        }
-                        delay(5000)
+                if (shouldRun) {
+                    val started = NetworkUtils.MulticastPublisher.start(network = cfg.net, address = cfg.address, port = cfg.port)
+                    if (started) {
+                        dataRepository.setMulticastPublisherRunning(true)
+                        dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
+                    } else {
+                        dataRepository.setMulticastPublisherRunning(false)
+                        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
                     }
                 } else {
-                    stopMulticast()
+                    NetworkUtils.MulticastPublisher.stop()
+                    dataRepository.setMulticastPublisherRunning(false)
+                    dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
                 }
             }
         }
-    }
-
-    private fun stopMulticast() {
-        NetworkUtils.MulticastPublisher.stop()
-        dataRepository.setMulticastPublisherRunning(false)
-        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
     }
 
     fun setFromDatastore() {
@@ -338,8 +327,8 @@ class TAKConnectService: Service() {
                         "isP12=${detail.isP12Cert} hasP12=${!detail.p12Cert.isNullOrBlank()}"
                 )
             }
+            _takServerRuntimeDetails.value = takServerDetails.toList()
             refreshDuplicateEndpointSuppression()
-            runtimeServerDetails.value = takServerDetails.toList()
             enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
             esriEndpoint = dataRepository.getEsriEndpoint.first()
 
@@ -396,94 +385,79 @@ class TAKConnectService: Service() {
         }
     }
 
-    private suspend fun reloadProvisionedTakServers(connect: Boolean = true): Unit =
-        serverConfigurationMutex.withLock {
-            val storedServers = dataRepository.tryAwaitTakServerList()
-                ?: error("Persisted TAK server list is unavailable")
-            val previousById = takServerDetails.associateBy(TakServerDetail::serverId)
-            val retainedIds = mutableSetOf<String>()
-            val replacedRegistrations = mutableListOf<TakServerDetail>()
-            var replacedCount = 0
-            val refreshed = storedServers.map { stored ->
-                val serverId = requireNotNull(TakServerId.normalizeOrNull(stored.serverId))
-                retainedIds += serverId
-                val previous = previousById[serverId]
-                if (previous != null && previous.hasSameRuntimeConfiguration(stored)) {
-                    previous.name = stored.name
-                    dataRepository.takChannels.value
-                        .firstOrNull { it.serverId == serverId }
-                        ?.let { channels ->
-                            dataRepository.updateTakServerChannels(channels.copy(serverName = stored.name))
-                        }
-                    previous
-                } else {
-                    if (previous != null) {
-                        invalidateConnection(previous, terminate = true)
-                        if (previous.hasChangedCredentialMaterial(stored)) {
-                            context.deleteFile(certificateCacheFileName(previous))
-                            if (TakServerEndpointIdentity.key(previous.address, previous.port) !=
-                                TakServerEndpointIdentity.key(stored)) {
-                                context.deleteFile(
-                                    certificateCacheFileName(stored.address, stored.port)
-                                )
-                            }
-                        }
+    suspend fun registerServer(serverId: String) {
+        reloadProvisionedTakServers()
+
+        val detail = getTakServerDetail(serverId)
+            ?: error("Saved TAK server is unavailable")
+
+        detail.numConnAttempts = 0
+        getClientCertificateAndConnect(detail)
+    }
+
+    private suspend fun reloadProvisionedTakServers() {
+        val storedServers = dataRepository.tryAwaitTakServerList()
+            ?: error("Persisted TAK server list is unavailable")
+        val previousById = takServerDetails.associateBy(TakServerDetail::serverId)
+        val retainedIds = mutableSetOf<String>()
+        var replacedCount = 0
+        val refreshed = storedServers.map { stored ->
+            val serverId = requireNotNull(TakServerId.normalizeOrNull(stored.serverId))
+            retainedIds += serverId
+            val previous = previousById[serverId]
+            if (previous != null && previous.hasSameRuntimeConfiguration(stored)) {
+                previous.name = stored.name
+                dataRepository.takChannels.value
+                    .firstOrNull { it.serverId == serverId }
+                    ?.let { channels ->
+                        dataRepository.updateTakServerChannels(channels.copy(serverName = stored.name))
                     }
-                    replacedCount++
-                    stored.toRuntimeDetail().also { replacement ->
-                        if (previous != null) {
-                            serverRegistration.replaceRuntime(serverId, previous, replacement)
-                            if (serverRegistration.isPendingRuntime(replacement)) {
-                                replacedRegistrations += replacement
-                            }
+                previous
+            } else {
+                if (previous != null) {
+                    invalidateConnection(previous, terminate = true)
+                    if (previous.hasChangedCredentialMaterial(stored)) {
+                        applicationContext.deleteFile(certificateCacheFileName(previous))
+                        if (TakServerEndpointIdentity.key(previous.address, previous.port) !=
+                            TakServerEndpointIdentity.key(stored)) {
+                            applicationContext.deleteFile(
+                                certificateCacheFileName(stored.address, stored.port)
+                            )
                         }
                     }
                 }
-            }
-
-            previousById
-                .filterKeys { it !in retainedIds }
-                .values
-                .forEach { removed ->
-                    publishUiRegistration(removed, TAK_SERVER_CONNECTION_FAILED_STRING,
-                        serverRegistration.unavailable())
-                    invalidateConnection(removed, terminate = true)
-                }
-
-            takServerDetails = refreshed.toMutableList()
-            takServerDetailsById.clear()
-            refreshed.forEach { detail -> takServerDetailsById[detail.serverId] = detail }
-            refreshDuplicateEndpointSuppression()
-            runtimeServerDetails.value = refreshed.toList()
-            setIsAnyNetworkConnected()
-            setIsAnyNetworkConnecting()
-
-            Log.i(
-                TAG,
-                "Provisioned TAK configuration refreshed servers=${refreshed.size} replaced=$replacedCount"
-            )
-
-            val companionConnected = isCompanionAppConnected || dataRepository.isCompanionConnected.value
-            if (connect) replacedRegistrations.forEach(::startUiRegistration)
-            if (connect && !companionConnected && isNetworkConnected) {
-                refreshed
-                    .filter { detail ->
-                        detail !in replacedRegistrations &&
-                            detail.isEnabled &&
-                            !detail.duplicateEndpointSuppressed &&
-                            detail.connectionStatus.get() == TAK_SERVER_DISCONNECTED
-                    }
-                    .forEach(::getClientCertificateAndConnect)
+                replacedCount++
+                stored.toRuntimeDetail()
             }
         }
 
-    suspend fun registerServer(serverId: String) {
-        // Always start the requested attempt, even if a collector already consumed the edit.
-        reloadProvisionedTakServers(connect = false)
-        serverConfigurationMutex.withLock {
-            val detail = getTakServerDetail(serverId)
-                ?: error("Saved TAK server is unavailable")
-            startUiRegistration(detail)
+        previousById
+            .filterKeys { it !in retainedIds }
+            .values
+            .forEach { removed -> invalidateConnection(removed, terminate = true) }
+
+        takServerDetails = refreshed.toMutableList()
+        takServerDetailsById.clear()
+        refreshed.forEach { detail -> takServerDetailsById[detail.serverId] = detail }
+        _takServerRuntimeDetails.value = refreshed.toList()
+        refreshDuplicateEndpointSuppression()
+        setIsAnyNetworkConnected()
+        setIsAnyNetworkConnecting()
+
+        Log.i(
+            TAG,
+            "Provisioned TAK configuration refreshed servers=${refreshed.size} replaced=$replacedCount"
+        )
+
+        val companionConnected = isCompanionAppConnected || dataRepository.isCompanionConnected.value
+        if (!companionConnected && isNetworkConnected) {
+            refreshed
+                .filter { detail ->
+                    detail.isEnabled &&
+                        !detail.duplicateEndpointSuppressed &&
+                        detail.connectionStatus.get() == TAK_SERVER_DISCONNECTED
+                }
+                .forEach(::getClientCertificateAndConnect)
         }
     }
 
@@ -507,23 +481,15 @@ class TAKConnectService: Service() {
 
     override fun onDestroy() {
         Log.d(TAG, "TAKConnectService onDestroy()")
-        synchronized(connectionLifecycleLock) {
-            // A late teardown must not stop a replacement service's connections.
-            if (connectionServiceJob != null &&
-                connectionScope.coroutineContext[Job] === connectionServiceJob) {
-                serviceStopping = true
-                isRunning.set(false)
-                closeTakServerSockets()
-                stopMulticast()
-            }
-            connectionServiceJob?.cancel()
-        }
+        serviceStopping = true
+        isRunning.set(false)
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+        closeTakServerSockets()
+        NetworkUtils.MulticastPublisher.stop()
         scope.cancel()
-        multicastWifiRequest?.close()
-        multicastWifiRequest = null
+        connectionScope.cancel()
         connectJob?.cancel()
         networkManager = null
         stopForeground(STOP_FOREGROUND_DETACH)
@@ -536,8 +502,6 @@ class TAKConnectService: Service() {
         requestStatusIconsComplicationUpdate(context)
         for (takServerDetail in takServerDetails) {
             takServerDetail.numConnAttempts = 0
-            publishUiRegistration(takServerDetail, TAK_SERVER_CONNECTION_FAILED_STRING,
-                serverRegistration.unavailable())
             invalidateConnection(takServerDetail)
         }
         dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
@@ -622,24 +586,82 @@ class TAKConnectService: Service() {
             }
             takServerDetailsById[takServerDetail.serverId] = takServerDetail
             refreshDuplicateEndpointSuppression()
-            runtimeServerDetails.value = takServerDetails.toList()
-            if (SERVER_ADDED_VIA_UI == message) {
-                serverRegistration.prepare(takServerDetail.serverId)
-                startUiRegistration(takServerDetail)
-                return@runBlocking
-            }
             // Delete server name file (if it exists)
             Companion.deleteFile(certificateCacheFileName(takServerDetail))
             if (isNetworkConnected) {
+                if (SERVER_ADDED_VIA_UI == message) {
+                    Log.d(TAG, "Previous newServerAddedViaUi=$newServerAddedViaUi; newServerAddedViaUiConnectionStatusLiveData=${newServerAddedViaUiConnectionStatusLiveData.value}")
+                    newServerAddedViaUi = true
+                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                }
                 setIsAnyNetworkConnected()
                 setIsAnyNetworkConnecting()
                 getClientCertificateAndConnect(takServerDetail)
             } else {
                 Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
-                val failure = TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.CONNECTIVITY)
-                takServerDetail.failureLiveData.postValue(failure)
-                takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
-                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
+                isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
+                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+
+                requestStatusIconsComplicationUpdate(context)
+
+                if (SERVER_ADDED_VIA_UI == message) {
+                    newServerAddedViaUi = false
+                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                }
+            }
+        }
+    }
+
+    private fun onServerChanged(index: Int) {
+        val oldTakServerDetail = takServerDetails.get(index)
+        Log.d(TAG, "Received SERVER_DETAILS_CHANGED message for index($index): ${oldTakServerDetail.address}")
+        val oldAddress = oldTakServerDetail.address
+        var serverConnDetailsChanged = false
+        runBlocking {
+            val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
+                ?: return@runBlocking
+            val takServer = takServers.get(index)
+            if (takServer.address != oldAddress || takServer.port != oldTakServerDetail.port ||
+                takServer.isEnabled != oldTakServerDetail.isEnabled || takServer.isP12Cert != oldTakServerDetail.isP12Cert ||
+                takServer.username != oldTakServerDetail.username || takServer.password != oldTakServerDetail.password ||
+                takServer.p12Cert != oldTakServerDetail.p12Cert || takServer.p12CertPassword != oldTakServerDetail.p12CertPassword) {
+                serverConnDetailsChanged = true
+            }
+            val takServerDetail = takServerDetails[index]
+            takServerDetail.isEnabled = takServer.isEnabled; takServerDetail.name = takServer.name
+            takServerDetail.address = takServer.address.trim(); takServerDetail.port = takServer.port
+            takServerDetail.isP12Cert = takServer.isP12Cert;
+            takServerDetail.username = takServer.username; takServerDetail.password = takServer.password
+            takServerDetail.p12Cert = takServer.p12Cert; takServerDetail.p12CertPassword = takServer.p12CertPassword
+            takServerDetail.numConnAttempts = 0
+            dataRepository.takChannels.value
+                .firstOrNull { it.serverId == takServerDetail.serverId }
+                ?.let { current ->
+                    dataRepository.updateTakServerChannels(current.copy(serverName = takServerDetail.name))
+                }
+            refreshDuplicateEndpointSuppression()
+        }
+        if (serverConnDetailsChanged) {
+            Log.d(TAG, "serverConnDetailsChanged $serverConnDetailsChanged")
+            // Delete old server name file
+            Companion.deleteFile(certificateCacheFileName(oldTakServerDetail))
+            val newTakServerDetail = takServerDetails.get(index)
+            // Delete new server name file (if it exists)
+            val oldEndpointKey = TakServerEndpointIdentity.key(oldTakServerDetail.address, oldTakServerDetail.port)
+            val newEndpointKey = TakServerEndpointIdentity.key(newTakServerDetail.address, newTakServerDetail.port)
+            if (oldEndpointKey != newEndpointKey) {
+                Companion.deleteFile(certificateCacheFileName(newTakServerDetail))
+            }
+            invalidateConnection(newTakServerDetail)
+            if (isNetworkConnected) {
+                setIsAnyNetworkConnected()
+                setIsAnyNetworkConnecting()
+                if (newTakServerDetail.isEnabled && !newTakServerDetail.duplicateEndpointSuppressed) {
+                    getClientCertificateAndConnect(newTakServerDetail)
+                }
+            } else {
+                Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
                 isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
                 isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
                 dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
@@ -647,13 +669,6 @@ class TAKConnectService: Service() {
                 requestStatusIconsComplicationUpdate(context)
 
             }
-        }
-    }
-
-    private fun onServerChanged(index: Int) {
-        Log.d(TAG, "Received SERVER_DETAILS_CHANGED message for index($index)")
-        runBlocking {
-            reloadProvisionedTakServers()
         }
     }
 
@@ -665,7 +680,6 @@ class TAKConnectService: Service() {
         takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
         if (takServerDetail.isEnabled) {
             takServerDetail.isEnabled = false
-            rejectUiRegistration(takServerDetail)
             invalidateConnection(takServerDetail)
             dataRepository.removeTakServerChannels(takServerDetail.serverId)
             setIsAnyNetworkConnected()
@@ -692,13 +706,11 @@ class TAKConnectService: Service() {
         val takServerDetail = takServerDetails.get(index)
         Log.d(TAG, "Received SERVER_REMOVED message for index($index): ${takServerDetail.address}")
         takServerDetail.numConnAttempts = 0
-        rejectUiRegistration(takServerDetail)
         invalidateConnection(takServerDetail, terminate = true)
         setIsAnyNetworkConnected()
         setIsAnyNetworkConnecting()
         takServerDetailsById.remove(takServerDetail.serverId, takServerDetail)
         takServerDetails.removeAt(index)
-        runtimeServerDetails.value = takServerDetails.toList()
         dataRepository.removeTakServerChannels(takServerDetail.serverId)
         refreshDuplicateEndpointSuppression()
     }
@@ -710,18 +722,12 @@ class TAKConnectService: Service() {
         try {
             if (SERVER_CHANGED == message) {
                 onServerChanged(addlIntInfo)
-            } else {
-                runBlocking {
-                    serverConfigurationMutex.withLock {
-                        if ((SERVER_ADDED == message) || (SERVER_ADDED_VIA_UI == message)) {
-                            onServerAdded(message, addlIntInfo)
-                        } else if (SERVER_TOGGLED == message) {
-                            onServerToggled(addlIntInfo)
-                        } else if (SERVER_REMOVED == message) {
-                            onServerRemoved(addlIntInfo)
-                        }
-                    }
-                }
+            } else if ((SERVER_ADDED == message) || (SERVER_ADDED_VIA_UI == message)) {
+                onServerAdded(message, addlIntInfo)
+            } else if (SERVER_TOGGLED == message) {
+                onServerToggled(addlIntInfo)
+            } else if (SERVER_REMOVED == message) {
+                onServerRemoved(addlIntInfo)
             }
         } catch (e: Exception) {
             Log.w(TAG, "ERROR in MessageEvent ($message) w/ $addlIntInfo: ${e.message}")
@@ -735,7 +741,6 @@ class TAKConnectService: Service() {
 
     fun closeTakServerSockets() {
         for (takServer in takServerDetails) {
-            rejectUiRegistration(takServer)
             invalidateConnection(takServer)
         }
     }
@@ -808,17 +813,37 @@ class TAKConnectService: Service() {
         val isAnyTakConnectingLiveData = MutableLiveData<Boolean>(false)
 
         @Volatile var serviceStopping: Boolean = false
-        private val connectionLifecycleLock = Any()
-        @Volatile private var connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        private val connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         private val channelTraceSequence = AtomicInteger(0)
 
         var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
         private val takServerDetailsById = ConcurrentHashMap<String, TakServerDetail>()
-        private val serverConfigurationMutex = Mutex()
         val serverRegistration = TakServerRegistration()
-        private val runtimeServerDetails = MutableStateFlow<List<TakServerDetail>>(emptyList())
-        val takServerRuntimeDetails = runtimeServerDetails.asStateFlow()
+        fun retryServerRegistration() {
+            val serverId = serverRegistration.state.value.serverId ?: return
+            val ticket = serverRegistration.prepare(serverId)
 
+            val job = connectionScope.launch {
+                serverRegistration.saveAndConnect(
+                    serverId,
+                    save = { TakServerRegistration.SaveResult.SAVED },
+                    connect = { TAK_CONNECT_SERVICE.registerServer(serverId) },
+                    ticket = ticket,
+
+                )
+            }
+
+            job.invokeOnCompletion { error ->
+                if (error != null) {
+                    serverRegistration.failPending(ticket)
+                }
+            }
+        }
+        private val _takServerRuntimeDetails =
+            MutableStateFlow<List<TakServerDetail>>(emptyList())
+
+        val takServerRuntimeDetails: StateFlow<List<TakServerDetail>> =
+            _takServerRuntimeDetails
         fun getTakServerDetail(serverId: String): TakServerDetail? =
             TakServerId.normalizeOrNull(serverId)?.let(takServerDetailsById::get)
 
@@ -1075,6 +1100,680 @@ class TAKConnectService: Service() {
             }
         }
 
+
+
+        // Refresh the available Data Sync missions for one TAK Server
+        // Each server has its own mission list so the server ID is used to find the right connection
+        // The refreshed list is saved in the repository for the rest of the app to access
+        private suspend fun refreshAvailableMissions(
+            serverId: String
+        ) {
+            // Find the connection details for the requested server
+            // Stop if the server is no longer available
+            val detail = getTakServerDetail(serverId) ?: return
+
+            try {
+                // Create the mission API client and request the latest mission list
+                // This gets all missions the connected client is allowed to see
+                val missions = missionApi(detail).getAllMissions()
+
+                // Update the repository with the latest missions
+                // Include server information so missions from different servers stay separate
+                dataRepository.updateTakMissions(
+                    serverId = detail.serverId,
+                    serverName = detail.name,
+                    serverAddress = detail.address,
+                    missions = missions
+                )
+
+                // Log how many missions were returned
+                Log.d(
+                    TAG,
+                    "Mission refresh: found ${missions.size} missions"
+                )
+            } catch (error: CancellationException) {
+                // Let coroutine cancellation stop the operation normally
+                throw error
+            } catch (error: Exception) {
+                // Log API or connection failures without stopping other server operations
+                Log.e(TAG, "Mission refresh failed for $serverId", error)
+            }
+        }
+
+        // Load the mission list when the watch connects to a TAK Server
+        // Restore previous mission subscriptions after the list is downloaded
+        // Start syncing subscribed missions so their content stays updated
+        private suspend fun loadTakMissions(
+            detail: TakServerDetail
+        ) {
+            // Tell the repository that this server's missions are loading
+            // This allows the app to track the loading state
+            dataRepository.updateTakMissionLoading(
+                serverId = detail.serverId,
+                serverName = detail.name,
+                serverAddress = detail.address
+            )
+
+            Log.i(
+                TAG,
+                "Mission load starting serverId=${detail.serverId} " +
+                        "serverName=${detail.name} address=${detail.address}"
+            )
+
+            try {
+                // Log the server and client details used during mission requests
+                // Useful when checking which device is requesting mission access
+                Log.d(
+                    TAG,
+                    "MISSION AUTH " +
+                            "server=${detail.address} " +
+                            "username=${detail.username} " +
+                            "clientUid=${MainActivity.device_uid}"
+                )
+
+                // Request the available Data Sync missions from the server
+                // The response is converted into mission models by the API layer
+                val missions = missionApi(detail).getAllMissions()
+
+                // Save the mission models under the correct TAK Server
+                // This makes the mission list available to other parts of the app
+                dataRepository.updateTakMissions(
+                    serverId = detail.serverId,
+                    serverName = detail.name,
+                    serverAddress = detail.address,
+                    missions = missions
+                )
+
+                // Restore any mission subscriptions saved from an earlier connection
+                // This lets the watch remember which missions were joined previously
+                dataRepository.restorePersistedMissionState(
+                    serverId = detail.serverId
+                )
+
+                // Start checking subscribed missions for new changes and CoT content
+                syncSubscribedMissions(detail.serverId)
+
+                Log.i(
+                    TAG,
+                    "Mission load complete serverId=${detail.serverId} " +
+                            "missions=${missions.map { it.name }}"
+                )
+
+            } catch (error: CancellationException) {
+                // Preserve normal cancellation behavior
+                throw error
+            } catch (error: Exception) {
+                // Store the failure so the mission state can show what went wrong
+                dataRepository.updateTakMissionError(
+                    serverId = detail.serverId,
+                    serverName = detail.name,
+                    serverAddress = detail.address,
+                    message = error.message ?: error.javaClass.simpleName
+                )
+
+                Log.e(
+                    TAG,
+                    "Mission load failed serverId=${detail.serverId}",
+                    error
+                )
+            }
+        }
+
+
+        // Join a Data Sync mission on a specific TAK Server
+        // The watch must subscribe before treating the mission as joined locally
+        // After subscribing, the mission is synced to retrieve its available content
+        fun subscribeToTakMission(
+            serverId: String,
+            missionName: String
+        ) {
+            // Find the TAK Server that owns the mission
+            // Stop if the server connection details are missing
+            val detail = getTakServerDetail(serverId) ?: run {
+                Log.e(TAG, "TAK Server not found for serverId=$serverId")
+                return
+            }
+
+            // Run the subscription request in the connection coroutine scope
+            // This avoids blocking the caller while the network request runs
+            connectionScope.launch {
+                try {
+                    Log.i(
+                        TAG,
+                        "Mission subscribe starting serverId=$serverId mission=$missionName"
+                    )
+
+                    // Send a subscription request to the TAK Server
+                    // The device UID identifies which client is joining the mission
+                    missionApi(detail).subscribeToMission(
+                        missionName = missionName,
+                        clientUid = MainActivity.device_uid
+                    )
+
+                    // Mark the mission as subscribed in the current repository state
+                    // Other parts of the app can use this to determine joined missions
+                    dataRepository.setMissionSubscribed(
+                        serverId = serverId,
+                        missionName = missionName,
+                        subscribed = true
+                    )
+
+                    // Save the subscription so it can be restored after reconnecting
+                    // Keep the subscription tied to its original TAK Server
+                    dataRepository.persistMissionSubscribed(
+                        serverId = serverId,
+                        missionName = missionName
+                    )
+
+                    Log.i(
+                        TAG,
+                        "Mission subscribe complete serverId=$serverId mission=$missionName"
+                    )
+
+                    // Immediately check the joined mission for content
+                    // This allows routes and other CoT events to be retrieved after joining
+                    syncTakMission(
+                        serverId = serverId,
+                        missionName = missionName
+                    )
+
+                } catch (error: CancellationException) {
+                    // Allow cancellation to stop the coroutine
+                    throw error
+                } catch (error: Exception) {
+                    // Save the error without marking a failed subscription as successful
+                    dataRepository.setMissionSyncError(
+                        serverId = serverId,
+                        missionName = missionName,
+                        message = error.message ?: error.javaClass.simpleName
+                    )
+
+                    Log.e(
+                        TAG,
+                        "Mission subscribe failed serverId=$serverId mission=$missionName",
+                        error
+                    )
+                }
+            }
+        }
+
+        // Leave a Data Sync mission on a specific TAK Server
+        // Remove locally stored routes associated with the mission
+        // Clear the saved subscription so the mission is not automatically restored
+        fun unsubscribeFromTakMission(
+            serverId: String,
+            missionName: String
+        ) {
+            // Find the TAK Server that owns the mission
+            val detail = getTakServerDetail(serverId) ?: run {
+                Log.e(TAG, "TAK Server not found for serverId=$serverId")
+                return
+            }
+
+            // Run the unsubscribe request without blocking the caller
+            connectionScope.launch {
+                try {
+                    // Tell the TAK Server that this device is leaving the mission
+                    // The client UID identifies which subscription should be removed
+                    missionApi(detail).unsubscribeFromMission(
+                        missionName = missionName,
+                        clientUid = MainActivity.device_uid
+                    )
+
+                    // Remove routes associated with the mission from local storage
+                    // Include the server ID so routes on other servers are not affected
+                    dataRepository.removeTakRoutesForMission(
+                        serverId = serverId,
+                        missionName = missionName
+                    )
+
+                    // Update the local mission state to show that the device has left
+                    dataRepository.setMissionSubscribed(
+                        serverId = serverId,
+                        missionName = missionName,
+                        subscribed = false
+                    )
+
+                    // Remove the saved subscription from persistent storage
+                    // This prevents the mission from being restored as joined later
+                    dataRepository.persistMissionUnsubscribed(
+                        serverId = serverId,
+                        missionName = missionName
+                    )
+
+                    Log.i(
+                        TAG,
+                        "Mission unsubscribe complete serverId=$serverId mission=$missionName"
+                    )
+
+                } catch (error: CancellationException) {
+                    // Allow cancellation to stop the coroutine
+                    throw error
+                } catch (error: Exception) {
+                    // Record the error if the server does not complete the unsubscribe request
+                    dataRepository.setMissionSyncError(
+                        serverId = serverId,
+                        missionName = missionName,
+                        message = error.message ?: error.javaClass.simpleName
+                    )
+
+                    Log.e(
+                        TAG,
+                        "Mission unsubscribe failed serverId=$serverId mission=$missionName",
+                        error
+                    )
+                }
+            }
+        }
+
+
+        // Keep subscribed missions updated while the server connection is active
+        // Check for newly available missions and updates to existing missions
+        // Each server is handled separately to prevent mixing mission content
+        private suspend fun syncSubscribedMissions(
+            serverId: String
+        ) {
+            // Continue syncing until the coroutine is cancelled
+            // Stopping the connection coroutine also stops this polling loop
+            while (currentCoroutineContext().isActive) {
+
+                // Refresh the available mission list from this TAK Server
+                // This allows newly created missions to appear in the repository
+                refreshAvailableMissions(serverId)
+
+                // Find missions currently marked as subscribed on this server
+                // Unsubscribed missions do not need their content downloaded
+                val subscribedMissions =
+                    dataRepository.getSubscribedMissions(serverId)
+
+                // Check each subscribed mission for updated content
+                // The mission name identifies which Data Sync mission to request
+                subscribedMissions.forEach { state ->
+                    syncTakMission(
+                        serverId = serverId,
+                        missionName = state.mission.name
+                    )
+                }
+
+                // Wait 20 seconds before starting the next check
+                // This prevents the app from constantly sending mission API requests
+                delay(20_000L)
+            }
+        }
+
+
+        // Sync the content of one subscribed Data Sync mission
+        // Check the server for changes since previous syncs
+        // Download CoT when new changes exist or the mission has no stored routes
+        // Send downloaded events through the existing CoT processing system
+        private suspend fun syncTakMission(
+            serverId: String,
+            missionName: String
+        ) {
+            // Find the server connection used for this mission
+            // Stop if the server details are unavailable
+            val detail = getTakServerDetail(serverId) ?: run {
+                Log.e(TAG, "TAK Server not found for serverId=$serverId")
+                return
+            }
+
+            // Find the mission in the repository under the correct server
+            // Mission names alone are not enough because different servers may use the same name
+            // Stop if the requested mission is missing from the repository
+            val state = dataRepository.takMissions.value
+                .firstOrNull { it.serverId == serverId }
+                ?.missions
+                ?.firstOrNull { it.mission.name == missionName }
+                ?: return
+
+            // Only sync missions that the watch has joined
+            // This prevents downloading content for missions that are not subscribed
+            if (!state.subscribed) return
+
+            // Mark the mission as syncing before making network requests
+            // The repository can use this state to show that an update is in progress
+            dataRepository.setMissionSyncing(
+                serverId = serverId,
+                missionName = missionName
+            )
+
+            try {
+                // Create the mission API client for the matching TAK Server
+                // The client uses the server's existing TLS configuration
+                val api = missionApi(detail)
+
+                // Request the mission change history from the TAK Server
+                // Changes can indicate that mission content was added or updated
+                val changes = api.getMissionChanges(missionName)
+                val creatorByRouteUid = changes
+                    .filter {
+                        it.type == "ADD_CONTENT" &&
+                                !it.contentUid.isNullOrBlank() &&
+                                !it.creatorUid.isNullOrBlank()
+                    }
+                    .associate {
+                        it.contentUid!! to it.creatorUid!!
+                    }
+                val routeSenders = changes
+                    .filter { it.type == "ADD_CONTENT" }
+                    .mapNotNull { change ->
+                        val routeUid = change.contentUid
+                        val senderUid = change.creatorUid
+
+                        if (routeUid != null && senderUid != null) {
+                            routeUid to senderUid
+                        } else {
+                            null
+                        }
+                    }
+                    .toMap()
+
+                // Compare the returned changes against previously processed changes
+                // Each change has a key based on its type, content UID, and timestamp
+                // Only changes without a matching saved key are treated as new
+                val newChanges = changes.filter {
+                    it.changeKey() !in state.processedChangeKeys
+                }
+
+                // Log the total number of changes and how many are new
+                Log.i(
+                    TAG,
+                    "Mission sync serverId=$serverId mission=$missionName " +
+                            "changes=${changes.size} new=${newChanges.size}"
+                )
+
+                // Log the routes currently stored in the repository
+                // Useful for checking whether downloaded routes were saved correctly
+                // Also shows whether each route has a mission name associated with it
+                Log.d(
+                    TAG,
+                    "Stored routes for mission=$missionName: " +
+                            dataRepository.takRoutes.value.map {
+                                "${it.name} uid=${it.uid} mission=${it.missionName}"
+                            }
+                )
+
+                // Decide whether the mission's CoT content needs to be downloaded
+                // Download if no route is stored for this server and mission
+                // Also download if the server reports any unprocessed changes
+                // Otherwise skip downloading the same mission content again
+                if (
+                    dataRepository.takRoutes.value.none {
+                        it.serverId == serverId && it.missionName == missionName
+                    } || newChanges.isNotEmpty()
+                ) {
+
+                    // Request the current CoT content from the Data Sync mission
+                    // The response can contain multiple CoT events in one XML payload
+                    val cot = api.getMissionCot(missionName)
+
+                    // Log the downloaded payload size for debugging
+                    Log.i(
+                        TAG,
+                        "Mission content downloaded serverId=$serverId " +
+                                "mission=$missionName bytes=${cot.toByteArray().size}"
+                    )
+
+                    // Separate the mission XML into individual CoT event messages
+                    // Each event needs to be processed on its own by the CoT ingestor
+                    val events = extractMissionCotEvents(cot)
+
+                    // Log how many CoT events were extracted from the mission
+                    Log.d(
+                        TAG,
+                        "Mission CoT events found=${events.size}"
+                    )
+
+                    // Process every CoT event downloaded from the mission
+                    // This reuses the same parser used for live TAK Server messages
+                    for (eventXml in events) {
+
+                        // Wrap the event with information about its source server
+                        // Include the server address and the time the event was received
+                        // This helps downstream handlers keep data separated by server
+                        val envelope = TakServerCotEnvelope(
+                            sourceServerId = serverId,
+                            sourceServerAddress = detail.address,
+                            receivedAt = System.currentTimeMillis(),
+                            rawXml = eventXml
+                        )
+
+                        // Log the extracted XML to help inspect the CoT structure
+                        Log.d("MISSION_TEST", "Extracted event XML=$eventXml")
+
+                        // Pass the event to the existing CoT ingestor
+                        // Route events are identified by their b-m-r event type
+                        // TakRouteCotParser converts valid route XML into a TakRoute
+                        // The route is then passed to the onRoute handler
+                        val result = cotIngestor.ingest(envelope)
+
+                        // Log whether the event was processed as a route or another CoT type
+                        // Malformed or unsupported events are also reported here
+                        Log.d(
+                            TAG,
+                            "Mission CoT processed mission=$missionName " +
+                                    "result=$result"
+                        )
+                    }
+
+                } else {
+                    // Skip the CoT download when a route is already stored
+                    // and the mission has no newly reported changes
+                    Log.d(
+                        TAG,
+                        "Mission sync skipped: route already loaded, no new changes"
+                    )
+                }
+
+
+
+                // Attach mission creator information to matching routes
+                dataRepository.takRoutes.value
+                    .filter { route ->
+                        route.serverId == serverId &&
+                                creatorByRouteUid.containsKey(route.uid) &&
+                                (route.missionName == null || route.missionName == missionName)
+                    }
+                    .forEach { route ->
+                        val creatorUid = creatorByRouteUid[route.uid] ?: return@forEach
+
+                        if (route.sender != creatorUid || route.missionName != missionName) {
+                            dataRepository.upsertTakRoute(
+                                route.copy(
+                                    sender = creatorUid,
+                                    missionName = missionName
+                                )
+                            )
+
+                            Log.d(
+                                TAG,
+                                "Route sender updated: route=${route.name}, creatorUid=$creatorUid"
+                            )
+                        }
+                    }
+
+                // Add newly processed change keys to the existing set
+                // These keys are used during the next sync to identify new changes
+                val processedKeys =
+                    state.processedChangeKeys +
+                            newChanges.map { it.changeKey() }
+
+                // Record the time when this sync finished
+                val syncTime = System.currentTimeMillis()
+
+                // Mark the mission sync as complete in the repository
+                // Save the latest sync time and processed change keys in memory
+                dataRepository.setMissionSyncComplete(
+                    serverId = serverId,
+                    missionName = missionName,
+                    processedChangeKeys = processedKeys,
+                    syncTime = syncTime
+                )
+
+                // Save the sync progress for future sessions
+                // This helps the app recognize changes that were already processed
+                // The progress is stored separately for each server and mission
+                dataRepository.persistMissionSyncProgress(
+                    serverId = serverId,
+                    missionName = missionName,
+                    lastSyncTime = syncTime,
+                    processedChangeKeys = processedKeys
+                )
+
+            } catch (error: CancellationException) {
+                // Let coroutine cancellation stop the sync normally
+                throw error
+
+            } catch (error: Exception) {
+                // Record the failure so the repository knows this sync did not complete
+                // Keep the error associated with the correct server and mission
+                dataRepository.setMissionSyncError(
+                    serverId = serverId,
+                    missionName = missionName,
+                    message = error.message ?: error.javaClass.simpleName
+                )
+
+                Log.e(
+                    TAG,
+                    "Mission sync failed serverId=$serverId mission=$missionName",
+                    error
+                )
+            }
+        }
+
+
+
+        // Split downloaded Data Sync XML into separate CoT event messages
+        // A mission response can contain multiple event elements
+        // Each event is turned into its own XML string for the normal CoT ingestor
+        private fun extractMissionCotEvents(xml: String): List<String> {
+
+            // Store the individual CoT XML messages found in the response
+            val events = mutableListOf<String>()
+
+            // Create an XML pull parser to read the response one tag at a time
+            // This allows individual events to be found inside a larger XML document
+            val parser = XmlPullParserFactory.newInstance()
+                .newPullParser()
+
+            // Disable namespace processing and provide the XML response as input
+            parser.setFeature(
+                XmlPullParser.FEATURE_PROCESS_NAMESPACES,
+                false
+            )
+            parser.setInput(StringReader(xml))
+
+            // Start reading from the first XML parser event
+            var eventType = parser.eventType
+
+            // Continue reading until the end of the XML document
+            while (eventType != XmlPullParser.END_DOCUMENT) {
+
+                // Look for the start of a CoT event element
+                // Each event element will be extracted as a separate XML message
+                if (
+                    eventType == XmlPullParser.START_TAG &&
+                    parser.name == "event"
+                ) {
+
+                    // Create a new string writer to hold this CoT event
+                    // Create an XML serializer to rebuild the event as valid XML
+                    val writer = StringWriter()
+                    val serializer = XmlPullParserFactory.newInstance()
+                        .newSerializer()
+
+                    serializer.setOutput(writer)
+                    serializer.startDocument("UTF-8", null)
+
+                    // Track how deeply nested the XML tags are
+                    // The event is complete when the depth returns to zero
+                    // This keeps nested tags inside the correct CoT event
+                    var depth = 0
+
+                    do {
+                        when (parser.eventType) {
+
+                            // Copy each opening XML tag into the new event
+                            XmlPullParser.START_TAG -> {
+                                serializer.startTag(
+                                    parser.namespace,
+                                    parser.name
+                                )
+
+                                // Copy all attributes from the original tag
+                                // This preserves fields such as type, UID, coordinates, and callsign
+                                for (i in 0 until parser.attributeCount) {
+                                    serializer.attribute(
+                                        parser.getAttributeNamespace(i),
+                                        parser.getAttributeName(i),
+                                        parser.getAttributeValue(i)
+                                    )
+                                }
+
+                                // Increase depth when entering a new XML element
+                                depth++
+                            }
+
+                            // Copy the closing XML tag into the new event
+                            XmlPullParser.END_TAG -> {
+                                serializer.endTag(
+                                    parser.namespace,
+                                    parser.name
+                                )
+
+                                // Decrease depth when leaving an XML element
+                                depth--
+                            }
+
+                            // Preserve text stored inside XML elements
+                            XmlPullParser.TEXT -> {
+                                serializer.text(parser.text)
+                            }
+
+                            // Preserve any CDATA sections inside the event
+                            XmlPullParser.CDSECT -> {
+                                serializer.cdsect(parser.text)
+                            }
+                        }
+
+                        // Move to the next parser event while still inside this CoT event
+                        if (depth > 0) {
+                            parser.next()
+                        }
+
+                    } while (depth > 0)
+
+                    // Finish rebuilding this CoT event as its own XML document
+                    serializer.endDocument()
+
+                    // Add the completed XML string to the list of extracted events
+                    events.add(writer.toString())
+                }
+
+                // Continue looking for more CoT events in the mission response
+                eventType = parser.next()
+            }
+
+            // Return all extracted events for individual processing
+            return events
+        }
+
+
+        // Create a key that identifies one mission change
+        // Combines the change type, affected content UID, and timestamp
+        // Used during syncing to avoid treating previously processed changes as new
+        private fun TakMissionChange.changeKey(): String {
+
+            // Replace missing optional values with empty strings
+            // Join the fields into one string for comparison against saved keys
+            return listOf(
+                type,
+                contentUid.orEmpty(),
+                timestamp.orEmpty()
+            ).joinToString("|")
+        }
+
+
         private fun channelApi(detail: TakServerDetail): TakChannelApi {
             check(detail.isEnabled && detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT) {
                 "TAK Server Xis not connected"
@@ -1097,6 +1796,59 @@ class TAKConnectService: Service() {
             )
         }
 
+
+        // Create the REST API client used for Data Sync mission requests
+        // Use the same server connection details and TLS settings already configured
+        // Each client is associated with one TAK Server
+        private fun missionApi(detail: TakServerDetail): TakMissionApi {
+
+            // Make sure the server is enabled and its CoT connection is active
+            // Mission requests should only be made through a connected server
+            check(
+                detail.isEnabled &&
+                        detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT
+            ) {
+                "TAK Server is not connected"
+            }
+
+            // Get the SSL context configured for this server
+            // This contains the TLS configuration needed for secure connections
+            // Stop if the required context is unavailable
+            val sslContext = checkNotNull(detail.channelSslContext) {
+                "TAK Server API TLS context is unavailable"
+            }
+
+            // Get the trust manager used to validate the server certificate
+            // Stop if the trust manager has not been configured
+            val trustManager = checkNotNull(detail.channelTrustManager) {
+                "TAK Server API trust manager is unavailable"
+            }
+
+            // Create the mission API client using the server address and TLS settings
+            // Server identity is also included to keep requests tied to the correct server
+            return TakMissionApi(
+                address = detail.address,
+                sslContext = sslContext,
+                trustManager = trustManager,
+                serverId = detail.serverId,
+                serverName = detail.name
+            )
+        }
+
+
+        // Start loading Data Sync missions after a TAK Server connects
+        // Launch the loading process in the background without blocking connection setup
+        // The loading function also restores subscriptions and begins mission syncing
+        private fun loadTakMissionsAfterConnect(
+            detail: TakServerDetail
+        ) {
+            // Run the mission loading process in the connection coroutine scope
+            connectionScope.launch {
+                loadTakMissions(detail)
+            }
+        }
+
+
         private fun channelStatus(empty: Boolean): TakChannelStatus =
             if (empty) TakChannelStatus.EMPTY else TakChannelStatus.READY
 
@@ -1117,6 +1869,8 @@ class TAKConnectService: Service() {
                 }
             }
         }
+
+
 
         private suspend fun reconcileServerChannelChange(serverId: String) {
             val traceId = nextChannelTraceId("server-notice", serverId)
@@ -1182,59 +1936,8 @@ class TAKConnectService: Service() {
                 .take(8)
                 .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
-        fun retryServerRegistration() {
-            val serverId = serverRegistration.state.value.serverId ?: return
-            val ticket = serverRegistration.prepare(serverId)
-            val job = connectionScope.launch {
-                serverRegistration.saveAndConnect(
-                    serverId,
-                    save = { TakServerRegistration.SaveResult.SAVED },
-                    connect = { TAK_CONNECT_SERVICE.registerServer(serverId) },
-                    ticket = ticket,
-                )
-            }
-            job.invokeOnCompletion { error ->
-                if (error != null) serverRegistration.failPending(ticket)
-            }
-        }
-
-        private fun startUiRegistration(detail: TakServerDetail) {
-            invalidateConnection(detail)
-            detail.numConnAttempts = 0
-            serverRegistration.bind(detail.serverId, detail)
-            detail.failureLiveData.postValue(null)
-            if (detail.duplicateEndpointSuppressed) {
-                serverRegistration.publish(detail.serverId, detail, TakServerRegistration.Status.DUPLICATE)
-            } else if (!detail.isEnabled || !isNetworkConnected || isCompanionAppConnected ||
-                dataRepository.isCompanionConnected.value || serviceStopping || detail.runtime.terminated) {
-                val failure = serverRegistration.unavailable()
-                detail.failureLiveData.postValue(failure)
-                detail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
-                detail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
-                publishUiRegistration(detail, TAK_SERVER_CONNECTION_FAILED_STRING, failure)
-            } else {
-                getClientCertificateAndConnect(detail)
-            }
-        }
-
-        private fun rejectUiRegistration(detail: TakServerDetail) {
-            if (!serverRegistration.isPendingRuntime(detail)) return
-            val failure = serverRegistration.unavailable()
-            detail.failureLiveData.postValue(failure)
-            detail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
-            detail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
-            publishUiRegistration(detail, TAK_SERVER_CONNECTION_FAILED_STRING, failure)
-        }
-
-        private fun publishUiRegistration(detail: TakServerDetail, status: String, failure: TakConnectionFailure? = null) {
-            val registrationStatus = when (status) {
-                TAK_SERVER_CONNECTING_STRING -> TakServerRegistration.Status.CONNECTING
-                TAK_SERVER_CONNECTED_STRING -> TakServerRegistration.Status.CONNECTED
-                TAK_SERVER_DUPLICATE_STRING -> TakServerRegistration.Status.DUPLICATE
-                else -> TakServerRegistration.Status.FAILED
-            }
-            serverRegistration.publish(detail.serverId, detail, registrationStatus, failure)
-        }
+        var newServerAddedViaUi = false
+        val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
 
         private val bhRepo by lazy {
             try {
@@ -1247,12 +1950,6 @@ class TAKConnectService: Service() {
         private val cotIngestor by lazy {
             TakServerCotIngestor(
                 sink = object : TakServerCotSink {
-                    override suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean =
-                        PluginCotIngress.offer(
-                            envelope,
-                            (context as WearTakApplication).pluginManager.settingsCoordinator
-                        )
-
                     override suspend fun onChat(event: TakChatEvent) {
                         Log.d(
                             TAG,
@@ -1302,9 +1999,8 @@ class TAKConnectService: Service() {
                         event: CotMarkerEvent,
                         envelope: TakServerCotEnvelope
                     ) {
-                        val shouldTrack = dataRepository.receiveMarkerEvent(
+                        val shouldTrack = dataRepository.applyReceivedMarkerEvent(
                             event = event,
-                            bloodhoundRepository = bhRepo,
                             source = envelope.sourceServerAddress,
                             sourceServerId = envelope.sourceServerId,
                             receivedAt = envelope.receivedAt
@@ -1324,12 +2020,52 @@ class TAKConnectService: Service() {
                             return
                         }
 
+                        val mapItem = CotMarkerMapItem(event)
+                        bhRepo.updateBloodhoundEvent(
+                            BloodhoundRepository.BloodhoundEvent(
+                                mapItem = mapItem,
+                                server = envelope.sourceServerAddress,
+                                timeIssued = mapItem.link?.productionTime,
+                                timeCompleted = null,
+                                remark = event.detail.remarks ?: "",
+                                sourceServerId = envelope.sourceServerId,
+                                receivedAt = envelope.receivedAt
+                            )
+                        )
                         Log.d(
                             TAG,
                             "Inbound marker delivered to Bloodhound state uid=${event.uid} " +
                                 "sourceServerId=${envelope.sourceServerId} eventTime=${event.time}"
                         )
                     }
+
+
+                    // Handle routes received from incoming TAK CoT messages
+                    // Routes may come through the normal CoT connection or mission sync
+                    // The CoT ingestor has already identified and parsed the route
+                    override suspend fun onRoute(
+                        route: TakRoute,
+                        envelope: TakServerCotEnvelope
+                    ) {
+
+                        // Add the parsed route to the repository
+                        // Update the existing route if its identity is already stored
+                        // The route includes its UID, name, points, and source server
+                        dataRepository.upsertTakRoute(route)
+
+                        // Log the route details after it has been stored
+                        // The point count helps verify that route coordinates were extracted
+                        // Server and mission fields help identify where the route came from
+                        Log.d(
+                            TAG,
+                            "Route received: uid=${route.uid}, " +
+                                    "name=${route.name}, " +
+                                    "points=${route.points.size}, " +
+                                    "serverId=${route.serverId}, " +
+                                    "mission=${route.missionName}"
+                        )
+                    }
+
 
                     override suspend fun onEmergency(
                         event: com.aitech.weartak_civ.cot.CotEmergencyEvent,
@@ -1356,6 +2092,19 @@ class TAKConnectService: Service() {
                 deviceCallsign = { MainActivity.callsign },
                 chatCommandHandler = ChatCommandRuntime.create(context, dataRepository)
             )
+        }
+
+        suspend fun handleInboundCot(rawXml: String, source: String) {
+            val envelope = TakServerCotEnvelope(
+                sourceServerId = source,
+                sourceServerAddress = source,
+                receivedAt = System.currentTimeMillis(),
+                rawXml = rawXml
+            )
+
+            val result = cotIngestor.ingest(envelope)
+
+            Log.d(TAG, "Plugin CoT ingested source=$source result=$result")
         }
 
         private val TAK_CONNECT_SERVICE = TAKConnectService()
@@ -1392,8 +2141,6 @@ class TAKConnectService: Service() {
                 detail.runtime.generation++
                 attempt = ConnectionAttempt(detail.runtime.generation)
                 detail.runtime.currentAttempt = attempt
-                detail.failureLiveData.postValue(null)
-                publishUiRegistration(detail, TAK_SERVER_CONNECTING_STRING)
                 detail.runtime.connectJob = null
                 detail.runtime.readerJob = null
                 detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
@@ -1419,7 +2166,6 @@ class TAKConnectService: Service() {
                 detail.runtime.readerJob = null
                 detail.channelSslContext = null
                 detail.channelTrustManager = null
-                detail.channelHostnameVerifier = null
                 detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                 detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
             }
@@ -1521,8 +2267,9 @@ class TAKConnectService: Service() {
                 }
         }
 
-        private fun generateBase64CSR(nameValueList: MutableList<NameValueEntry>, takServerDetail: TakServerDetail, attempt: ConnectionAttempt): String {
+        private fun generateBase64CSR(nameValueList: MutableList<NameValueEntry>, takServerDetail: TakServerDetail): String? {
             val cnName = takServerDetail.username
+            var base64CSR: String? = null
             try {
                 // Add the BouncyCastle security provider
                 Security.addProvider(BouncyCastleProvider())
@@ -1531,6 +2278,7 @@ class TAKConnectService: Service() {
                 val keyPairGen = KeyPairGenerator.getInstance("RSA", "BC")
                 keyPairGen.initialize(4096)
                 val keyPair = keyPairGen.generateKeyPair()
+                takServerDetail.privateKey = keyPair.private
 
                 // Build the X.500 Name (subject) for the CSR
                 //    e.g., "C=US, ST=NY, L=New York, O=MyOrg, CN=example.com"
@@ -1544,6 +2292,7 @@ class TAKConnectService: Service() {
                         subjectStr = "$subjectStr, ${nameValueEntry.name}=${escapeDnValue(nameValueEntry.value)}"
                     }
                 }
+                Log.d(TAG, "subjectStr =($subjectStr)")
                 val subject = X500Name(subjectStr)
 
                 // 4. Create the CSR builder
@@ -1554,27 +2303,23 @@ class TAKConnectService: Service() {
                 // Create a ContentSigner for "SHA256withRSA" using the private key
                 val csBuilder = JcaContentSignerBuilder("SHA256withRSA")
                 //csBuilder.setProvider("BC")
-                val signer = csBuilder.build(keyPair.private)
+                val signer = csBuilder.build(takServerDetail.privateKey)
 
                 // Build the PKCS#10 CSR
                 val csr = p10Builder.build(signer)
 
-                synchronized(takServerDetail.runtime.lock) {
-                    if (!isCurrent(takServerDetail, attempt)) throw CancellationException()
-                    takServerDetail.privateKey = keyPair.private
-                }
-                return Base64.getEncoder().encodeToString(csr.encoded)
-            } catch (e: CancellationException) {
-                throw e
+                base64CSR = Base64.getEncoder().encodeToString(csr.encoded)
             } catch (e: Exception) {
-                throw TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CSR, TakFailureCategory.CERTIFICATE))
+                Log.e(TAG, "ERROR in generateBase64CSR: ${e.message}", e)
             }
+            return base64CSR
         }
 
-        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry> {
+        fun fetchAndParseCertificateConfig(takServerDetail: TakServerDetail): MutableList<NameValueEntry>? {
             val takServer = takServerDetail.address
             val username = takServerDetail.username
             val password = takServerDetail.password
+            val nameValueList : MutableList<NameValueEntry> = mutableListOf()
 
             val url = "https://$takServer:8446/Marti/api/tls/config"
             val client = OkHttpClient()
@@ -1589,23 +2334,55 @@ class TAKConnectService: Service() {
                     .get()
                     .build()
 
+                Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
                 client.newCall(request).execute().use { response ->
-                    TakEnrollment.requireHttpSuccess(response.code, TakEnrollmentStage.CONFIG)
-                    val body = TakEnrollment.requireBody(response.body?.string(), TakEnrollmentStage.CONFIG)
-                    try {
-                        return TakEnrollment.parseConfig(body).map { (name, value) ->
-                            NameValueEntry(name, value)
-                        }.toMutableList()
-                    } catch (_: Exception) {
-                        throw TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.CERTIFICATE))
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
+                        return nameValueList
                     }
+
+                    val responseBody = response.body?.string()
+                    if (null == responseBody) {
+                        Log.e(TAG, "ERROR fetch certification config response is null")
+                        return nameValueList
+                    } else {
+                        Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
+                    }
+
+                    // Parse XML response
+                    val document = parseXml(responseBody)
+                    val nameEntries = document.getElementsByTagName("nameEntry")
+                    for (i in 0 until nameEntries.length) {
+                        val element = nameEntries.item(i) as? org.w3c.dom.Element
+                        val name = element?.getAttribute("name")
+                        val value = element?.getAttribute("value")
+                        if ((null !=name) && (null != value)) {
+                                nameValueList.add(NameValueEntry(name, value))
+                            }
+                    }
+
+                    Log.d(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: $nameValueList")
+                    return nameValueList
                 }
             } catch (e: Exception) {
-                throw TakEnrollmentException(TakConnectionFailure.from(TakEnrollmentStage.CONFIG, e))
+                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                return null
             }
+            return nameValueList
         }
 
-        private fun postCsrAndGetResponse(takServer: String, username: String, password: String, base64CSR: String): String {
+        fun parseXml(xml: String): Document {
+            val factory = DocumentBuilderFactory.newInstance()
+            val builder = factory.newDocumentBuilder()
+            val inputSource = InputSource(StringReader(xml))
+            return builder.parse(inputSource)
+        }
+
+        // Returns null on ERROR else response body as String
+        private fun postCsrAndGetResponse(takServer: String, username: String, password: String, base64CSR: String): String? {
             try {
                 var versionName: String? = null
                 try {
@@ -1620,6 +2397,8 @@ class TAKConnectService: Service() {
                     versionInfo = "+v$versionName"
                 }
                 val urlString = "https://$takServer:8446/Marti/api/tls/signClient/v2?clientUid=${MainActivity.device_uid}&version=WearTAK-Civ$versionInfo"
+
+                Log.d(TAG, "postCsrAndGetResponse CSR request: ($urlString)")
 
                 // Build OkHttpClient
                 val client = OkHttpClient()
@@ -1636,30 +2415,45 @@ class TAKConnectService: Service() {
                     .url(urlString)
                     .header("Authorization", credential)
                     .header("Content-Type", "text/plain")
-                    .header("Accept", "application/json, application/xml;q=0.9")
                     .post(body)
                     .build()
 
                 client.newCall(request).execute().use { response ->
-                    TakEnrollment.requireHttpSuccess(response.code, TakEnrollmentStage.SIGN)
-                    return TakEnrollment.requireBody(response.body?.string(), TakEnrollmentStage.SIGN)
+                    if (!response.isSuccessful) {
+                        Log.e(TAG, "ERROR CSR response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
+                        return null
+                    }
+                    val responseBodyString = response.body?.string()
+                    Log.v(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
+                    // Return the response body as string
+                    return responseBodyString
                 }
             } catch (e: Exception) {
-                throw TakEnrollmentException(TakConnectionFailure.from(TakEnrollmentStage.SIGN, e))
+                Log.e(TAG, "postCsrAndGetResponse ERROR: ${e.message}", e)
             }
+            return null
         }
 
-        fun postCsrAndParse(takServerDetail: TakServerDetail, base64CSR: String): TakSignedCertificates {
+        fun postCsrAndParse(takServerDetail: TakServerDetail, base64CSR: String): SignClientResponse? {
             val takServer = takServerDetail.address
             val username = takServerDetail.username
             val password = takServerDetail.password
 
+            var result: SignClientResponse? = null
+
             val csrResponse = postCsrAndGetResponse(takServer, username, password, base64CSR)
-            try {
-                return TakEnrollment.parseSignResponse(csrResponse)
-            } catch (_: Exception) {
-                throw TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.SIGN, TakFailureCategory.CERTIFICATE))
+            if (null != csrResponse) {
+                try {
+                    val mapper = ObjectMapper()
+                    result = mapper.readValue(csrResponse, SignClientResponse::class.java)
+                    println("signedCert: " + result.signedCert)
+                    println("ca0: " + result.ca0)
+                    println("ca1: " + result.ca1)
+                } catch (e: Exception) {
+                    Log.e(TAG, "postCsrAndParse: could not parse response", e)
+                }
             }
+            return result
         }
         fun isCertExpiringSoon(expiryDate: Date): Boolean {
             val now = Date()
@@ -1724,12 +2518,36 @@ class TAKConnectService: Service() {
             }
         }
 
-        fun setKeystore(takServerDetail: TakServerDetail, signClientResponse: TakSignedCertificates) {
+        fun setKeystore(takServerDetail: TakServerDetail, signClientResponse: SignClientResponse): Boolean {
             val cacheFileName = certificateCacheFileName(takServerDetail)
+            var retVal = true
 
             try {
+                // Convert each base64 string to X509Certificate
+                val signedCert = parseBase64ToX509(signClientResponse.signedCert ?: "")
+                //val expiryDate: Date = signedCert.getNotAfter()
+                val ca0Cert = parseBase64ToX509(signClientResponse.ca0 ?: "")
+                val ca1Cert = parseBase64ToX509(signClientResponse.ca1 ?: "")
+                Log.i(TAG, "signedCert expiry date: ${signedCert.getNotAfter()}")
+                Log.v(TAG, "ca0Cert expiry date: ${ca0Cert.getNotAfter()}")
+                Log.v(TAG, "ca1Cert expiry date: ${ca1Cert.getNotAfter()}")
+
+                // Build the chain: leaf first, then CA(s).
+                // NOTE: ca0cert is the intermediate CA cert and ca1Cert is the root CA cert. This is how the TAK server returns the CA certs
+                val chain = arrayOf<Certificate>(signedCert, ca0Cert, ca1Cert)
+
+                // Create an empty PKCS#12 keystore
+                // Initialize with null parameters => empty store
+                takServerDetail.keyStore.load(null, null)
+
+                //p12.setCertificateEntry("signedCert", signedCert);
+                // Store the CA certs as "trusted" entries
+                takServerDetail.keyStore.setCertificateEntry("ca0", ca0Cert)
+                takServerDetail.keyStore.setCertificateEntry("ca1", ca1Cert)
+
+                // Keystore password to protect the .p12
                 val keystorePassword = KEYSTORE_PASS.toCharArray()
-                signClientResponse.install(takServerDetail.keyStore, requireNotNull(takServerDetail.privateKey), KEY_ALIAS, keystorePassword)
+                takServerDetail.keyStore.setKeyEntry(KEY_ALIAS, takServerDetail.privateKey, keystorePassword, chain)
                 runBlocking {
                     try {
                         MainActivity.mainActivity.openFileOutput(cacheFileName, Context.MODE_PRIVATE).use { fos ->
@@ -1737,11 +2555,26 @@ class TAKConnectService: Service() {
                             Log.i(TAG, "Keystore stored successfully in $cacheFileName")
                         }
                     } catch (e: Exception) {
-                        Log.w(TAG, "Unable to cache enrolled keystore; using in-memory certificate")
+                        Log.w(TAG, "Not able to store keystore file as $cacheFileName. Error: ${e.message}")
+                        retVal = true // Really no need for this but....
                     }
                 }
             } catch (e: Exception) {
-                throw TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CERTIFICATE, TakFailureCategory.CERTIFICATE))
+                Log.e(TAG, "ERROR in setKeystore: ${e.message}", e)
+                retVal = false
+            }
+            return retVal
+        }
+
+        @Throws(java.lang.Exception::class)
+        private fun parseBase64ToX509(base64Cert: String): X509Certificate {
+            // Remove newlines if present
+            val normalized = base64Cert.replace("\\s+".toRegex(), "")
+            val derBytes = Base64.getDecoder().decode(normalized)
+
+            val cf = CertificateFactory.getInstance("X.509")
+            ByteArrayInputStream(derBytes).use { `in` ->
+                return cf.generateCertificate(`in`) as X509Certificate
             }
         }
 
@@ -1827,12 +2660,10 @@ class TAKConnectService: Service() {
     fun getClientCertificateAndConnect(takServerDetail: TakServerDetail) {
             if (takServerDetail.duplicateEndpointSuppressed) {
                 Log.w(TAG, "TAK connection suppressed for duplicate endpoint=${takServerDetail.address}:${takServerDetail.port}")
-                publishUiRegistration(takServerDetail, TAK_SERVER_DUPLICATE_STRING)
                 return
             }
             if (isCompanionAppConnected) {
                 Log.w(TAG, "TAK reconnect suppressed (cert): Companion App is active")
-                rejectUiRegistration(takServerDetail)
                 return
             }
             Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
@@ -1840,13 +2671,9 @@ class TAKConnectService: Service() {
             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
             if (isNetworkConnected) {
                 if (takServerDetail.numConnAttempts > NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                    rejectUiRegistration(takServerDetail)
                     return
                 }
-                val attempt = beginConnectionAttempt(takServerDetail) ?: run {
-                    rejectUiRegistration(takServerDetail)
-                    return
-                }
+                val attempt = beginConnectionAttempt(takServerDetail) ?: return
                 takServerDetail.numConnAttempts++
                 val job = connectionScope.launch {
                     isAnyTakConnecting = true; isAnyTakConnectingLiveData.postValue(true)
@@ -1879,12 +2706,26 @@ class TAKConnectService: Service() {
                                 takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                                 connectTAKServer(takServerDetail, attempt)
                             } catch (e: Exception) {
-                                publishFailure(takServerDetail, attempt, TakConnectionFailure(
-                                    TakEnrollmentStage.CERTIFICATE, TakFailureCategory.CERTIFICATE))
+                                Log.e(TAG, "ERROR getClientCertificateAndConnect: Cannot load p12Cert for takServer ${takServerDetail.address}: ${e.message}", e)
+                                takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                setIsAnyNetworkConnected()
+                                setIsAnyNetworkConnecting()
+                                if (newServerAddedViaUi) {
+                                    newServerAddedViaUi = false
+                                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                }
                             }
                         } else {
-                            publishFailure(takServerDetail, attempt, TakConnectionFailure(
-                                TakEnrollmentStage.CERTIFICATE, TakFailureCategory.CERTIFICATE))
+                            Log.e(TAG, "ERROR getClientCertificateAndConnect: Cannot parse p12Cert for takServer ${takServerDetail.address}")
+                            takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                            takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                            setIsAnyNetworkConnected()
+                            setIsAnyNetworkConnecting()
+                            if (newServerAddedViaUi) {
+                                newServerAddedViaUi = false
+                                newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                            }
                         }
                     } else {
                         if (takServerDetail.numConnAttempts == NUM_CONN_ATTEMPS_AFTER_FAILURE) {
@@ -1938,30 +2779,55 @@ class TAKConnectService: Service() {
                         } else {
                             deleteFile(certificateCacheFileName(takServerDetail))
                             Log.i(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
-                            try {
-                                val signed = TakEnrollment.enroll(
-                                    config = { fetchAndParseCertificateConfig(takServerDetail) },
-                                    csr = { config ->
-                                        if (!isCurrent(takServerDetail, attempt)) throw CancellationException()
-                                        generateBase64CSR(config, takServerDetail, attempt)
-                                    },
-                                    sign = { csr ->
-                                        if (!isCurrent(takServerDetail, attempt)) throw CancellationException()
-                                        postCsrAndParse(takServerDetail, csr)
+                            val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
+                            var signClientResponse: SignClientResponse? = null
+                            var base64CSR: String? = null
+                            if (null != nameValueList) {
+                               base64CSR = generateBase64CSR(nameValueList, takServerDetail)
+                            }
+                            if (null != base64CSR) {
+                                //Log.d(TAG, "base64CSR NOT null. Going to call postCsrAndParse")
+                                signClientResponse = postCsrAndParse(takServerDetail, base64CSR)
+                                if (null != signClientResponse) {
+                                    //Log.d(TAG, "signClientResponse NOT null. Going to call setKeystore")
+                                    if (setKeystore(takServerDetail, signClientResponse)) {
+                                        Log.d(TAG, "setKeystore success: calling connectTAKServer")
+                                        takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
+                                        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                                        connectTAKServer(takServerDetail, attempt)
+                                    } else {
+                                        deleteFile(certificateCacheFileName(takServerDetail))
+                                        Log.e(TAG, "ERROR in setKeystore: Cannot connect to TAK Server")
+                                        takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                        setIsAnyNetworkConnected()
+                                        setIsAnyNetworkConnecting()
+                                        if (newServerAddedViaUi) {
+                                            newServerAddedViaUi = false
+                                            newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                        }
                                     }
-                                )
-                                synchronized(takServerDetail.runtime.lock) {
-                                    if (!isCurrent(takServerDetail, attempt)) return@launch
-                                    setKeystore(takServerDetail, signed)
-                                    takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
-                                    takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                                } else {
+                                    Log.e(TAG, "ERROR postCsrAndParse returned NULL: Cannot connect to TAK Server")
+                                    takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                    takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                    setIsAnyNetworkConnected()
+                                    setIsAnyNetworkConnecting()
+                                    if (newServerAddedViaUi) {
+                                        newServerAddedViaUi = false
+                                        newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                    }
                                 }
-                                connectTAKServer(takServerDetail, attempt)
-                            } catch (e: CancellationException) {
-                                throw e
-                            } catch (e: Exception) {
-                                publishFailure(takServerDetail, attempt,
-                                    TakConnectionFailure.from(TakEnrollmentStage.CERTIFICATE, e))
+                            } else {
+                                Log.e(TAG, "ERROR fetchAndParseCertificateConfig or generateBase64CSR returned NULL. Cannot connect to TAK Server")
+                                takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                setIsAnyNetworkConnected()
+                                setIsAnyNetworkConnecting()
+                                if (newServerAddedViaUi) {
+                                    newServerAddedViaUi = false
+                                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                                }
                             }
                         }
                     }
@@ -1985,25 +2851,50 @@ class TAKConnectService: Service() {
                 }
             } else {
                 Log.d(TAG, "Network is NOT connected. Hence not trying to connect to TAK server")
-                val failure = TakConnectionFailure(TakEnrollmentStage.CONNECTION, TakFailureCategory.CONNECTIVITY)
-                takServerDetail.failureLiveData.postValue(failure)
-                takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
-                takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
-                publishUiRegistration(takServerDetail, TAK_SERVER_CONNECTION_FAILED_STRING, failure)
+                if (newServerAddedViaUi) {
+                    newServerAddedViaUi = false
+                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                }
             }
         }
 
-        private fun publishFailure(detail: TakServerDetail, attempt: ConnectionAttempt, failure: TakConnectionFailure) {
-            synchronized(detail.runtime.lock) {
-                if (!isCurrent(detail, attempt)) return
-                detail.failureLiveData.postValue(failure)
-                detail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
-                detail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
-                publishUiRegistration(detail, TAK_SERVER_CONNECTION_FAILED_STRING, failure)
+        fun firstKeyAlias(ks: KeyStore): String? {
+            val e = ks.aliases()
+            while (e.hasMoreElements()) {
+                val a = e.nextElement()
+                if (ks.isKeyEntry(a)) return a
             }
-            Log.w(TAG, failure.displayMessage())
-            setIsAnyNetworkConnected()
-            setIsAnyNetworkConnecting()
+            return null
+        }
+
+        fun findRootInChain(ks: KeyStore): X509Certificate? {
+            val alias = firstKeyAlias(ks)
+            Log.d(TAG, "findRootInChain for alias=$alias")
+            val chain = ks.getCertificateChain(alias)
+                ?.map { it as X509Certificate }
+            if (null == chain) return null
+
+            // Prefer a self-signed cert (subject == issuer AND signature verifies with its own key)
+            chain.firstOrNull { isSelfSigned(it) }?.let { return it }
+
+            // Fallback: pick the cert whose issuer DN is not the subject DN of any other (top of chain)
+            val subjects = chain.map { it.subjectX500Principal.name }.toSet()
+            val candidate = chain.firstOrNull { it.issuerX500Principal.name !in subjects }
+            return candidate
+        }
+
+        private fun isSelfSigned(cert: X509Certificate): Boolean = try {
+            if (cert.subjectX500Principal != cert.issuerX500Principal) {
+                Log.d(TAG, "isSelfSigned=false")
+                false
+            } else {
+                cert.verify(cert.publicKey);
+                Log.d(TAG, "isSelfSigned=true")
+                true
+            }
+        } catch (_: Exception) {
+            Log.d(TAG, "isSelfSigned=false")
+            false
         }
 
         var isCompanionAppConnected = false
@@ -2014,7 +2905,6 @@ class TAKConnectService: Service() {
         ) {
             if (isCompanionAppConnected) {
                 Log.w(TAG, "connectTAKServer CompanionAppIsConnected back out early")
-                rejectUiRegistration(takServerDetail)
                 return
             }
             if (!isCurrent(takServerDetail, attempt)) return
@@ -2035,17 +2925,24 @@ class TAKConnectService: Service() {
                     }
 
                     // Initialize SSL Context with TrustManager
-                    val trustAnchors = TakEnrollment.selectTrustAnchors(takServerDetail.keyStore)
-                    Log.d(TAG, "TAK supplied trust anchors=${trustAnchors.size}")
+                    val root = findRootInChain(takServerDetail.keyStore)
+                    Log.d(TAG, "TAK trust root present=${root != null}")
                     val trustKs = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
                         load(null, null)
-                        trustAnchors.forEachIndexed { index, certificate ->
-                            setCertificateEntry("ca$index", certificate)
-                        }
+                        setCertificateEntry("root", root)
                     }
-                    val trustManagerFactory =
+                    val trustManagerFactory = if (null != root) {
                         TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
-                            .apply { init(if (trustAnchors.isEmpty()) null else trustKs) }
+                            .apply { init(trustKs) }
+                    } else {
+                        TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                            .apply { init (takServerDetail.keyStore) }
+
+                    }
+                    /*
+                    val trustManagerFactory = TrustManagerFactory.getInstance(TrustManagerFactory.getDefaultAlgorithm())
+                    trustManagerFactory.init(takServerDetail.keyStore)
+                     */
                     val trustManager = trustManagerFactory.trustManagers.filterIsInstance<X509TrustManager>().firstOrNull()
 
                     val sslContext = SSLContext.getInstance("TLSv1.3")
@@ -2080,39 +2977,26 @@ class TAKConnectService: Service() {
                         takServerDetail.secureSocket = socket
                         attempt.socket = socket
                     }
-                    synchronized(takServerDetail.runtime.lock) {
-                        if (!isCurrent(takServerDetail, attempt)) return
-                        takServerDetail.channelSslContext = sslContext
-                        takServerDetail.channelTrustManager = trustManager
-                        takServerDetail.channelHostnameVerifier = TakSanHostnameVerifier(
-                            address = takServer,
-                            serverTrustManager = trustManager,
-                            onResolved = { name ->
-                                Log.i(TAG, "Resolved channel TLS name serverId=${takServerDetail.serverId} " +
-                                    "address=$takServer tlsName=$name")
-                            },
-                            onRejected = { reason ->
-                                Log.w(TAG, "Channel SAN discovery rejected serverId=${takServerDetail.serverId} " +
-                                    "address=$takServer reason=$reason")
-                            },
-                        )
-                        isAnyTakConnected = true
-                        isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
-                        dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
-                        requestStatusIconsComplicationUpdate(context)
+                    takServerDetail.channelSslContext = sslContext
+                    takServerDetail.channelTrustManager = trustManager
+                    isAnyTakConnected = true
+                    isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
+                    dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
+                    requestStatusIconsComplicationUpdate(context)
 
-                        takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
-                        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
-                        // Reset counters for connection attempts
-                        takServerDetail.numConnAttempts = 0
-                        setIsAnyNetworkConnecting()
-                        Log.d(TAG, "Successfully connected to $takServer on port $port")
-                        takServerDetail.failureLiveData.postValue(null)
-                        publishUiRegistration(takServerDetail, TAK_SERVER_CONNECTED_STRING)
+                    takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
+                    takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
+                    // Reset counters for connection attempts
+                    takServerDetail.numConnAttempts = 0
+                    setIsAnyNetworkConnecting()
+                    Log.d(TAG, "Successfully connected to $takServer on port $port")
+                    if (newServerAddedViaUi) {
+                        newServerAddedViaUi = false
+                        newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
                     loadTakChannelsAfterConnect(takServerDetail)
+                    loadTakMissionsAfterConnect(takServerDetail)
                     startCotReader(takServerDetail, socket, attempt)
-
                 } catch (e: Exception) {
                     runCatching { attempt.socket?.close() }
                     synchronized(takServerDetail.runtime.lock) {
@@ -2123,9 +3007,16 @@ class TAKConnectService: Service() {
                     }
                     val currentAttempt = isCurrent(takServerDetail, attempt)
                     if (currentAttempt) {
-                        val uiAttempt = serverRegistration.isPendingRuntime(takServerDetail)
-                        publishFailure(takServerDetail, attempt, TakConnectionFailure.from(TakEnrollmentStage.CONNECTION, e))
-                        if (!uiAttempt) {
+                        //sendTakConnectionStatusEvent(CONNECTION_FAILURE)
+                        takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTION_FAILED)
+                        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                        setIsAnyNetworkConnected()
+                        setIsAnyNetworkConnecting()
+                        Log.e(TAG, "ERROR in connectTAKServer: ${e.message}", e)
+                        if (newServerAddedViaUi) {
+                            newServerAddedViaUi = false
+                            newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
+                        } else {
                             getClientCertificateAndConnect(takServerDetail)
                         }
                     } else {
@@ -2136,8 +3027,10 @@ class TAKConnectService: Service() {
                 // TODO: do we need to check that it is also NOT TAK_SERVER_CONNECTED_COT_PORT
                 if (takServerDetail.connectionStatus.get() != TAK_SERVER_OBTAINING_CLIENT_CERT) {
                     Log.d(TAG, "Going to call getClientCertificateAndConnect for takServer($takServer)")
-                    if (!serverRegistration.isPendingRuntime(takServerDetail)) {
+                    if (!newServerAddedViaUi) {
                         getClientCertificateAndConnect(takServerDetail)
+                        newServerAddedViaUi = false
+                        newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
                     }
                 }
             }
@@ -2207,15 +3100,6 @@ class TAKConnectService: Service() {
             }
             runCatching { socket.close() }
             if (shouldReconnect) getClientCertificateAndConnect(detail)
-        }
-
-        suspend fun handleInboundCot(rawXml: String, source: String) {
-            cotIngestor.ingest(TakServerCotEnvelope(
-                sourceServerId = source,
-                sourceServerAddress = source,
-                receivedAt = System.currentTimeMillis(),
-                rawXml = rawXml
-            ))
         }
 
         private fun startCotReader(

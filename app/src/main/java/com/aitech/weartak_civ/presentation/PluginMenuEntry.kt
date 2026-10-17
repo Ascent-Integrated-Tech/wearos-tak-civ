@@ -6,6 +6,7 @@ internal enum class BuiltInPlugin {
     COMMANDS,
     CRM,
     DART,
+    DATA_SYNC,
     DITTO,
     EVERYWHERE_COMMS,
     FALCON,

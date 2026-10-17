@@ -6,6 +6,7 @@ import com.aitech.weartak_civ.cot.TakServerCotEnvelope
 import com.aitech.weartak_civ.cot.TakServerCotIngestResult
 import com.aitech.weartak_civ.cot.TakServerCotIngestor
 import com.aitech.weartak_civ.cot.TakServerCotSink
+import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.events.TakChatEvent
 import kotlinx.coroutines.async
@@ -95,6 +96,9 @@ class WifiMulticastReceiverTest {
             sink = object : TakServerCotSink {
                 override suspend fun onChat(event: TakChatEvent) { chats += event }
                 override suspend fun onGeofence(geofence: GeofenceCot) = Unit
+                override suspend fun onRoute(route: TakRoute,
+                    envelope: TakServerCotEnvelope
+                ) = Unit
                 override suspend fun onUser(event: CotUserPositionEvent, envelope: TakServerCotEnvelope) {
                     users += envelope
                 }

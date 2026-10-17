@@ -8,6 +8,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import java.io.ByteArrayOutputStream
 import java.io.IOException
+import com.aitech.weartak_civ.data.model.TakRoute
 
 class TakDatagramDecoderTest {
     @Test
@@ -51,6 +52,7 @@ class TakDatagramDecoderTest {
             sink = object : TakServerCotSink {
                 override suspend fun onChat(event: TakChatEvent) { chat = event }
                 override suspend fun onGeofence(geofence: GeofenceCot) = Unit
+                override suspend fun onRoute(route: TakRoute, envelope: TakServerCotEnvelope) = Unit
                 override suspend fun onUser(event: CotUserPositionEvent, envelope: TakServerCotEnvelope) = Unit
                 override suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope) = Unit
             },

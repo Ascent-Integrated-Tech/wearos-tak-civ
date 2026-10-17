@@ -117,6 +117,14 @@ Debug tools are a screen within settings, not a separately launchable activity.
 ATOS CoT IPC authorizes the caller on every Binder transaction, before processing
 the payload; service binding itself does not establish a trusted caller identity.
 
+### Route point selection
+
+Route lines and named point markers remain visible on the map. Selecting a point
+opens its details, with Chat and Bloodhound range/bearing tracking available as
+before. Selection and sender lookup use both the source server ID and route UID,
+so matching route UIDs received from different servers cannot select each other's
+points. Route parsing does not log raw CoT XML.
+
 ### Companion provisioning and optional phone management (WEARTAK-90)
 
 The companion defaults to one-time provisioning: edit the watch callsign and server
