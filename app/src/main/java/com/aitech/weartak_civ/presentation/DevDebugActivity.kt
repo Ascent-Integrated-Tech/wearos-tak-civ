@@ -9,8 +9,12 @@
 
 package com.aitech.weartak_civ.presentation
 
+import android.net.Uri
 import android.graphics.Bitmap
 import android.graphics.Color as AndroidColor
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -30,6 +34,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -52,12 +58,16 @@ import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Scaffold
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.service.LocationDiagnosticSample
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
+import kotlinx.coroutines.launch
+import java.io.IOException
 
 private const val DEBUG_SERVER_PORT = 8000
 
@@ -112,6 +122,28 @@ private fun DebugScreen(
     var showQrCode by remember {
         mutableStateOf(false)
     }
+    var showLocationDiagnostics by remember { mutableStateOf(false) }
+    var exportStatus by remember { mutableStateOf("") }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val diagnosticsEnabled by dataRepository.getBondedLocationDiagnosticsEnabled.collectAsState(initial = false)
+    val diagnostics = (context.applicationContext as WearTakApplication).locationDiagnostics
+    val watchSample by diagnostics.watch.collectAsState()
+    val phoneSample by diagnostics.phone.collectAsState()
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        try {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(diagnostics.exportJson().toByteArray(Charsets.UTF_8))
+            } ?: throw IOException("Unable to open the selected export destination")
+            exportStatus = "Export complete"
+        } catch (error: IOException) {
+            exportStatus = "Export failed: ${error.message ?: "storage error"}"
+            Toast.makeText(context, exportStatus, Toast.LENGTH_LONG).show()
+        }
+    }
 
 //    val networkSnapshot by dataRepository
 //        .networkSnapshot
@@ -136,7 +168,9 @@ private fun DebugScreen(
     )
 
     fun navigateBack() {
-        if (showQrCode) {
+        if (showLocationDiagnostics) {
+            showLocationDiagnostics = false
+        } else if (showQrCode) {
             showQrCode = false
         } else {
             onExit()
@@ -151,7 +185,22 @@ private fun DebugScreen(
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
-            if (showQrCode) {
+            if (showLocationDiagnostics) {
+                DebugLocationDiagnosticsPage(
+                    watch = watchSample,
+                    phone = phoneSample,
+                    enabled = diagnosticsEnabled,
+                    exportStatus = exportStatus,
+                    onExport = { exportLauncher.launch("wear-tak-location-diagnostics.json") },
+                    onClear = {
+                        diagnostics.clear()
+                        exportStatus = "Diagnostics cleared"
+                    },
+                    onMarkEntry = { diagnostics.eventMarker("entry") },
+                    onMarkExit = { diagnostics.eventMarker("exit") },
+                    onBack = { showLocationDiagnostics = false }
+                )
+            } else if (showQrCode) {
                 DebugQrPage(
                     debugInfo = debugInfo,
                     onBack = {
@@ -164,7 +213,12 @@ private fun DebugScreen(
                     onBack = { navigateBack() },
                     onShowQrCode = {
                         showQrCode = true
-                    }
+                    },
+                    diagnosticsEnabled = diagnosticsEnabled,
+                    onDiagnosticsEnabledChanged = { enabled ->
+                        scope.launch { dataRepository.storeBondedLocationDiagnosticsEnabled(enabled) }
+                    },
+                    onShowLocationDiagnostics = { showLocationDiagnostics = true }
                 )
             }
         }
@@ -175,7 +229,10 @@ private fun DebugScreen(
 private fun DebugInformationPage(
     debugInfo: DebugDisplayInfo,
     onBack: () -> Unit,
-    onShowQrCode: () -> Unit
+    onShowQrCode: () -> Unit,
+    diagnosticsEnabled: Boolean,
+    onDiagnosticsEnabledChanged: (Boolean) -> Unit,
+    onShowLocationDiagnostics: () -> Unit
 ) {
     val rows = listOf(
         DebugRow(
@@ -238,6 +295,23 @@ private fun DebugInformationPage(
         }
 
         item {
+            WearTAKToggleChip(
+                checkedLive = diagnosticsEnabled,
+                onCheckedChange = onDiagnosticsEnabledChanged,
+                title = "Bonded Location Diagnostics"
+            )
+        }
+
+        item {
+            Button(
+                onClick = onShowLocationDiagnostics,
+                modifier = Modifier.size(width = 148.dp, height = 42.dp)
+            ) {
+                Text("Location Diagnostics", textAlign = TextAlign.Center, fontSize = 11.sp)
+            }
+        }
+
+        item {
             DebugStayAwakeSetting()
         }
 
@@ -273,6 +347,96 @@ private fun DebugInformationPage(
         item {
             WearTAKBackButton(onClick = onBack)
         }
+    }
+}
+
+@Composable
+private fun DebugLocationDiagnosticsPage(
+    watch: LocationDiagnosticSample,
+    phone: LocationDiagnosticSample,
+    enabled: Boolean,
+    exportStatus: String,
+    onExport: () -> Unit,
+    onClear: () -> Unit,
+    onMarkEntry: () -> Unit,
+    onMarkExit: () -> Unit,
+    onBack: () -> Unit
+) {
+    ScalingLazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 40.dp, bottom = 26.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        item {
+            Text(
+                "Bonded Location Diagnostics",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colors.primary
+            )
+        }
+        item { DiagnosticSummary("Watch", watch) }
+        item { DiagnosticSummary("Phone", phone) }
+        item {
+            Text(
+                if (enabled) "GNSS observation only; no location is sent as CoT."
+                else "Disabled. Enabling requires an authenticated bonded Companion session.",
+                fontSize = 10.sp,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colors.onSurface
+            )
+        }
+        item {
+            Button(onClick = onMarkEntry, modifier = Modifier.size(width = 112.dp, height = 40.dp)) {
+                Text("Mark Entry", fontSize = 11.sp)
+            }
+        }
+        item {
+            Button(onClick = onMarkExit, modifier = Modifier.size(width = 112.dp, height = 40.dp)) {
+                Text("Mark Exit", fontSize = 11.sp)
+            }
+        }
+        item {
+            Button(onClick = onExport, modifier = Modifier.size(width = 112.dp, height = 40.dp)) {
+                Text("Export", fontSize = 11.sp)
+            }
+        }
+        item {
+            Button(onClick = onClear, modifier = Modifier.size(width = 112.dp, height = 40.dp)) {
+                Text("Clear", fontSize = 11.sp)
+            }
+        }
+        if (exportStatus.isNotBlank()) item {
+            Text(exportStatus, fontSize = 10.sp, textAlign = TextAlign.Center)
+        }
+        item { WearTAKBackButton(onClick = onBack) }
+    }
+}
+
+@Composable
+private fun DiagnosticSummary(label: String, sample: LocationDiagnosticSample) {
+    val ageText = sample.ageMillis?.let { "${it / 1000}s" } ?: "unknown"
+    val accuracyText = sample.horizontalAccuracyMeters?.let { "%.1f m".format(it) } ?: "unknown"
+    val satellitesText = if (sample.satelliteStatusSupported == true) {
+        "${sample.usedSatelliteCount ?: 0}/${sample.satelliteCount ?: 0} used"
+    } else "unknown"
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(
+            "$label: ${sample.quality()}",
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colors.primary
+        )
+        Text(
+            "Age $ageText; accuracy $accuracyText; $satellitesText",
+            fontSize = 10.sp,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colors.onSurface
+        )
+        Text(sample.reason(), fontSize = 10.sp, textAlign = TextAlign.Center)
     }
 }
 
@@ -439,7 +603,10 @@ private fun PreviewDebugInformationPage() {
                 port = DEBUG_SERVER_PORT
             ),
             onBack = {},
-            onShowQrCode = {}
+            onShowQrCode = {},
+            diagnosticsEnabled = false,
+            onDiagnosticsEnabledChanged = {},
+            onShowLocationDiagnostics = {}
         )
     }
 }

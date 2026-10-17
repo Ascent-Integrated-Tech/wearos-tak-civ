@@ -3590,6 +3590,17 @@ class DataRepository(private val context: Context) {
             .map { prefs -> prefs[ENABLE_WEARTAK_DEV_MODE] ?: false }
             .distinctUntilChanged()
 
+    val getBondedLocationDiagnosticsEnabled: Flow<Boolean> =
+        context.dataStore.data
+            .map { prefs -> prefs[BONDED_LOCATION_DIAGNOSTICS_ENABLED] ?: false }
+            .distinctUntilChanged()
+
+    suspend fun storeBondedLocationDiagnosticsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[BONDED_LOCATION_DIAGNOSTICS_ENABLED] = enabled
+        }
+    }
+
     // NOTE: Store as false on every app boot!
     suspend fun storeEnableWearTakDevMode(enable: Boolean) {
         context.dataStore.edit { prefs ->
@@ -4543,6 +4554,8 @@ class DataRepository(private val context: Context) {
         private val ENABLE_SENSOR_MANAGER = booleanPreferencesKey("enable_sensor_manager")
         private val CHAT_COMMAND_CALLSIGNS = stringPreferencesKey("chat_command_callsigns")
         private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
+        private val BONDED_LOCATION_DIAGNOSTICS_ENABLED =
+            booleanPreferencesKey("bonded_location_diagnostics_enabled")
         private val NETWORK_PREFERENCES_LOCKED = booleanPreferencesKey("network_preferences_locked")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val RESTING_HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_high_alert_bpm_threshold")
