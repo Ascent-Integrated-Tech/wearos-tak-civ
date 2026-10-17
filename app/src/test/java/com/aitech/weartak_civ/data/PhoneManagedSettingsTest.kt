@@ -73,4 +73,35 @@ class PhoneManagedSettingsTest {
         assertEquals(60, repo.getConstantReportingInterval.first())
         assertTrue(repo.getEnableDynamicReportingStrategy.first())
     }
+
+    @Test fun sessionTimeoutUnlocksWithoutClearingManagementOrProvisionedValues() = runBlocking {
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.storeCallsign("PHONE")
+        repo.storeConstantReportingInterval(15)
+        repo.storeEnableDynamicReportingStrategy(false)
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        repo.setPhoneManagementSessionActive(true)
+        assertTrue(repo.phoneManagedSettingsLocked.first())
+
+        repo.setPhoneManagementSessionActive(false)
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+        assertEquals("AA:BB", repo.phoneManagedCompanionAddress.first())
+        assertEquals("PHONE", repo.getCallsign.first())
+        assertEquals(15, repo.getConstantReportingInterval.first())
+        assertFalse(repo.getEnableDynamicReportingStrategy.first())
+
+        repo.setPhoneManagementSessionActive(true)
+        assertTrue(repo.phoneManagedSettingsLocked.first())
+        repo.clearPhoneManagedSettingsForPeer("AA:BB", false)
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+    }
+
+    @Test fun processRestartRequiresFreshManagementHandshake() = runBlocking {
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.setPhoneManagementSessionActive(true)
+        val restarted = DataRepository(RuntimeEnvironment.getApplication())
+        assertTrue(restarted.phoneManagedSettingsEnabled.first())
+        assertFalse(restarted.phoneManagedSettingsLocked.first())
+    }
 }

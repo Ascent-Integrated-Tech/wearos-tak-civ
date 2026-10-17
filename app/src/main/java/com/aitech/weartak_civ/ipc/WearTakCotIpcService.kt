@@ -59,11 +59,13 @@ class WearTakCotIpcService : Service() {
     }
     private val binder = object : IWearTakAppCotListener.Stub() {
         override fun receiveCotFromPlugin(cotXml: String) {
+            enforceCallerAllowed()
             Log.i(AtosIpcConstants.LOG_TAG, "receiveCotFromPlugin invoked size=${cotXml.toByteArray(Charsets.UTF_8).size}")
             handleIncomingPayload(AtosIpcRoute.LOCAL_INGEST_REQUEST, cotXml)
         }
 
         override fun broadcastCot(cotXml: String) {
+            enforceCallerAllowed()
             Log.i(AtosIpcConstants.LOG_TAG, "broadcastCot invoked size=${cotXml.toByteArray(Charsets.UTF_8).size}")
             handleIncomingPayload(AtosIpcRoute.BROADCAST_REQUEST, cotXml)
         }
@@ -84,27 +86,20 @@ class WearTakCotIpcService : Service() {
     }
 
     override fun onBind(intent: Intent?): IBinder? {
-        val callingUid = Binder.getCallingUid()
-        val callerPackages = packageManager.getPackagesForUid(callingUid)?.toList().orEmpty()
-        val callerLabel = if (callerPackages.isEmpty()) {
-            packageManager.getNameForUid(callingUid) ?: "unknown"
-        } else {
-            callerPackages.joinToString(",")
-        }
-
-        if (!isCallerAllowed(callerPackages)) {
-            Log.w(
-                AtosIpcConstants.LOG_TAG,
-                "Rejected ATOS bind action=${intent?.action} callerUid=$callingUid callerPackages=$callerLabel"
-            )
-            return null
-        }
-
         Log.i(
             AtosIpcConstants.LOG_TAG,
-            "WearTakCotIpcService onBind(action=${intent?.action}) callerUid=$callingUid callerPackages=$callerLabel"
+            "WearTakCotIpcService onBind(action=${intent?.action}); caller checked per transaction"
         )
         return binder
+    }
+
+    internal fun enforceCallerAllowed() {
+        val uid = Binder.getCallingUid()
+        val packages = packageManager.getPackagesForUid(uid)?.toList().orEmpty()
+        if (!isCallerAllowed(packages)) {
+            Log.w(AtosIpcConstants.LOG_TAG, "Rejected ATOS transaction callerUid=$uid")
+            throw SecurityException("Caller is not allowed to submit ATOS CoT")
+        }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {

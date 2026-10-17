@@ -415,10 +415,12 @@ fun WearTAKSettingsNav(
 
     val isDevMode by settingsVm.savedEnableWearTakDevMode.collectAsState()
     val networkPreferencesLocked by settingsVm.savedNetworkPreferencesLocked.collectAsState()
+    val phoneManagedNotice = stringResource(R.string.phone_managed_by_paired_phone)
+    val networkLockedNotice = stringResource(R.string.network_settings_locked)
     val showPhoneManagedNotice = {
         Toast.makeText(
             context,
-            context.getString(R.string.phone_managed_by_paired_phone),
+            phoneManagedNotice,
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -514,7 +516,7 @@ fun WearTAKSettingsNav(
                                         onClick = {
                                             Toast.makeText(
                                                 context,
-                                                context.getString(R.string.network_settings_locked),
+                                                networkLockedNotice,
                                                 Toast.LENGTH_SHORT
                                             ).apply {
                                                 setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 50)

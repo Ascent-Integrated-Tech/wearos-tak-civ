@@ -47,7 +47,7 @@ object ChatCommandRuntime {
 
     fun create(context: Context, repo: DataRepository): suspend (ChatCommandRequest) -> Boolean {
         val appContext = context.applicationContext
-        val identityLocked: suspend () -> Boolean = { repo.phoneManagedSettingsEnabled.first() }
+        val identityLocked: suspend () -> Boolean = { repo.phoneManagedSettingsLocked.first() }
         val options = ProfileOptions(
             teams = { MainActivity.teamEntriesValuesList.ltEntries },
             roles = { MainActivity.categoryRolesEntryLists.flatMap { c -> c.roles.map { c.category to it } } },
@@ -83,15 +83,15 @@ object ChatCommandRuntime {
                     source = { name -> readPreset(appContext, name) },
                     profileHandler = profileHandlers.getValue("setprofile"),
                     serverSink = serverSink(repo),
-                    networkLocked = { repo.phoneManagedSettingsEnabled.first() || repo.getNetworkPreferencesLocked.first() }
+                    networkLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() }
                 ),
                 "setcallsign" to SetCallsignHandler(
-                    isLocked = { repo.phoneManagedSettingsEnabled.first() },
+                    isLocked = { repo.phoneManagedSettingsLocked.first() },
                     store = { repo.storeCallsign(it) }
                 ),
                 "enrollserver" to EnrollServerHandler(
                     isLocked = {
-                        repo.phoneManagedSettingsEnabled.first() || repo.getNetworkPreferencesLocked.first()
+                        repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first()
                     },
                     prompt = { promptForCredentials(appContext, it) }
                 )

@@ -112,6 +112,11 @@ The Developer Preferences diagnostics page shows watch and phone quality separat
 
 ## Configuration and operation
 
+The legacy `SettingsActivity` component redirects to `WearTAKSettingsActivity`.
+Debug tools are a screen within settings, not a separately launchable activity.
+ATOS CoT IPC authorizes the caller on every Binder transaction, before processing
+the payload; service binding itself does not establish a trusted caller identity.
+
 ### Companion provisioning and optional phone management (WEARTAK-90)
 
 The companion defaults to one-time provisioning: edit the watch callsign and server
@@ -122,7 +127,15 @@ One-time uploads do not lock watch settings or copy the phone's team and role.
 
 **Manage watch settings from this phone** is opt-in. It copies phone identity and
 resynchronizes on reconnect, with watch identity, reporting, and server edits locked.
-A temporary BLE disconnect does not release this management mode. To return to
+The editing lock requires a live, successfully managed Companion session. Application-level
+heartbeats run every 10 seconds; after 30 seconds without a matching response, the watch
+unlocks local edits and resets the Companion transport, even if Samsung retains the shared
+Bluetooth connection after ATAK exits or crashes. This detects loss of responsiveness,
+not the cause of the outage. The saved management opt-in, servers, certificates, identity,
+and reporting values are retained. A fresh successful managed-settings handshake restores
+the lock; merely reconnecting or receiving an old heartbeat does not. Watch process/service
+restart also requires a fresh handshake. Older Companion builds without heartbeat support
+cannot maintain the lock and must be updated alongside the watch. To return to
 one-time provisioning, uncheck the option and send settings again; this releases
 the lock without deleting certificates or reverting the current reporting settings.
 Unpairing instead releases the lock and restores the pre-management reporting settings.
@@ -133,7 +146,8 @@ Turning off **Companion App** in watch settings first clears the phone-managed
 settings lock for its recorded companion peer, then disables the companion service.
 This stop action preserves the current reporting strategy and interval, along with
 provisioned servers, certificates, callsign, team, and role. A transient BLE
-disconnect or service restart does not unlock settings; Android unpairing continues
+disconnect retains the editing lock only for the heartbeat grace period; service restart
+requires a new handshake. Android unpairing continues
 to release management and restore the reporting values saved before management began.
 The release transaction serializes settings writes and fences managed updates for
 that BLE generation, so a delayed settings push cannot relock the watch before its

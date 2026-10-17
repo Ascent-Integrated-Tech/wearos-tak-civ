@@ -99,6 +99,8 @@ class CompanionPhoneManagementReleaseTest {
         repo.storeEnableDynamicReportingStrategy(false)
         repo.storeConstantReportingInterval(15)
         repo.storeCallsign("Provisioned")
+        repo.setPhoneManagementSessionActive(true)
+        (field("phoneManagementLease") as PhoneManagementLease).start("AA:BB", generation().get(), 0)
 
         repeat(2) {
             val id = UUID.randomUUID().toString()
@@ -109,6 +111,8 @@ class CompanionPhoneManagementReleaseTest {
             assertTrue(response.getJSONObject("payload").getBoolean("ok"))
         }
         assertFalse(repo.phoneManagedSettingsEnabled.first())
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        assertFalse(service.expirePhoneManagement(PhoneManagementLease.TIMEOUT_MS))
         assertFalse(repo.getEnableDynamicReportingStrategy.first())
         assertEquals(15, repo.getConstantReportingInterval.first())
         assertEquals("Provisioned", repo.getCallsign.first())
@@ -139,6 +143,43 @@ class CompanionPhoneManagementReleaseTest {
 
         assertFalse(repo.phoneManagedSettingsEnabled.first())
         assertNull(repo.phoneManagedCompanionAddress.first())
+    }
+
+    @Test fun heartbeatTimeoutUnlocksButKeepsSavedManagementAndReconnectRelocks() = runBlocking {
+        stubServerPersistence()
+        service.applySettingsFromCompanion(managedSettings())
+        assertTrue(repo.phoneManagedSettingsLocked.first())
+        val now = android.os.SystemClock.elapsedRealtime()
+        (field("phoneManagementLease") as PhoneManagementLease).start("AA:BB", generation().get(), now)
+        assertFalse(service.expirePhoneManagement(now + PhoneManagementLease.TIMEOUT_MS - 1))
+        assertTrue(service.expirePhoneManagement(now + PhoneManagementLease.TIMEOUT_MS))
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+        assertEquals("AA:BB", repo.phoneManagedCompanionAddress.first())
+        assertEquals("PHONE", repo.getCallsign.first())
+        assertEquals(30, repo.getConstantReportingInterval.first())
+
+        service.beginCompanionSubscription()
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        service.applySettingsFromCompanion(managedSettings())
+        assertTrue(repo.phoneManagedSettingsLocked.first())
+    }
+
+    @Test fun currentHeartbeatRenewsButOldSessionAndDuplicatePongsDoNot() = runBlocking {
+        stubServerPersistence()
+        service.applySettingsFromCompanion(managedSettings())
+        val lease = field("phoneManagementLease") as PhoneManagementLease
+        val now = android.os.SystemClock.elapsedRealtime()
+        val token = requireNotNull(lease.probe("AA:BB", generation().get(), now))
+        val pong = JSONObject().put("msg_type", "phone_management_pong")
+            .put("version", 1).put("token", token)
+        CompanionAppService::class.java.getDeclaredMethod("handleCompanionLine", String::class.java)
+            .apply { isAccessible = true }.invoke(service, pong.toString())
+        assertFalse(lease.acknowledge("AA:BB", generation().get(), token, now))
+        service.beginCompanionSubscription()
+        assertNull(lease.probe("AA:BB", generation().get(), now + 10_000))
+        assertTrue(service.expirePhoneManagement(now + PhoneManagementLease.TIMEOUT_MS + 1_000))
+        assertFalse(repo.phoneManagedSettingsLocked.first())
     }
 
     @Test fun newSubscriptionAllowsManagedSettingsAndFencesReleasedGeneration() = runBlocking {
@@ -431,6 +472,13 @@ class CompanionPhoneManagementReleaseTest {
     }
 
     private fun generation(): AtomicLong = field("bloodhoundConnectionGeneration") as AtomicLong
+
+    private fun stubServerPersistence() {
+        val serviceRepo = io.mockk.spyk(repo)
+        coEvery { serviceRepo.storeProvisionedTakServerList(any()) } returns mockk(relaxed = true)
+        coEvery { serviceRepo.awaitTakServerList() } returns emptyList()
+        inject("repo\$delegate", lazyOf(serviceRepo))
+    }
 
     private fun managedSettings() = CompanionAppRepository.SetSettingsPayload(
         takServerList = emptyList(),

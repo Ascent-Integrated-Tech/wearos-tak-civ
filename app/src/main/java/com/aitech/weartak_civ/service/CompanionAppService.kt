@@ -125,6 +125,7 @@ class CompanionAppService : Service() {
         Log.i(TAG, "New companion subscription generation=${bloodhoundConnectionGeneration.get()}")
     }
     private val phoneManagementSettingsMutex = Mutex()
+    private val phoneManagementLease = PhoneManagementLease()
     private val phoneManagementReleaseGeneration = java.util.concurrent.atomic.AtomicLong(-1L)
     @SuppressLint("MissingPermission")
     private fun currentPeer(address: String, generation: Long): Boolean =
@@ -141,6 +142,10 @@ class CompanionAppService : Service() {
             MainActivity.Constants.constantReportingInterval = it.second
         }
         val unmanaged = !repo.phoneManagedSettingsEnabled.first()
+        if (unmanaged) synchronized(phoneManagementLease) {
+            phoneManagementLease.stop()
+            repo.setPhoneManagementSessionActive(false)
+        }
         check(currentPeer(address, generation)) { "Companion connection changed during management release" }
         return unmanaged
     }
@@ -535,6 +540,46 @@ class CompanionAppService : Service() {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun startPhoneManagementWatchdog() {
+        serviceScope.launch {
+            while (true) {
+                delay(1_000L)
+                phoneManagementSettingsMutex.withLock {
+                    synchronized(phoneManagementLease) {
+                        val now = android.os.SystemClock.elapsedRealtime()
+                        val ownsTransport = phoneManagementLease.ownsSession(
+                            connectedDevice?.address, bloodhoundConnectionGeneration.get()
+                        )
+                        if (expirePhoneManagement(now)) {
+                            if (ownsTransport) forceBleReset("phone_management_timeout")
+                        } else {
+                            val address = connectedDevice?.address
+                            val generation = bloodhoundConnectionGeneration.get()
+                            if (address != null && isCurrentSingleWatch(address, generation)) {
+                                phoneManagementLease.probe(address, generation, now)?.let { token ->
+                                    val message = org.json.JSONObject()
+                                        .put("msgType", "phone_management_ping")
+                                        .put("version", 1).put("token", token)
+                                    if (!sendBloodhoundControl(message.toString())) {
+                                        Log.w(TAG, "Phone management heartbeat queue full")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    internal fun expirePhoneManagement(now: Long): Boolean = synchronized(phoneManagementLease) {
+        if (!phoneManagementLease.expire(now)) return@synchronized false
+        repo.setPhoneManagementSessionActive(false)
+        Log.w(TAG, "Phone management heartbeat timed out; local settings unlocked")
+        true
+    }
+
     private var bluetoothManager: BluetoothManager? = null
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var advertiser: BluetoothLeAdvertiser? = null
@@ -753,6 +798,7 @@ class CompanionAppService : Service() {
         // 5) Start outbound BLE collector & changed settings state
         startBleOutboundCollector()
         startSettingsChangedCollector()
+        startPhoneManagementWatchdog()
         startPointDeletionRelay()
         startLocationDiagnostics()
         repo.clearCompanionUsers()
@@ -969,7 +1015,11 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
         Log.d(TAG, "CompanionAppService onDestroy()")
-        advanceCompanionGeneration()
+        synchronized(phoneManagementLease) {
+            advanceCompanionGeneration()
+            phoneManagementLease.stop()
+            repo.setPhoneManagementSessionActive(false)
+        }
 
         // 1) Update app-level state FIRST (avoid stale SERVICES_READY in repo)
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
@@ -1648,6 +1698,7 @@ class CompanionAppService : Service() {
             sendingPeerAddress?.let { peerAddress ->
                 repo.clearPhoneManagedSettingsForPeer(peerAddress, restorePreviousReporting = false)
                     ?.let { (dynamicReporting, constantInterval) ->
+                        synchronized(phoneManagementLease) { phoneManagementLease.stop() }
                         MainActivity.Constants.enableDynamicReportingStrategy = dynamicReporting
                         MainActivity.Constants.constantReportingInterval = constantInterval
                     }
@@ -1688,11 +1739,22 @@ class CompanionAppService : Service() {
             repo.storeRole(phoneRole)
             MainActivity.Constants.role = phoneRole
         }
+        synchronized(phoneManagementLease) {
+            if (managedPeerAddress != null && currentPeer(managedPeerAddress, expectedGeneration) &&
+                phoneManagementReleaseGeneration.get() != expectedGeneration
+            ) {
+                phoneManagementLease.start(
+                    managedPeerAddress, expectedGeneration, android.os.SystemClock.elapsedRealtime()
+                )
+                repo.setPhoneManagementSessionActive(true)
+            }
+        }
     }
 
     private fun clearPhoneManagedSettings(address: String) {
         serviceScope.launch {
             val restoredReporting = repo.clearPhoneManagedSettingsForPeer(address) ?: return@launch
+            synchronized(phoneManagementLease) { phoneManagementLease.stop() }
             MainActivity.Constants.enableDynamicReportingStrategy = restoredReporting.first
             MainActivity.Constants.constantReportingInterval = restoredReporting.second
             Log.i(TAG, "Phone-managed watch settings released after companion bond removal")
@@ -1739,6 +1801,19 @@ class CompanionAppService : Service() {
             if (handleLocationDiagnosticsMessage(json, base.type)) return
 
             when (base.type) {
+                "phone_management_pong" -> {
+                    val message = org.json.JSONObject(json)
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    require(message.optInt("version") == 1) { "Unsupported management heartbeat version" }
+                    val token = message.getString("token")
+                    if (!currentPeer(address, generation) ||
+                        !phoneManagementLease.acknowledge(
+                            address, generation, token, android.os.SystemClock.elapsedRealtime()
+                        )
+                    ) Log.w(TAG, "Ignoring stale phone management heartbeat")
+                }
+
                 "phone_user_cot", "phone_user_remove" -> {
                     val address = connectedDevice?.address ?: return
                     val generation = bloodhoundConnectionGeneration.get()
