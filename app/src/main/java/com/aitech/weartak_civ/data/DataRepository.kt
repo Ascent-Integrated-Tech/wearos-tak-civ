@@ -2318,6 +2318,15 @@ class DataRepository(private val context: Context) {
         prefs[PHONE_MANAGED_SETTINGS_ENABLED] ?: false
     }
 
+    private val phoneManagementSessionActive = MutableStateFlow(false)
+    val phoneManagedSettingsLocked: Flow<Boolean> = kotlinx.coroutines.flow.combine(
+        phoneManagedSettingsEnabled, phoneManagementSessionActive
+    ) { enabled, active -> enabled && active }
+
+    internal fun setPhoneManagementSessionActive(active: Boolean) {
+        phoneManagementSessionActive.value = active
+    }
+
     val phoneManagedCompanionAddress: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[PHONE_MANAGED_COMPANION_ADDRESS]
     }
@@ -2372,6 +2381,7 @@ class DataRepository(private val context: Context) {
             }
         }
         restoredReporting?.let { (dynamicReporting, constantInterval) ->
+            setPhoneManagementSessionActive(false)
             _enableDynamicReportingStrategy.emit(dynamicReporting)
             _constantReportingInterval.emit(constantInterval)
         }

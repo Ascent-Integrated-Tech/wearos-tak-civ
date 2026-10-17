@@ -542,11 +542,6 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".presentation.DevDebugActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:theme="@style/MainActivityTheme.Starting" />
-        <activity
             android:name=".presentation.SosActivity"
             android:exported="true"
             android:excludeFromRecents="true"
@@ -619,18 +614,6 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".presentation.SettingsActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:launchMode="singleTask"
-            android:taskAffinity="com.aitech.weartak_civ"
-            android:theme="@style/MainActivityTheme.Starting">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-        <activity
             android:name=".presentation.WearTAKSettingsActivity"
             android:exported="true"
             android:excludeFromRecents="true"
@@ -642,6 +625,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity-alias
+            android:name=".presentation.SettingsActivity"
+            android:targetActivity=".presentation.WearTAKSettingsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".presentation.ChatContactPickerActivity"
             android:exported="false"

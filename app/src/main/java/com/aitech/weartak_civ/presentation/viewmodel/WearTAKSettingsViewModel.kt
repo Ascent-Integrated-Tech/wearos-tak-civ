@@ -209,7 +209,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     val savedPhoneManagedSettings: StateFlow<Boolean> =
-        dataRepository.phoneManagedSettingsEnabled.stateIn(
+        dataRepository.phoneManagedSettingsLocked.stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
             initialValue = false
