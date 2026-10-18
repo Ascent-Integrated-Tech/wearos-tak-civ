@@ -30,6 +30,17 @@ Some capabilities depend on hardware, permissions, credentials, configuration, a
 
 ## Platform and requirements
 
+### WEARTAK-169: Bluetooth name is no longer changed
+
+WearTAK no longer changes the watch's system Bluetooth name at startup, when applying
+a callsign from the phone, or when restoring the watch's own settings. Companion BLE
+discovery still uses the A11A service UUID, and advertising still includes the current
+system device name; no `WT-` prefix is required. Bluetooth connection permissions remain
+necessary for GATT and bond handling.
+
+An existing name such as `WT-ODIN-ATAK` is not automatically restored because the original
+name is unknown. Rename the watch manually in watch Settings if desired.
+
 ### Companion bond retention
 
 Transient missing-key, failed BLE setup, and pre-session disconnect retries retain
