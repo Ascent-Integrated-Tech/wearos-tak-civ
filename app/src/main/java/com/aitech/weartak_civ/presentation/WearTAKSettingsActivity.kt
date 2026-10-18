@@ -361,8 +361,6 @@ fun WearTAKSettingsNav(
 
     val enablePhysiologicalServices by settingsVm.savedEnablePhysiologicalServices.collectAsState()
     val enableBatdokCot by settingsVm.savedEnableBatdokCot.collectAsState()
-    val enableLocationService by settingsVm.savedEnableLocationService.collectAsState()
-
     val takServerList by settingsVm.savedTakServerList.collectAsState()
 
     val enableMulticast by settingsVm.savedEnableMulticast.collectAsState()
@@ -701,14 +699,6 @@ fun WearTAKSettingsNav(
                                 )
                             },
                             title = stringResource(R.string.batdok),
-                            description = stringResource(R.string.on_off)
-                        )
-                    }
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableLocationService,
-                            onCheckedChange = { settingsVm.storeEnableLocationService(it) },
-                            title = "Location Service",
                             description = stringResource(R.string.on_off)
                         )
                     }

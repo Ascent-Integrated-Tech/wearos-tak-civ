@@ -1107,7 +1107,18 @@ class MainActivity : ComponentActivity() {
         bhRepo = (context.applicationContext as WearTakApplication).bhRepo
         sitxRepo = (context.applicationContext as WearTakApplication).sitxRepo
 
+        restrictionsManager = getSystemService(RESTRICTIONS_SERVICE) as RestrictionsManager
         seedVariablesFromRepo()
+        val restrictions = restrictionsManager.applicationRestrictions
+        val managedLocationSetting =
+            if (restrictions?.containsKey("location_service_enabled") == true) {
+                restrictions.getBoolean("location_service_enabled")
+            } else {
+                null
+            }
+        enableLocationService = runBlocking {
+            dataRepository.initializeLocationServiceSetting(managedLocationSetting)
+        }
         runBlocking {
             updateCepSustainOverridesMap()
             Handler(Looper.getMainLooper()).postDelayed({ runBlocking {
@@ -1116,7 +1127,6 @@ class MainActivity : ComponentActivity() {
         }
         refreshUI(context)
 
-        restrictionsManager = getSystemService(RESTRICTIONS_SERVICE) as RestrictionsManager
         restrictionReceiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED) {
