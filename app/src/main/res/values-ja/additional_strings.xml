@@ -40,7 +40,7 @@
     <string name="admin_preferences">管理者設定</string>
     <string name="developer_preferences">開発者設定</string>
     <string name="locked">ロック中</string>
-    <string name="phone_managed">スマートフォンで管理</string>
+    <string name="phone_managed">ペアリング済み</string>
     <string name="phone_managed_by_paired_phone">これらの設定はペア設定したスマートフォンで管理されています</string>
     <string name="cell_ditto_connected_location_enabled">モバイル通信、Ditto 接続済み、位置情報有効</string>
     <string name="cell_ditto_connected_location_disabled">モバイル通信、Ditto 接続済み、位置情報無効</string>

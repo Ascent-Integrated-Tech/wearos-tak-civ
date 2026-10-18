@@ -127,6 +127,8 @@ class CompanionAppService : Service() {
     private val phoneManagementSettingsMutex = Mutex()
     private val phoneManagementLease = PhoneManagementLease()
     private val phoneManagementReleaseGeneration = java.util.concurrent.atomic.AtomicLong(-1L)
+    // A restarted service waits one heartbeat window for the phone to re-handshake.
+    @Volatile private var phoneManagedRestoreNotBefore = 0L
     @SuppressLint("MissingPermission")
     private fun currentPeer(address: String, generation: Long): Boolean =
         bloodhoundConnectionGeneration.get() == generation &&
@@ -134,13 +136,9 @@ class CompanionAppService : Service() {
 
     internal suspend fun releasePhoneManagement(address: String, generation: Long): Boolean {
         check(currentPeer(address, generation)) { "Companion connection is not ready" }
-        val reporting = repo.clearPhoneManagedSettingsForPeer(address, restorePreviousReporting = false) {
+        repo.clearPhoneManagedSettingsForPeer(address) {
             currentPeer(address, generation)
-        }
-        reporting?.let {
-            MainActivity.Constants.enableDynamicReportingStrategy = it.first
-            MainActivity.Constants.constantReportingInterval = it.second
-        }
+        }?.let(::applyRestoredPhoneManagedSettings)
         val unmanaged = !repo.phoneManagedSettingsEnabled.first()
         if (unmanaged) synchronized(phoneManagementLease) {
             phoneManagementLease.stop()
@@ -546,8 +544,8 @@ class CompanionAppService : Service() {
             while (true) {
                 delay(1_000L)
                 phoneManagementSettingsMutex.withLock {
+                    val now = android.os.SystemClock.elapsedRealtime()
                     synchronized(phoneManagementLease) {
-                        val now = android.os.SystemClock.elapsedRealtime()
                         val ownsTransport = phoneManagementLease.ownsSession(
                             connectedDevice?.address, bloodhoundConnectionGeneration.get()
                         )
@@ -568,8 +566,42 @@ class CompanionAppService : Service() {
                             }
                         }
                     }
+                    try {
+                        restorePhoneManagedSettingsIfUnleased(now)
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Log.w(TAG, "Failed to restore phone-managed settings", error)
+                    }
                 }
             }
+        }
+    }
+
+    /**
+     * Restores the watch's own phone-locked values once no live managed session holds
+     * the lease. Transient drops inside the heartbeat grace keep the lease and do not
+     * restore; a fresh managed handshake snapshots and re-applies the phone's values.
+     */
+    internal suspend fun restorePhoneManagedSettingsIfUnleased(now: Long): Boolean {
+        val unleased = synchronized(phoneManagementLease) {
+            !phoneManagementLease.isActive() && now >= phoneManagedRestoreNotBefore
+        }
+        if (!unleased) return false
+        val restored = repo.restorePhoneManagedSnapshot {
+            synchronized(phoneManagementLease) { !phoneManagementLease.isActive() }
+        } ?: return false
+        applyRestoredPhoneManagedSettings(restored)
+        Log.i(TAG, "Phone-managed session ended; restored the watch's own locked settings")
+        return true
+    }
+
+    private fun applyRestoredPhoneManagedSettings(values: DataRepository.PhoneManagedSettingsValues) {
+        values.applyToRuntimeConstants()
+        if (connectedDevice == null) {
+            updateBluetoothNameFromCallsign(values.callsign)
+        } else {
+            Log.d(TAG, "Callsign restored while connected; will update BT name next advertise")
         }
     }
 
@@ -782,6 +814,9 @@ class CompanionAppService : Service() {
         // 3) Collect state *before* BLE init so transitions are not missed
         collectBleState()
         registerBondReceiver()
+
+        phoneManagedRestoreNotBefore =
+            android.os.SystemClock.elapsedRealtime() + PhoneManagementLease.TIMEOUT_MS
 
         // 4) Initialize BLE server + GATT service
         initBle()
@@ -1654,6 +1689,16 @@ class CompanionAppService : Service() {
         }
         val sendingPeerAddress = connectedDevice?.address
 
+        if (!payload.phoneManagedSettings) {
+            // Configure mode: restore any bond snapshot first so the uploaded settings stick.
+            sendingPeerAddress?.let { peerAddress ->
+                repo.clearPhoneManagedSettingsForPeer(peerAddress)?.let { restored ->
+                    synchronized(phoneManagementLease) { phoneManagementLease.stop() }
+                    applyRestoredPhoneManagedSettings(restored)
+                }
+            }
+        }
+
         val managedPeerAddress = if (payload.phoneManagedSettings) {
             require((payload.reportIntSecs ?: 0) > 0) {
                 "Phone-managed settings require a positive reporting interval"
@@ -1665,7 +1710,8 @@ class CompanionAppService : Service() {
                 ?: throw IllegalStateException("Cannot apply phone-managed settings without an active companion")
         } else null
 
-        // 1) Store servers
+        // 1) Store servers, first saving the watch's own servers when a bond takes over.
+        if (managedPeerAddress != null) repo.snapshotTakServersForPhoneManagement()
         Log.d(TAG, "applySettingsFromCompanion: storeTakServerList size=${payload.takServerList.size}")
         val refresh = repo.storeProvisionedTakServerList(payload.takServerList)
         if (TAKConnectService.isRunning.get()) {
@@ -1694,24 +1740,43 @@ class CompanionAppService : Service() {
                     connectedDevice?.address.equals(peerAddress, ignoreCase = true)
             }
         }
-        if (!payload.phoneManagedSettings) {
-            sendingPeerAddress?.let { peerAddress ->
-                repo.clearPhoneManagedSettingsForPeer(peerAddress, restorePreviousReporting = false)
-                    ?.let { (dynamicReporting, constantInterval) ->
-                        synchronized(phoneManagementLease) { phoneManagementLease.stop() }
-                        MainActivity.Constants.enableDynamicReportingStrategy = dynamicReporting
-                        MainActivity.Constants.constantReportingInterval = constantInterval
-                    }
+        if (managedPeerAddress != null) {
+            // 2) Snapshot the watch's own locked values once, then apply the phone's.
+            val applied = repo.applyPhoneManagedSettings(
+                callsign = requireNotNull(payload.callsign),
+                team = requireNotNull(payload.team),
+                role = requireNotNull(payload.role),
+                constantReportingInterval = requireNotNull(payload.reportIntSecs)
+            ) {
+                bloodhoundConnectionGeneration.get() == expectedGeneration &&
+                    phoneManagementReleaseGeneration.get() != expectedGeneration &&
+                    connectedDevice?.address.equals(managedPeerAddress, ignoreCase = true)
+            }
+            applied.applyToRuntimeConstants()
+            if (connectedDevice == null) {
+                updateBluetoothNameFromCallsign(applied.callsign)
+            } else {
+                Log.d(TAG, "Callsign applied while connected; will update BT name next advertise")
+            }
+        } else {
+            applyProvisionedSettings(payload)
+        }
+        synchronized(phoneManagementLease) {
+            if (managedPeerAddress != null && currentPeer(managedPeerAddress, expectedGeneration) &&
+                phoneManagementReleaseGeneration.get() != expectedGeneration
+            ) {
+                phoneManagementLease.start(
+                    managedPeerAddress, expectedGeneration, android.os.SystemClock.elapsedRealtime()
+                )
+                repo.setPhoneManagementSessionActive(true)
             }
         }
+    }
 
+    private suspend fun applyProvisionedSettings(payload: CompanionAppRepository.SetSettingsPayload) {
         // 2) Store reporting interval
         val int = payload.reportIntSecs
         if (int != null && int != 0) {
-            if (payload.phoneManagedSettings) {
-                repo.storeEnableDynamicReportingStrategy(false)
-                MainActivity.Constants.enableDynamicReportingStrategy = false
-            }
             repo.storeConstantReportingInterval(payload.reportIntSecs)
             MainActivity.Constants.constantReportingInterval = payload.reportIntSecs
         }
@@ -1739,24 +1804,13 @@ class CompanionAppService : Service() {
             repo.storeRole(phoneRole)
             MainActivity.Constants.role = phoneRole
         }
-        synchronized(phoneManagementLease) {
-            if (managedPeerAddress != null && currentPeer(managedPeerAddress, expectedGeneration) &&
-                phoneManagementReleaseGeneration.get() != expectedGeneration
-            ) {
-                phoneManagementLease.start(
-                    managedPeerAddress, expectedGeneration, android.os.SystemClock.elapsedRealtime()
-                )
-                repo.setPhoneManagementSessionActive(true)
-            }
-        }
     }
 
     private fun clearPhoneManagedSettings(address: String) {
         serviceScope.launch {
-            val restoredReporting = repo.clearPhoneManagedSettingsForPeer(address) ?: return@launch
+            val restored = repo.clearPhoneManagedSettingsForPeer(address) ?: return@launch
             synchronized(phoneManagementLease) { phoneManagementLease.stop() }
-            MainActivity.Constants.enableDynamicReportingStrategy = restoredReporting.first
-            MainActivity.Constants.constantReportingInterval = restoredReporting.second
+            applyRestoredPhoneManagedSettings(restored)
             Log.i(TAG, "Phone-managed watch settings released after companion bond removal")
         }
     }

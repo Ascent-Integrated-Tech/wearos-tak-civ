@@ -50,6 +50,9 @@ internal class PhoneManagementLease {
     }
 
     @Synchronized
+    fun isActive(): Boolean = address != null
+
+    @Synchronized
     fun ownsSession(address: String?, generation: Long): Boolean =
         this.address != null && address != null && matches(address, generation)
 

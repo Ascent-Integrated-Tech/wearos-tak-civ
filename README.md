@@ -139,24 +139,27 @@ The editing lock requires a live, successfully managed Companion session. Applic
 heartbeats run every 10 seconds; after 30 seconds without a matching response, the watch
 unlocks local edits and resets the Companion transport, even if Samsung retains the shared
 Bluetooth connection after ATAK exits or crashes. This detects loss of responsiveness,
-not the cause of the outage. The saved management opt-in, servers, certificates, identity,
-and reporting values are retained. A fresh successful managed-settings handshake restores
+not the cause of the outage. The saved management opt-in is retained, while the watch's
+own identity, reporting, servers, and certificates are restored (WEARTAK-168).
+A fresh successful managed-settings handshake re-applies the phone's values and restores
 the lock; merely reconnecting or receiving an old heartbeat does not. Watch process/service
-restart also requires a fresh handshake. Older Companion builds without heartbeat support
+restart also requires a fresh handshake; if none arrives within 30 seconds, the watch
+restores its own values. Older Companion builds without heartbeat support
 cannot maintain the lock and must be updated alongside the watch. To return to
 one-time provisioning, uncheck the option and send settings again; this releases
-the lock without deleting certificates or reverting the current reporting settings.
-Unpairing instead releases the lock and restores the pre-management reporting settings.
+the lock, restores the watch's own values, and then applies the one-time upload, whose
+servers and certificates stay. Unpairing also releases the lock and restores the watch's
+own values.
 
 ### WEARTAK-161: Explicitly releasing phone management
 
 Turning off **Companion App** in watch settings first clears the phone-managed
 settings lock for its recorded companion peer, then disables the companion service.
-This stop action preserves the current reporting strategy and interval, along with
-provisioned servers, certificates, callsign, team, and role. A transient BLE
+Since WEARTAK-168, this stop action restores the watch's own callsign, team, role,
+reporting settings, TAK servers, and certificates. A transient BLE
 disconnect retains the editing lock only for the heartbeat grace period; service restart
-requires a new handshake. Android unpairing continues
-to release management and restore the reporting values saved before management began.
+requires a new handshake. Android unpairing also releases management and restores
+the values saved before management began.
 The release transaction serializes settings writes and fences managed updates for
 that BLE generation, so a delayed settings push cannot relock the watch before its
 release acknowledgement; management can be enabled again after reconnecting.
@@ -168,6 +171,46 @@ An accepted notification subscription starts a new logical companion generation:
 Samsung may keep the shared physical Bluetooth link alive while ATAK closes and
 reopens its GATT client. Reconnect therefore does not depend on a physical
 disconnect callback to clear the previous session's management-release fence.
+
+### WEARTAK-168: Restoring watch settings after phone management
+
+This applies to the Companion's **Bond Single Watch** mode (managed settings). Before the
+phone first overwrites the watch, the watch saves its own values for every setting the phone
+writes: callsign, team (and team color), role, role category, the dynamic reporting strategy,
+the constant reporting interval, and the TAK server list including `.p12` certificates and
+passwords. Identity and reporting values are saved in DataStore. The server list is saved in
+the same encrypted TAK server store as the live list; only a non-secret "snapshot saved" marker
+is kept in DataStore. The snapshot survives a process restart, and repeated phone pushes during
+management never overwrite it. Stationary, on-foot, vehicle, and alerting intervals are locked
+but never written by the phone, so they are not changed.
+
+**Configure Single Watch** (one-time upload) does not lock or snapshot anything; its servers,
+certificates, and other settings stay on the watch. If a one-time upload arrives from the
+bonded phone, the watch first restores its saved values and ends the bond, then applies the
+upload, so the configured settings stick.
+
+The saved values are restored, the Bluetooth name is recomputed from the restored callsign,
+the TAK service is asked to reconnect with the restored servers, and a PLI refresh is
+requested when any of these happen:
+- the phone releases management or sends a one-time (unmanaged) upload;
+- **Companion App** is turned off on the watch;
+- the managing phone is unpaired;
+- the 30-second heartbeat lease expires, or no managed handshake arrives within
+  30 seconds of a service restart.
+
+A disconnect shorter than the lease grace keeps the phone's values, so the identity does
+not switch back and forth. Releasing management, turning off Companion App, and unpairing
+also clear the management opt-in. Lease expiry keeps the opt-in, so a later managed handshake
+saves the watch values again and re-applies the phone's values.
+
+Watch edits are blocked while the lock is active. If the user changes one of these settings
+while management is enabled but unlocked (for example, during the restart grace), the edit
+also updates the saved value, so it is not lost on restore. The same applies to TAK server
+edits. Locked settings are labeled **Bonded** (previously "Phone managed").
+
+If a managed handshake saves the servers but then fails, the saved servers are restored once
+the watch is no longer locked. Installs whose bond began before identity or server snapshots
+existed restore only what they saved: reporting and the current identity and servers stay.
 
 ### WEARTAK-66: Interaction-triggered PLI refresh and identity updates
 

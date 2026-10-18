@@ -40,7 +40,7 @@
     <string name="admin_preferences">Preferencias de administrador</string>
     <string name="developer_preferences">Preferencias de desarrollador</string>
     <string name="locked">Bloqueado</string>
-    <string name="phone_managed">Gestionado desde el teléfono</string>
+    <string name="phone_managed">Vinculado</string>
     <string name="phone_managed_by_paired_phone">El teléfono emparejado gestiona estos ajustes</string>
     <string name="cell_ditto_connected_location_enabled">Red móvil, Ditto conectado, ubicación activada</string>
     <string name="cell_ditto_connected_location_disabled">Red móvil, Ditto conectado, ubicación desactivada</string>

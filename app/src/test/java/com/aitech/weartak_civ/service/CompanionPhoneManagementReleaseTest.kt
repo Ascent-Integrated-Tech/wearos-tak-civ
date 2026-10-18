@@ -36,6 +36,8 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import com.aitech.weartak_civ.data.InMemoryTakServerSecrets
+import com.aitech.weartak_civ.data.InMemoryTakServerSecrets.Companion.server
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicLong
 
@@ -54,6 +56,7 @@ class CompanionPhoneManagementReleaseTest {
     private lateinit var txCharacteristic: BluetoothGattCharacteristic
     private var bonded = true
     private var ready = true
+    private val secrets = InMemoryTakServerSecrets()
 
     @Before fun setup() = runBlocking {
         val app = RuntimeEnvironment.getApplication()
@@ -61,6 +64,7 @@ class CompanionPhoneManagementReleaseTest {
         MainActivity.versionNumber = "test"
         MainActivity.mainActivity = mockk { every { applicationContext } returns app }
         repo = DataRepository(app)
+        repo.takServerSecretsOverride = secrets.repository
         repo.legacyDataStore().edit { it.clear() }
         peer = mockk()
         every { peer.address } returns "AA:BB"
@@ -92,13 +96,14 @@ class CompanionPhoneManagementReleaseTest {
         coroutineErrors.firstOrNull()?.let { throw AssertionError("Service coroutine failed", it) }
     }
 
-    @Test fun releaseAckPreservesProvisionedValuesAndIsIdempotent() = runBlocking {
+    @Test fun releaseAckRestoresWatchLockedValuesAndIsIdempotent() = runBlocking {
         repo.storeEnableDynamicReportingStrategy(true)
         repo.storeConstantReportingInterval(60)
+        repo.storeCallsign("ODIN-WEARTAK")
+        repo.storeTeam("Dark Green")
+        repo.storeRole("K9")
         repo.enablePhoneManagedSettings("AA:BB")
-        repo.storeEnableDynamicReportingStrategy(false)
-        repo.storeConstantReportingInterval(15)
-        repo.storeCallsign("Provisioned")
+        repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Lead", 15)
         repo.setPhoneManagementSessionActive(true)
         (field("phoneManagementLease") as PhoneManagementLease).start("AA:BB", generation().get(), 0)
 
@@ -113,9 +118,15 @@ class CompanionPhoneManagementReleaseTest {
         assertFalse(repo.phoneManagedSettingsEnabled.first())
         assertFalse(repo.phoneManagedSettingsLocked.first())
         assertFalse(service.expirePhoneManagement(PhoneManagementLease.TIMEOUT_MS))
-        assertFalse(repo.getEnableDynamicReportingStrategy.first())
-        assertEquals(15, repo.getConstantReportingInterval.first())
-        assertEquals("Provisioned", repo.getCallsign.first())
+        assertTrue(repo.getEnableDynamicReportingStrategy.first())
+        assertEquals(60, repo.getConstantReportingInterval.first())
+        assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+        assertEquals("Dark Green", repo.getTeam.first())
+        assertEquals("K9", repo.getRole.first())
+        assertEquals("ODIN-WEARTAK", MainActivity.Constants.callsign)
+        assertEquals("K9", MainActivity.Constants.role)
+        assertTrue(MainActivity.Constants.enableDynamicReportingStrategy)
+        assertEquals(60, MainActivity.Constants.constantReportingInterval)
     }
 
     @Test fun releaseRejectsWrongPeerInvalidUuidAndStaleMutationFence() = runBlocking {
@@ -131,7 +142,7 @@ class CompanionPhoneManagementReleaseTest {
         assertTrue(repo.phoneManagedSettingsEnabled.first())
 
         assertThrows(IllegalStateException::class.java) {
-            runBlocking { repo.clearPhoneManagedSettingsForPeer("AA:BB", false) { false } }
+            runBlocking { repo.clearPhoneManagedSettingsForPeer("AA:BB") { false } }
         }
         assertTrue(repo.phoneManagedSettingsEnabled.first())
     }
@@ -145,7 +156,10 @@ class CompanionPhoneManagementReleaseTest {
         assertNull(repo.phoneManagedCompanionAddress.first())
     }
 
-    @Test fun heartbeatTimeoutUnlocksButKeepsSavedManagementAndReconnectRelocks() = runBlocking {
+    @Test fun heartbeatTimeoutRestoresWatchValuesKeepsManagementAndReconnectRelocks() = runBlocking {
+        repo.storeCallsign("ODIN-WEARTAK")
+        repo.storeTeam("Dark Green")
+        repo.storeConstantReportingInterval(60)
         stubServerPersistence()
         service.applySettingsFromCompanion(managedSettings())
         assertTrue(repo.phoneManagedSettingsLocked.first())
@@ -159,10 +173,105 @@ class CompanionPhoneManagementReleaseTest {
         assertEquals("PHONE", repo.getCallsign.first())
         assertEquals(30, repo.getConstantReportingInterval.first())
 
+        assertTrue(service.restorePhoneManagedSettingsIfUnleased(now + PhoneManagementLease.TIMEOUT_MS))
+        assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+        assertEquals("Dark Green", repo.getTeam.first())
+        assertEquals(60, repo.getConstantReportingInterval.first())
+        assertEquals("ODIN-WEARTAK", MainActivity.Constants.callsign)
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+        assertEquals("AA:BB", repo.phoneManagedCompanionAddress.first())
+        assertFalse(service.restorePhoneManagedSettingsIfUnleased(now + PhoneManagementLease.TIMEOUT_MS))
+
         service.beginCompanionSubscription()
         assertFalse(repo.phoneManagedSettingsLocked.first())
         service.applySettingsFromCompanion(managedSettings())
         assertTrue(repo.phoneManagedSettingsLocked.first())
+        assertEquals("PHONE", repo.getCallsign.first())
+
+        repo.clearPhoneManagedSettingsForPeer("AA:BB")
+        assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+        assertEquals("Dark Green", repo.getTeam.first())
+        assertEquals(60, repo.getConstantReportingInterval.first())
+    }
+
+    @Test fun bondModeRestoresWatchServersOnReleaseAck() = runBlocking {
+        repo.storeTakServerList(listOf(server("own")))
+        repo.storeCallsign("ODIN-WEARTAK")
+        service.applySettingsFromCompanion(managedSettings().copy(takServerList = listOf(server("phone"))))
+        assertEquals(listOf("phone"), secrets.liveServers().map { it.name })
+        service.applySettingsFromCompanion(managedSettings().copy(takServerList = listOf(server("phone-2"))))
+        assertEquals(listOf("own"), secrets.snapshotServers().map { it.name })
+
+        handle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        assertTrue(awaitAck().getJSONObject("payload").getBoolean("ok"))
+        assertEquals(listOf("own"), secrets.liveServers().map { it.name })
+        assertNull(secrets.snapshot.value)
+        assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+    }
+
+    @Test fun configureModeAfterBondRestoresThenKeepsConfiguredSettings() = runBlocking {
+        repo.storeTakServerList(listOf(server("own")))
+        repo.storeCallsign("ODIN-WEARTAK")
+        service.applySettingsFromCompanion(managedSettings().copy(takServerList = listOf(server("phone"))))
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
+
+        service.applySettingsFromCompanion(
+            managedSettings().copy(
+                takServerList = listOf(server("configured")),
+                callsign = "CONFIGURED",
+                phoneManagedSettings = false
+            )
+        )
+        assertEquals(listOf("configured"), secrets.liveServers().map { it.name })
+        assertNull(secrets.snapshot.value)
+        assertEquals("CONFIGURED", repo.getCallsign.first())
+        assertFalse(repo.phoneManagedSettingsEnabled.first())
+        assertNull(repo.clearPhoneManagedSettingsForPeer("AA:BB"))
+        assertEquals(listOf("configured"), secrets.liveServers().map { it.name })
+    }
+
+    @Test fun configureModeWithoutBondKeepsPushedServers() = runBlocking {
+        repo.storeTakServerList(listOf(server("own")))
+        service.applySettingsFromCompanion(
+            managedSettings().copy(takServerList = listOf(server("configured")), phoneManagedSettings = false)
+        )
+        assertEquals(listOf("configured"), secrets.liveServers().map { it.name })
+        assertNull(secrets.snapshot.value)
+        assertFalse(service.restorePhoneManagedSettingsIfUnleased(Long.MAX_VALUE))
+        assertEquals(listOf("configured"), secrets.liveServers().map { it.name })
+    }
+
+    @Test fun briefDropInsideHeartbeatGraceKeepsPhoneValues() = runBlocking {
+        repo.storeCallsign("ODIN-WEARTAK")
+        stubServerPersistence()
+        service.applySettingsFromCompanion(managedSettings())
+        val now = android.os.SystemClock.elapsedRealtime()
+        (field("phoneManagementLease") as PhoneManagementLease).start("AA:BB", generation().get(), now)
+        service.beginCompanionSubscription()
+
+        assertFalse(service.expirePhoneManagement(now + PhoneManagementLease.TIMEOUT_MS - 1))
+        assertFalse(service.restorePhoneManagedSettingsIfUnleased(now + PhoneManagementLease.TIMEOUT_MS - 1))
+        assertEquals("PHONE", repo.getCallsign.first())
+
+        service.applySettingsFromCompanion(managedSettings())
+        assertTrue(repo.phoneManagedSettingsLocked.first())
+        assertEquals("PHONE", repo.getCallsign.first())
+        repo.clearPhoneManagedSettingsForPeer("AA:BB")
+        assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+    }
+
+    @Test fun restartedServiceWaitsForHandshakeGraceBeforeRestoring() = runBlocking {
+        repo.storeCallsign("ODIN-WEARTAK")
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Member", 30)
+        val now = android.os.SystemClock.elapsedRealtime()
+        inject("phoneManagedRestoreNotBefore", now + PhoneManagementLease.TIMEOUT_MS)
+
+        assertFalse(service.restorePhoneManagedSettingsIfUnleased(now))
+        assertEquals("PHONE", repo.getCallsign.first())
+        assertTrue(service.restorePhoneManagedSettingsIfUnleased(now + PhoneManagementLease.TIMEOUT_MS))
+        assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+        assertTrue(repo.phoneManagedSettingsEnabled.first())
     }
 
     @Test fun currentHeartbeatRenewsButOldSessionAndDuplicatePongsDoNot() = runBlocking {

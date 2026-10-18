@@ -7,9 +7,12 @@ class PhoneManagementLeaseTest {
     private val lease = PhoneManagementLease()
 
     @Test fun expiresAtThirtySecondsEvenWhenTransportStillAppearsConnected() {
+        assertFalse(lease.isActive())
         lease.start("AA:BB", 1, 100)
         assertFalse(lease.expire(30_099))
+        assertTrue(lease.isActive())
         assertTrue(lease.expire(30_100))
+        assertFalse(lease.isActive())
         assertFalse(lease.expire(60_000))
         assertNull(lease.probe("AA:BB", 1, 60_000))
     }

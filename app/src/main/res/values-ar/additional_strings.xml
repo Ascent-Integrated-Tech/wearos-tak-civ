@@ -40,7 +40,7 @@
     <string name="admin_preferences">تفضيلات المسؤول</string>
     <string name="developer_preferences">تفضيلات المطوّر</string>
     <string name="locked">مقفل</string>
-    <string name="phone_managed">تتم الإدارة عبر الهاتف</string>
+    <string name="phone_managed">مقترن</string>
     <string name="phone_managed_by_paired_phone">تتم إدارة هذه الإعدادات عبر الهاتف المقترن</string>
     <string name="cell_ditto_connected_location_enabled">شبكة خلوية، Ditto متصل، الموقع مفعّل</string>
     <string name="cell_ditto_connected_location_disabled">شبكة خلوية، Ditto متصل، الموقع معطّل</string>

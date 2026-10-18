@@ -56,7 +56,8 @@ class CompanionSettingsProvisioningTest {
         coEvery { repo.storeProvisionedTakServerList(payload.takServerList) } returns
             DataRepository.TakServerConfigurationRefresh()
         coEvery { repo.awaitTakServerList() } returns payload.takServerList
-        coEvery { repo.clearPhoneManagedSettingsForPeer("AA:BB", false, any()) } returns (false to 15)
+        coEvery { repo.clearPhoneManagedSettingsForPeer("AA:BB", any()) } returns
+            DataRepository.PhoneManagedSettingsValues(true, 60, "ODIN", "Dark Green", "Dark Green", "K9", "MIL")
         coEvery { repo.storeConstantReportingInterval(30) } returns Unit
         coEvery { repo.storeCallsign("ODIN-WEARTAK") } returns Unit
         val device = mockk<BluetoothDevice>()
@@ -76,7 +77,7 @@ class CompanionSettingsProvisioningTest {
         TAKConnectService.isRunning.set(false)
         service.applySettingsFromCompanion(payload)
         coVerify(exactly = 1) { repo.storeProvisionedTakServerList(payload.takServerList) }
-        coVerify(exactly = 1) { repo.clearPhoneManagedSettingsForPeer("AA:BB", false, any()) }
+        coVerify(exactly = 1) { repo.clearPhoneManagedSettingsForPeer("AA:BB", any()) }
         coVerify(exactly = 0) { repo.enablePhoneManagedSettings(any()) }
         coVerify(exactly = 0) { repo.storeEnableDynamicReportingStrategy(any()) }
         coVerify(exactly = 0) { repo.storeTeam(any()) }

@@ -19,4 +19,10 @@ class TakServerSecretsRepository(private val store: TakServerEncryptedDataStore)
 
     suspend fun setTakServerListJson(json: String?) =
         store.setEncryptedString(TakServerSecretsKeys.TAK_SERVER_LIST_JSON, json)
+
+    val phoneManagedSnapshotRead: Flow<DecryptResult?> =
+        store.encryptedStringResult(TakServerSecretsKeys.PHONE_MANAGED_TAK_SERVER_SNAPSHOT_JSON)
+
+    suspend fun setPhoneManagedSnapshotJson(json: String?) =
+        store.setEncryptedString(TakServerSecretsKeys.PHONE_MANAGED_TAK_SERVER_SNAPSHOT_JSON, json)
 }

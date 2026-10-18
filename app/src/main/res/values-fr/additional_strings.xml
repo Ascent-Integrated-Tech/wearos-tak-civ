@@ -40,7 +40,7 @@
     <string name="admin_preferences">Préférences d’administration</string>
     <string name="developer_preferences">Préférences de développement</string>
     <string name="locked">Verrouillé</string>
-    <string name="phone_managed">Géré par le téléphone</string>
+    <string name="phone_managed">Associé</string>
     <string name="phone_managed_by_paired_phone">Ces paramètres sont gérés par le téléphone associé</string>
     <string name="cell_ditto_connected_location_enabled">Réseau cellulaire, Ditto connecté, position activée</string>
     <string name="cell_ditto_connected_location_disabled">Réseau cellulaire, Ditto connecté, position désactivée</string>

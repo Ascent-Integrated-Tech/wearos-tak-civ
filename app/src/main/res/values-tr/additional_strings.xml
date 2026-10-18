@@ -40,7 +40,7 @@
     <string name="admin_preferences">Yönetici tercihleri</string>
     <string name="developer_preferences">Geliştirici tercihleri</string>
     <string name="locked">Kilitli</string>
-    <string name="phone_managed">Telefon tarafından yönetiliyor</string>
+    <string name="phone_managed">Eşlendi</string>
     <string name="phone_managed_by_paired_phone">Bu ayarlar eşleştirilmiş telefon tarafından yönetiliyor</string>
     <string name="cell_ditto_connected_location_enabled">Hücresel, Ditto bağlı, konum açık</string>
     <string name="cell_ditto_connected_location_disabled">Hücresel, Ditto bağlı, konum kapalı</string>
