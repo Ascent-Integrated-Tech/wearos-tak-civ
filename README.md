@@ -300,6 +300,11 @@ and invalid certificate data. Retry clears the previous error for that server.
 Add/edit registration waits for the saved configuration before starting an attempt.
 The dialog follows a stable server-ID request across runtime configuration refreshes;
 failures replace the spinner, and retry starts an attempt even when settings are unchanged.
+Offline, disabled, companion-managed, cancelled, or stopped-service attempts also
+terminate registration rather than leaving it loading; a completed TLS handshake
+publishes success. Restarting the TAK foreground service creates a fresh connection
+scope and retires the prior service's work. Late teardown of an old instance cannot
+cancel the replacement's connections.
 This does **not** repair rejected credentials: HTTP 401 still requires valid
 credentials/server-side authorization. Response bodies and certificate material
 are not logged by enrollment.
