@@ -598,11 +598,6 @@ class CompanionAppService : Service() {
 
     private fun applyRestoredPhoneManagedSettings(values: DataRepository.PhoneManagedSettingsValues) {
         values.applyToRuntimeConstants()
-        if (connectedDevice == null) {
-            updateBluetoothNameFromCallsign(values.callsign)
-        } else {
-            Log.d(TAG, "Callsign restored while connected; will update BT name next advertise")
-        }
     }
 
     internal fun expirePhoneManagement(now: Long): Boolean = synchronized(phoneManagementLease) {
@@ -847,9 +842,6 @@ class CompanionAppService : Service() {
 
         // 6) Finish setup async
         serviceScope.launch {
-            val sys = repo.snapshotSystem()
-            updateBluetoothNameFromSnapshot(sys)
-
             // IMPORTANT:
             // Only advertise if we are NOT already connected.
             // If we ARE already connected, the handshake watchdog
@@ -860,36 +852,6 @@ class CompanionAppService : Service() {
                 Log.w(TAG, "Service started while already connected; waiting for handshake")
                 armHandshakeWatchdog("onCreate_already_connected")
             }
-        }
-    }
-
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun updateBluetoothNameFromSnapshot(sys: DataRepository.SystemSnapshot) {
-        val adapter = bluetoothAdapter ?: return
-        val desiredName = "WT-${sys.callsign}"          // or just sys.callsign
-
-        if (adapter.name != desiredName) {
-            try {
-                adapter.name = desiredName
-                Log.d(TAG, "Set BT adapter name to $desiredName")
-            } catch (t: Throwable) {
-                Log.w(TAG, "Failed to set BT adapter name", t)
-            }
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun updateBluetoothNameFromCallsign(callsign: String) {
-        val desiredName = "WT-$callsign" // or just callsign
-        val adapter = bluetoothAdapter ?: return
-
-        try {
-            if (adapter.name != desiredName) {
-                adapter.name = desiredName
-                Log.d(TAG, "Set BT adapter name to $desiredName")
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "Failed to set BT adapter name", t)
         }
     }
 
@@ -1753,11 +1715,6 @@ class CompanionAppService : Service() {
                     connectedDevice?.address.equals(managedPeerAddress, ignoreCase = true)
             }
             applied.applyToRuntimeConstants()
-            if (connectedDevice == null) {
-                updateBluetoothNameFromCallsign(applied.callsign)
-            } else {
-                Log.d(TAG, "Callsign applied while connected; will update BT name next advertise")
-            }
         } else {
             applyProvisionedSettings(payload)
         }
@@ -1784,11 +1741,6 @@ class CompanionAppService : Service() {
         payload.callsign?.let { phoneCallsign ->
             repo.storeCallsign(phoneCallsign)
             callsign = phoneCallsign
-            if (connectedDevice == null) {
-                updateBluetoothNameFromCallsign(phoneCallsign)
-            } else {
-                Log.d(TAG, "Callsign applied while connected; will update BT name next advertise")
-            }
         }
 
         payload.team?.let { phoneTeam ->

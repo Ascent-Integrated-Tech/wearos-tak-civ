@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.service
 
 import android.app.Application
+import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattServer
@@ -54,6 +55,7 @@ class CompanionPhoneManagementReleaseTest {
     private lateinit var peer: BluetoothDevice
     private lateinit var gattServer: BluetoothGattServer
     private lateinit var txCharacteristic: BluetoothGattCharacteristic
+    private val adapter = mockk<BluetoothAdapter>(relaxed = true)
     private var bonded = true
     private var ready = true
     private val secrets = InMemoryTakServerSecrets()
@@ -77,6 +79,8 @@ class CompanionPhoneManagementReleaseTest {
         every { capRepo.envelopeToJson(any<CompanionAppRepository.Envelope<Any>>()) } returns
             """{"msgType":"settings_request"}"""
         inject("repo\$delegate", lazyOf(repo))
+        every { adapter.name } returns "Galaxy Watch"
+        inject("bluetoothAdapter", adapter)
         inject("capRepo\$delegate", lazyOf(capRepo))
         val scope = CoroutineScope(job + StandardTestDispatcher(scheduler) +
             CoroutineExceptionHandler { _, error -> coroutineErrors.add(error) })
@@ -94,6 +98,7 @@ class CompanionPhoneManagementReleaseTest {
         job.cancel()
         scheduler.runCurrent()
         coroutineErrors.firstOrNull()?.let { throw AssertionError("Service coroutine failed", it) }
+        verify(exactly = 0) { adapter.setName(any()) }
     }
 
     @Test fun releaseAckRestoresWatchLockedValuesAndIsIdempotent() = runBlocking {
