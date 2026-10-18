@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 class HostPluginRepository(
     private val app: WearTakApplication,
     private val manager: PluginManager,
+    private val pluginStateStore: PluginStateStore,
 ) : PluginRepository, PluginManager.PluginTopologyListener {
 
     private val identityStore = PluginIdentityStore()
@@ -58,7 +59,9 @@ class HostPluginRepository(
                 }
             }
 
-            val visiblePackages = identityStore.visiblePackageNames(discoveredPackageNames)
+            // Installed package discovery is authoritative. A plugin must remain visible while
+            // it is installed; enabled state controls whether it is bound and running.
+            val visiblePackages = discoveredPackageNames
             val records = visiblePackages.map { packageName ->
                 buildPluginUi(packageName, diagnostics)
             }.sortedWith(compareBy<PluginUI> { it.title.lowercase() }.thenBy { it.packageName })
@@ -81,9 +84,7 @@ class HostPluginRepository(
             publishFailure("addPlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
-        synchronized(stateLock) {
-            identityStore.setHidden(packageName, false)
-        }
+        pluginStateStore.setEnabled(packageName, true)
         publishSuccess("addPlugin", pluginId, packageName)
         refresh()
     }
@@ -120,7 +121,9 @@ class HostPluginRepository(
             publishFailure("loadPlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
+        pluginStateStore.setEnabled(packageName, true)
         if (!manager.bindPackage(packageName)) {
+            pluginStateStore.setEnabled(packageName, false)
             publishFailure("loadPlugin", pluginId, "Unable to bind package $packageName")
             return
         }
@@ -134,6 +137,7 @@ class HostPluginRepository(
             publishFailure("unloadPlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
+        pluginStateStore.setEnabled(packageName, false)
         manager.unbindPackage(packageName)
         publishSuccess("unloadPlugin", pluginId, packageName)
         refresh()
@@ -145,13 +149,7 @@ class HostPluginRepository(
             publishFailure("removePlugin", pluginId, UNKNOWN_PLUGIN_IDENTIFIER)
             return
         }
-        synchronized(stateLock) {
-            identityStore.setHidden(packageName, true)
-            if (selectedPackageName == packageName) {
-                selectedPackageName = null
-                _selectedPlugin.value = null
-            }
-        }
+        pluginStateStore.setEnabled(packageName, false)
         manager.unbindPackage(packageName)
         publishSuccess("removePlugin", pluginId, packageName)
         refresh()
@@ -168,11 +166,31 @@ class HostPluginRepository(
         return PluginUninstallRequest.Ready(packageName = packageName)
     }
 
+    /**
+     * Refreshes a package after installation or replacement.
+     *
+     * A fresh install is a new admission event and may reset stale state. A package replacement
+     * is an in-place update, so the user's enabled/disabled choice must survive it.
+     */
+    internal fun onPackageChanged(packageName: String, resetAdmissionState: Boolean) {
+        if (resetAdmissionState) {
+            pluginStateStore.remove(packageName)
+            synchronized(stateLock) {
+                identityStore.setHidden(packageName, false)
+            }
+        }
+        manager.unbindPackage(packageName)
+        manager.refreshBindings()
+        refresh()
+    }
+
     override fun close() {
         manager.removeTopologyListener(this)
     }
 
     internal fun onPackageRemoved(packageName: String) {
+        manager.unbindPackage(packageName)
+        pluginStateStore.remove(packageName)
         synchronized(stateLock) {
             identityStore.removePackage(packageName)
             if (selectedPackageName == packageName) {
