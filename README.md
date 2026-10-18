@@ -28,6 +28,14 @@ to Unpair once paired. Enabling Sensor Manager does not start scanning or connec
 
 Some capabilities depend on hardware, permissions, credentials, configuration, and separately provisioned services or SDKs. In particular, mesh, companion, SITX, plugin, audio-detection, and managed-configuration features are optional.
 
+## GitHub pipeline release
+
+Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
+**TAK.gov CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
+as stable builds, not prereleases. See [CI release setup and retention](ci/README.md)
+for required administrator configuration, provenance, and verified replacement behavior.
+Other numbered releases and unrelated assets are preserved.
+
 ## Platform and requirements
 
 ### WEARTAK-169: Bluetooth name is no longer changed
