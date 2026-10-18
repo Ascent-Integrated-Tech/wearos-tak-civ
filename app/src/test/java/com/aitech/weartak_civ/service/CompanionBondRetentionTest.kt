@@ -40,7 +40,7 @@ class CompanionBondRetentionTest {
         set("repo\$delegate", lazyOf(repo))
         set("capRepo\$delegate", lazyOf(mockk<CompanionAppRepository>(relaxed = true)))
         every { repo.clearCompanionUsers() } returns Unit
-        coEvery { repo.clearPhoneManagedSettingsForPeer(any(), any(), any()) } returns null
+        coEvery { repo.clearPhoneManagedSettingsForPeer(any(), any()) } returns null
         connect()
     }
 
@@ -69,7 +69,7 @@ class CompanionBondRetentionTest {
 
     private fun retained() {
         assertEquals(BluetoothDevice.BOND_BONDED, peer.bondState)
-        coVerify(exactly = 0) { repo.clearPhoneManagedSettingsForPeer(any(), any(), any()) }
+        coVerify(exactly = 0) { repo.clearPhoneManagedSettingsForPeer(any(), any()) }
     }
 
     @Test fun missingKeyRetainsBondAndManagementButInvalidatesReadySession() {
@@ -98,7 +98,7 @@ class CompanionBondRetentionTest {
 
     @Test fun explicitUnpairReleasesOnlyMatchingPeerAndInvalidatesSession() {
         broadcast(BluetoothDevice.ACTION_BOND_STATE_CHANGED, state = BluetoothDevice.BOND_NONE)
-        coVerify(timeout = 2000, exactly = 1) { repo.clearPhoneManagedSettingsForPeer(peer.address, any(), any()) }
+        coVerify(timeout = 2000, exactly = 1) { repo.clearPhoneManagedSettingsForPeer(peer.address, any()) }
         assertNull(get("connectedDevice"))
         assertEquals(false, get("notificationsEnabled"))
     }
@@ -117,8 +117,8 @@ class CompanionBondRetentionTest {
         val other = android.bluetooth.BluetoothAdapter.getDefaultAdapter()
             .getRemoteDevice("AA:BB:CC:DD:EE:02")
         broadcast(BluetoothDevice.ACTION_BOND_STATE_CHANGED, other, BluetoothDevice.BOND_NONE)
-        coVerify(timeout = 2000, exactly = 1) { repo.clearPhoneManagedSettingsForPeer(other.address, any(), any()) }
-        coVerify(exactly = 0) { repo.clearPhoneManagedSettingsForPeer(peer.address, any(), any()) }
+        coVerify(timeout = 2000, exactly = 1) { repo.clearPhoneManagedSettingsForPeer(other.address, any()) }
+        coVerify(exactly = 0) { repo.clearPhoneManagedSettingsForPeer(peer.address, any()) }
         assertSame(peer, get("connectedDevice"))
     }
 

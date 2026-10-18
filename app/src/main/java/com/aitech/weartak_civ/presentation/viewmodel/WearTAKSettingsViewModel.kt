@@ -946,7 +946,7 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             if (!enable) {
                 dataRepository.phoneManagedCompanionAddress.first()?.let { peer ->
-                    dataRepository.clearPhoneManagedSettingsForPeer(peer, restorePreviousReporting = false)
+                    dataRepository.clearPhoneManagedSettingsForPeer(peer)?.applyToRuntimeConstants()
                 }
             }
             dataRepository.storeEnableCompanionAppService(enable)

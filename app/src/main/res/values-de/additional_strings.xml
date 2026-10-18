@@ -40,7 +40,7 @@
     <string name="admin_preferences">Administratoreinstellungen</string>
     <string name="developer_preferences">Entwicklereinstellungen</string>
     <string name="locked">Gesperrt</string>
-    <string name="phone_managed">Vom Smartphone verwaltet</string>
+    <string name="phone_managed">Gekoppelt</string>
     <string name="phone_managed_by_paired_phone">Diese Einstellungen werden vom gekoppelten Smartphone verwaltet</string>
     <string name="cell_ditto_connected_location_enabled">Mobilfunk, Ditto verbunden, Standort aktiviert</string>
     <string name="cell_ditto_connected_location_disabled">Mobilfunk, Ditto verbunden, Standort deaktiviert</string>

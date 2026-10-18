@@ -40,7 +40,7 @@
     <string name="admin_preferences">管理员偏好设置</string>
     <string name="developer_preferences">开发者偏好设置</string>
     <string name="locked">已锁定</string>
-    <string name="phone_managed">由手机管理</string>
+    <string name="phone_managed">已绑定</string>
     <string name="phone_managed_by_paired_phone">这些设置由已配对的手机管理</string>
     <string name="cell_ditto_connected_location_enabled">移动网络，Ditto 已连接，位置已启用</string>
     <string name="cell_ditto_connected_location_disabled">移动网络，Ditto 已连接，位置已停用</string>

@@ -40,7 +40,7 @@
     <string name="admin_preferences">관리자 환경설정</string>
     <string name="developer_preferences">개발자 환경설정</string>
     <string name="locked">잠김</string>
-    <string name="phone_managed">휴대전화에서 관리</string>
+    <string name="phone_managed">페어링됨</string>
     <string name="phone_managed_by_paired_phone">페어링된 휴대전화에서 이 설정을 관리합니다</string>
     <string name="cell_ditto_connected_location_enabled">셀룰러, Ditto 연결됨, 위치 사용 설정됨</string>
     <string name="cell_ditto_connected_location_disabled">셀룰러, Ditto 연결됨, 위치 사용 중지됨</string>

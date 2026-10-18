@@ -40,7 +40,7 @@
     <string name="admin_preferences">Tùy chọn quản trị viên</string>
     <string name="developer_preferences">Tùy chọn nhà phát triển</string>
     <string name="locked">Đã khóa</string>
-    <string name="phone_managed">Được quản lý bằng điện thoại</string>
+    <string name="phone_managed">Đã ghép nối</string>
     <string name="phone_managed_by_paired_phone">Các cài đặt này được quản lý bằng điện thoại đã ghép nối</string>
     <string name="cell_ditto_connected_location_enabled">Mạng di động, Ditto đã kết nối, vị trí bật</string>
     <string name="cell_ditto_connected_location_disabled">Mạng di động, Ditto đã kết nối, vị trí tắt</string>
