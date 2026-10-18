@@ -8,6 +8,7 @@ import com.aitech.weartak_civ.data.takserver.TakConnectionFailure
 import com.aitech.weartak_civ.data.takserver.TakEnrollmentException
 import com.aitech.weartak_civ.data.takserver.TakEnrollmentStage
 import com.aitech.weartak_civ.data.takserver.TakFailureCategory
+import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.coEvery
@@ -31,6 +32,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
@@ -167,6 +169,57 @@ class TAKConnectServiceLifecycleTest {
         withTimeout(5_000) { initialChild.join() }
         assertNotSame(initialScope, currentConnectionScope())
         assertTrue(currentConnectionScope().coroutineContext[Job]!!.isActive)
+    }
+
+    @Test
+    fun destructionEndsActiveEnrollmentAndRecreationCanRetryWithoutStalePublication() = runBlocking {
+        val first = createService()
+        val started = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val failure = TakConnectionFailure(
+            TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401
+        )
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.fetchAndParseCertificateConfig(any()) } answers {
+            started.complete(Unit)
+            runBlocking { release.await() }
+            throw TakEnrollmentException(failure)
+        }
+        TAKConnectService.isNetworkConnected = true
+        try {
+            TAKConnectService.serverRegistration.saveAndConnect(
+                serverId, save = { TakServerRegistration.SaveResult.SAVED },
+                connect = { TAKConnectService.getInstance().registerServer(serverId) }
+            )
+            withTimeout(5_000) { started.await() }
+            val oldJob = TAKConnectService.getTakServerDetail(serverId)!!.runtime.currentAttempt!!.job!!
+            assertTrue(TAKConnectService.serverRegistration.state.value.isLoading)
+            first.destroy()
+            assertEquals(
+                TakServerRegistration.Status.FAILED, TAKConnectService.serverRegistration.state.value.status
+            )
+
+            TAKConnectService.isNetworkConnected = false
+            createService()
+            val newDetail = TAKConnectService.getTakServerDetail(serverId)!!
+            TAKConnectService.serverRegistration.prepare(serverId)
+            TAKConnectService.serverRegistration.bind(serverId, newDetail)
+            release.complete(Unit)
+            withTimeout(5_000) { oldJob.join() }
+            assertTrue(oldJob.isCancelled)
+            assertEquals(
+                TakServerRegistration.Status.CONNECTING, TAKConnectService.serverRegistration.state.value.status
+            )
+
+            every { TAKConnectService.fetchAndParseCertificateConfig(any()) } throws TakEnrollmentException(failure)
+            TAKConnectService.isNetworkConnected = true
+            TAKConnectService.getClientCertificateAndConnect(newDetail)
+            withTimeout(5_000) { newDetail.runtime.currentAttempt!!.job!!.join() }
+            assertEquals(failure, TAKConnectService.serverRegistration.state.value.failure)
+        } finally {
+            release.complete(Unit)
+        }
     }
 
     private fun assertConnectionAndChannelLaunchesRun() = runBlocking {

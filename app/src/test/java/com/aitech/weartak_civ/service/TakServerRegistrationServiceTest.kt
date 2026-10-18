@@ -13,10 +13,12 @@ import io.mockk.coEvery
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
+import io.mockk.mockkStatic
 import io.mockk.unmockkAll
 import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -27,6 +29,15 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import java.io.ByteArrayInputStream
+import java.security.KeyStore
+import java.security.cert.X509Certificate
+import javax.net.ssl.KeyManagerFactory
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.TrustManagerFactory
+import javax.net.ssl.X509TrustManager
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE, application = Application::class)
@@ -52,8 +63,13 @@ class TakServerRegistrationServiceTest {
         TAKConnectService.takServerDetails = mutableListOf()
     }
 
-    @After fun tearDown() {
+    @After fun tearDown() = runBlocking {
+        val jobs = TAKConnectService.takServerDetails.flatMap {
+            listOfNotNull(it.runtime.currentAttempt?.job, it.runtime.readerJob)
+        }
+        TAKConnectService.isNetworkConnected = false
         TAKConnectService.getInstance().closeTakServerSockets()
+        withTimeout(5_000) { jobs.forEach { it.join() } }
         unmockkAll()
     }
 
@@ -141,5 +157,91 @@ class TakServerRegistrationServiceTest {
             assertEquals(1, TAKConnectService.getTakServerDetail(serverId)!!.numConnAttempts)
         }
         verify(exactly = 3) { TAKConnectService.fetchAndParseCertificateConfig(any()) }
+    }
+
+    @Test fun repositoryCompanionGateAlsoTerminatesRegistration() {
+        every { repository.isCompanionConnected } returns MutableStateFlow(true)
+        TAKConnectService.isNetworkConnected = true
+        register()
+        assertEquals(TakServerRegistration.Status.FAILED, TAKConnectService.serverRegistration.state.value.status)
+    }
+
+    @Test fun duplicateEndpointTerminatesRegistrationWithoutConnecting() {
+        val other = stored.copy(serverId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        coEvery { repository.tryAwaitTakServerList() } returns listOf(other, stored)
+        TAKConnectService.isNetworkConnected = true
+        register()
+        assertEquals(TakServerRegistration.Status.DUPLICATE, TAKConnectService.serverRegistration.state.value.status)
+        assertNull(TAKConnectService.getTakServerDetail(serverId)!!.runtime.currentAttempt)
+    }
+
+    @Test fun missingSavedServerTerminatesRegistration() {
+        coEvery { repository.tryAwaitTakServerList() } returns emptyList()
+        register()
+        assertEquals(TakServerRegistration.Status.FAILED, TAKConnectService.serverRegistration.state.value.status)
+    }
+
+    @Test fun cancelledEnrollmentTerminatesRegistrationAndPreservesCancellation() = runBlocking {
+        mockEnrollment()
+        every { TAKConnectService.fetchAndParseCertificateConfig(any()) } throws CancellationException("Stopped")
+        register()
+        val job = TAKConnectService.getTakServerDetail(serverId)!!.runtime.currentAttempt!!.job!!
+        withTimeout(5_000) { job.join() }
+        assertTrue(job.isCancelled)
+        assertEquals(TakServerRegistration.Status.FAILED, TAKConnectService.serverRegistration.state.value.status)
+    }
+
+    @Test fun invalidCertificateTerminatesRegistrationWithCertificateFailure() = runBlocking {
+        stored = stored.copy(isP12Cert = true, p12Cert = "not-base64")
+        TAKConnectService.isNetworkConnected = true
+        register()
+        val terminal = withTimeout(5_000) {
+            TAKConnectService.serverRegistration.state.first { !it.isLoading }
+        }
+        assertEquals(TakServerRegistration.Status.FAILED, terminal.status)
+        assertEquals(TakFailureCategory.CERTIFICATE, terminal.failure?.category)
+    }
+
+    @Test fun successfulHandshakePublishesConnectedRegistration() = runBlocking {
+        mockEnrollment()
+        // Keep post-connect REST loading outside this handshake-only test.
+        every { repository.updateTakServerChannels(any()) } throws CancellationException("Channels not under test")
+        every { repository.updateTakMissionLoading(any(), any(), any()) } throws CancellationException("Missions not under test")
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } answers {
+            firstArg<KeyStore>().load(null, null)
+            true
+        }
+        every { TAKConnectService.findRootInChain(any()) } returns mockk<X509Certificate>(relaxed = true)
+        mockkStatic(KeyManagerFactory::class, TrustManagerFactory::class, SSLContext::class)
+        val keyManager = mockk<KeyManagerFactory>(relaxed = true)
+        every { KeyManagerFactory.getInstance(any<String>()) } returns keyManager
+        val trustManager = mockk<TrustManagerFactory>(relaxed = true)
+        every { TrustManagerFactory.getInstance(any<String>()) } returns trustManager
+        every { trustManager.trustManagers } returns arrayOf(mockk<X509TrustManager>(relaxed = true))
+        val sslContext = mockk<SSLContext>(relaxed = true)
+        every { SSLContext.getInstance("TLSv1.3") } returns sslContext
+        val socketFactory = mockk<SSLSocketFactory>()
+        every { sslContext.socketFactory } returns socketFactory
+        val socket = mockk<SSLSocket>(relaxed = true)
+        every { socketFactory.createSocket(stored.address, stored.port) } returns socket
+        every { socket.inputStream } answers {
+            TAKConnectService.isNetworkConnected = false
+            ByteArrayInputStream(byteArrayOf())
+        }
+
+        register()
+        val terminal = withTimeout(5_000) {
+            TAKConnectService.serverRegistration.state.first { !it.isLoading }
+        }
+        assertEquals(TakServerRegistration.Status.CONNECTED, terminal.status)
+        assertNull(terminal.failure)
+        verify(exactly = 1) { socket.startHandshake() }
+        verify(exactly = 0) { TAKConnectService.fetchAndParseCertificateConfig(any()) }
+    }
+
+    private fun mockEnrollment() {
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        TAKConnectService.isNetworkConnected = true
     }
 }
