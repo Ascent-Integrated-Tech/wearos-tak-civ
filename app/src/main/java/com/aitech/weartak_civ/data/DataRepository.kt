@@ -3260,6 +3260,12 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    suspend fun initializeLocationServiceSetting(managedSetting: Boolean?): Boolean {
+        val enabled = managedSetting ?: DEFAULT_ENABLE_LOCATION_SERVICE
+        storeEnableLocationService(enabled)
+        return enabled
+    }
+
     val getEnablePhysiologicalServices: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_PHYSIOLOGICAL_SERVICES] ?: DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES
     }

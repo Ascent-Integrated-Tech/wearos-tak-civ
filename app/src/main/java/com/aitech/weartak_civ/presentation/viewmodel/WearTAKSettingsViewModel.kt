@@ -94,7 +94,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicR
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHighAtmPressureAlert
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableImmersionAlerts
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLowAtmPressureAlert
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGunshotService
@@ -625,12 +624,6 @@ class WearTAKSettingsViewModel : ViewModel() {
             initialValue = DEFAULT_ENABLE_LOCATION_SERVICE
         )
 
-    fun storeEnableLocationService(enable: Boolean) {
-        viewModelScope.launch {
-            dataRepository.storeEnableLocationService(enable)
-            enableLocationService =         enable
-        }
-    }
     ///Callsign and Device Preferences ^^^
 
     //Network Preferences vvv
