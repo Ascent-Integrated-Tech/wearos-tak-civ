@@ -45,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
@@ -168,6 +169,10 @@ import androidx.navigation.navArgument
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Icon
+import androidx.wear.compose.material.PositionIndicator
+import androidx.wear.compose.material.Scaffold
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -273,20 +278,44 @@ fun MapCivApp(
     val app = context.applicationContext as WearTakApplication
 
     val dataRepository = remember(app) { app.repo }
-    val bhRepo = remember(app) { app.bhRepo }
-
-    val navController = rememberSwipeDismissableNavController()
-
     val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    MapUserNavigation(
+        users = receivedUserListSetting,
+        context = context,
+        selectingChatContact = selectingChatContact,
+        onChatContactSelected = onChatContactSelected
+    ) { onUserClick ->
+        MapApp(exitActivity, mapVm, selectingChatContact, onUserClick)
+    }
+}
+
+@Composable
+internal fun MapUserNavigation(
+    users: List<DataRepository.ReceivedUser>,
+    context: Context,
+    selectingChatContact: Boolean = false,
+    onChatContactSelected: (DirectChatContact) -> Unit = {},
+    onBloodhoundUserSelected: (DataRepository.ReceivedUser) -> Boolean = { user ->
+        startMapUserBloodhound(context, user)
+    },
+    mapContent: @Composable ((String) -> Unit) -> Unit
+) {
+    val navController = rememberSwipeDismissableNavController()
+    val currentUsers by rememberUpdatedState(users)
+    val currentMapContent by rememberUpdatedState(mapContent)
+    val currentOnChatContactSelected by rememberUpdatedState(onChatContactSelected)
+    val currentOnBloodhoundUserSelected by rememberUpdatedState(onBloodhoundUserSelected)
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = "map_screen"
     ) {
         composable("map_screen" ) {
-            MapApp({ exitActivity() }, navController, mapVm, selectingChatContact)
+            currentMapContent { uid ->
+                navController.navigate("selected_user/${Uri.encode(uid)}") { launchSingleTop = true }
+            }
         }
 
         composable(
@@ -294,8 +323,8 @@ fun MapCivApp(
             arguments = listOf(navArgument("uid") { type = NavType.StringType })
         ) { backStackEntry ->
             val selectedUid = backStackEntry.arguments?.getString("uid")
-            SelectedUser(navController, selectedUid, receivedUserListSetting, context,
-                selectingChatContact, onChatContactSelected)
+            SelectedUser(navController, selectedUid, currentUsers, context,
+                selectingChatContact, currentOnChatContactSelected, currentOnBloodhoundUserSelected)
         }
     }
 }
@@ -1676,8 +1705,8 @@ fun LayerChannelsPopup(
 // MAIN MAP SCREEN
 // Connects repository data, map layers, popups, and controls
 @Composable
-fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapViewModel,
-           selectingChatContact: Boolean = false) {
+fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
+           selectingChatContact: Boolean = false, onUserClick: (String) -> Unit) {
     // Access the application repository used by the map
     val context = LocalContext.current
 
@@ -2538,7 +2567,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                         }
                     },
                     onUserClick = { id, _ ->
-                        navController.navigate("selected_user/${Uri.encode(id)}") { launchSingleTop = true }
+                        onUserClick(id)
                     },
                     camera = cameraState
                 )
@@ -2911,15 +2940,7 @@ fun SelectedUser(
     selectingChatContact: Boolean = false,
     onChatContactSelected: (DirectChatContact) -> Unit = {},
     onBloodhoundUserSelected: (DataRepository.ReceivedUser) -> Boolean = { user ->
-        val repository = (context.applicationContext as WearTakApplication).bhRepo
-        if (repository.addUserTarget(user)) {
-            repository.requestActivateBloodhound(user.uid)
-            requestBloodhoundComplicationUpdate(context)
-            true
-        } else {
-            Toast.makeText(context, R.string.remote_emergency_no_location, Toast.LENGTH_SHORT).show()
-            false
-        }
+        startMapUserBloodhound(context, user)
     },
 ) {
     Log.i(TAG, "User list: $receivedUserSetting")
@@ -2928,112 +2949,122 @@ fun SelectedUser(
     val title = user?.title.orEmpty()
     val team = user?.team.orEmpty()
 
-// MAP UI STATE
-// Controls popups, overlays, filters, and map buttons
     WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
+        val listState = rememberScalingLazyListState(initialCenterItemIndex = 1)
+        Scaffold(positionIndicator = { PositionIndicator(scalingLazyListState = listState) }) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp)
-                    .verticalScroll(rememberScrollState()),
-
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxSize()
+                    .background(colors.background)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.user_white),
-                    contentDescription = "Favorite icon",
-                    tint = TeamColors(team),
-                    modifier = Modifier.size(25.dp),
-                )
-                androidx.compose.material3.Text(
-                    text = if (user == null) stringResource(R.string.chat_invalid_contact)
-                        else title.ellipsizeMarkerTitle(14),
-                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                ScalingLazyColumn(
+                    state = listState,
                     modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 10.dp, bottom = 5.dp)
-                        .align(Alignment.CenterHorizontally)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Chip(
-                    onClick = {
-                        val contact = try {
-                            resolveChatContact(selectedUid, receivedUserSetting, MainActivity.device_uid)
-                        } catch (error: IllegalArgumentException) {
-                            Log.w(TAG, "Invalid selected chat contact", error)
-                            Toast.makeText(context, R.string.chat_invalid_contact, Toast.LENGTH_SHORT).show()
-                            return@Chip
+                        .fillMaxSize()
+                        .padding(bottom = 60.dp)
+                        .testTag("map-user-actions"),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.user_white),
+                                contentDescription = null,
+                                tint = TeamColors(team),
+                                modifier = Modifier.size(25.dp),
+                            )
+                            androidx.compose.material3.Text(
+                                text = if (user == null) stringResource(R.string.chat_invalid_contact)
+                                    else title.ellipsizeMarkerTitle(14),
+                                fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                            )
                         }
-                        if (selectingChatContact) {
-                            onChatContactSelected(contact)
-                        } else {
-                            val intent = Intent(context, ChatActivity::class.java).apply {
-                                putExtra("user_uid", contact.uid)
-                                putExtra("user_callsign", contact.callsign)
-                                putExtra("from_maps", true)
-                            }
-                            context.startActivity(intent)
-                            navController.popBackStack()
-                        }
-                    },
-                    enabled = user != null && uid.isNotBlank() && title.isNotBlank() &&
-                        uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS,
-                    label = { Text(stringResource(if (selectingChatContact)
-                        R.string.chat_select_person_confirm else R.string.chat_open)) },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 10.dp)
-                )
-                if (!selectingChatContact) {
-                    val location = user?.location
-                    Chip(
-                        onClick = {
-                            if (user != null && onBloodhoundUserSelected(user)) {
-                                navController.popBackStack()
-                            }
-                        },
-                        enabled = user != null && uid.isNotBlank() &&
-                            uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS &&
-                            location != null && location.lat.isFinite() && location.lon.isFinite() &&
-                            location.lat in -90.0..90.0 && location.lon in -180.0..180.0,
-                        label = { Text(stringResource(R.string.bloodhound)) },
-                        colors = ChipDefaults.chipColors(
-                            backgroundColor = Color.DarkGray,
-                            contentColor = Color.White,
-                            secondaryContentColor = Color.LightGray
-                        ),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                    }
+                    item {
+                        Chip(
+                            onClick = {
+                                val contact = try {
+                                    resolveChatContact(selectedUid, receivedUserSetting, MainActivity.device_uid)
+                                } catch (error: IllegalArgumentException) {
+                                    Log.w(TAG, "Invalid selected chat contact", error)
+                                    Toast.makeText(context, R.string.chat_invalid_contact, Toast.LENGTH_SHORT).show()
+                                    return@Chip
+                                }
+                                if (selectingChatContact) {
+                                    onChatContactSelected(contact)
+                                } else {
+                                    val intent = Intent(context, ChatActivity::class.java).apply {
+                                        putExtra("user_uid", contact.uid)
+                                        putExtra("user_callsign", contact.callsign)
+                                        putExtra("from_maps", true)
+                                    }
+                                    context.startActivity(intent)
+                                    navController.popBackStack()
+                                }
+                            },
+                            enabled = user != null && uid.isNotBlank() && title.isNotBlank() &&
+                                uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS,
+                            label = { Text(stringResource(if (selectingChatContact)
+                                R.string.chat_select_person_confirm else R.string.chat_open)) },
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White,
+                                secondaryContentColor = Color.LightGray
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    item {
+                        val location = user?.location
+                        Chip(
+                            onClick = {
+                                if (user != null && onBloodhoundUserSelected(user)) {
+                                    navController.popBackStack()
+                                }
+                            },
+                            enabled = user != null && uid.isNotBlank() &&
+                                uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS &&
+                                location != null && location.lat.isFinite() && location.lon.isFinite() &&
+                                location.lat in -90.0..90.0 && location.lon in -180.0..180.0,
+                            label = { Text(stringResource(R.string.bloodhound_start)) },
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White,
+                                secondaryContentColor = Color.LightGray
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+
+                Row(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
+                    WearTAKBackButton(
+                        onClick = { navController.popBackStack()}
                     )
                 }
             }
-
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                WearTAKBackButton(
-                    onClick = { navController.popBackStack()}
-                )
-            }
         }
     }
+}
+
+private fun startMapUserBloodhound(context: Context, user: DataRepository.ReceivedUser): Boolean {
+    val repository = (context.applicationContext as WearTakApplication).bhRepo
+    if (!repository.addUserTarget(user)) {
+        Toast.makeText(context, R.string.remote_emergency_no_location, Toast.LENGTH_SHORT).show()
+        return false
+    }
+    repository.requestActivateBloodhound(user.uid)
+    requestBloodhoundComplicationUpdate(context)
+    return true
 }
 
 
