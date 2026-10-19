@@ -123,6 +123,12 @@ class BloodhoundService: Service() {
         collectActivationReqFlow()
         collectInPosReqFlow()
         collectActiveSelection()
+        scope.launch {
+            repo.receivedUserList.collect { users ->
+                bhRepo.refreshUserTargets(users)
+                updateVectors()
+            }
+        }
     }
 
     private fun collectActiveSelection() {
@@ -225,6 +231,7 @@ class BloodhoundService: Service() {
                     when (result) {
                         ActivationResult.FIRST_ACK,
                         ActivationResult.SWITCH_ONLY -> {
+                            updateVectors()
                             resetProximityAlertState(item?.uid)
                             evaluateActiveTargetProximity()
                             sendBloodhoundReply(item, "Roger: Bloodhounding to")

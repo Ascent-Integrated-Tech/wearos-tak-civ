@@ -2910,6 +2910,17 @@ fun SelectedUser(
     context: Context,
     selectingChatContact: Boolean = false,
     onChatContactSelected: (DirectChatContact) -> Unit = {},
+    onBloodhoundUserSelected: (DataRepository.ReceivedUser) -> Boolean = { user ->
+        val repository = (context.applicationContext as WearTakApplication).bhRepo
+        if (repository.addUserTarget(user)) {
+            repository.requestActivateBloodhound(user.uid)
+            requestBloodhoundComplicationUpdate(context)
+            true
+        } else {
+            Toast.makeText(context, R.string.remote_emergency_no_location, Toast.LENGTH_SHORT).show()
+            false
+        }
+    },
 ) {
     Log.i(TAG, "User list: $receivedUserSetting")
     val user = receivedUserSetting.firstOrNull { it.uid == selectedUid }
@@ -2993,6 +3004,27 @@ fun SelectedUser(
                         .fillMaxWidth()
                         .padding(bottom = 10.dp)
                 )
+                if (!selectingChatContact) {
+                    val location = user?.location
+                    Chip(
+                        onClick = {
+                            if (user != null && onBloodhoundUserSelected(user)) {
+                                navController.popBackStack()
+                            }
+                        },
+                        enabled = user != null && uid.isNotBlank() &&
+                            uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS &&
+                            location != null && location.lat.isFinite() && location.lon.isFinite() &&
+                            location.lat in -90.0..90.0 && location.lon in -180.0..180.0,
+                        label = { Text(stringResource(R.string.bloodhound)) },
+                        colors = ChipDefaults.chipColors(
+                            backgroundColor = Color.DarkGray,
+                            contentColor = Color.White,
+                            secondaryContentColor = Color.LightGray
+                        ),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                    )
+                }
             }
 
             Row(modifier = Modifier.align(Alignment.BottomCenter)) {

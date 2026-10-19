@@ -131,7 +131,8 @@ class BloodhoundRepository(
         val remark: String = "",
         val sourceServerId: String? = null,
         val receivedAt: Long = System.currentTimeMillis(),
-        val remoteAlert: RemoteAlert? = null
+        val remoteAlert: RemoteAlert? = null,
+        val tracksUserPosition: Boolean = false
     )
 
     data class RemoteAlert(
@@ -387,6 +388,60 @@ class BloodhoundRepository(
         )
     }
 
+    fun addUserTarget(user: DataRepository.ReceivedUser): Boolean =
+        synchronized(bloodhoundStateLock) {
+            val location = user.location
+            if (user.uid.isBlank() || location == null ||
+                !location.lat.isFinite() || !location.lon.isFinite() ||
+                location.lat !in -90.0..90.0 || location.lon !in -180.0..180.0
+            ) {
+                Log.w(TAG, "User tracking rejected: missing identity or invalid location")
+                return@synchronized false
+            }
+            val marker = CotMarkerEvent(
+                version = "2.0", uid = user.uid, type = user.type, how = "h-g-i-g-o",
+                time = user.timeReceived, start = user.timeReceived, stale = user.staleTime,
+                access = null,
+                point = CotPoint(
+                    location.lat, location.lon, location.hae ?: 0.0,
+                    location.ce?.toDouble() ?: 999999.0,
+                    location.le?.toDouble() ?: 999999.0
+                ),
+                detail = CotMarkerDetail(user.title, null, null, null, null, null)
+            )
+            val event = BloodhoundEvent(
+                mapItem = CotMarkerMapItem(marker), server = user.source,
+                timeIssued = user.timeReceived, timeCompleted = null,
+                sourceServerId = user.sourceServerId, receivedAt = user.receivedAt,
+                tracksUserPosition = true
+            )
+            val existing = bloodhoundStore.item(sourceKey(event))
+            // Preserve an existing assignment's issuer and acknowledgement semantics.
+            if (existing != null) {
+                bloodhoundStore.update(sourceKey(event)) {
+                    it.copy(bhEvent = it.bhEvent.copy(tracksUserPosition = true))
+                }
+            }
+            upsertFromEvent(
+                existing?.bhEvent?.copy(
+                    mapItem = CotMarkerMapItem(marker.copy(
+                        detail = existing.bhEvent.mapItem.cotEvent.detail.copy(markerCallsign = user.title)
+                    )),
+                    receivedAt = event.receivedAt,
+                    tracksUserPosition = true
+                ) ?: event
+            )
+            isUidValid(user.uid)
+        }
+
+    fun refreshUserTargets(users: List<DataRepository.ReceivedUser>) =
+        synchronized(bloodhoundStateLock) {
+            users.forEach { user ->
+                val key = SourceCotKey(user.sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID, user.uid)
+                if (bloodhoundStore.item(key)?.bhEvent?.tracksUserPosition == true) addUserTarget(user)
+            }
+        }
+
 
     // UI adapter, list to populate chips in the bloodhounds screen
     val listBhItemsUi: StateFlow<List<Utils.BloodhoundItem>> =
@@ -432,7 +487,7 @@ class BloodhoundRepository(
         } else {
             // Preserve state; refresh event payload for this source-owned copy.
             current.copy(
-                bhEvent = e,
+                bhEvent = e.copy(tracksUserPosition = e.tracksUserPosition || current.bhEvent.tracksUserPosition),
                 target = BloodhoundItem.Target(e.mapItem),
                 origin = BloodhoundItem.Origin(e)
             )
