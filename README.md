@@ -28,6 +28,16 @@ to Unpair once paired. Enabling Sensor Manager does not start scanning or connec
 
 Some capabilities depend on hardware, permissions, credentials, configuration, and separately provisioned services or SDKs. In particular, mesh, companion, SITX, plugin, audio-detection, and managed-configuration features are optional.
 
+### WEARTAK-121: Bloodhound to a map user
+
+Tap a user on the map, then **Bloodhound** immediately below **Open Chat** to
+start the existing Bloodhound action and return to the map. The action uses the
+selected user's UID and location; subsequent PLI from that same source refreshes
+the target while preserving tracking state. Users without a valid position cannot
+be selected for Bloodhound. If the user disappears, the last known target remains
+until stopped or removed through the existing Bloodhound controls. The chat-contact
+picker remains chat-only.
+
 ## GitHub pipeline release
 
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
