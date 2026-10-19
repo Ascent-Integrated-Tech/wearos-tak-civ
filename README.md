@@ -30,13 +30,19 @@ Some capabilities depend on hardware, permissions, credentials, configuration, a
 
 ### WEARTAK-121: Bloodhound to a map user
 
-Tap a user on the map, then **Bloodhound** immediately below **Open Chat** to
+Tap a user on the map, then **Start Bloodhound** immediately below **Open Chat** to
 start the existing Bloodhound action and return to the map. The action uses the
 selected user's UID and location; subsequent PLI from that same source refreshes
 the target while preserving tracking state. Users without a valid position cannot
 be selected for Bloodhound. If the user disappears, the last known target remains
-until stopped or removed through the existing Bloodhound controls. The chat-contact
-picker remains chat-only.
+until stopped or removed through the existing Bloodhound controls. This action is
+also available on the map opened from Chat: it starts Bloodhound and returns to
+that map without selecting a chat contact or sending a message. **Open Chat**
+retains the chat picker's existing contact-selection behavior.
+The user menu uses the standard Wear scrolling list and position indicator so both
+actions remain reachable on round screens. The ordinary Bloodhound detail action
+also reads **Start Bloodhound** instead of **RGR**; acknowledgement and stop behavior
+are unchanged.
 
 ## GitHub pipeline release
 

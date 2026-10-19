@@ -9,8 +9,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.cot.ChatDestinations
 import com.aitech.weartak_civ.data.DataRepository
@@ -62,11 +65,12 @@ class ChatPickerActionsTest {
                 onChatContactSelected = { selections += it })
         }
         compose.runOnIdle { users.value = listOf(bob, alice.copy(title = "Alice updated")) }
-        compose.onNodeWithText("Open Chat").performScrollTo().performClick()
+        compose.onNodeWithText("Open Chat").performClick()
         compose.runOnIdle { assertEquals(listOf(DirectChatContact("alice", "Alice updated")), selections) }
         compose.runOnIdle { users.value = listOf(bob) }
         compose.onNodeWithText("Open Chat").assertIsNotEnabled()
-        compose.onNodeWithText("Bloodhound").assertDoesNotExist()
+        compose.onNodeWithTag("map-user-actions").performScrollToNode(hasText("Start Bloodhound"))
+        compose.onNodeWithText("Start Bloodhound").assertIsNotEnabled()
     }
 
     @Test fun selectedMapUserOffersBloodhoundBelowChatAndUsesLatestUidSnapshot() {
@@ -83,19 +87,19 @@ class ChatPickerActionsTest {
                 LocalContext.current,
                 onBloodhoundUserSelected = { selections += it; true })
         }
-        compose.onNodeWithText("Bloodhound").performScrollTo()
-        assertTrue(compose.onNodeWithText("Bloodhound").fetchSemanticsNode().positionInRoot.y >
+        compose.onNodeWithTag("map-user-actions").performScrollToNode(hasText("Start Bloodhound"))
+        assertTrue(compose.onNodeWithText("Start Bloodhound").fetchSemanticsNode().positionInRoot.y >
             compose.onNodeWithText("Open Chat").fetchSemanticsNode().positionInRoot.y)
         val updated = alice.copy(title = "Alice updated")
         compose.runOnIdle { users.value = listOf(bob, updated) }
-        compose.onNodeWithText("Bloodhound").performClick()
+        compose.onNodeWithText("Start Bloodhound").performClick()
         compose.runOnIdle { assertEquals(listOf(updated), selections) }
         compose.runOnIdle { users.value = listOf(bob) }
-        compose.onNodeWithText("Bloodhound").assertIsNotEnabled()
+        compose.onNodeWithText("Start Bloodhound").assertIsNotEnabled()
         compose.runOnIdle { users.value = listOf(alice.copy(location = null)) }
-        compose.onNodeWithText("Bloodhound").assertIsNotEnabled()
+        compose.onNodeWithText("Start Bloodhound").assertIsNotEnabled()
         compose.runOnIdle { users.value = listOf(alice.copy(
             location = alice.location?.copy(lat = Double.NaN))) }
-        compose.onNodeWithText("Bloodhound").assertIsNotEnabled()
+        compose.onNodeWithText("Start Bloodhound").assertIsNotEnabled()
     }
 }

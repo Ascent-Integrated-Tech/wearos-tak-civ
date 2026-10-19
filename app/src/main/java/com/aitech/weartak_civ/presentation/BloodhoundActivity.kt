@@ -646,7 +646,7 @@ fun BloodhoundScreenDetailed(
                         Text(
                             text = stringResource(
                                 if (item.isRemoteAlert) R.string.remote_emergency_bloodhound_to_alert
-                                else R.string.rgr
+                                else R.string.bloodhound_start
                             ),
                             fontSize = 15.sp,
                             overflow = TextOverflow.Ellipsis,
