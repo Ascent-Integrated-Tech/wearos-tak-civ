@@ -101,6 +101,55 @@ class PluginSettingsCoordinatorTest {
     }
 
     @Test
+    fun localMarkerRemovalTargetsOnlyItsOriginatingPlugin() {
+        coordinator.onPluginConnected("com.plugin.settings", fakePlugin)
+        val otherPlugin = FakeWearTakPlugin("com.plugin.other")
+        coordinator.onPluginConnected("com.plugin.other", otherPlugin)
+        val marker = DataRepository.ReceivedMarker(
+            uid = "edge-scout.aabb",
+            markerType = "a-u-A-M-F-Q",
+            title = "DRONE",
+            timeReceived = 2_000L,
+            staleTime = 62_000L,
+            location = null,
+            source = "plugin:com.plugin.settings",
+            sourceServerId = "plugin:com.plugin.settings",
+            receivedAt = 2_100L,
+        )
+
+        coordinator.notifyLocalMarkerRemoved(marker, removedAt = 2_200L)
+
+        val (action, args) = fakePlugin.mainUiActions.single()
+        assertEquals(PluginSettingsCoordinator.ACTION_LOCAL_MARKER_REMOVED, action)
+        assertEquals(marker.uid, args?.getString(PluginSettingsCoordinator.KEY_MARKER_UID))
+        assertEquals(marker.timeReceived, args?.getLong(PluginSettingsCoordinator.KEY_EVENT_TIME))
+        assertEquals(marker.receivedAt, args?.getLong(PluginSettingsCoordinator.KEY_RECEIVED_AT))
+        assertEquals(2_200L, args?.getLong(PluginSettingsCoordinator.KEY_REMOVED_AT))
+        assertTrue(otherPlugin.mainUiActions.isEmpty())
+    }
+
+    @Test
+    fun localMarkerRemovalIgnoresNonPluginSources() {
+        coordinator.onPluginConnected("com.plugin.settings", fakePlugin)
+        coordinator.notifyLocalMarkerRemoved(
+            DataRepository.ReceivedMarker(
+                uid = "remote-marker",
+                markerType = "a-u-G",
+                title = "REMOTE",
+                timeReceived = 2_000L,
+                staleTime = 62_000L,
+                location = null,
+                source = "tak:server",
+                sourceServerId = "tak:server",
+                receivedAt = 2_100L,
+            ),
+            removedAt = 2_200L,
+        )
+
+        assertTrue(fakePlugin.mainUiActions.isEmpty())
+    }
+
+    @Test
     fun outboundCotReadinessTracksOptInAndDisconnect() {
         val field = PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT
         fakePlugin.setSettingsSchemaForTest(SettingsSchemaParcel(fields = listOf(
