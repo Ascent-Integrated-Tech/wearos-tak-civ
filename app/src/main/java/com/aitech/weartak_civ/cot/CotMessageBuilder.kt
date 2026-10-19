@@ -212,8 +212,8 @@ object CotMessageBuilder {
         return when {
             physio.heartRateBpm == -1 && physio.skinTempF == -1f -> ""
             physio.heartRateBpm == -1 -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.startCot}\">(Temp,$skinTemp (F) $celsius (C),${time.time})</vitalSign></_atmist_>"
-            physio.skinTempF == -1f -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.staleCot}\">(HR,$heartRate,${time.time})</vitalSign></_atmist_>"
-            else -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.staleCot}\">(HR,$heartRate,${time.time})</vitalSign><vitalSign index=\"1\" timestamp=\"${time.startCot}\">(Temp,$skinTemp (F) $celsius (C),${time.time})</vitalSign></_atmist_>"
+            physio.skinTempF == -1f -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.startCot}\">(HR,$heartRate,${time.time})</vitalSign></_atmist_>"
+            else -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.startCot}\">(HR,$heartRate,${time.time})</vitalSign><vitalSign index=\"1\" timestamp=\"${time.startCot}\">(Temp,$skinTemp (F) $celsius (C),${time.time})</vitalSign></_atmist_>"
         }
     }
 

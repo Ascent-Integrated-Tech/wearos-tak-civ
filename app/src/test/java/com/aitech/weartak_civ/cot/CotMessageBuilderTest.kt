@@ -8,6 +8,7 @@ import org.junit.Test
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.StringReader
+import java.time.Instant
 import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 
@@ -17,6 +18,71 @@ class CotMessageBuilderTest {
         val actual = CotMessageBuilder.pli(pliSnapshot(), CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", false, "<hail/>"))
         val legacy = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='watch-1' type='a-f-G-U-C' time='$START' start='$START' stale='$STALE' how='m-g'><point lat='41.000000' lon='-87.000000' hae='100.0' ce='4' le='5'/><detail><status readiness='true' battery='80'/><remarks>Exert:0.25%;HR:72;SkinTemp:98.6</remarks><contact endpoint='*:-1:stcp' callsign='EAGLE'/><__group role='Team Member' name='Cyan'/><track course='45' speed='3'/><hail/></detail></event>"
         assertEquals(project(legacy), project(actual))
+    }
+
+    @Test
+    fun batdokHeartRateOnlyUsesIncidentTimeNotExpiration() {
+        assertBatdokVitalTimes(72, -1f)
+    }
+
+    @Test
+    fun batdokHeartRateAndTemperatureUseIncidentTimeNotExpiration() {
+        assertBatdokVitalTimes(72, 98.6f)
+    }
+
+    @Test
+    fun batdokTemperatureOnlyKeepsIncidentTime() {
+        assertBatdokVitalTimes(-1, 98.6f)
+    }
+
+    private fun assertBatdokVitalTimes(heartRateBpm: Int, skinTempF: Float) {
+        val epoch = Instant.parse("2026-10-15T12:34:56.789Z").toEpochMilli()
+        val staleOffsets = listOf(60, 300).flatMap { reportingIntervalSeconds ->
+            // Exercise both the reported historical offsets and the current PLI policy.
+            listOf(3 * reportingIntervalSeconds, 2 * reportingIntervalSeconds + 15)
+        }
+        for (staleOffsetSeconds in staleOffsets) {
+            val eventTime = CotEventTimeFactory.at(
+                nowMillis = epoch,
+                staleOffset = CotTimeOffset(seconds = staleOffsetSeconds),
+            )
+            val physio = physio().copy(data = physio().data.copy(
+                heartRateBpm = heartRateBpm,
+                skinTempF = skinTempF,
+            ))
+            val xml = CotMessageBuilder.pli(
+                pliSnapshot().copy(time = eventTime, physioData = physio),
+                CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", true, ""),
+            )
+            val event = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(InputSource(StringReader(xml))).documentElement
+            assertEquals(eventTime.startCot, event.getAttribute("time"))
+            assertEquals(eventTime.startCot, event.getAttribute("start"))
+            assertEquals(eventTime.staleCot, event.getAttribute("stale"))
+            assertEquals(
+                epoch + staleOffsetSeconds * 1_000L,
+                Instant.parse(event.getAttribute("stale")).toEpochMilli(),
+            )
+
+            val atmistNodes = event.getElementsByTagName("_atmist_")
+            assertEquals(1, atmistNodes.length)
+            val atmist = atmistNodes.item(0) as Element
+            assertEquals("30", atmist.getAttribute("age"))
+            assertEquals(eventTime.startCot, atmist.getAttribute("timeOfIncident"))
+            val expectedTuples = buildList {
+                if (heartRateBpm != -1) add("(HR,72,$epoch)")
+                if (skinTempF != -1f) add("(Temp,98.6 (F) 37 (C),$epoch)")
+            }
+            val vitals = atmist.getElementsByTagName("vitalSign")
+            assertEquals(expectedTuples.size, vitals.length)
+            expectedTuples.forEachIndexed { index, tuple ->
+                val vital = vitals.item(index) as Element
+                assertEquals(index.toString(), vital.getAttribute("index"))
+                assertEquals(tuple, vital.textContent)
+                assertEquals(atmist.getAttribute("timeOfIncident"), vital.getAttribute("timestamp"))
+                assertEquals(epoch, Instant.parse(vital.getAttribute("timestamp")).toEpochMilli())
+            }
+        }
     }
 
     @Test
