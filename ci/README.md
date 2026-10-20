@@ -3,8 +3,12 @@
 Successful **protected `develop` push pipelines** from
 `git.tak.gov/core/weartak-core/wearos-tak-civ` publish the final production-signed
 `develop_release` APK to the fixed GitHub mirror
-`Ascent-Integrated-Tech/wearos-tak-civ`. The visible title is exactly
-**TAK.gov CI/CD Pipeline Release**.
+`Ascent-Integrated-Tech/wearos-tak-civ`. The visible title is
+**TAK.gov Forge CI/CD Pipeline Release (<version>)**, e.g.
+`TAK.gov Forge CI/CD Pipeline Release (5.8.0.3-p105)`, where `<version>` is the APK
+versionName without its `+<sha>` build metadata. The APK is attached as
+`WearTAK-<version>.apk`. The release tag is
+`TAK.gov-Forge-CI-CD-Pipeline-Release` (git tags cannot contain spaces or `/`).
 
 By project policy, `develop` builds are stable: this release uses
 `prerelease=false`, not a prerelease. This classification is an explicit project
@@ -25,8 +29,9 @@ Official `v...` pipelines and all existing numbered/stable releases remain uncha
    visibility or access; any different destination needs separate approval.
 2. Protect canonical GitLab `develop` and restrict who may push/merge, edit pipeline
    configuration, use protected runners, or override pipeline variables.
-3. In the GitHub mirror, create the fixed tag `wearos-development` on an existing
-   mirrored commit, with separate approval. There is currently no such tag.
+3. In the GitHub mirror, create the fixed tag `TAK.gov-Forge-CI-CD-Pipeline-Release` on an
+   existing mirrored commit, with separate approval. (It replaced the original
+   `wearos-development` anchor, whose release is no longer updated.)
    Do not move the tag on each build. The publisher checks that it exists before
    creating a release, never pushes commits, and has no tag-management calls.
    The mirror was behind canonical `gov/develop` at inspection, so a GitLab
@@ -75,13 +80,15 @@ pipeline (including retries) from replacing a successfully published newer one.
 Reusing a pipeline IID with different bytes/source fails rather than overwriting.
 This is not a cross-project/distributed lock against other writers.
 
-The first release is created as a draft. Each APK receives a unique pipeline/hash
-name, is uploaded alongside the previous APK, then is downloaded using the
+The first release is created as a draft. Each APK receives a unique `WearTAK-<version>.apk`
+name (the pipeline IID is part of `<version>`), is uploaded alongside the previous APK, then is downloaded using the
 authenticated asset API and checked for exact size and SHA256. Only after that
 does the job publish/update the release metadata and confirm it by reading it back.
 It then deletes **only older assets on this one release** with both the exact
-`weartak-development-p<IID>-<SHA256>.apk` naming scheme and its matching
-`weartak-rolling-v1:<SHA256>` ownership label.
+`WearTAK-<version>-p<IID>.apk` naming scheme and an identical label (GitHub
+shows the label in place of the file name), or the legacy
+`weartak-development-p<IID>-<SHA256>.apk` name with its
+`weartak-rolling-v1:<SHA256>` label.
 
 Other releases, tags, unrelated assets, and future-pipeline assets are untouched.
 There is no historical-release sweep. A failure before replacement verification

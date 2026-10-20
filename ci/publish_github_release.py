@@ -12,10 +12,12 @@ import urllib.request
 
 
 REPO = "Ascent-Integrated-Tech/wearos-tak-civ"
-TAG = "wearos-development"
-TITLE = "TAK.gov CI/CD Pipeline Release"
+# Git tags cannot contain spaces or "/", so the tag is the title in tag-safe form.
+TAG = "TAK.gov-Forge-CI-CD-Pipeline-Release"
+TITLE = "TAK.gov Forge CI/CD Pipeline Release"
 MARKER = "weartak-rolling-v1"
-ASSET_PATTERN = re.compile(r"weartak-development-p([1-9][0-9]*)-([0-9a-f]{64})\.apk")
+ASSET_PATTERN = re.compile(r"WearTAK-[0-9A-Za-z._-]*-p([1-9][0-9]*)\.apk")
+LEGACY_ASSET_PATTERN = re.compile(r"weartak-development-p([1-9][0-9]*)-([0-9a-f]{64})\.apk")
 LABEL_PREFIX = "weartak-rolling-v1:"
 OUTPUT = Path("app/build/outputs/apk/release")
 
@@ -189,10 +191,27 @@ def state_from(release, project_id):
     return state
 
 
+def display_version(version, pipeline_iid):
+    """User-facing build id, e.g. 5.8.0.3-p105 (drops +sha build metadata)."""
+    short = version.split("+", 1)[0]
+    suffix = f"-p{pipeline_iid}"
+    return short if short.endswith(suffix) else short + suffix
+
+
+def asset_pipeline(asset):
+    """Pipeline IID of an asset this publisher owns, or None for anything else."""
+    name = asset.get("name", "")
+    match = ASSET_PATTERN.fullmatch(name)
+    if match and asset.get("label") == name:
+        return int(match[1])
+    legacy = LEGACY_ASSET_PATTERN.fullmatch(name)
+    if legacy and asset.get("label") == f"{LABEL_PREFIX}{legacy[2]}":
+        return int(legacy[1])
+    return None
+
+
 def managed_asset(asset):
-    match = ASSET_PATTERN.fullmatch(asset.get("name", ""))
-    return (match is not None
-            and asset.get("label") == f"{LABEL_PREFIX}{match[2]}")
+    return asset_pipeline(asset) is not None
 
 
 def publish(api, state, apk, digest, version, code):
@@ -222,6 +241,8 @@ def publish(api, state, apk, digest, version, code):
             raise PublishError("Same pipeline has different source/artifact; refusing replacement.")
 
     state = dict(state, sha256=digest)
+    short = display_version(version, state["pipeline_iid"])
+    title = f"{TITLE} ({short})"
     body = (
         "Automatically published stable WearOS develop-channel build.\n\n"
         f"- APK version: **{version}** (versionCode **{code}**)\n"
@@ -230,19 +251,21 @@ def publish(api, state, apk, digest, version, code):
         f"- Pipeline: {state['pipeline_url']}\n"
         f"- Source commit: `{state['source_sha']}` on TAK.gov `develop`\n"
         f"- SHA256: `{digest}`\n\n"
-        "The fixed GitHub tag is a release anchor, not the APK's source revision. "
-        "The source SHA above is authoritative and may not yet be mirrored to GitHub.\n\n"
+        "Install the APK above. GitHub's \"Source code\" archives come from the fixed release "
+        "anchor tag, not from this build; the source commit above is authoritative and may "
+        "not yet be mirrored to GitHub.\n\n"
         f"<!-- {MARKER} {json.dumps(state, sort_keys=True)} -->"
     )
     if not release:
         release = api.request("POST", "releases", {
-            "tag_name": TAG, "name": TITLE, "body": body,
+            "tag_name": TAG, "name": title, "body": body,
             "draft": True, "prerelease": False, "make_latest": "false",
         })
     release_id = release["id"]
     assets = api.assets(release_id)
-    name = f"weartak-development-p{state['pipeline_iid']}-{digest}.apk"
-    label = f"{LABEL_PREFIX}{digest}"
+    name = f"WearTAK-{short}.apk"
+    # GitHub shows the label instead of the file name, so keep it human-readable.
+    label = name
     existing = [item for item in assets if item["name"] == name]
     if existing:
         uploaded = existing[0]
@@ -261,21 +284,21 @@ def publish(api, state, apk, digest, version, code):
             "inspect only this pipeline's new asset before retrying."
         )
     api.request("PATCH", f"releases/{release_id}", {
-        "name": TITLE, "body": body, "draft": False,
+        "name": title, "body": body, "draft": False,
         "prerelease": False, "make_latest": "false",
     })
     confirmed = api.request("GET", f"releases/{release_id}")
     confirmed_state = state_from(confirmed, state["project_id"])
-    if (confirmed.get("draft") or confirmed.get("name") != TITLE or confirmed_state != state
+    if (confirmed.get("draft") or confirmed.get("name") != title or confirmed_state != state
             or not any(a["id"] == uploaded["id"] and a.get("state") == "uploaded"
                        and a.get("size") == size for a in api.assets(release_id))):
         raise PublishError("Release update could not be verified; previous assets retained.")
     # Delete only older assets explicitly owned by this publisher, after verification.
     for old in assets:
-        match = ASSET_PATTERN.fullmatch(old["name"])
-        if managed_asset(old) and int(match[1]) < state["pipeline_iid"]:
+        owner = asset_pipeline(old)
+        if owner is not None and owner < state["pipeline_iid"]:
             api.request("DELETE", f"releases/assets/{old['id']}")
-    print(f"Published {TITLE}: version {version} ({code}), SHA256 {digest}")
+    print(f"Published {title}: version {version} ({code}), SHA256 {digest}")
 
 
 def main():
