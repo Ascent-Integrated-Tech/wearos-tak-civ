@@ -2398,6 +2398,7 @@ class TAKConnectService: Service() {
                 detail.runtime.readerJob = null
                 detail.channelSslContext = null
                 detail.channelTrustManager = null
+                detail.channelHostnameVerifier = null
                 detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                 detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
             }
@@ -3232,6 +3233,8 @@ class TAKConnectService: Service() {
                     }
                     takServerDetail.channelSslContext = sslContext
                     takServerDetail.channelTrustManager = trustManager
+                    takServerDetail.channelHostnameVerifier =
+                        TakSanHostnameVerifier(takServerDetail.address, trustManager)
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
                     dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
