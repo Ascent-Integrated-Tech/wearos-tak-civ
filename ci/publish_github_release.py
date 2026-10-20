@@ -197,10 +197,12 @@ def managed_asset(asset):
 
 def publish(api, state, apk, digest, version, code):
     repository = api.request("GET", "")
-    if repository.get("private") is not True or repository.get("archived") is not False:
+    if (repository.get("full_name") != REPO or
+            repository.get("archived") is not False or
+            repository.get("disabled") is not False):
         raise PublishError(
-            "Destination must be a private, active repository. Public distribution has "
-            "not been approved; obtain separate approval before changing this policy."
+            "Destination must be the explicitly approved, active repository "
+            f"{REPO}; archived, disabled or different repositories are not allowed."
         )
     # Require an administrator-provisioned fixed tag. Never create/move a ref.
     if not api.request("GET", f"git/ref/tags/{TAG}", missing_ok=True):

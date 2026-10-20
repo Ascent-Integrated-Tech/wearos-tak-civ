@@ -49,7 +49,7 @@ class FakeGitHub:
     def __init__(self, state=None):
         self.calls = []
         self.tag = True
-        self.repository = {"private": True, "archived": False}
+        self.repository = {"full_name": p.REPO, "private": True, "archived": False, "disabled": False}
         self.release = None
         self.items = []
         self.content = {}
@@ -192,11 +192,20 @@ class PublisherTests(unittest.TestCase):
             self.publish(api)
         self.assert_no_writes(api)
 
-    def test_public_or_archived_destination_fails_without_writes(self):
-        for change in ({"private": False}, {"archived": True}):
+    def test_explicitly_approved_public_destination_can_publish(self):
+        api = FakeGitHub()
+        api.repository["private"] = False
+        self.publish(api)
+        self.assertFalse(api.release["draft"])
+        self.assertEqual(api.release["name"], p.TITLE)
+
+    def test_other_archived_disabled_or_unknown_destination_fails_without_writes(self):
+        for change in ({"full_name": "other/repository"}, {"full_name": None},
+                       {"archived": True}, {"disabled": True},
+                       {"archived": None}, {"disabled": None}):
             api = FakeGitHub()
             api.repository.update(change)
-            with self.assertRaisesRegex(p.PublishError, "private, active"):
+            with self.assertRaisesRegex(p.PublishError, "explicitly approved, active"):
                 self.publish(api)
             self.assert_no_writes(api)
 

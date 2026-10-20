@@ -23,6 +23,7 @@ fun RouteDetailsView(
     onRemove: () -> Unit,
     onBack: () -> Unit
 ) {
+    val namedPoints = route.points.withIndex().filter { !it.value.name.isNullOrBlank() }
     var confirmingRemoval by remember(route.serverId, route.uid) { mutableStateOf(false) }
     val listState = key(confirmingRemoval) { rememberScalingLazyListState() }
     BackHandler {
@@ -65,7 +66,7 @@ fun RouteDetailsView(
                 }
             } else {
                 item {
-                    Text(stringResource(R.string.route_point_count, route.points.size),
+                    Text(stringResource(R.string.route_named_point_count, namedPoints.size, route.points.size),
                         textAlign = TextAlign.Center)
                 }
                 item {
@@ -75,14 +76,18 @@ fun RouteDetailsView(
                         modifier = Modifier.fillMaxWidth().testTag("route-remove")
                     )
                 }
-                items(route.points.size) { index ->
-                    val point = route.points[index]
+                if (namedPoints.isEmpty()) {
+                    item {
+                        Text(stringResource(R.string.route_no_named_points), textAlign = TextAlign.Center)
+                    }
+                }
+                items(namedPoints.size) { position ->
+                    val (index, point) = namedPoints[position]
                     Chip(
                         onClick = { onPoint(index) },
                         label = {
                             Text(
-                                point.name?.takeIf { it.isNotBlank() }
-                                    ?: stringResource(R.string.route_point_number, index + 1),
+                                requireNotNull(point.name),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
