@@ -57,6 +57,8 @@
     <string name="connected_to_toast">Đã kết nối với %1$s</string>
     <string name="connection_failed">Kết nối thất bại</string>
     <string name="tak_server_connections">Kết nối đến Máy chủ TAK</string>
+    <string name="tak_servers_title">Máy chủ TAK</string>
+    <string name="add_tak_server">Thêm máy chủ TAK</string>
     <string name="new_server">Máy chủ mới</string>
     <string name="reporting_interval_empty_enter_again">Khoảng thời gian báo cáo đang để trống, vui lòng nhập lại</string>
     <string name="reporting_interval_0_enter_again">Khoảng thời gian báo cáo là 0, vui lòng nhập lại</string>

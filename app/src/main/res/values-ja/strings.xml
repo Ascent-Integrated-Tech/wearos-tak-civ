@@ -57,6 +57,8 @@
     <string name="connected_to_toast">%1$sに接続</string>
     <string name="connection_failed">接続失敗</string>
     <string name="tak_server_connections">TAKサーバー接続</string>
+    <string name="tak_servers_title">TAKサーバー</string>
+    <string name="add_tak_server">TAKサーバーを追加</string>
     <string name="new_server">新サーバー</string>
     <string name="reporting_interval_empty_enter_again">レポート間隔 の入力欄が空です。再度入力してください</string>
     <string name="reporting_interval_0_enter_again">報告間隔が0です。再入力してください</string>
