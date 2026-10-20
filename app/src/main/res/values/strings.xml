@@ -798,7 +798,7 @@
     <string name="pdl_help">PDL Help</string>
     <string name="pdl_help_summary">How to copy &amp; paste a custom PDL</string>
     <string name="pdl_help_instructions">1. Send only the PDL in a chat message. Do not add other text, spaces, or characters.\n\n2. On the watch, press and hold the message, then release it. A toast confirms the PDL was copied.\n\n3. Open Custom PDL. Before opening the keyboard, press and hold the text field, then tap Paste.</string>
-    <string name="route_bloodhound_summary">Route ? %1$d points</string>
+    <string name="route_bloodhound_summary">Route · %1$d points</string>
     <string name="route_bloodhound_nearest">Nearest: %1$s</string>
     <string name="route_bloodhound_start_nearest">Start nearest</string>
     <string name="route_bloodhound_start_beginning">Start from beginning</string>
@@ -809,9 +809,9 @@
     <string name="route_bloodhound_no_location">Waiting for location. Start nearest needs a location fix.</string>
     <string name="route_bloodhound_invalid">This route has no usable points.</string>
     <string name="route_bloodhound_distance_unknown">Waiting for location</string>
-    <string name="bloodhound_picker_route_summary">Route ? %1$d pts ? %2$s</string>
-    <string name="bloodhound_picker_route_progress">Pt %1$d of %2$d ? %3$s left</string>
-    <string name="bloodhound_picker_target_summary">%1$s ? %2$s</string>
+    <string name="bloodhound_picker_route_summary">Route · %1$d pts · %2$s</string>
+    <string name="bloodhound_picker_route_progress">Pt %1$d of %2$d · %3$s left</string>
+    <string name="bloodhound_picker_target_summary">%1$s · %2$s</string>
     <string name="bloodhound_picker_marker">Marker</string>
     <string name="bloodhound_picker_contact">Contact</string>
     <string name="bloodhound_picker_point">Point</string>

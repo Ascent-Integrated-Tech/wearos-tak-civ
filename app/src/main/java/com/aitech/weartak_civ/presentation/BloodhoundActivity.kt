@@ -400,6 +400,10 @@ fun BloodhoundScreen(
     var removingAll by remember { mutableStateOf(false) }
     val showRemoveAllConfirmation = remember { mutableStateOf(false) }
     val canRemove = (bloodhounds.isNotEmpty() || session?.navigation?.completed == false) && !removingAll
+    val goBack = {
+        exitActivity()
+        context.startActivity(Intent(context, MainActivity::class.java))
+    }
     WearTAKCIVTheme {
         if (showRemoveAllConfirmation.value) {
             BloodhoundRemoveAllDialog(
@@ -433,17 +437,18 @@ fun BloodhoundScreen(
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.bloodhound), color = colors.primary,
                         modifier = Modifier.padding(bottom = 8.dp))
-                    Button(onClick = { showRemoveAllConfirmation.value = true }, enabled = canRemove) {
-                        Text(stringResource(R.string.bloodhound_remove_all))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { showRemoveAllConfirmation.value = true }, enabled = canRemove) {
+                            Text(stringResource(R.string.bloodhound_remove_all))
+                        }
+                        WearTAKBackButton(onClick = goBack)
                     }
                 }
             },
             footer = {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    WearTAKBackButton(onClick = {
-                        exitActivity()
-                        context.startActivity(Intent(context, MainActivity::class.java))
-                    })
+                    WearTAKBackButton(onClick = goBack)
                 }
             }
         )
