@@ -85,4 +85,19 @@ class RoutePointSelectionTest {
             it.properties?.get("pointIndex")?.jsonPrimitive?.content
         })
     }
+
+    @Test
+    fun emptyNamedTrackVerticesPreserveLineButDoNotCreateThousandsOfMarkers() {
+        val route = first.copy(points = List(2469) { index ->
+            TakRoutePoint(34.0 + index / 100000.0, -117.0,
+                name = when (index) { 0 -> "Start"; 2468 -> "Finish"; else -> "" })
+        }).mapRoute()
+        assertEquals(2469, route.toLineString()?.coordinates?.size)
+        assertEquals(listOf("0", "2468"), route.toPointFeatures().map {
+            it.properties?.get("pointIndex")?.jsonPrimitive?.content
+        })
+        assertNotNull(findRoutePoint(listOf(first.copy(points = List(2469) {
+            TakRoutePoint(34.0, -117.0, name = "")
+        })), first.serverId, first.uid, 1234))
+    }
 }

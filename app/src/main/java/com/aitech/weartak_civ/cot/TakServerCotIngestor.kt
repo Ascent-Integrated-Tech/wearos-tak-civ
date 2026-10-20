@@ -19,6 +19,7 @@ import com.aitech.weartak_civ.events.TakChatEvent
 import kotlinx.coroutines.CancellationException
 import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.data.parsers.TakRouteCotParser
+import com.aitech.weartak_civ.data.takserver.TakDataPackageRequest
 
 // Holds information about a CoT message received from a TAK Server
 // Keeps the original message along with the server it came from
@@ -35,7 +36,9 @@ data class TakServerCotEnvelope(
     val receivedAt: Long,
 
     // Original CoT message in XML format
-    val rawXml: String
+    val rawXml: String,
+    val sourceSessionId: String? = null,
+    val sourcePeerAddress: String? = null
 )
 
 
@@ -87,6 +90,7 @@ enum class TakServerCotIngestResult {
     MARKER,
     EMERGENCY,
     ROUTE,
+    DATA_PACKAGE,
     CHANNEL_CHANGED,
     CONFIGURATION,
     UNSUPPORTED,
@@ -115,6 +119,7 @@ class TakServerCotIngestor(
     // Gets the callsign of the current watch
     private val deviceCallsign: () -> String,
     private val chatCommandHandler: (suspend (ChatCommandRequest) -> Boolean)? = null,
+    private val dataPackageHandler: (suspend (TakDataPackageRequest, TakServerCotEnvelope) -> Unit)? = null,
 
     // Logs problems found while processing incoming CoT messages
     private val logger: (String, Throwable?) -> Unit = { message, error ->
@@ -176,6 +181,11 @@ class TakServerCotIngestor(
         // Let the inbound handler check the message before normal processing
         // Return CONFIGURATION if another handler already processed the message
         if (sink.onInboundCot(envelope)) return TakServerCotIngestResult.CONFIGURATION
+
+        if (dataPackageHandler != null && CotMessageParser.eventTypeOrNull(rawXml) == "b-f-t-r") {
+            dataPackageHandler.invoke(TakDataPackageRequest.parse(rawXml, envelope.sourcePeerAddress), envelope)
+            return TakServerCotIngestResult.DATA_PACKAGE
+        }
 
         if (chatCommandHandler != null && CotMessageParser.isChatMessage(rawXml)) {
             val direct = CotMessageParser.parseChatRooms(rawXml, deviceUid(), deviceCallsign(), envelope.sourceServerId, envelope.receivedAt)

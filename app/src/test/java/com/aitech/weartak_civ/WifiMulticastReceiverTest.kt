@@ -160,6 +160,49 @@ class WifiMulticastReceiverTest {
                 } catch (_: IOException) {
                     failed = true
                 }
+
+                @Test
+                fun multicastRouteGeometryUsesSharedRouteIngressAndRetainsActualPeerAddress() = runBlocking {
+                    val socket = localSocket()
+                    val receiver = WifiMulticastReceiver(
+                        listOf(WifiMulticastReceiver.Subscription(TakMulticastEndpoints.directCot, socket))
+                    ) {}
+                    val routes = Channel<Pair<TakRoute, TakServerCotEnvelope>>(Channel.UNLIMITED)
+                    val ingestor = TakServerCotIngestor(
+                        sink = object : TakServerCotSink {
+                            override suspend fun onChat(event: TakChatEvent) = Unit
+                            override suspend fun onGeofence(geofence: GeofenceCot) = Unit
+                            override suspend fun onUser(event: CotUserPositionEvent, envelope: TakServerCotEnvelope) = Unit
+                            override suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope) = Unit
+                            override suspend fun onRoute(route: TakRoute, envelope: TakServerCotEnvelope) {
+                                routes.send(route to envelope)
+                            }
+                        },
+                        isChatEnabled = { false }, isGeofenceEnabled = { false },
+                        deviceUid = { "watch" }, deviceCallsign = { "WATCH" }, logger = { _, _ -> }
+                    )
+                    receiver.use {
+                        val receiving = launch { receiver.receive { ingestor.ingest(it) } }
+                        try {
+                            DatagramSocket().use { sender ->
+                                send(sender, socket, "<event uid='route-local' type='b-m-r'><detail>" +
+                                    "<contact callsign='Local route'/><link point='41,-87' callsign='Start'/>" +
+                                    "<link point='41.01,-87.01' callsign=''/><link point='41.02,-87.02' callsign='Finish'/>" +
+                                    "</detail></event>")
+                            }
+                            val (route, envelope) = withTimeout(3000) { routes.receive() }
+                            assertEquals(TakMulticastEndpoints.directCot.sourceId, route.serverId)
+                            assertEquals("Local route", route.name)
+                            assertEquals(3, route.points.size)
+                            assertEquals(41.01, route.points[1].latitude, 0.0)
+                            assertEquals(socket.localAddress.hostAddress, envelope.sourcePeerAddress)
+                            assertEquals(TakMulticastEndpoints.directCot.address, envelope.sourceServerAddress)
+                            assertEquals(null, envelope.sourceSessionId)
+                        } finally {
+                            withTimeout(3000) { receiving.cancelAndJoin() }
+                        }
+                    }
+                }
                 assertTrue(failed)
             }
         }

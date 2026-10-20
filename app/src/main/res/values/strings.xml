@@ -1,4 +1,19 @@
 <resources>
+    <string name="route_package_imported">Imported %1$d route(s). Open the map to view.</string>
+    <string name="route_package_failed">Route package import failed. Check the server connection and package, then resend.</string>
+    <string name="multicast_receive_failed">Multicast receive unavailable. Check Wi-Fi and multicast settings.</string>
+    <string name="route_peer_tls_failed">Local route transfer rejected: phone certificate or hostname is not trusted. No routes imported.</string>
+    <string name="route_unnamed">Route</string>
+    <string name="route_point_count">%1$d points</string>
+    <string name="route_point_number">Point %1$d</string>
+    <string name="route_point_open">Details and Bloodhound</string>
+    <string name="route_remove">Remove from watch</string>
+    <string name="route_remove_confirm">Remove route</string>
+    <string name="route_remove_explanation">Remove this whole route from this watch only? The server copy is unchanged. A later resend or mission sync can restore it.</string>
+    <string name="route_cancel">Cancel</string>
+    <string name="route_back">Back</string>
+    <string name="route_whole">Whole route</string>
+    <string name="point_bloodhound">Bloodhound to Marker</string>
     <string name="app_name" translatable="false">WearTAK</string>
     <!--
     This string is used for square devices and overridden by hello_world in

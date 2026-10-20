@@ -16,6 +16,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import com.aitech.weartak_civ.data.model.TakRoute
+import com.aitech.weartak_civ.data.takserver.TakDataPackageRequest
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -73,6 +74,35 @@ class TakServerCotIngestorTest {
         override suspend fun onChannelChanged(envelope: TakServerCotEnvelope) {
             channelChanges += envelope
         }
+    }
+
+    @Test
+    fun deliversServerPackageOffersAndRejectsMalformedOffersWithoutStoppingCot() = runTest {
+        val sink = RecordingSink()
+        val offers = mutableListOf<Pair<TakDataPackageRequest, TakServerCotEnvelope>>()
+        val logs = mutableListOf<String>()
+        val ingestor = TakServerCotIngestor(
+            sink = sink,
+            isChatEnabled = { true },
+            isGeofenceEnabled = { true },
+            deviceUid = { "watch" },
+            deviceCallsign = { "WATCH" },
+            dataPackageHandler = { offer, source -> offers += offer to source },
+            logger = { message, _ -> logs += message }
+        )
+        val xml = """<event uid="package" type="b-f-t-r"><detail>
+            <fileshare sha256="${"a".repeat(64)}" sizeInBytes="89176"
+            senderUrl="https://192.0.2.1:8443/Marti/sync/content?hash=${"a".repeat(64)}"/>
+            </detail></event>"""
+        val source = envelope(xml, 100L)
+        assertEquals(TakServerCotIngestResult.DATA_PACKAGE, ingestor.ingest(source))
+        assertEquals(source, offers.single().second)
+        assertEquals(89176L, offers.single().first.size)
+        assertEquals(TakServerCotIngestResult.MALFORMED,
+            ingestor.ingest(source.copy(rawXml = xml.replace("89176", "999999999"))))
+        assertEquals(1, offers.size)
+        assertTrue(logs.any { it.contains("malformed") })
+        assertEquals(TakServerCotIngestResult.USER, ingestor.ingest(envelope(USER_XML, 101L)))
     }
 
     @Test

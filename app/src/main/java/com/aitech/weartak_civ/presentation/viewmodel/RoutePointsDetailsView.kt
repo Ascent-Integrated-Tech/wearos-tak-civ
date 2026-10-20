@@ -2,9 +2,8 @@ package com.aitech.weartak_civ.presentation.viewmodel
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -15,10 +14,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material.Button
-import androidx.wear.compose.material.ButtonDefaults
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.testTag
+import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.presentation.MarkerBearingDistance
+import com.aitech.weartak_civ.presentation.WearTAKBackButton
+import com.aitech.weartak_civ.presentation.PointBloodhoundAction
+import com.aitech.weartak_civ.presentation.markerIconFromString
+import androidx.wear.compose.material.Icon
+import androidx.wear.compose.material.MaterialTheme.colors
 import com.aitech.weartak_civ.data.model.TakRoute
+import androidx.activity.compose.BackHandler
 
 data class RoutePointDetails(
     val routeUid: String,
@@ -58,134 +66,72 @@ fun RoutePointsDetailsView(
     longitude: Double,
     sender: String? = null,
     missionName: String? = null,
+    distance: Double? = null,
+    orientation: Float = 0f,
+    isBloodhounding: Boolean = false,
     onChat: () -> Unit = {},
     onBloodhound: () -> Unit = {},
+    onInPosition: () -> Unit = {},
+    onWholeRoute: () -> Unit = {},
     onBack: () -> Unit
 ) {
+    BackHandler(onBack = onBack)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
-    ) {
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize(),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            contentPadding = PaddingValues(
-                top = 24.dp,
-                bottom = 70.dp
-            ),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            item {
-                DetailCircle("Point", pointName)
-            }
-
-            item {
-                DetailCircle("Latitude", "%.5f".format(latitude))
-            }
-
-            item {
-                DetailCircle("Longitude", "%.5f".format(longitude))
-            }
-
-            item {
-                DetailCircle("Sent by", sender ?: "?")
-            }
-
-            item {
-                DetailCircle("Mission", missionName ?: "?")
-            }
-
-            item {
-                ActionCircle("Chat", onChat)
-            }
-
-            item {
-                ActionCircle("Bloodhound", onBloodhound)
-            }
-        }
-
-        // Back button stays at the bottom of the screen
-        Button(
-            onClick = onBack,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 8.dp)
-                .size(width = 92.dp, height = 38.dp)
-        ) {
-            Text(
-                text = "Back",
-                fontSize = 12.sp,
-                color = Color.White
-            )
-        }
-    }
-}
-
-@Composable
-private fun DetailCircle(
-    label: String,
-    value: String
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth(0.85f)
-            .height(64.dp)
-            .background(
-                color = Color.DarkGray,
-                shape = RoundedCornerShape(32.dp)
-            ),
-        contentAlignment = Alignment.Center
+            .padding(bottom = 16.dp, top = 15.dp)
+            .padding(horizontal = 16.dp)
+            .testTag("route-point-details")
     ) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center,
-            modifier = Modifier.padding(
-                horizontal = 14.dp,
-                vertical = 6.dp
-            )
+            modifier = Modifier
+                .fillMaxWidth()
+                .fillMaxHeight(0.9f)
+                .align(Alignment.TopCenter)
+                .padding(bottom = 30.dp)
+                .verticalScroll(rememberScrollState()),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text(
-                text = label,
-                fontWeight = FontWeight.Bold,
-                color = Color.LightGray,
-                fontSize = 11.sp,
-                textAlign = TextAlign.Center
+            Icon(
+                painter = markerIconFromString("b-m-p-s-m"),
+                contentDescription = null,
+                tint = Color.Unspecified,
+                modifier = Modifier.size(25.dp)
             )
-
             Text(
-                text = value,
-                color = Color.White,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
+                text = pointName,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
                 textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
+                color = Color.White,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 5.dp)
             )
+            MarkerBearingDistance(distance, latitude, longitude, orientation)
+            PointBloodhoundAction(isBloodhounding, onBloodhound, onInPosition)
+            if (!sender.isNullOrBlank()) {
+                Text(sender, color = Color.LightGray, fontSize = 13.sp)
+                Button(
+                    onClick = onChat,
+                    modifier = Modifier.padding(vertical = 10.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
+                ) {
+                    Text(stringResource(R.string.chat), color = Color.Black, fontSize = 15.sp)
+                }
+            }
+            if (!missionName.isNullOrBlank()) {
+                Text(missionName, color = Color.LightGray, fontSize = 13.sp)
+            }
+            Button(
+                onClick = onWholeRoute,
+                modifier = Modifier.padding(vertical = 10.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = colors.primary)
+            ) {
+                Text(stringResource(R.string.route_whole), color = Color.Black, fontSize = 15.sp)
+            }
         }
-    }
-}
-@Composable
-private fun ActionCircle(
-    label: String,
-    onClick: () -> Unit
-) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth(0.85f)
-            .height(64.dp),
-        shape = RoundedCornerShape(32.dp),
-        colors = ButtonDefaults.buttonColors(
-            backgroundColor = Color.DarkGray
-        )
-    ) {
-        Text(
-            text = label,
-            color = Color.White,
-            fontSize = 13.sp,
-            textAlign = TextAlign.Center
-        )
+        Row(modifier = Modifier.align(Alignment.BottomCenter)) {
+            WearTAKBackButton(onClick = onBack)
+        }
     }
 }

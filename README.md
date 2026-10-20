@@ -154,9 +154,63 @@ the payload; service binding itself does not establish a trusted caller identity
 
 ### Route point selection
 
+TAK-server Data Package offers (`b-f-t-r`) can import routes from version 2
+Mission Package ZIPs. WearTAK downloads the content hash from the **source server's
+configured HTTPS host on port 8443**, using that server's client certificate and
+certificate/hostname verification. Advertised hosts and redirects are never followed.
+Non-route package content is not supported.
+Offers are bound to the receiving TLS socket's current connection attempt, not
+its asynchronously updated display status. Replaced/disabled/disconnected
+sessions cannot borrow a new connection's credentials. A reconnect or busy importer
+is reported as an operational import failure, not malformed sender XML.
+Only manifest-listed, non-ignored `b-m-r` CoT entries are imported, through the
+existing route parser; package commands and import/delete instructions are not executed.
+Downloads are limited to 8 MiB, expanded archives to 16 MiB, individual entries to
+4 MiB (manifest: 256 KiB), 256 entries, and 10,000 total route points.
+SHA-256 and advertised size must match before import. Unsafe paths, DTDs/entities,
+missing content and invalid routes reject the package without importing partial routes.
+One package is processed at a time without blocking incoming CoT; failed imports
+are logged and show a watch toast. Resend after an import failure.
+When requested, transfer success/failure acknowledgements are routed back to the
+sender through the source TAK server; success is sent only after route import.
+Imported routes use the existing in-memory route store; restart recovery requires
+a resend or a subscribed Data Sync mission.
+
+Ordinary route geometry CoT (`b-m-r`) received on the configured Wi-Fi multicast
+subscriptions uses the same route store, complete geometry and point actions as
+server/Data Sync routes. A Mission Package ZIP is not raw route CoT over UDP:
+its local `b-f-t-r` offer uses a separate source-bound peer download. Only a private
+IPv4 UDP sender on the receiving Wi-Fi link, HTTPS port 8443 and `/getfile` with
+exactly one numeric `file` ID and one `sender` parameter are accepted (CommonCommo
+`MissionPackageManager::getLocalUrl`). The offered host must exactly match the UDP
+sender. Downloads are bound to that Wi-Fi network/session with no proxy or redirects;
+server credentials/client certificates are never used. Default platform TLS trust
+and hostname validation remain required; a phone with an untrusted or IP-mismatched
+certificate is explicitly rejected, with no HTTP or trust-all fallback.
+Peer imports share the same ZIP/hash/size bounds and route UI; identities are
+scoped to the multicast source and peer IP. Peer ACK routing is not yet supported,
+so a sender may report a timeout even after a verified watch import.
+Live peer ZIP interoperability is not yet accepted; an observed local offer alone
+does not establish successful HTTPS download or route import.
+Debug multicast diagnostics record only the peer IP, offer URL scheme/port/path
+host/source equality, query key names/count, and hash/size presence, not the full
+offer, credentials, query values or hash values.
+
+Tap a route line to view the whole route and select any of its points (including
+unnamed vertices) for the existing point details and Bloodhound action. **Remove
+from watch** requires confirmation and removes only that source server/route UID
+from local map state, never the server copy or another server's matching UID.
+A later resend or Data Sync update can restore a locally removed route. Existing
+Bloodhound targets remain until stopped or removed using Bloodhound controls.
+
 Route lines and named point markers remain visible on the map. Selecting a point
-opens its details, with Chat and Bloodhound range/bearing tracking available as
-before. Selection and sender lookup use both the source server ID and route UID,
+uses the standard marker range/bearing display, Bloodhound/In Position action,
+and Back control. **Whole route** returns from point details to route removal
+and the complete point list. Route taps have a 12 dp tolerance; individual vertex
+selection is available above zoom 10, including unnamed vertices. Only nonblank
+waypoint names produce map dots/labels, avoiding thousands of empty track markers
+without dropping any line geometry. Hit testing runs on taps, not on each frame.
+Selection and sender lookup use both the source server ID and route UID,
 so matching route UIDs received from different servers cannot select each other's
 points. Route parsing does not log raw CoT XML.
 
