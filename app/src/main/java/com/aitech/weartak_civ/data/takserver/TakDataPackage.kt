@@ -170,6 +170,24 @@ internal fun validatePeerUrl(url: HttpUrl, peerAddress: String) {
         } == true) { "Unsupported peer download query; expected one file ID and sender" }
 }
 
+/**
+ * ATAK serves local mission packages with a self-signed certificate that does not name the
+ * phone's IP, so platform trust can never succeed. Package integrity comes from the offer's
+ * mandatory SHA-256 and size, which downloadRoutes verifies before importing anything.
+ * Never use this for TAK server connections.
+ */
+@android.annotation.SuppressLint("CustomX509TrustManager", "TrustAllX509TrustManager")
+internal object PeerPackageTrustManager : X509TrustManager {
+    override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) =
+        throw java.security.cert.CertificateException("Peer package client authentication is unsupported")
+
+    override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {
+        if (chain.isNullOrEmpty()) throw java.security.cert.CertificateException("Peer sent no certificate")
+    }
+
+    override fun getAcceptedIssuers(): Array<java.security.cert.X509Certificate> = emptyArray()
+}
+
 internal class TakDataPackageClient(
     private val address: String,
     internal val client: OkHttpClient,
@@ -180,8 +198,13 @@ internal class TakDataPackageClient(
                           network: android.net.Network): TakDataPackageClient {
             val url = requireNotNull(offer.peerDownloadUrl)
             validatePeerUrl(url, peerAddress)
+            val tls = SSLContext.getInstance("TLS").apply {
+                init(null, arrayOf(PeerPackageTrustManager), null)
+            }
             return TakDataPackageClient(peerAddress, OkHttpClient.Builder()
                 .socketFactory(network.socketFactory)
+                .sslSocketFactory(tls.socketFactory, PeerPackageTrustManager)
+                .hostnameVerifier { hostname, _ -> hostname == peerAddress }
                 .proxy(java.net.Proxy.NO_PROXY)
                 .dns(object : okhttp3.Dns {
                     override fun lookup(hostname: String): List<java.net.InetAddress> {

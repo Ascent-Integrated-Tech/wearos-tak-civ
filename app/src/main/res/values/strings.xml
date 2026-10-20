@@ -2,7 +2,7 @@
     <string name="route_package_imported">Imported %1$d route(s). Open the map to view.</string>
     <string name="route_package_failed">Route package import failed. Check the server connection and package, then resend.</string>
     <string name="multicast_receive_failed">Multicast receive unavailable. Check Wi-Fi and multicast settings.</string>
-    <string name="route_peer_tls_failed">Local route transfer rejected: phone certificate or hostname is not trusted. No routes imported.</string>
+    <string name="route_peer_tls_failed">Local route transfer failed: secure connection to the phone could not be established. No routes imported.</string>
     <string name="route_unnamed">Route</string>
     <string name="route_point_count">%1$d points</string>
     <string name="route_named_point_count">%1$d named points / %2$d total points</string>

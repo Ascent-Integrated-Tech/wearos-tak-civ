@@ -184,9 +184,12 @@ IPv4 UDP sender on the receiving Wi-Fi link, HTTPS port 8443 and `/getfile` with
 exactly one numeric `file` ID and one `sender` parameter are accepted (CommonCommo
 `MissionPackageManager::getLocalUrl`). The offered host must exactly match the UDP
 sender. Downloads are bound to that Wi-Fi network/session with no proxy or redirects;
-server credentials/client certificates are never used. Default platform TLS trust
-and hostname validation remain required; a phone with an untrusted or IP-mismatched
-certificate is explicitly rejected, with no HTTP or trust-all fallback.
+server credentials/client certificates are never used. ATAK serves `/getfile` with a
+self-signed certificate that does not name the phone's IP, so the peer download accepts
+the phone's certificate (HTTPS only, hostname must equal the UDP sender IP, no HTTP
+fallback). Integrity comes from the offer's mandatory SHA-256 and size, which must match
+the downloaded bytes before any route is imported. TAK server connections keep full
+platform/enrolled-CA trust and hostname validation.
 Peer imports share the same ZIP/hash/size bounds and route UI; identities are
 scoped to the multicast source and peer IP. Peer ACK routing is not yet supported,
 so a sender may report a timeout even after a verified watch import.
