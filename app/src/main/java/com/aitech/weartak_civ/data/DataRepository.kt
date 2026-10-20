@@ -332,6 +332,10 @@ class DataRepository(private val context: Context) {
         )
     }
 
+    fun removeTakRoute(serverId: String, routeUid: String) {
+        _takRoutes.update { it - (serverId to routeUid) }
+    }
+
     // Remove routes that belong to a specific mission on a specific server
     // Keep routes from other missions and TAK Servers
     fun removeTakRoutesForMission(serverId: String, missionName: String) {

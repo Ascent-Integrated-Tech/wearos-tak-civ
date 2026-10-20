@@ -43,6 +43,13 @@ import com.aitech.weartak_civ.data.model.TakChannel
 import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.model.TakServerChannels
 import com.aitech.weartak_civ.data.takserver.TakChannelApi
+import com.aitech.weartak_civ.data.takserver.TakChannelHostnameVerifier
+import com.aitech.weartak_civ.data.takserver.TakDataPackageClient
+import com.aitech.weartak_civ.data.takserver.TakDataPackageRequest
+import com.aitech.weartak_civ.R
+import android.widget.Toast
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.aitech.weartak_civ.data.takserver.TakChannelState
 import com.aitech.weartak_civ.data.takserver.TakSanHostnameVerifier
@@ -155,6 +162,7 @@ class TAKConnectService: Service() {
     private var multicastWifiRequest: MulticastWifiRequest? = null
 
     class ConnectionAttempt(val generation: Long) {
+        val sessionId: String = java.util.UUID.randomUUID().toString()
         var job: Job? = null
         var socket: SSLSocket? = null
     }
@@ -295,31 +303,74 @@ class TAKConnectService: Service() {
             }
         }
         scope.launch {
-            combine(NetworkManager.getInstance().wifiNetwork,
+            collectMulticastConfigurations(combine(NetworkManager.getInstance().wifiNetwork,
                 dataRepository.multicastEnabled,
                 dataRepository.multicastAddress,
                 dataRepository.multicastPort) { net, enable, address, port ->
                 MulticastConfig(net, enable, address, port)
-            }.distinctUntilChanged().collectLatest{ cfg ->
-                val shouldRun = cfg.enable != null && cfg.enable && cfg.net != null &&
-                        !cfg.address.isNullOrBlank() && cfg.port != null
-                Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
-                if (shouldRun) {
-                    val started = NetworkUtils.MulticastPublisher.start(network = cfg.net, address = cfg.address, port = cfg.port)
-                    if (started) {
-                        dataRepository.setMulticastPublisherRunning(true)
-                        dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
-                    } else {
-                        dataRepository.setMulticastPublisherRunning(false)
-                        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
+            })
+        }
+    }
+
+    internal suspend fun collectMulticastConfigurations(
+        configurations: kotlinx.coroutines.flow.Flow<MulticastConfig>,
+        updatePublisher: (MulticastConfig, Boolean) -> Unit = ::updateMulticastPublisher,
+        openReceiver: (MulticastConfig) -> WifiMulticastReceiver = { cfg ->
+            WifiMulticastReceiver.open(
+                applicationContext, requireNotNull(cfg.net), requireNotNull(cfg.address), requireNotNull(cfg.port)
+            )
+        }
+    ) {
+        configurations.distinctUntilChanged().collectLatest { cfg ->
+            val shouldRun = cfg.enable == true && cfg.net != null &&
+                !cfg.address.isNullOrBlank() && cfg.port != null
+            Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
+            updatePublisher(cfg, shouldRun)
+            if (shouldRun) {
+                try {
+                    withContext(Dispatchers.IO) {
+                        openReceiver(cfg).use { receiver ->
+                            val session = java.util.UUID.randomUUID().toString()
+                            activeMulticastSource = requireNotNull(cfg.net) to session
+                            Log.i(TAG, "Multicast route receiver ready")
+                            try {
+                                receiver.receive { envelope ->
+                                    cotIngestor.ingest(envelope.copy(sourceSessionId = session))
+                                }
+                            } finally {
+                                if (activeMulticastSource?.second == session) activeMulticastSource = null
+                            }
+                        }
                     }
-                } else {
-                    NetworkUtils.MulticastPublisher.stop()
-                    dataRepository.setMulticastPublisherRunning(false)
-                    dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: IOException) {
+                    Log.e(TAG, "Multicast receive failed", error)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, R.string.multicast_receive_failed, Toast.LENGTH_LONG).show()
+                    }
+                } catch (error: SecurityException) {
+                    Log.e(TAG, "Multicast receive permission denied", error)
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, R.string.multicast_receive_failed, Toast.LENGTH_LONG).show()
+                    }
                 }
             }
         }
+    }
+
+    private fun updateMulticastPublisher(cfg: MulticastConfig, shouldRun: Boolean) {
+        val started = if (shouldRun) {
+            NetworkUtils.MulticastPublisher.start(
+                requireNotNull(cfg.net), requireNotNull(cfg.address), requireNotNull(cfg.port)
+            )
+        } else {
+            NetworkUtils.MulticastPublisher.stop()
+            false
+        }
+        dataRepository.setMulticastPublisherRunning(started)
+        if (started) dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
+        else dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
     }
 
     fun setFromDatastore() {
@@ -840,6 +891,150 @@ class TAKConnectService: Service() {
         private var activeService: TAKConnectService? = null
         @Volatile private var connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         private val channelTraceSequence = AtomicInteger(0)
+        private val dataPackageSlot = java.util.concurrent.Semaphore(1)
+        @Volatile private var activeMulticastSource: Pair<Network, String>? = null
+
+        private fun receiveDataPackage(offer: TakDataPackageRequest, envelope: TakServerCotEnvelope) {
+            if (envelope.sourcePeerAddress != null) {
+                receivePeerDataPackage(offer, envelope)
+                return
+            }
+            val detail = takServerDetailsById[envelope.sourceServerId]
+            val source = try {
+                if (detail == null) throw IOException("Package source is no longer configured")
+                synchronized(detail.runtime.lock) {
+                    val attempt = requireDataPackageSession(detail, envelope, serviceStopping)
+                    attempt to TakDataPackageClient(
+                        address = detail.address,
+                        sslContext = detail.channelSslContext ?: throw IOException("Package TLS context unavailable"),
+                        trustManager = detail.channelTrustManager ?: throw IOException("Package trust manager unavailable"),
+                        hostnameVerifier = TakChannelHostnameVerifier()
+                    )
+                }
+            } catch (error: IOException) {
+                Log.w(TAG, "Route package source unavailable serverId=${envelope.sourceServerId} " +
+                    "enabled=${detail?.isEnabled} status=${detail?.connectionStatus?.get()}", error)
+                connectionScope.launch(Dispatchers.Main) {
+                    Toast.makeText(context, R.string.route_package_failed, Toast.LENGTH_LONG).show()
+                }
+                return
+            }
+            val attempt = source.first
+            val client = source.second
+            if (!dataPackageSlot.tryAcquire()) {
+                connectionScope.launch {
+                    reportDataPackageFailure(detail, attempt, offer,
+                        IOException("Another route package is being imported; resend after it finishes"))
+                }
+                return
+            }
+            val job = connectionScope.launch {
+                try {
+                    val routes = client.downloadRoutes(offer, detail.serverId)
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    synchronized(detail.runtime.lock) {
+                        requireDataPackageSession(detail, envelope, serviceStopping)
+                        if (takServerDetailsById[detail.serverId] !== detail) {
+                            throw IOException("Package source configuration changed")
+                        }
+                    }
+                    routes.forEach { dataRepository.upsertTakRoute(it) }
+                    Log.i(TAG, "Route package imported serverId=${detail.serverId} routes=${routes.size}")
+                    val now = System.currentTimeMillis()
+                    offer.acknowledgement(MainActivity.device_uid, now, true)?.let {
+                        sendData(detail, it, isNotPli = true, currTime = now)
+                    }
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, context.getString(R.string.route_package_imported, routes.size),
+                            Toast.LENGTH_LONG).show()
+                    }
+                } catch (error: IOException) {
+                    reportDataPackageFailure(detail, attempt, offer, error)
+                } catch (error: IllegalArgumentException) {
+                    reportDataPackageFailure(detail, attempt, offer, error)
+                } catch (error: org.xmlpull.v1.XmlPullParserException) {
+                    reportDataPackageFailure(detail, attempt, offer, error)
+                }
+            }
+            job.invokeOnCompletion { dataPackageSlot.release() }
+        }
+
+        private fun receivePeerDataPackage(offer: TakDataPackageRequest, envelope: TakServerCotEnvelope) {
+            val source = activeMulticastSource
+            val peer = requireNotNull(envelope.sourcePeerAddress)
+            val sourceId = "${envelope.sourceServerId}:peer:$peer"
+            connectionScope.launch {
+                var acquired = false
+                try {
+                    if (source == null || source.second != envelope.sourceSessionId || serviceStopping) {
+                        throw IOException("Local receive session changed")
+                    }
+                    val connectivity = context.getSystemService(ConnectivityManager::class.java)
+                    val address = java.net.InetAddress.getByAddress(
+                        peer.split('.').map { it.toInt().toByte() }.toByteArray())
+                    val links = connectivity?.getLinkProperties(source.first)
+                    if (links == null || links.linkAddresses.none {
+                            android.net.IpPrefix(it.address, it.prefixLength).contains(address)
+                        } || links.linkAddresses.any { it.address == address }) {
+                        throw IOException("Peer is not a remote device on the receiving Wi-Fi link")
+                    }
+                    acquired = dataPackageSlot.tryAcquire()
+                    if (!acquired) throw IOException("Route package importer is busy")
+                    val routes = TakDataPackageClient.peer(offer, peer, source.first).downloadRoutes(offer, sourceId)
+                    currentCoroutineContext().ensureActive()
+                    if (activeMulticastSource != source || serviceStopping) {
+                        throw IOException("Local receive session changed")
+                    }
+                    routes.forEach { dataRepository.upsertTakRoute(it) }
+                    Log.i(TAG, "Local route package imported peer=$peer routes=${routes.size}")
+                    // Local transfer acknowledgements require peer-specific routing, not a TAK-server ACK.
+                    if (offer.ackUid != null) Log.w(TAG, "Local package ACK routing unsupported peer=$peer")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, context.getString(R.string.route_package_imported, routes.size),
+                            Toast.LENGTH_LONG).show()
+                    }
+                } catch (error: IOException) {
+                    val tls = error is javax.net.ssl.SSLException
+                    Log.w(TAG, "Local route package failed peer=$peer reason=" +
+                        if (tls) "TLS trust/hostname verification failed; no bypass" else "network/source unavailable")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context,
+                            if (tls) R.string.route_peer_tls_failed else R.string.route_package_failed,
+                            Toast.LENGTH_LONG).show()
+                    }
+                } catch (error: IllegalArgumentException) {
+                    Log.w(TAG, "Local route package failed peer=$peer reason=package validation rejected")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, R.string.route_package_failed, Toast.LENGTH_LONG).show()
+                    }
+                } catch (error: org.xmlpull.v1.XmlPullParserException) {
+                    Log.w(TAG, "Local route package failed peer=$peer reason=invalid package XML")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(context, R.string.route_package_failed, Toast.LENGTH_LONG).show()
+                    }
+                } finally {
+                    if (acquired) dataPackageSlot.release()
+                }
+            }
+        }
+
+        private suspend fun reportDataPackageFailure(
+            detail: TakServerDetail,
+            attempt: ConnectionAttempt,
+            offer: TakDataPackageRequest,
+            error: Exception
+        ) {
+            Log.e(TAG, "Route package import failed serverId=${detail.serverId}", error)
+            if (isCurrent(detail, attempt) && detail.isEnabled) {
+                val now = System.currentTimeMillis()
+                offer.acknowledgement(MainActivity.device_uid, now, false)?.let {
+                    sendData(detail, it, isNotPli = true, currTime = now)
+                }
+            }
+            withContext(Dispatchers.Main) {
+                Toast.makeText(context, R.string.route_package_failed, Toast.LENGTH_LONG).show()
+            }
+        }
 
         var takServerDetails : MutableList<TakServerDetail> = emptyList<TakServerDetail>().toMutableList()
         private val takServerDetailsById = ConcurrentHashMap<String, TakServerDetail>()
@@ -2115,7 +2310,8 @@ class TAKConnectService: Service() {
                 isGeofenceEnabled = { geofenceEnabled },
                 deviceUid = { MainActivity.device_uid },
                 deviceCallsign = { MainActivity.callsign },
-                chatCommandHandler = ChatCommandRuntime.create(context, dataRepository)
+                chatCommandHandler = ChatCommandRuntime.create(context, dataRepository),
+                dataPackageHandler = { offer, envelope -> receiveDataPackage(offer, envelope) }
             )
         }
 
@@ -3235,7 +3431,8 @@ class TAKConnectService: Service() {
                                     sourceServerId = takServerDetail.serverId,
                                     sourceServerAddress = takServerDetail.address,
                                     receivedAt = System.currentTimeMillis(),
-                                    rawXml = rawXml
+                                    rawXml = rawXml,
+                                    sourceSessionId = attempt.sessionId
                                 )
                                 val diagnostics = CotMessageParser.ingressDiagnostics(rawXml)
                                 val activeChannels = dataRepository.takChannels.value

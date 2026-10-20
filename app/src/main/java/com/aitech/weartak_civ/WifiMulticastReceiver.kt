@@ -7,6 +7,7 @@ import android.net.wifi.WifiManager
 import android.util.Log
 import com.aitech.weartak_civ.cot.TakServerCotEnvelope
 import com.aitech.weartak_civ.cot.TakDatagramDecoder
+import com.aitech.weartak_civ.data.takserver.TakDataPackageRequest
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.currentCoroutineContext
@@ -67,12 +68,16 @@ class WifiMulticastReceiver internal constructor(
                         logPacket("Received control-only TAK message group=${subscription.endpoint.sourceId}")
                         continue
                     }
+                    if (BuildConfig.DEBUG) {
+                        TakDataPackageRequest.localOfferSummary(xml, packet.address?.hostAddress)?.let(logPacket)
+                    }
                     onCot(
                         TakServerCotEnvelope(
                             sourceServerId = subscription.endpoint.sourceId,
                             sourceServerAddress = subscription.endpoint.address,
                             receivedAt = System.currentTimeMillis(),
-                            rawXml = xml
+                            rawXml = xml,
+                            sourcePeerAddress = packet.address?.hostAddress
                         )
                     )
                 }

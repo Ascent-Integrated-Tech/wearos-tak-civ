@@ -207,6 +207,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.RoutePointDetails
 import com.aitech.weartak_civ.presentation.viewmodel.RoutePointsDetailsView
+import com.aitech.weartak_civ.presentation.viewmodel.RouteDetailsView
 import com.aitech.weartak_civ.presentation.viewmodel.findRoutePoint
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
@@ -1037,6 +1038,7 @@ fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
 
         if (
             item.hasPoint &&
+            !item.pointTitle.isNullOrBlank() &&
             lat != null &&
             lon != null
         ) {
@@ -1060,13 +1062,13 @@ fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
 fun RoutesLayer(
     routes: List<RouteCollection>,
     camera: CameraState,
-    onPointClick: (String, String, Int) -> Unit
+    onPointClick: (String, String, Int) -> Unit,
+    onRouteClick: (String, String) -> Unit = { _, _ -> }
 ) {
     if (routes.isEmpty()) return
     val featureCollection = remember(routes) {
         routes.toFeatureCollection()
     }
-    if (featureCollection.features.isEmpty()) return
     val source = rememberGeoJsonSource(
         data = GeoJsonData.Features(featureCollection)
     )
@@ -1086,6 +1088,23 @@ fun RoutesLayer(
 
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
+    LineLayer(
+        id = "routes-hit-layer",
+        source = source,
+        color = const(Color.Transparent),
+        width = const(24.dp),
+        onClick = { features ->
+            val feature = features.firstOrNull() ?: return@LineLayer ClickResult.Pass
+            val serverId = feature.getStringProperty("serverId").orEmpty()
+            val routeUid = feature.getStringProperty("uid").orEmpty()
+            if (serverId.isBlank() || routeUid.isBlank()) {
+                ClickResult.Pass
+            } else {
+                onRouteClick(serverId, routeUid)
+                ClickResult.Consume
+            }
+        }
+    )
     LineLayer(
         id = "routes-layer",
         source = source,
@@ -1884,6 +1903,7 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
     // Show the coordinate popup for the user location puck
     var showPopup by remember { mutableStateOf(false) }
     var selectedRoutePoint by remember {mutableStateOf<RoutePointDetails?>(null)}
+    var selectedRoute by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     // Show or hide connected users
     var showUsers by remember { mutableStateOf(mapPreferences.getBoolean(
@@ -2061,6 +2081,20 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
     val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val selectRoutePoint: (String, String, Int) -> Unit = { serverId, routeUid, index ->
+        val point = findRoutePoint(takRoutes, serverId, routeUid, index)
+        if (point != null) {
+            selectedRoutePoint = point.copy(
+                droppedBy = point.droppedBy?.let { senderUid ->
+                    receivedUserListSetting.firstOrNull {
+                        it.uid == senderUid && it.sourceServerId == serverId
+                    }?.title ?: senderUid
+                }
+            )
+        } else {
+            Log.w(TAG, "Selected route point is no longer available")
+        }
+    }
     val bhRepo = remember(context) {
         (context.applicationContext as WearTakApplication).bhRepo
     }
@@ -2362,6 +2396,28 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
             // Keeps zoom within the supported range
             zoomRange = 0f..25.5f,
 
+            onMapClick = { _, offset ->
+                val mapProjection = cameraState.projection
+                val hit = mapProjection?.let { map ->
+                    findRouteMapSelection(
+                        takRoutes,
+                        RouteScreenPoint(offset.x.value.toDouble(), offset.y.value.toDouble()),
+                        pointsVisible = cameraState.position.zoom > 10.0
+                    ) { latitude, longitude ->
+                        val screen = map.screenLocationFromPosition(Position(longitude, latitude))
+                        RouteScreenPoint(screen.x.value.toDouble(), screen.y.value.toDouble())
+                    }
+                }
+                if (hit == null) {
+                    ClickResult.Pass
+                } else {
+                    selectedRoute = hit.serverId to hit.routeUid
+                    selectedRoutePoint = null
+                    hit.pointIndex?.let { selectRoutePoint(hit.serverId, hit.routeUid, it) }
+                    ClickResult.Consume
+                }
+            },
+
             // Drops a marker when the user long presses the map
             onMapLongClick = { coordinates, offset ->
 
@@ -2584,24 +2640,14 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
             RoutesLayer(
                 routes = missionMapRoutes,
                 camera = cameraState,
-
-                onPointClick = { serverId, routeUid, pointIndex ->
-                    val point = findRoutePoint(takRoutes, serverId, routeUid, pointIndex)
-                    if (point != null) {
-                        selectedRoutePoint = point.copy(
-                            droppedBy = point.droppedBy?.let { senderUid ->
-                                receivedUserListSetting.firstOrNull { user ->
-                                    user.uid == senderUid &&
-                                            user.sourceServerId == serverId
-                                }?.title ?: senderUid
-                            }
-                        )
-                    } else {
-                        Log.w(TAG, "Selected route point is no longer available")
-                    }
+                onPointClick = { serverId, routeUid, index ->
+                    selectedRoute = serverId to routeUid
+                    selectRoutePoint(serverId, routeUid, index)
+                },
+                onRouteClick = { serverId, routeUid ->
+                    selectedRoutePoint = null
+                    selectedRoute = serverId to routeUid
                 }
-
-
             )
         }
 
@@ -2854,15 +2900,50 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                 takServers = takChannels
             )
         }
-        // Show details when a route point is selected
-        // Show details when a route point is selected
+        selectedRoute?.let { (serverId, routeUid) ->
+            val route = takRoutes.firstOrNull { it.serverId == serverId && it.uid == routeUid }
+            if (route != null && selectedRoutePoint == null) {
+                RouteDetailsView(
+                    route = route,
+                    onPoint = { index -> selectRoutePoint(serverId, routeUid, index) },
+                    onRemove = {
+                        dataRepository.removeTakRoute(serverId, routeUid)
+                        selectedRoutePoint = null
+                        selectedRoute = null
+                    },
+                    onBack = { selectedRoute = null }
+                )
+            }
+        }
         selectedRoutePoint?.let { point ->
+            val pointUid = "route-point-${point.serverId}-${point.routeUid}-${point.pointIndex}"
+            val heading by dataRepository.azimuthTrueDegSmoothed.collectAsStateWithLifecycle()
+            val vector = locationFlow?.let {
+                com.aitech.weartak_civ.provider.LocationVectorCalculator.calculate(
+                    it.latitude, it.longitude, point.latitude, point.longitude
+                )
+            }
+            val orientation = com.aitech.weartak_civ.provider.LocationVectorCalculator
+                .needleAngle(vector?.bearing, heading) ?: vector?.bearing ?: 0.0
             RoutePointsDetailsView(
-                pointName = point.title.ifBlank { "Route Point" },
+                pointName = point.title.ifBlank {
+                    context.getString(R.string.route_point_number, point.pointIndex + 1)
+                },
                 latitude = point.latitude,
                 longitude = point.longitude,
                 sender = point.droppedBy,
                 missionName = point.missionName,
+                distance = vector?.distance,
+                orientation = orientation.toFloat(),
+                isBloodhounding = activeItem?.uid == pointUid,
+                onInPosition = {
+                    bhRepo.requestInPosition(pointUid)
+                    requestBloodhoundComplicationUpdate(context)
+                },
+                onWholeRoute = {
+                    selectedRoute = point.serverId to point.routeUid
+                    selectedRoutePoint = null
+                },
 
                 onChat = {
                     val senderUid = takRoutes
@@ -2894,6 +2975,7 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
 
                         context.startActivity(intent)
                         selectedRoutePoint = null
+                        selectedRoute = null
                     }
                 },
 
@@ -2918,8 +3000,6 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                     // Refresh the Bloodhound complication
                     requestBloodhoundComplicationUpdate(context)
 
-                    // Close the point details
-                    selectedRoutePoint = null
                 },
 
                 onBack = {
