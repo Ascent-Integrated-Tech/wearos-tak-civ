@@ -57,6 +57,8 @@
     <string name="connected_to_toast">Verbunden mit %1$s</string>
     <string name="connection_failed">Verbindung fehlgeschlagen</string>
     <string name="tak_server_connections">TAK-Server-Verbindungen</string>
+    <string name="tak_servers_title">TAK-Server</string>
+    <string name="add_tak_server">TAK-Server hinzufügen</string>
     <string name="new_server">Neuer Server</string>
     <string name="reporting_interval_empty_enter_again">Meldeintervall leer, erneut eingeben</string>
     <string name="reporting_interval_0_enter_again">Meldeintervall 0, erneut eingeben</string>

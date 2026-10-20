@@ -81,6 +81,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -90,6 +91,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -1521,7 +1524,7 @@ fun WearTAKSettingsNav(
             val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
             val disconnectedStatus = remember { androidx.lifecycle.MutableLiveData(TAK_SERVER_DISCONNECTED_STRING) }
             WearTAKPageWithBackArrow(
-                stringResource(R.string.tak_server_connections),
+                stringResource(R.string.tak_servers_title),
                 {
                     itemsIndexed(
                         takServerList.alphabetizedServerEntries { it.name },
@@ -1600,16 +1603,16 @@ fun WearTAKSettingsNav(
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
                     }
-                    item {
-                        WearTAKTitleChip(
-                            icon = { Icon(Icons.Filled.Add, contentDescription = "Add") },
-                            title = stringResource(R.string.add_network),
-                            route = "new_server_screen",
-                            navController = navController
-                        )
-                    }
                 },
                 navController,
+                titleAction = {
+                    WearTAKTitleAddButton(
+                        contentDescription = stringResource(R.string.add_tak_server),
+                        onClick = {
+                            navController.navigate("new_server_screen") { launchSingleTop = true }
+                        }
+                    )
+                },
             )
         }
 
@@ -4205,6 +4208,7 @@ fun WearTakScreenDimensions(
     columnContent: ScalingLazyListScope.(ScalingLazyListState) -> Unit,
     rowContent: @Composable () -> Unit,
     text: String,
+    titleAction: (@Composable () -> Unit)? = null,
 ) {
     WearTAKCIVTheme {
         val listState = rememberScalingLazyListState()
@@ -4232,15 +4236,38 @@ fun WearTakScreenDimensions(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     item {
-                        Text(
-                            text = text,
-                            fontSize = if (text.length!! < 20) 17.sp else 15.sp,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .padding(horizontal = 10.dp)
-                                .padding(bottom = 8.dp)
-                        )
+                        if (titleAction == null) {
+                            Text(
+                                text = text,
+                                fontSize = if (text.length!! < 20) 17.sp else 15.sp,
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .padding(horizontal = 10.dp)
+                                    .padding(bottom = 8.dp)
+                            )
+                        } else {
+                            // Title and action share one line; the title ellipsizes rather than wrapping.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .padding(horizontal = 10.dp)
+                                    .padding(bottom = 8.dp)
+                            ) {
+                                Text(
+                                    text = text,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                titleAction()
+                            }
+                        }
                     }
                    columnContent(listState)
                 }
@@ -4261,7 +4288,8 @@ fun WearTAKPageWithBackArrow(
     columnContent: ScalingLazyListScope.(ScalingLazyListState) -> Unit, //Screen contents
     navController: NavController, //Navcontroller passed from navhost,
     exitActivity: Boolean = false,
-    exitFunction: () -> Unit = {}
+    exitFunction: () -> Unit = {},
+    titleAction: (@Composable () -> Unit)? = null,
 ) {
     WearTakScreenDimensions(
         columnContent = { columnContent(it) },
@@ -4276,8 +4304,30 @@ fun WearTAKPageWithBackArrow(
                 },
             )
         },
-        title
+        title,
+        titleAction
     )
+}
+
+// Compact circular "+" used beside a page title, e.g. to add a TAK server.
+@Composable
+fun WearTAKTitleAddButton(contentDescription: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(colors.primary)
+            .clickable(onClickLabel = contentDescription, role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription }
+    ) {
+        Icon(
+            Icons.Filled.Add,
+            contentDescription = null,
+            tint = colors.onPrimary,
+            modifier = Modifier.size(20.dp)
+        )
+    }
 }
 
 //Used for any page that needs a title and back button, used for most screens
