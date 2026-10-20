@@ -8,6 +8,17 @@ object JsonLogic {
     private fun asDoubleOrKey(fs: FeatureStore, any: Any): Double? =
         when (any) { is Number -> any.toDouble(); is String -> fs.double(any); else -> null }
 
+    // Threshold may be a literal number or a feature key (e.g. "features.hr.high_threshold_bpm").
+    // A missing threshold argument falls back to [default]; an unresolvable key yields null.
+    private fun threshold(fs: FeatureStore, a: JSONArray, default: Double): Double? {
+        if (a.length() < 2 || a.isNull(1)) return default
+        return when (val v = a.get(1)) {
+            is Number -> v.toDouble()
+            is String -> v.toDoubleOrNull() ?: fs.double(v)
+            else -> null
+        }
+    }
+
     fun eval(node: JSONObject, fs: FeatureStore): Boolean {
         return try {
             when {
@@ -61,7 +72,7 @@ object JsonLogic {
                     // Phase 4: null feature (missing or stale) → false, not +infinity.
                     val a = node.getJSONArray("lte_key")
                     val x = fs.double(a.getString(0)) ?: return false
-                    val y = a.optDouble(1, Double.POSITIVE_INFINITY)
+                    val y = threshold(fs, a, Double.POSITIVE_INFINITY) ?: return false
                     x <= y
                 }
 
@@ -71,7 +82,7 @@ object JsonLogic {
                     // Returns false if feature is missing OR older than maxAgeSec.
                     val a = node.getJSONArray("lte_key_fresh")
                     val x = fs.doubleIfFresh(a.getString(0), a.getDouble(2)) ?: return false
-                    val y = a.optDouble(1, Double.POSITIVE_INFINITY)
+                    val y = threshold(fs, a, Double.POSITIVE_INFINITY) ?: return false
                     x <= y
                 }
 
@@ -79,7 +90,7 @@ object JsonLogic {
                     // Phase 4: null feature (missing or stale) → false, not -infinity.
                     val a = node.getJSONArray("gte_key")
                     val x = fs.double(a.getString(0)) ?: return false
-                    val y = a.optDouble(1, Double.NEGATIVE_INFINITY)
+                    val y = threshold(fs, a, Double.NEGATIVE_INFINITY) ?: return false
                     x >= y
                 }
 
@@ -89,7 +100,7 @@ object JsonLogic {
                     // Returns false if feature is missing OR older than maxAgeSec.
                     val a = node.getJSONArray("gte_key_fresh")
                     val x = fs.doubleIfFresh(a.getString(0), a.getDouble(2)) ?: return false
-                    val y = a.optDouble(1, Double.NEGATIVE_INFINITY)
+                    val y = threshold(fs, a, Double.NEGATIVE_INFINITY) ?: return false
                     x >= y
                 }
 
