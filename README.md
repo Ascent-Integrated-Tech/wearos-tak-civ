@@ -47,7 +47,7 @@ are unchanged.
 ## GitHub pipeline release
 
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
-**TAK.gov CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
+**TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
 as stable builds, not prereleases. See [CI release setup and retention](ci/README.md)
 for required administrator configuration, provenance, and verified replacement behavior.
 Other numbered releases and unrelated assets are preserved.
