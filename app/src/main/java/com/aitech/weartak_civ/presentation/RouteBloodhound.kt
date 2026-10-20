@@ -72,10 +72,15 @@ fun BloodhoundPickerList(
                 Utils.BloodhoundTargetKind.ALERT -> item.alertCategory ?: stringResource(R.string.remote_emergency_alert)
                 Utils.BloodhoundTargetKind.MARKER -> stringResource(R.string.bloodhound_picker_marker)
             }
+            val typeIcon = when (item.targetKind) {
+                Utils.BloodhoundTargetKind.ALERT -> R.drawable.atak_nav_alert
+                Utils.BloodhoundTargetKind.CONTACT, Utils.BloodhoundTargetKind.POINT,
+                Utils.BloodhoundTargetKind.MARKER -> R.drawable.atak_nav_marker
+            }
             val subtitle = if (item.isStale) stringResource(R.string.remote_emergency_stale_category, kind)
                 else stringResource(R.string.bloodhound_picker_target_summary, kind,
                     routeDistanceText(item.distance?.times(1000.0).takeIf { item.hasLocation }))
-            BloodhoundPickerRow(item.target, subtitle, "?", item.bloodhounding,
+            BloodhoundPickerRow(item.target, subtitle, typeIcon, item.bloodhounding,
                 onBody = { onTarget(item.uid) }, onMap = { onMapTarget(item.uid) },
                 onHound = { if (item.bloodhounding) onStopTarget(item.uid) else onStartTarget(item.uid) },
                 actionsEnabled = item.hasLocation, tag = "bloodhound-target-${item.uid}")
@@ -103,7 +108,7 @@ fun RouteBloodhoundChip(
     val subtitle = if (selected != null) stringResource(R.string.bloodhound_picker_route_progress,
         selected.navigation.pointNumber, selected.navigation.points.size, routeDistanceText(selected.remainingMeters))
     else stringResource(R.string.bloodhound_picker_route_summary, route.points.size, routeDistanceText(nearestMeters))
-    BloodhoundPickerRow(route.name.ifBlank { stringResource(R.string.route_unnamed) }, subtitle, "?",
+    BloodhoundPickerRow(route.name.ifBlank { stringResource(R.string.route_unnamed) }, subtitle, R.drawable.atak_nav_routes,
         selected != null, onClick, onMap, { if (selected != null) onStop() else onChoose() },
         actionsEnabled = route.points.isNotEmpty(), tag = "bloodhound-route")
 }
@@ -112,7 +117,7 @@ fun RouteBloodhoundChip(
 fun BloodhoundPickerRow(
     title: String,
     subtitle: String,
-    glyph: String,
+    typeIcon: Int,
     active: Boolean,
     onBody: () -> Unit,
     onMap: () -> Unit,
@@ -132,7 +137,8 @@ fun BloodhoundPickerRow(
     ) {
         Row(Modifier.weight(1f).clickable(onClick = onBody).padding(start = 4.dp, end = 2.dp, top = 8.dp, bottom = 8.dp)
             .testTag("$tag-body"), verticalAlignment = Alignment.CenterVertically) {
-            Text(glyph, color = Color.White, modifier = Modifier.padding(end = 4.dp))
+            Icon(painterResource(typeIcon), contentDescription = null, tint = Color.White,
+                modifier = Modifier.padding(end = 6.dp).size(20.dp))
             Column {
                 Text(title, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     fontSize = 13.sp)

@@ -34,7 +34,7 @@ class BloodhoundPickerActionsTest {
                 onStartTarget = { started++; active.value = true },
                 onStopTarget = { stopped++; active.value = false })
         }
-        compose.onNodeWithText("Marker ? 1.2 km").assertExists()
+        compose.onNodeWithText("Marker · 1.2 km").assertExists()
         compose.onNodeWithContentDescription("Show Rally Point on map").performClick()
         compose.runOnIdle { assertEquals(1, mapped); assertEquals(0, started); assertEquals(0, opened) }
         compose.onNodeWithContentDescription("Start Bloodhound to Rally Point").performClick()
@@ -50,10 +50,10 @@ class BloodhoundPickerActionsTest {
             BloodhoundPickerList(listOf(item.value), emptyList(), null, {}, {}, Modifier.fillMaxSize(),
                 onStartTarget = { started = it })
         }
-        compose.onNodeWithText("Contact ? 340 m").assertExists()
+        compose.onNodeWithText("Contact · 340 m").assertExists()
         compose.onNodeWithTag("bloodhound-target-marker-hound").performClick()
         compose.runOnIdle { assertEquals("marker", started); item.value = item.value.copy(targetKind = Utils.BloodhoundTargetKind.POINT) }
-        compose.onNodeWithText("Point ? 340 m").assertExists()
+        compose.onNodeWithText("Point · 340 m").assertExists()
     }
 
     @Test fun locationlessAlertCannotMapOrStart() {
