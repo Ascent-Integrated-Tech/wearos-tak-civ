@@ -201,7 +201,20 @@ unnamed vertices) for the existing point details and Bloodhound action. **Remove
 from watch** requires confirmation and removes only that source server/route UID
 from local map state, never the server copy or another server's matching UID.
 A later resend or Data Sync update can restore a locally removed route. Existing
-Bloodhound targets remain until stopped or removed using Bloodhound controls.
+single-point Bloodhound targets remain until stopped or removed using Bloodhound controls.
+
+The Bloodhound picker also lists each received **whole route** once, with its total
+point count and distance to the nearest vertex when a location fix is available.
+Open a route and choose **Start nearest** (requires a location fix) or **Start from
+beginning**. Navigation follows every vertex in its received order, including
+unnamed points, advancing past consecutive targets within **20 m**. The route
+screen shows **Point X of N**, remaining distance along the route, the existing
+Bloodhound compass, and **Stop route**. Reaching the final point shows **Route
+complete** and clears the active target. Starting another Bloodhound stops route
+following; removing the route from the watch also stops it. A received geometry
+change stops following so an old point index cannot target a different path.
+Following is local only (no CoT, chat or acknowledgement to the sender), and both
+routes and follow progress are in memory, not restored after app restart.
 
 Route lines and named point markers remain visible on the map. Selecting a point
 uses the standard marker range/bearing display, Bloodhound/In Position action,
@@ -822,3 +835,20 @@ Unlimited Rights granted to TPC
 Keep changes focused and validate them with the narrowest relevant Gradle task or test. When adding or changing a service, account for its manifest declaration, permission requirements, persisted enablement, and registration with the service orchestration layer.
 
 ### Point of Contact: Alex Gorsuch on chat.tak.gov or Signal
+
+
+#### Bloodhound picker controls and artwork
+
+Each picker row has a type/name/subtitle, a grey crosshair (**Show on map**, no
+navigation activation), and a green ATAK hound (**Bloodhound**). Routes open a
+**Start nearest / Start from beginning / Cancel** chooser; other located targets
+start immediately. Active rows turn amber, show route progress and remaining
+distance, and replace the hound with a red **Stop** button. The row body still
+opens details. Route crosshairs fit the whole geometry within the round watch;
+point/contact/marker crosshairs center the map at the target.
+
+The bundled `atak_nav_bloodhound.png` and `atak_ic_crosshair.png` artwork comes
+from [deptofdefense/AndroidTacticalAssaultKit-CIV](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV)
+(`atak/ATAK/app/src/main/res/drawable-xxxhdpi/nav_bloodhound.png` and
+`drawable-hdpi/ic_crosshair.png`), licensed GPLv3. Distribution/licensing review
+of this artwork is pending with the project owner.

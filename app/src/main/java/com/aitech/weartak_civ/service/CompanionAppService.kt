@@ -178,7 +178,7 @@ class CompanionAppService : Service() {
     private val bloodhoundSync by lazy {
         CompanionBloodhoundSync(
             activeTarget = {
-                bhRepo.activeTrackingItem()?.let {
+                bhRepo.activeTrackingItem()?.takeUnless { it.bhEvent.isRouteFollow }?.let {
                     CompanionBloodhoundSync.Target(
                         it.uid, it.target.name ?: it.uid, it.target.point.lat,
                         it.target.point.lon, it.target.point.hae
