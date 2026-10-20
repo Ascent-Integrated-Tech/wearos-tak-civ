@@ -59,6 +59,10 @@
     <string name="tak_server_connections">اتصالات خادم TAK</string>
     <string name="tak_servers_title">خوادم TAK</string>
     <string name="add_tak_server">إضافة خادم TAK</string>
+    <string name="cert_on_watch">الشهادة على الساعة: %1$s</string>
+    <string name="cert_on_watch_unreadable">تعذر فتح الشهادة على الساعة. تحقق من ملف ‎.pwd.</string>
+    <string name="username_optional">اسم المستخدم (اختياري)</string>
+    <string name="password_optional">كلمة المرور (اختياري)</string>
     <string name="new_server">خادم جديد</string>
     <string name="reporting_interval_empty_enter_again">فترة الإبلاغ فارغة، أدخل مرة أخرى</string>
     <string name="reporting_interval_0_enter_again">فترة الإبلاغ 0، أدخل مرة أخرى</string>

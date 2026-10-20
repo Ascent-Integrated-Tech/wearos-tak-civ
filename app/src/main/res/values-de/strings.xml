@@ -59,6 +59,10 @@
     <string name="tak_server_connections">TAK-Server-Verbindungen</string>
     <string name="tak_servers_title">TAK-Server</string>
     <string name="add_tak_server">TAK-Server hinzufügen</string>
+    <string name="cert_on_watch">Zertifikat auf der Uhr: %1$s</string>
+    <string name="cert_on_watch_unreadable">Zertifikat auf der Uhr kann nicht geöffnet werden. Prüfen Sie die .pwd-Datei.</string>
+    <string name="username_optional">Benutzername (optional)</string>
+    <string name="password_optional">Passwort (optional)</string>
     <string name="new_server">Neuer Server</string>
     <string name="reporting_interval_empty_enter_again">Meldeintervall leer, erneut eingeben</string>
     <string name="reporting_interval_0_enter_again">Meldeintervall 0, erneut eingeben</string>

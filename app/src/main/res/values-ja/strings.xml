@@ -59,6 +59,10 @@
     <string name="tak_server_connections">TAKサーバー接続</string>
     <string name="tak_servers_title">TAKサーバー</string>
     <string name="add_tak_server">TAKサーバーを追加</string>
+    <string name="cert_on_watch">ウォッチの証明書: %1$s</string>
+    <string name="cert_on_watch_unreadable">ウォッチの証明書を開けません。.pwd ファイルを確認してください。</string>
+    <string name="username_optional">ユーザー名（任意）</string>
+    <string name="password_optional">パスワード（任意）</string>
     <string name="new_server">新サーバー</string>
     <string name="reporting_interval_empty_enter_again">レポート間隔 の入力欄が空です。再度入力してください</string>
     <string name="reporting_interval_0_enter_again">報告間隔が0です。再入力してください</string>
