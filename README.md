@@ -206,7 +206,10 @@ Bloodhound targets remain until stopped or removed using Bloodhound controls.
 Route lines and named point markers remain visible on the map. Selecting a point
 uses the standard marker range/bearing display, Bloodhound/In Position action,
 and Back control. **Whole route** returns from point details to route removal
-and the complete point list. Route taps have a 12 dp tolerance; individual vertex
+and the named point list. The list excludes blank names but keeps original point
+indices; its count distinguishes named entries from all geometry points. Routes
+without named points show an empty-state explanation; unnamed points remain
+selectable on the map. Route taps have a 12 dp tolerance; individual vertex
 selection is available above zoom 10, including unnamed vertices. Only nonblank
 waypoint names produce map dots/labels, avoiding thousands of empty track markers
 without dropping any line geometry. Hit testing runs on taps, not on each frame.

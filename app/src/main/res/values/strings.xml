@@ -5,6 +5,8 @@
     <string name="route_peer_tls_failed">Local route transfer rejected: phone certificate or hostname is not trusted. No routes imported.</string>
     <string name="route_unnamed">Route</string>
     <string name="route_point_count">%1$d points</string>
+    <string name="route_named_point_count">%1$d named points / %2$d total points</string>
+    <string name="route_no_named_points">No named points. Tap the route on the map to select unnamed points.</string>
     <string name="route_point_number">Point %1$d</string>
     <string name="route_point_open">Details and Bloodhound</string>
     <string name="route_remove">Remove from watch</string>

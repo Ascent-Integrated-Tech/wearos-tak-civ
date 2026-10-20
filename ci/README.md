@@ -16,11 +16,13 @@ Official `v...` pipelines and all existing numbered/stable releases remain uncha
 
 ## Administrator setup (separate approval required)
 
-1. Confirm distribution to this exact GitHub destination is approved.
-   Read-only inspection on 2026-10-18 found the mirror **private**, with no releases;
-   this job does not change visibility and checks it before every update. Public
-   or archived destinations fail closed. Recheck visibility before activation and
-   obtain separate approval/policy changes before public distribution.
+1. Public signed-APK distribution to the exact fixed destination
+   `Ascent-Integrated-Tech/wearos-tak-civ` was explicitly approved on 2026-10-19.
+   The mirror was private at the original setup and is now public. The publisher
+   permits either visibility for this approved destination only and checks its
+   exact identity and active status before every update. Other, archived, disabled
+   or unknown-status destinations fail closed. This job never changes repository
+   visibility or access; any different destination needs separate approval.
 2. Protect canonical GitLab `develop` and restrict who may push/merge, edit pipeline
    configuration, use protected runners, or override pipeline variables.
 3. In the GitHub mirror, create the fixed tag `wearos-development` on an existing

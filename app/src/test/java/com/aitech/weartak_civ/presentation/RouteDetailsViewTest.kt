@@ -41,15 +41,44 @@ class RouteDetailsViewTest {
         compose.runOnIdle { assertEquals(1, removed) }
     }
 
-    @Test fun routeListIncludesUnnamedPointsAndSelectsOriginalIndex() {
+    @Test fun routeListShowsOnlyNonblankNamesAndSelectsOriginalIndices() {
         val selected = mutableListOf<Int>()
-        compose.setContent { RouteDetailsView(route, { selected += it }, {}, {}) }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("route-point-1"))
-        compose.onNodeWithTag("route-point-1").assertIsDisplayed().performClick()
-        compose.runOnIdle { assertEquals(listOf(1), selected) }
+        val mixed = route.copy(points = route.points + listOf(
+            TakRoutePoint(35.1, -118.1, name = ""),
+            TakRoutePoint(35.2, -118.2, name = " \t\n")
+        ))
+        compose.setContent { RouteDetailsView(mixed, { selected += it }, {}, {}) }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("2 named points / 5 total points"))
+        compose.onNodeWithText("2 named points / 5 total points").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("route-point-0"))
+        compose.onNodeWithTag("route-point-0").assertIsDisplayed().performClick()
         compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("route-point-2"))
         compose.onNodeWithTag("route-point-2").assertIsDisplayed().performClick()
-        compose.runOnIdle { assertEquals(listOf(1, 2), selected) }
+        compose.runOnIdle { assertEquals(listOf(0, 2), selected) }
+        listOf(1, 3, 4).forEach {
+            compose.onNodeWithTag("route-point-$it").assertDoesNotExist()
+        }
+    }
+
+    @Test fun routeWithoutNamedPointsShowsExplanationAndKeepsWholeRouteActions() {
+        val unnamed = route.copy(points = route.points.map { it.copy(name = " ") })
+        var backed = 0
+        compose.setContent { RouteDetailsView(unnamed, { error("No list point should be selectable") },
+            {}, { backed++ }) }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("0 named points / 3 total points"))
+        compose.onNodeWithText("0 named points / 3 total points").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("route-remove"))
+        compose.onNodeWithTag("route-remove").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText(
+            "No named points. Tap the route on the map to select unnamed points."))
+        compose.onNodeWithText("No named points. Tap the route on the map to select unnamed points.")
+            .assertIsDisplayed()
+        unnamed.points.indices.forEach {
+            compose.onNodeWithTag("route-point-$it").assertDoesNotExist()
+        }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Back"))
+        compose.onNodeWithText("Back").performClick()
+        compose.runOnIdle { assertEquals(1, backed) }
     }
 
     @Test
