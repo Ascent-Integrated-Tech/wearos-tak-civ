@@ -120,3 +120,30 @@ pagination, and stripping authorization on storage redirects. These checks do no
 prove runner registry/network access, protected-variable delivery, token authorization,
 or real GitHub upload behavior. Those remain end-to-end acceptance checks after
 separate approval and administrator setup. No Android build is needed for CI-only tests.
+
+## Release-testing checklist for testers
+
+After a release is published **and verified**, the publisher sends a GitHub
+`repository_dispatch` (`weartak-release-published`) with the pipeline ID. The
+token's existing Contents: write permission covers this; no new scopes are needed.
+If the notification fails, the job fails with a clear message and can be retried;
+nothing is duplicated.
+
+`.github/workflows/release-testing.yml` handles it on the GitHub mirror. GitHub only
+runs workflows from the default branch, so `.github/workflows/release-testing.yml`
+and `ci/release-testing/` must also be present on the mirror's `develop` (an approved
+exception to publishing source to GitHub). Keep both copies identical.
+
+The workflow re-reads the release (it never trusts the payload), skips superseded
+pipelines, and opens one issue per pipeline titled
+`Release testing: <release title>`. The issue has the APK download link, the release
+details and `ci/release-testing/checklist.md`, and is assigned to the user in the
+repository variable `RELEASE_TESTER` (currently `paul-weartak`, with Write access so
+they can tick boxes). Existing issues, including closed ones, are never recreated.
+If the tester has not accepted the repository invitation yet, the issue @mentions
+them unassigned; running the workflow again (**Actions > Release testing checklist >
+Run workflow**) assigns it.
+
+Edit `ci/release-testing/checklist.md` when features change. Tests:
+`python -m unittest discover -s ci/tests` and
+`node --test ci/release-testing/create_release_test_issue.test.cjs`.

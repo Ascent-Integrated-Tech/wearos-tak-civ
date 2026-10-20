@@ -19,6 +19,8 @@ MARKER = "weartak-rolling-v1"
 ASSET_PATTERN = re.compile(r"WearTAK-[0-9A-Za-z._-]*-p([1-9][0-9]*)\.apk")
 LEGACY_ASSET_PATTERN = re.compile(r"weartak-development-p([1-9][0-9]*)-([0-9a-f]{64})\.apk")
 LABEL_PREFIX = "weartak-rolling-v1:"
+# Handled by .github/workflows/release-testing.yml on the GitHub default branch.
+DISPATCH_EVENT = "weartak-release-published"
 OUTPUT = Path("app/build/outputs/apk/release")
 
 
@@ -299,6 +301,18 @@ def publish(api, state, apk, digest, version, code):
         if owner is not None and owner < state["pipeline_iid"]:
             api.request("DELETE", f"releases/assets/{old['id']}")
     print(f"Published {title}: version {version} ({code}), SHA256 {digest}")
+    # Only a verified build reaches testers. The workflow re-reads the release itself and
+    # deduplicates per pipeline, so retrying a failed notification is safe.
+    try:
+        api.request("POST", "dispatches", {
+            "event_type": DISPATCH_EVENT,
+            "client_payload": {"pipeline_id": state["pipeline_id"], "release_id": release_id},
+        })
+    except PublishError:
+        raise PublishError(
+            "The release is published, but the release-testing notification failed. "
+            "Retry this job; the release and tester checklist are not duplicated."
+        ) from None
 
 
 def main():
