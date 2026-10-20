@@ -487,6 +487,8 @@ object Utils {
     }
 
     /** Minimal data models for bloodhound. */
+    enum class BloodhoundTargetKind { MARKER, CONTACT, POINT, ALERT }
+
     data class BloodhoundItem(
         val target: String,
         val uid: String,
@@ -499,7 +501,8 @@ object Utils {
         val alertCategory: String? = null,
         val isRemoteAlert: Boolean = false,
         val isStale: Boolean = false,
-        val hasLocation: Boolean = true
+        val hasLocation: Boolean = true,
+        val targetKind: BloodhoundTargetKind = BloodhoundTargetKind.MARKER
     )
 
     fun normalize0to360(deg: Double): Double =

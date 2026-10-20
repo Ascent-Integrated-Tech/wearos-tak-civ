@@ -235,6 +235,10 @@ import kotlin.math.pow
 open class MapActivity : ComponentActivity() {
 
     companion object Constants {
+        const val EXTRA_FOCUS_LAT = "bloodhound_focus_lat"
+        const val EXTRA_FOCUS_LON = "bloodhound_focus_lon"
+        const val EXTRA_FOCUS_ROUTE_SERVER = "bloodhound_focus_route_server"
+        const val EXTRA_FOCUS_ROUTE_UID = "bloodhound_focus_route_uid"
         val TAG = "WearTAK-" + MapActivity::class.java.simpleName
         lateinit var mapActivity: MapActivity
         val orange = Color(0xFFFF7700)
@@ -246,8 +250,27 @@ open class MapActivity : ComponentActivity() {
         val brown = Color(0xFF964B00)
     }
 
+    private val requestedFocus = mutableStateOf<BloodhoundMapFocus?>(null)
+
+    private fun readFocus(intent: Intent): BloodhoundMapFocus? {
+        val server = intent.getStringExtra(EXTRA_FOCUS_ROUTE_SERVER)
+        val route = intent.getStringExtra(EXTRA_FOCUS_ROUTE_UID)
+        if (server != null && route != null) return BloodhoundMapFocus(serverId = server, routeUid = route)
+        if (!intent.hasExtra(EXTRA_FOCUS_LAT) || !intent.hasExtra(EXTRA_FOCUS_LON)) return null
+        val point = com.aitech.weartak_civ.data.model.TakRoutePoint(
+            intent.getDoubleExtra(EXTRA_FOCUS_LAT, Double.NaN), intent.getDoubleExtra(EXTRA_FOCUS_LON, Double.NaN))
+        return point.takeIf(com.aitech.weartak_civ.data.RouteFollow::validLocation)?.let { BloodhoundMapFocus(point = it) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedFocus.value = readFocus(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedFocus.value = readFocus(intent)
         mapActivity = this
         Log.i(TAG, "MapActivity onCreate called")
 
@@ -258,7 +281,7 @@ open class MapActivity : ComponentActivity() {
                 val mapVm: MapViewModel = viewModel ()
 
                 val selectingChatContact = intent.getBooleanExtra(ChatContactContract.EXTRA_SELECT_CHAT_CONTACT, false)
-                MapCivApp({ if (selectingChatContact) finish() else finishAndRemoveTask() }, context, mapVm, selectingChatContact) { contact ->
+                MapCivApp({ if (selectingChatContact) finish() else finishAndRemoveTask() }, context, mapVm, selectingChatContact, requestedFocus.value) { contact ->
                     setResult(Activity.RESULT_OK, ChatContactContract.result(contact))
                     finish()
                 }
@@ -274,6 +297,7 @@ fun MapCivApp(
     context: Context,
     mapVm: MapViewModel,
     selectingChatContact: Boolean = false,
+    mapFocus: BloodhoundMapFocus? = null,
     onChatContactSelected: (DirectChatContact) -> Unit = {}
 ) {
     val app = context.applicationContext as WearTakApplication
@@ -287,9 +311,10 @@ fun MapCivApp(
         users = receivedUserListSetting,
         context = context,
         selectingChatContact = selectingChatContact,
-        onChatContactSelected = onChatContactSelected
+        onChatContactSelected = onChatContactSelected,
+        mapFocus = mapFocus
     ) { onUserClick ->
-        MapApp(exitActivity, mapVm, selectingChatContact, onUserClick)
+        MapApp(exitActivity, mapVm, selectingChatContact, mapFocus, onUserClick)
     }
 }
 
@@ -302,9 +327,13 @@ internal fun MapUserNavigation(
     onBloodhoundUserSelected: (DataRepository.ReceivedUser) -> Boolean = { user ->
         startMapUserBloodhound(context, user)
     },
+    mapFocus: BloodhoundMapFocus? = null,
     mapContent: @Composable ((String) -> Unit) -> Unit
 ) {
     val navController = rememberSwipeDismissableNavController()
+    LaunchedEffect(mapFocus) {
+        if (mapFocus != null) navController.popBackStack("map_screen", inclusive = false)
+    }
     val currentUsers by rememberUpdatedState(users)
     val currentMapContent by rememberUpdatedState(mapContent)
     val currentOnChatContactSelected by rememberUpdatedState(onChatContactSelected)
@@ -1725,7 +1754,8 @@ fun LayerChannelsPopup(
 // Connects repository data, map layers, popups, and controls
 @Composable
 fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
-           selectingChatContact: Boolean = false, onUserClick: (String) -> Unit) {
+           selectingChatContact: Boolean = false, mapFocus: BloodhoundMapFocus? = null,
+           onUserClick: (String) -> Unit) {
     // Access the application repository used by the map
     val context = LocalContext.current
 
@@ -1806,6 +1836,20 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
     )
 
 
+
+    val screen = androidx.compose.ui.platform.LocalConfiguration.current
+    val focusPoints = mapFocus?.point?.let { listOf(it) } ?: takRoutes.firstOrNull {
+        it.serverId == mapFocus?.serverId && it.uid == mapFocus?.routeUid
+    }?.points
+    LaunchedEffect(mapFocus, focusPoints, screen.screenWidthDp, screen.screenHeightDp) {
+        if (mapFocus != null && !focusPoints.isNullOrEmpty()) {
+            val frame = runCatching {
+                routeCameraFrame(focusPoints, screen.screenWidthDp.toDouble(), screen.screenHeightDp.toDouble())
+            }.getOrNull() ?: return@LaunchedEffect
+            cameraState.animateTo(CameraPosition(
+                target = Position(frame.longitude, frame.latitude), zoom = frame.zoom, bearing = 0.0, tilt = 0.0))
+        }
+    }
 
     // LAYER MENU CONFIGURATION
     // Connects each menu option to its MapLibre style layer IDs
