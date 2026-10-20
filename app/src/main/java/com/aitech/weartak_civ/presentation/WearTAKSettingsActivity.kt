@@ -63,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -161,6 +162,7 @@ import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.setAirplaneMode
+import com.aitech.weartak_civ.data.takserver.SideloadedClientCert
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxGroupStatus
 import com.aitech.weartak_civ.events.MessageEvent
@@ -1628,6 +1630,8 @@ fun WearTAKSettingsNav(
             var isP12Cert = false
             val serverSettingsChanged = remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
+            val certStatus = rememberSideloadedCertStatus(address)
+            val credentialsOptional = certStatus is SideloadedClientCert.Status.Found
 
             WearTAKPageWithConfirmCancel(
                 title = stringResource(R.string.new_server),
@@ -1653,17 +1657,24 @@ fun WearTAKSettingsNav(
                             keyboardType = KeyboardType.Number,
                         ).text
                     }
+                    if (certStatus != SideloadedClientCert.Status.None) {
+                        item { SideloadedCertNotice(certStatus) }
+                    }
                     item {
                         username = WearTAKOutlinedTextField(
                             string = username,
-                            label = stringResource(R.string.username),
+                            label = stringResource(
+                                if (credentialsOptional) R.string.username_optional else R.string.username
+                            ),
                             keyboardType = KeyboardType.Text
                         ).text
                     }
                     item {
                         password = WearTAKOutlinedTextField(
                             string = password,
-                            label = stringResource(R.string.password),
+                            label = stringResource(
+                                if (credentialsOptional) R.string.password_optional else R.string.password
+                            ),
                             keyboardType = KeyboardType.Text
                         ).text
                     }
@@ -1674,9 +1685,9 @@ fun WearTAKSettingsNav(
                 navController = navController,
                 onClickCancel = {},
                 onClickConfirm = {
-                    if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() &&
-                        password.isNotBlank()) {
-                        val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
+                    if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() &&
+                        (credentialsOptional || (username.isNotBlank() && password.isNotBlank()))) {
+                        val takServerItem = DataRepository.TakServerItem(true, name, address.trim(), port.toInt(),
                             isP12Cert, username, password, "", "")
                         settingsVm.saveAndRegisterTakServer(takServerItem)
                         serverSettingsChanged.value = true
@@ -1708,6 +1719,8 @@ fun WearTAKSettingsNav(
             var password by remember { mutableStateOf(takServerList.getOrNull(index)?.password.orEmpty()) }
             var isP12Cert by remember { mutableStateOf(takServerList.get(index)?.isP12Cert ?: false) }
             val serverConnSettingsChanged = remember { mutableStateOf(false) }
+            val certStatus = rememberSideloadedCertStatus(address)
+            val credentialsOptional = certStatus is SideloadedClientCert.Status.Found
             Log.d(TAG, "address=$address, serverSettingsChanged=${serverConnSettingsChanged.value}")
 
             WearTAKPageWithConfirmCancel(
@@ -1750,17 +1763,24 @@ fun WearTAKSettingsNav(
                                 keyboardType = KeyboardType.Number
                             ).text
                         }
+                        if (certStatus != SideloadedClientCert.Status.None) {
+                            item { SideloadedCertNotice(certStatus) }
+                        }
                         item {
                             username = WearTAKOutlinedTextField(
                                 string = username,
-                                label = stringResource(R.string.username),
+                                label = stringResource(
+                                    if (credentialsOptional) R.string.username_optional else R.string.username
+                                ),
                                 keyboardType = KeyboardType.Text
                             ).text
                         }
                         item {
                             password = WearTAKOutlinedTextField(
                                 string = password,
-                                label = stringResource(R.string.password),
+                                label = stringResource(
+                                    if (credentialsOptional) R.string.password_optional else R.string.password
+                                ),
                                 keyboardType = KeyboardType.Text
                             ).text
                         }
@@ -1782,8 +1802,8 @@ fun WearTAKSettingsNav(
                    },
                 onClickConfirm = {
                     if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() &&
-                        (if (isP12Cert) { true } else { username.isNotBlank() } ) &&
-                        (if (isP12Cert) { true } else { password.isNotBlank() } ) ) {
+                        (if (isP12Cert || credentialsOptional) { true } else { username.isNotBlank() } ) &&
+                        (if (isP12Cert || credentialsOptional) { true } else { password.isNotBlank() } ) ) {
                         val takServerDetails = takServerList.get(index)
                         Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
                         Log.d(
@@ -4279,6 +4299,38 @@ fun WearTakScreenDimensions(
             }
         }
     }
+}
+
+// Watches certs/<address>.p12 (as side-loaded over adb) while the user types the address.
+@Composable
+fun rememberSideloadedCertStatus(address: String): SideloadedClientCert.Status {
+    val context = LocalContext.current
+    val status by produceState<SideloadedClientCert.Status>(SideloadedClientCert.Status.None, address) {
+        value = withContext(Dispatchers.IO) {
+            SideloadedClientCert.detect(
+                context.getExternalFilesDir(null)?.let { java.io.File(it, "certs") },
+                address
+            )
+        }
+    }
+    return status
+}
+
+@Composable
+fun SideloadedCertNotice(status: SideloadedClientCert.Status) {
+    val text = when (status) {
+        is SideloadedClientCert.Status.Found ->
+            stringResource(R.string.cert_on_watch, status.commonName)
+        SideloadedClientCert.Status.Unreadable -> stringResource(R.string.cert_on_watch_unreadable)
+        SideloadedClientCert.Status.None -> return
+    }
+    Text(
+        text = text,
+        textAlign = TextAlign.Center,
+        fontSize = 12.sp,
+        color = if (status is SideloadedClientCert.Status.Unreadable) colors.error else colors.onSurface,
+        modifier = Modifier.padding(5.dp)
+    )
 }
 
 //Used for any page that needs a title and back button, used for most screens

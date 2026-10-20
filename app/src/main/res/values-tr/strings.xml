@@ -59,6 +59,10 @@
     <string name="tak_server_connections">TAK Sunucusu Bağlantıları</string>
     <string name="tak_servers_title">TAK Sunucuları</string>
     <string name="add_tak_server">TAK sunucusu ekle</string>
+    <string name="cert_on_watch">Saatteki sertifika: %1$s</string>
+    <string name="cert_on_watch_unreadable">Saatteki sertifika açılamıyor. .pwd dosyasını kontrol edin.</string>
+    <string name="username_optional">Kullanıcı adı (isteğe bağlı)</string>
+    <string name="password_optional">Parola (isteğe bağlı)</string>
     <string name="new_server">Yeni Sunucu</string>
     <string name="reporting_interval_empty_enter_again">Raporlama Aralığı Boş, Tekrar Girin</string>
     <string name="reporting_interval_0_enter_again">Raporlama Aralığı 0, Tekrar Girin</string>
