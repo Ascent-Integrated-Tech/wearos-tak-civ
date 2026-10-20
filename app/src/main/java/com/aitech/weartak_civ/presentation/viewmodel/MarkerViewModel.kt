@@ -8,8 +8,10 @@
  */
 package com.aitech.weartak_civ.presentation.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.bhRepo
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
@@ -23,7 +25,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 
-class MarkerViewModel : ViewModel() {
+class MarkerViewModel(application: Application) : AndroidViewModel(application) {
     data class MarkerVectorUiState(
         val distance: Double?,
         val orientation: Float,
@@ -123,8 +125,11 @@ class MarkerViewModel : ViewModel() {
         )
 
     fun deleteReceivedMarker(uid: String) {
+        val removedAt = System.currentTimeMillis()
         viewModelScope.launch {
-            dataRepository.deleteReceivedPointLocally(uid, bhRepo)
+            val removed = dataRepository.deleteReceivedPointLocally(uid, bhRepo)
+            val coordinator = getApplication<WearTakApplication>().pluginManager.settingsCoordinator
+            removed.forEach { coordinator.notifyLocalMarkerRemoved(it, removedAt) }
         }
     }
 

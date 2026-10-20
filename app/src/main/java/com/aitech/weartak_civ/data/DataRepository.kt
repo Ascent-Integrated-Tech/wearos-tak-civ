@@ -2352,7 +2352,10 @@ class DataRepository(private val context: Context) {
 
     @Volatile var companionPointGeneration = -1L
 
-    suspend fun deleteReceivedPointLocally(uid: String, bloodhounds: BloodhoundRepository) =
+    suspend fun deleteReceivedPointLocally(
+        uid: String,
+        bloodhounds: BloodhoundRepository,
+    ): List<ReceivedMarker> =
         markerIngressMutex.withLock {
             if (receivedMarkerStore.visibleKey(uid)?.sourceId == "companion-phone") {
                 companionPointRevisions.current(uid, companionPointGeneration)?.let {
