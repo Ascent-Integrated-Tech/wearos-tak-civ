@@ -86,10 +86,10 @@ import com.aitech.weartak_civ.service.CotDispatchService.Companion.tabletCommand
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.data.takserver.TakEnrollment
 import com.aitech.weartak_civ.data.takserver.TakEnrollmentStage
+import com.aitech.weartak_civ.data.takserver.TakSignedCertificates
 import com.aitech.weartak_civ.data.takserver.TakConnectionFailure
 import com.aitech.weartak_civ.data.takserver.TakFailureCategory
 import com.aitech.weartak_civ.data.takserver.TakEnrollmentException
-import com.aitech.weartak_civ.data.takserver.TakSignedCertificates
 import kotlinx.coroutines.CancellationException
 import com.aitech.weartak_civ.data.model.TakMissionChange
 import kotlinx.coroutines.CoroutineScope
@@ -175,12 +175,6 @@ class TAKConnectService: Service() {
         var connectJob: Job? = null
         var readerJob: Job? = null
         var terminated: Boolean = false
-    }
-
-    class SignClientResponse {
-        var signedCert: String? = null
-        var ca0: String? = null
-        var ca1: String? = null // getters/setters not strictly needed for basic usage
     }
 
     data class NameValueEntry(
@@ -2672,21 +2666,20 @@ class TAKConnectService: Service() {
             return null
         }
 
-        fun postCsrAndParse(takServerDetail: TakServerDetail, base64CSR: String): SignClientResponse? {
+        fun postCsrAndParse(takServerDetail: TakServerDetail, base64CSR: String): TakSignedCertificates? {
             val takServer = takServerDetail.address
             val username = takServerDetail.username
             val password = takServerDetail.password
 
-            var result: SignClientResponse? = null
+            var result: TakSignedCertificates? = null
 
             val csrResponse = postCsrAndGetResponse(takServer, username, password, base64CSR)
             if (null != csrResponse) {
                 try {
-                    val mapper = ObjectMapper()
-                    result = mapper.readValue(csrResponse, SignClientResponse::class.java)
-                    println("signedCert: " + result.signedCert)
-                    println("ca0: " + result.ca0)
-                    println("ca1: " + result.ca1)
+                    // Servers may return any number of caN entries (e.g. TAK Ops returns ca0..ca2).
+                    result = TakEnrollment.parseSignResponse(csrResponse)
+                    Log.i(TAG, "postCsrAndParse: signed certificate with ${result.authorities.size} CA(s) " +
+                        result.authorities.joinToString { it.first })
                 } catch (e: Exception) {
                     Log.e(TAG, "postCsrAndParse: could not parse response", e)
                 }
@@ -2756,36 +2749,19 @@ class TAKConnectService: Service() {
             }
         }
 
-        fun setKeystore(takServerDetail: TakServerDetail, signClientResponse: SignClientResponse): Boolean {
+        fun setKeystore(takServerDetail: TakServerDetail, signed: TakSignedCertificates): Boolean {
             val cacheFileName = certificateCacheFileName(takServerDetail)
             var retVal = true
 
             try {
-                // Convert each base64 string to X509Certificate
-                val signedCert = parseBase64ToX509(signClientResponse.signedCert ?: "")
-                //val expiryDate: Date = signedCert.getNotAfter()
-                val ca0Cert = parseBase64ToX509(signClientResponse.ca0 ?: "")
-                val ca1Cert = parseBase64ToX509(signClientResponse.ca1 ?: "")
-                Log.i(TAG, "signedCert expiry date: ${signedCert.getNotAfter()}")
-                Log.v(TAG, "ca0Cert expiry date: ${ca0Cert.getNotAfter()}")
-                Log.v(TAG, "ca1Cert expiry date: ${ca1Cert.getNotAfter()}")
-
-                // Build the chain: leaf first, then CA(s).
-                // NOTE: ca0cert is the intermediate CA cert and ca1Cert is the root CA cert. This is how the TAK server returns the CA certs
-                val chain = arrayOf<Certificate>(signedCert, ca0Cert, ca1Cert)
-
-                // Create an empty PKCS#12 keystore
-                // Initialize with null parameters => empty store
-                takServerDetail.keyStore.load(null, null)
-
-                //p12.setCertificateEntry("signedCert", signedCert);
-                // Store the CA certs as "trusted" entries
-                takServerDetail.keyStore.setCertificateEntry("ca0", ca0Cert)
-                takServerDetail.keyStore.setCertificateEntry("ca1", ca1Cert)
+                Log.i(TAG, "signedCert expiry date: ${signed.signedCert.notAfter}")
+                signed.authorities.forEach { (name, cert) -> Log.v(TAG, "$name expiry date: ${cert.notAfter}") }
 
                 // Keystore password to protect the .p12
                 val keystorePassword = KEYSTORE_PASS.toCharArray()
-                takServerDetail.keyStore.setKeyEntry(KEY_ALIAS, takServerDetail.privateKey, keystorePassword, chain)
+                // Leaf first, then every CA in server order (ca0 intermediate ... root), each also stored as trusted.
+                signed.install(takServerDetail.keyStore, requireNotNull(takServerDetail.privateKey) { "Missing CSR private key" },
+                    KEY_ALIAS, keystorePassword)
                 runBlocking {
                     try {
                         MainActivity.mainActivity.openFileOutput(cacheFileName, Context.MODE_PRIVATE).use { fos ->
@@ -2803,19 +2779,6 @@ class TAKConnectService: Service() {
             }
             return retVal
         }
-
-        @Throws(java.lang.Exception::class)
-        private fun parseBase64ToX509(base64Cert: String): X509Certificate {
-            // Remove newlines if present
-            val normalized = base64Cert.replace("\\s+".toRegex(), "")
-            val derBytes = Base64.getDecoder().decode(normalized)
-
-            val cf = CertificateFactory.getInstance("X.509")
-            ByteArrayInputStream(derBytes).use { `in` ->
-                return cf.generateCertificate(`in`) as X509Certificate
-            }
-        }
-
 
         fun base64ToInputStream(encodedString: String?): InputStream? {
             var inputStream: InputStream? = null
@@ -3039,7 +3002,7 @@ class TAKConnectService: Service() {
                                 deleteFile(certificateCacheFileName(takServerDetail))
                                 Log.i(TAG, "Cannot load keyStore for ${takServerDetail.address}. Going to generate CSR")
                                 val nameValueList = fetchAndParseCertificateConfig(takServerDetail)
-                                var signClientResponse: SignClientResponse? = null
+                                var signClientResponse: TakSignedCertificates? = null
                                 var base64CSR: String? = null
                                 if (null != nameValueList) {
                                    base64CSR = generateBase64CSR(nameValueList, takServerDetail)
