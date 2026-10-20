@@ -60,6 +60,7 @@ class FakeGitHub:
         self.content = {}
         self.bad_download = False
         self.fail = None
+        self.dispatches = []
         if state:
             self.release = {
                 "id": 1, "tag_name": p.TAG, "draft": False, "prerelease": False,
@@ -93,6 +94,9 @@ class FakeGitHub:
             return copy.deepcopy(self.release)
         if method == "GET" and path == "releases/1":
             return copy.deepcopy(self.release)
+        if method == "POST" and path == "dispatches":
+            self.dispatches.append(data)
+            return None
         if method == "DELETE" and path.startswith("releases/assets/"):
             self.items = [a for a in self.items if a["id"] != int(path.rsplit("/", 1)[1])]
             return None
@@ -157,6 +161,38 @@ class PublisherTests(unittest.TestCase):
             self.assertIn(value, body)
         methods = [c[0] for c in api.calls]
         self.assertLess(methods.index("DOWNLOAD"), methods.index("PATCH"))
+
+    def test_verified_release_notifies_testers_after_cleanup(self):
+        api = FakeGitHub(self.state | {"pipeline_iid": 11, "pipeline_id": "455"})
+        api.items = [asset(9, 11)]
+        self.publish(api)
+        self.assertEqual(api.dispatches, [{
+            "event_type": p.DISPATCH_EVENT,
+            "client_payload": {"pipeline_id": "456", "release_id": 1},
+        }])
+        writes = [c for c in api.calls if c[0] != "GET"]
+        self.assertEqual(writes[-1][:2], ("POST", "dispatches"))
+        self.assertIn(("DELETE", "releases/assets/9"), [c[:2] for c in writes])
+
+    def test_unverified_or_skipped_release_does_not_notify_testers(self):
+        api = FakeGitHub()
+        api.bad_download = True
+        with self.assertRaises(p.PublishError):
+            self.publish(api)
+        self.assertEqual(api.dispatches, [])
+        newer = FakeGitHub(self.state | {"pipeline_iid": 13, "pipeline_id": "457"})
+        self.publish(newer)
+        self.assertEqual(newer.dispatches, [])
+
+    def test_notification_failure_is_reported_and_retry_notifies_once(self):
+        api = FakeGitHub()
+        api.fail = lambda method, path: path == "dispatches"
+        with self.assertRaisesRegex(p.PublishError, "release-testing notification failed"):
+            self.publish(api)
+        self.assertFalse(api.release["draft"])
+        api.fail = None
+        self.publish(api)
+        self.assertEqual(len(api.dispatches), 1)
 
     def test_only_older_owned_assets_deleted_after_verification(self):
         api = FakeGitHub(dict(self.state, pipeline_iid=11))
@@ -286,7 +322,7 @@ class PublisherTests(unittest.TestCase):
         api.calls.clear()
         self.publish(api)
         self.assertEqual(len(api.items), 1)
-        self.assertFalse(any(c[0] == "POST" for c in api.calls))
+        self.assertFalse(any(c[0] == "POST" and c[1] != "dispatches" for c in api.calls))
 
     def test_cleanup_failure_is_reported_and_retry_can_finish(self):
         api = FakeGitHub(dict(self.state, pipeline_iid=11))
