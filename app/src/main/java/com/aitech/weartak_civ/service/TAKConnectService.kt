@@ -990,7 +990,7 @@ class TAKConnectService: Service() {
                 } catch (error: IOException) {
                     val tls = error is javax.net.ssl.SSLException
                     Log.w(TAG, "Local route package failed peer=$peer reason=" +
-                        if (tls) "TLS trust/hostname verification failed; no bypass" else "network/source unavailable")
+                        if (tls) "TLS handshake with phone failed" else "network/source unavailable")
                     withContext(Dispatchers.Main) {
                         Toast.makeText(context,
                             if (tls) R.string.route_peer_tls_failed else R.string.route_package_failed,

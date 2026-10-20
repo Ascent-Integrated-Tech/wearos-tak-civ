@@ -134,18 +134,30 @@ class TakDataPackageTest {
         assertEquals("/Marti/sync/content", server.downloadUrl(parsed).encodedPath)
     }
 
-    @Test fun peerClientRetainsPlatformTlsHostnameTrustAndUsesOnlyBoundWifiWithoutRedirects() {
+    @Test fun peerClientAcceptsSelfSignedPhoneCertOnlyForSenderIpAndUsesOnlyBoundWifiWithoutRedirects() {
         val network = io.mockk.mockk<android.net.Network>()
         val sockets = javax.net.SocketFactory.getDefault()
         io.mockk.every { network.socketFactory } returns sockets
         val parsed = TakDataPackageRequest.parse(request(url =
             "https://10.0.0.84:8443/getfile?file=9&amp;sender=ATAK"), "10.0.0.84")
         val peer = TakDataPackageClient.peer(parsed, "10.0.0.84", network).client
-        val platform = OkHttpClient()
         assertSame(sockets, peer.socketFactory)
-        assertSame(platform.hostnameVerifier, peer.hostnameVerifier)
-        assertEquals(platform.x509TrustManager?.javaClass, peer.x509TrustManager?.javaClass)
-        assertArrayEquals(platform.x509TrustManager?.acceptedIssuers, peer.x509TrustManager?.acceptedIssuers)
+        assertSame(PeerPackageTrustManager, peer.x509TrustManager)
+        val session = io.mockk.mockk<javax.net.ssl.SSLSession>()
+        assertTrue(peer.hostnameVerifier.verify("10.0.0.84", session))
+        assertFalse(peer.hostnameVerifier.verify("10.0.0.85", session))
+        assertFalse(peer.hostnameVerifier.verify("configured.example", session))
+        val cert = io.mockk.mockk<java.security.cert.X509Certificate>()
+        PeerPackageTrustManager.checkServerTrusted(arrayOf(cert), "ECDHE_RSA")
+        assertThrows(java.security.cert.CertificateException::class.java) {
+            PeerPackageTrustManager.checkServerTrusted(emptyArray(), "ECDHE_RSA")
+        }
+        assertThrows(java.security.cert.CertificateException::class.java) {
+            PeerPackageTrustManager.checkClientTrusted(arrayOf(cert), "RSA")
+        }
+        val server = TakDataPackageClient("configured.example", javax.net.ssl.SSLContext.getDefault(),
+            OkHttpClient().x509TrustManager!!, OkHttpClient().hostnameVerifier).client
+        assertNotSame(PeerPackageTrustManager, server.x509TrustManager)
         assertEquals(java.net.Proxy.NO_PROXY, peer.proxy)
         assertFalse(peer.followRedirects)
         assertFalse(peer.followSslRedirects)
