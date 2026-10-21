@@ -53,7 +53,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">Chế độ máy bay, một số máy chủ đã kết nối, vị trí bật</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">Chế độ máy bay, một số máy chủ đã kết nối, vị trí tắt</string>
     <string name="some_servers_connected">Một số máy chủ đã kết nối</string>
-    <string name="ditto_identity">Danh tính Ditto</string>
+    <string name="ditto_identity">Danh tính Ditto Edge Sync</string>
     <string name="community_pdl">PDL cộng đồng</string>
     <string name="custom_pdl">PDL tùy chỉnh</string>
     <string name="use_default_community_identity">Dùng danh tính cộng đồng mặc định</string>

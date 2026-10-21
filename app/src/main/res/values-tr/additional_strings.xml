@@ -53,7 +53,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">Uçak modu, bazı sunucular bağlı, konum açık</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">Uçak modu, bazı sunucular bağlı, konum kapalı</string>
     <string name="some_servers_connected">Bazı sunucular bağlı</string>
-    <string name="ditto_identity">Ditto kimliği</string>
+    <string name="ditto_identity">Ditto Edge Sync kimliği</string>
     <string name="community_pdl">Topluluk PDL\'si</string>
     <string name="custom_pdl">Özel PDL</string>
     <string name="use_default_community_identity">Varsayılan topluluk kimliğini kullan</string>

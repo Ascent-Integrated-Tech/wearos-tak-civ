@@ -53,7 +53,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">비행기 모드, 일부 서버 연결됨, 위치 사용 설정됨</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">비행기 모드, 일부 서버 연결됨, 위치 사용 중지됨</string>
     <string name="some_servers_connected">일부 서버 연결됨</string>
-    <string name="ditto_identity">Ditto ID</string>
+    <string name="ditto_identity">Ditto Edge Sync ID</string>
     <string name="community_pdl">커뮤니티 PDL</string>
     <string name="custom_pdl">맞춤 PDL</string>
     <string name="use_default_community_identity">기본 커뮤니티 ID 사용</string>

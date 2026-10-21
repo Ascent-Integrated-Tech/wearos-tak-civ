@@ -13,7 +13,7 @@
     <string name="location_service">خدمات الموقع</string>
     <string name="service_on_off">تشغيل/إيقاف الخدمة</string>
     <string name="biometrics">القياسات الحيوية</string>
-    <string name="ditto">منصة Ditto</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">الإصدار%1$s</string>
     <string name="tak_servers">خوادم TAK</string>
     <string name="edit_server">تعديل الخادم</string>

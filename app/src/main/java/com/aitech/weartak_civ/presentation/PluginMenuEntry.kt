@@ -1,18 +1,20 @@
 package com.aitech.weartak_civ.presentation
 
+import androidx.annotation.DrawableRes
+import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.integration.plugin.PluginUI
 
-internal enum class BuiltInPlugin {
+internal enum class BuiltInPlugin(@DrawableRes val brandIconRes: Int? = null) {
     COMMANDS,
     CRM,
-    DART,
+    DART(R.drawable.ic_integration_certus),
     DATA_SYNC,
-    DITTO,
-    EVERYWHERE_COMMS,
-    FALCON,
-    GOTENNA,
+    DITTO(R.drawable.ic_integration_ditto),
+    EVERYWHERE_COMMS(R.drawable.ic_integration_everywhere),
+    FALCON(R.drawable.ic_integration_certus),
+    GOTENNA(R.drawable.ic_integration_gotenna),
     SENSOR_MANAGER,
-    SOMEWEAR_LABS,
+    SOMEWEAR_LABS(R.drawable.ic_integration_somewear),
 }
 
 internal sealed interface PluginMenuEntry {

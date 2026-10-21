@@ -13,7 +13,7 @@
     <string name="location_service">Ortungsdienst</string>
     <string name="service_on_off">Service EIN/AUS</string>
     <string name="biometrics">Biometrie</string>
-    <string name="ditto">Dito</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">Version %1$s</string>
     <string name="tak_servers">TAK-Server</string>
     <string name="edit_server">Server bearbeiten</string>

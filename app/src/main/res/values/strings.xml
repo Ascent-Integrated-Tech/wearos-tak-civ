@@ -36,11 +36,15 @@
     <string name="location_service">Location Service</string>
     <string name="service_on_off">Service ON/OFF</string>
     <string name="biometrics">Biometrics</string>
-    <string name="ditto">Ditto</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="companion_app" translatable="false">Companion Plugin</string>
     <string name="chat_commands" translatable="false">Commands</string>
     <string name="chat_commands_description" translatable="false">Allow chat commands</string>
     <string name="chat_command_callsigns" translatable="false">Allowed Callsigns</string>
+    <string name="chat_command_examples" translatable="false">Command Examples</string>
+    <string name="chat_command_example_team" translatable="false">#weartakcommandsetteam team=\"Dark Green\"</string>
+    <string name="chat_command_example_role" translatable="false">#weartakcommandsetrole role=\"Team Member\"</string>
+    <string name="chat_command_example_callsign" translatable="false">#weartakcommandsetcallsign callsign=ALPHA-1</string>
     <string name="chat_command_enroll_title" translatable="false">Add server</string>
     <string name="chat_command_enroll_text" translatable="false">%1$s: enter your login</string>
     <string name="beta_features">Beta Features</string>
@@ -787,14 +791,14 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">Airplane Mode, Some Servers Connected, Location Enabled</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">Airplane Mode, Some Servers Connected, Location Disabled</string>
     <string name="some_servers_connected">Some Servers Connected</string>
-    <string name="ditto_identity">Ditto Identity</string>
+    <string name="ditto_identity">Ditto Edge Sync Identity</string>
     <string name="community_pdl">Community PDL</string>
     <string name="custom_pdl">Custom PDL</string>
     <string name="use_default_community_identity">Use default community identity</string>
     <string name="enter_your_own_identity">Enter your own identity</string>
     <string name="no_custom_pdl_saved">No custom PDL saved</string>
     <string name="ditto_community_subtitle">Community</string>
-    <string name="everywhere_comms" translatable="false">Everywhere Comms</string>
+    <string name="everywhere_comms" translatable="false">Everywhere</string>
     <string name="gotenna" translatable="false">GoTenna</string>
     <string name="sensor_manager">Sensor Manager</string>
     <string name="scan_sensor">Scan</string>

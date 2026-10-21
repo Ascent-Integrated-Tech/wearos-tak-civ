@@ -2102,7 +2102,29 @@ fun WearTAKSettingsNav(
                             navController = navController
                         )
                     }
-
+                    item {
+                        Text(
+                            text = stringResource(R.string.chat_command_examples),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    itemsIndexed(
+                        listOf(
+                            R.string.chat_command_example_team,
+                            R.string.chat_command_example_role,
+                            R.string.chat_command_example_callsign,
+                        )
+                    ) { _, example ->
+                        Text(
+                            text = stringResource(example),
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
+                            softWrap = true,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
                 },
                 navController,
             )
@@ -2853,16 +2875,24 @@ fun WearTAKSettingsNav(
                         when (entry) {
                             is PluginMenuEntry.BuiltIn -> when (entry.kind) {
                                 BuiltInPlugin.DATA_SYNC -> {
-                                    WearTAKTitleChip(
+                                    WearTAKTitleChipWithState(
                                         route = "data_sync",
                                         title = entry.title,
+                                        state = stringResource(R.string.unfunded_request),
                                         navController = navController
                                     )
                                 }
                                 BuiltInPlugin.COMMANDS -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_commands_megaphone),
+                                                contentDescription = null,
+                                                modifier = Modifier.padding(end = 4.dp).size(24.dp),
+                                            )
+                                        },
                                         title = entry.title,
-                                        label = stringResource(if (enableChatCommands) R.string.enabled else R.string.disabled),
+                                        label = stringResource(R.string.unfunded_request),
                                         checked = enableChatCommands,
                                         onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
                                         onClick = { navController.navigate("chat_commands") }
@@ -2870,6 +2900,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.DITTO -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = when (dittoPdlSource) {
                                             DittoPdlSource.COMMUNITY -> stringResource(R.string.ditto_community_subtitle)
@@ -2893,6 +2924,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.DART -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableGunshotDetection,
@@ -2902,6 +2934,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.FALCON -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableUasDetection,
@@ -2920,6 +2953,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.GOTENNA, BuiltInPlugin.SOMEWEAR_LABS -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = false,
@@ -3475,6 +3509,17 @@ fun <T> WearTAKTitleChipWithState(
             .fillMaxWidth()
 //            .padding(bottom = 7.dp)
     )
+}
+
+@Composable
+private fun BuiltInPluginBrandIcon(plugin: BuiltInPlugin) {
+    plugin.brandIconRes?.let { resource ->
+        Image(
+            painter = painterResource(resource),
+            contentDescription = null,
+            modifier = Modifier.padding(end = 4.dp).size(24.dp),
+        )
+    }
 }
 
 //Used for services and settings with a boolean state of ON/OFF
