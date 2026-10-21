@@ -625,7 +625,7 @@
     <string name="enable_companion_plugin" translatable="false">Enable Companion Plugin</string>
     <string name="enable_companion_plugin_desc" translatable="false">Enable the service for the companion WearTAK ATAK app</string>
     <string name="enable_companion_plugin_default" translatable="false">false</string>
-    <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound/Compass</string>
+    <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound Proximity</string>
     <string name="enable_bloodhound_compass_desc" translatable="false">Enable the ability to bloodhound and use the compass</string>
     <string name="enable_bloodhound_compass_default" translatable="false">true</string>
     <string name="bloodhound_settings">Bloodhound Settings</string>
@@ -750,7 +750,7 @@
     <string name="exertion_warning_threshold">Exertion Warning Threshold</string>
     <string name="seconds">seconds</string>
     <string name="exertion_alert_threshold">Exertion Alert Threshold</string>
-    <string name="bloodhound_compass">Bloodhound/Compass</string>
+    <string name="bloodhound_compass">Bloodhound Proximity</string>
     <string name="plugins">Plugins</string>
     <string name="n_a">N/A</string>
     <string name="male">Male</string>
