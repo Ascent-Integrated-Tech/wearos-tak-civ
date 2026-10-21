@@ -13,7 +13,7 @@
     <string name="location_service">위치 서비스</string>
     <string name="service_on_off">서비스 켜기/끄기</string>
     <string name="biometrics">생체 인식</string>
-    <string name="ditto">Ditto</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">버전 %1$s</string>
     <string name="tak_servers">TAK 서버</string>
     <string name="edit_server">서버 편집</string>

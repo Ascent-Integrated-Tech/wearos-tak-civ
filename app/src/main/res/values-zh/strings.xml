@@ -13,7 +13,7 @@
     <string name="location_service">地点服务</string>
     <string name="service_on_off">服务开启/关闭</string>
     <string name="biometrics">生物识别</string>
-    <string name="ditto">Ditto</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">版本 %1$s</string>
     <string name="tak_servers">TAK 服务器</string>
     <string name="edit_server">编辑服务器</string>

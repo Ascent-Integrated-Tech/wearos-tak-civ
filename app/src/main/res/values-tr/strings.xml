@@ -13,7 +13,7 @@
     <string name="location_service">Konum Hizmeti</string>
     <string name="service_on_off">Hizmet AÇIK/KAPALI</string>
     <string name="biometrics">Biyometrik</string>
-    <string name="ditto">Kopya</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">Sürüm %1$s</string>
     <string name="tak_servers">TAK Sunucuları</string>
     <string name="edit_server">Sunucuyu Düzenle</string>

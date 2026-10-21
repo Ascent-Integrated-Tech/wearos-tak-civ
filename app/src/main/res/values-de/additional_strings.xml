@@ -53,7 +53,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">Flugmodus, einige Server verbunden, Standort aktiviert</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">Flugmodus, einige Server verbunden, Standort deaktiviert</string>
     <string name="some_servers_connected">Einige Server verbunden</string>
-    <string name="ditto_identity">Ditto-Identität</string>
+    <string name="ditto_identity">Ditto Edge Sync-Identität</string>
     <string name="community_pdl">Community-PDL</string>
     <string name="custom_pdl">Benutzerdefinierte PDL</string>
     <string name="use_default_community_identity">Standard-Community-Identität verwenden</string>

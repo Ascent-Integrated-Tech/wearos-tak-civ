@@ -13,7 +13,7 @@
     <string name="location_service">ロケーションサービス</string>
     <string name="service_on_off">サービスのオン/オフ</string>
     <string name="biometrics">バイオメトリクス</string>
-    <string name="ditto">同上</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">バージョン %1$s</string>
     <string name="tak_servers">TAKサーバー</string>
     <string name="edit_server">サーバー編集</string>

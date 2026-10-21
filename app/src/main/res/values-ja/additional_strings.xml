@@ -53,7 +53,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">機内モード、一部のサーバーに接続済み、位置情報有効</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">機内モード、一部のサーバーに接続済み、位置情報無効</string>
     <string name="some_servers_connected">一部のサーバーに接続済み</string>
-    <string name="ditto_identity">Ditto ID</string>
+    <string name="ditto_identity">Ditto Edge Sync ID</string>
     <string name="community_pdl">コミュニティ PDL</string>
     <string name="custom_pdl">カスタム PDL</string>
     <string name="use_default_community_identity">コミュニティのデフォルト ID を使用</string>

@@ -13,7 +13,7 @@
     <string name="location_service">Service de localisation</string>
     <string name="service_on_off">Activer/désactiver le service</string>
     <string name="biometrics">Données biométriques</string>
-    <string name="ditto">Ditto</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">Version %1$s</string>
     <string name="tak_servers">Serveurs TAK</string>
     <string name="edit_server">Modifier le serveur</string>

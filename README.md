@@ -4,11 +4,11 @@ WearTAK-CIV is a standalone Wear OS application that connects a watch to the Tea
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
-Configure Ditto under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
-tap the Ditto row to select Community or configure a custom PDL in Ditto Identity. The row subtitle shows
+Configure Ditto Edge Sync under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
+tap the Ditto Edge Sync row to select Community or configure a custom PDL in Ditto Edge Sync Identity. The row subtitle shows
 Community or the saved custom PDL, truncated to fit. Ditto is off by default on fresh installs, and saved
 enablement settings are preserved. PDL Help provides scrollable instructions for copying and pasting a custom identity.
-Plugins are listed alphabetically, including installed plugins. Everywhere Comms, GoTenna and Somewear Labs are
+Plugins are listed alphabetically, including installed plugins. Everywhere, GoTenna and Somewear Labs are
 unfunded placeholders: each displays **Unfunded Request**, and their switches remain off without activating any integration.
 Installed plugins use split chips: tap the row to open the plugin's launcher activity, or use the switch
 to load/unload it. Swipe the row to access remove and info. Plugins without a launchable activity
@@ -26,6 +26,22 @@ The host reads service metadata without requiring the plugin to be loaded. Appli
 is not used for this override. Missing, empty, or whitespace-only values retain the loading-status
 subtitle. This changes only the menu subtitle: the info popup still shows the actual loading status,
 and the toggle, tap-to-open, and swipe remove/info actions are unchanged.
+
+Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
+Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
+Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.
+The six integration rows use the artwork below, fitted proportionally into 24 dp without theme tint.
+The user confirmed permission to use these identified assets on 2026-10-21; this is user-confirmed
+permission, not a claim of a public redistribution license. Only Ditto is the exact ATAK plugin icon;
+the other marks are approved official-company backups, not claimed as ATAK plugin artwork.
+
+| Integration | Artwork and provenance | Preparation |
+| --- | --- | --- |
+| Somewear Labs | [Official 192 px symbol](https://somewearlabs.com/wp-content/uploads/2026/07/cropped-somewear-favicon-rounded-corners-192x192.png) | Unchanged PNG, `ic_integration_somewear.png`. |
+| GoTenna | [Official original favicon](https://gotenna.com/cdn/shop/files/favicon.webp?v=1680207627) | Native 100 x 100 WebP, requested with `Accept: image/webp`; no enlargement. `ic_integration_gotenna.webp`. |
+| Everywhere | [Official white logo](https://everywherecomms.com/cdn/shop/files/everywhere_logo_white.png?v=1727986047) | Left 232 x 232 globe crop from the 1517 x 232 logo, proportionally reduced to 192 px; no redrawing. `ic_integration_everywhere.png`. |
+| DART and FALCON | [Official Certus Innovations symbol](https://images.squarespace-cdn.com/content/v1/687cf63b5a78985697612a02/8c2c76c6-79ac-4cf4-8dca-a3e9f8f0293c/CI-Icon-Arrow_white%2Bteal.png) | 1920 px artwork proportionally reduced to 192 px, retaining white/teal and transparency. Both use `ic_integration_certus.png`; labels distinguish the products. Product identity: [DART](https://www.certusinnovations.com/products/dart), [FALCON](https://www.certusinnovations.com/products/falcon). |
+| Ditto Edge Sync | Installed `com.dittofederal.atak.plugin.ditto` APK, `drawable/ic_ditto_menu` (`0x7f07006b`), compiled `res/AC.xml` | `ic_integration_ditto.xml` preserves all four original paths and `#F6F6F6` fills. Transparent margins trimmed from the 376 x 416 viewport to the artwork bounds (284 x 324), with proportional intrinsic size. |
 
 Sensor Manager displays **Unfunded Request** and has a saved enable/disable preference (off by default). Tap its row to open the preview
 configuration showing **Unfunded Request**, **Button is Placeholder**, and a single inert **Scan** button.

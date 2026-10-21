@@ -53,7 +53,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">飞行模式，部分服务器已连接，位置已启用</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">飞行模式，部分服务器已连接，位置已停用</string>
     <string name="some_servers_connected">部分服务器已连接</string>
-    <string name="ditto_identity">Ditto 身份</string>
+    <string name="ditto_identity">Ditto Edge Sync 身份</string>
     <string name="community_pdl">社区 PDL</string>
     <string name="custom_pdl">自定义 PDL</string>
     <string name="use_default_community_identity">使用默认社区身份</string>

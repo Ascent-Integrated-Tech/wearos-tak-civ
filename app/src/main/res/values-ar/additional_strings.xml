@@ -53,7 +53,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">وضع الطيران، بعض الخوادم متصلة، الموقع مفعّل</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">وضع الطيران، بعض الخوادم متصلة، الموقع معطّل</string>
     <string name="some_servers_connected">بعض الخوادم متصلة</string>
-    <string name="ditto_identity">هوية Ditto</string>
+    <string name="ditto_identity">هوية Ditto Edge Sync</string>
     <string name="community_pdl">PDL المجتمع</string>
     <string name="custom_pdl">PDL مخصص</string>
     <string name="use_default_community_identity">استخدام هوية المجتمع الافتراضية</string>
