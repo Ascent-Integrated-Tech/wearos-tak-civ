@@ -170,6 +170,7 @@ import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.integration.plugin.PluginCompatibilityStatus
+import com.aitech.weartak_civ.integration.plugin.PluginActivityLauncher
 import com.aitech.weartak_civ.integration.plugin.PluginLoadingStatus
 import com.aitech.weartak_civ.integration.plugin.PluginUI
 import com.aitech.weartak_civ.integration.plugin.PluginViewModel
@@ -2963,7 +2964,13 @@ fun WearTAKSettingsNav(
                                                     false -> pluginVm.unloadPlugin(item.pluginId)
                                                 }
                                             },
-                                            onClick = { it.first.launch { it.second.animateTo(targetValue = RevealValue.RightRevealing) } },
+                                            onClick = {
+                                                if (!PluginActivityLauncher.launch(context, item.packageName)) {
+                                                    it.first.launch {
+                                                        it.second.animateTo(targetValue = RevealValue.RightRevealing)
+                                                    }
+                                                }
+                                            },
                                         )
                                     },
                                 )
