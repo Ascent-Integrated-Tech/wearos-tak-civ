@@ -13,6 +13,20 @@ unfunded placeholders: each displays **Unfunded Request**, and their switches re
 Installed plugins use split chips: tap the row to open the plugin's launcher activity, or use the switch
 to load/unload it. Swipe the row to access remove and info. Plugins without a launchable activity
 (or whose activity cannot be opened) reveal those actions on tap instead. Opening an activity does not load the plugin.
+Plugin authors can override the menu subtitle by placing this metadata **inside the plugin's
+`<service>` element** (the service advertising `com.weartak.plugin.action.PLUGIN_SERVICE`):
+
+```xml
+<meta-data
+    android:name="com.weartak.plugin.MENU_SUBTITLE"
+    android:value="Unfunded Request" />
+```
+
+The host reads service metadata without requiring the plugin to be loaded. Application metadata
+is not used for this override. Missing, empty, or whitespace-only values retain the loading-status
+subtitle. This changes only the menu subtitle: the info popup still shows the actual loading status,
+and the toggle, tap-to-open, and swipe remove/info actions are unchanged.
+
 Sensor Manager displays **Unfunded Request** and has a saved enable/disable preference (off by default). Tap its row to open the preview
 configuration showing **Unfunded Request**, **Button is Placeholder**, and a single inert **Scan** button.
 The future workflow will list discovered sensors with per-sensor Pair controls and change the main action

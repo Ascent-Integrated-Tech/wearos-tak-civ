@@ -26,4 +26,8 @@ data class PluginUI(
     val packageName: String,
     val compatibility: PluginCompatibilityStatus = PluginCompatibilityStatus.UNKNOWN,
     val isLoaded: Boolean = false,
-)
+    val menuSubtitle: String? = null,
+) {
+    val menuLabel: String
+        get() = menuSubtitle?.takeIf { it.isNotBlank() } ?: loadingStatus.toString()
+}
