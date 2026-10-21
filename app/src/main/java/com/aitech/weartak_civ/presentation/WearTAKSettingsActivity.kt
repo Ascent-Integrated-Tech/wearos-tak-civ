@@ -2956,7 +2956,7 @@ fun WearTAKSettingsNav(
                                                 }
                                             },
                                             title = item.title,
-                                            label = item.loadingStatus.toString(),
+                                            label = item.menuLabel,
                                             checked = item.isLoaded,
                                             onCheckedChange = {
                                                 when (it) {
