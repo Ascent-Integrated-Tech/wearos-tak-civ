@@ -10,6 +10,9 @@ Community or the saved custom PDL, truncated to fit. Ditto is off by default on 
 enablement settings are preserved. PDL Help provides scrollable instructions for copying and pasting a custom identity.
 Plugins are listed alphabetically, including installed plugins. Everywhere Comms, GoTenna and Somewear Labs are
 unfunded placeholders: each displays **Unfunded Request**, and their switches remain off without activating any integration.
+Installed plugins use split chips: tap the row to open the plugin's launcher activity, or use the switch
+to load/unload it. Swipe the row to access remove and info. Plugins without a launchable activity
+(or whose activity cannot be opened) reveal those actions on tap instead. Opening an activity does not load the plugin.
 Sensor Manager displays **Unfunded Request** and has a saved enable/disable preference (off by default). Tap its row to open the preview
 configuration showing **Unfunded Request**, **Button is Placeholder**, and a single inert **Scan** button.
 The future workflow will list discovered sensors with per-sensor Pair controls and change the main action
