@@ -746,6 +746,7 @@
     <string name="my_team">My Team</string>
     <string name="my_role">My Role</string>
     <string name="my_user_metrics">My User Metrics</string>
+    <string name="my_base_trends">My Base Trends</string>
     <string name="reporting_strategy">Reporting Strategy</string>
     <string name="weartak_preferences">WearTAK Preferences</string>
     <string name="callsign_and_device_preferences">Callsign and Device Preferences</string>

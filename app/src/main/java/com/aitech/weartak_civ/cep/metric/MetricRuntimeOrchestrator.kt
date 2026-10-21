@@ -15,6 +15,7 @@ class MetricRuntimeOrchestrator(
     private val dataRepository: DataRepository?,
     metricSpecs: List<MetricSpec>,
     private val appContext: Context? = null,
+    private val legacyBaselineEnabled: Boolean = true,
     private val historyStore: MetricHistoryStore = FileBackedMetricHistoryStore(
         baseDir = if (appContext != null) {
             File(appContext.filesDir, "metric_history")
@@ -331,54 +332,59 @@ class MetricRuntimeOrchestrator(
 
     fun onEvent(evt: CepEvent<*>, featureStore: FeatureStore) {
         synchronized(runtimeLock) {
-            val nowMs = evt.ts
-            observeActivityContext(featureStore, nowMs)
-            dispatchRouter.sourcesForEvent(evt).forEach { source ->
-            val bindings = registry.findBySource(source)
-            bindings.forEach { binding ->
-                val context = buildGatingContext(binding.metricSpec, featureStore, nowMs)
-                val state = registry.stateFor(binding.metricSpec.id)
-                if (context.activityContext == MetricActivityContext.UNKNOWN &&
-                    binding.metricSpec.gating.activityContext != MetricActivityContext.ANY
-                ) {
-                    state.unknownContextSamples += 1
-                }
-                if (!contextEligibleForIngestion(binding.metricSpec, context)) {
-                    state.gatedSamples += 1
-                    val result = evaluate(binding, context, nowMs, forceRecalculate = false)
-                    MetricOutputMapper.publish(featureStore, binding.metricSpec.selectedOutputs, result, nowMs)
-                    return@forEach
-                }
-                val eventContext = context.copy(
-                    isFresh = true,
-                    lastSampleAgeMs = 0L
-                )
-                val normalized = when {
-                    binding.sourceHook != null -> binding.sourceHook.normalize(evt.payload as Any, eventContext)
-                    else -> dispatchRouter.extractScalar(evt, binding.metricSpec)?.let {
-                        NormalizedMetricSample(it, nowMs)
+            if (legacyBaselineEnabled) {
+                val nowMs = evt.ts
+                observeActivityContext(featureStore, nowMs)
+                dispatchRouter.sourcesForEvent(evt).forEach { source ->
+                    val bindings = registry.findBySource(source)
+                    bindings.forEach { binding ->
+                        processLegacyBinding(evt, featureStore, binding, nowMs)
                     }
                 }
-                val valid = normalized?.takeIf {
-                    isValidValue(binding.metricSpec, it.value)
-                }
-                if (normalized != null && valid == null) {
-                    state.invalidSamples += 1
-                }
-                if (valid != null) {
-                    state.acceptedSamples += 1
-                    state.latestSample = valid
-                    historyStore.appendHotSample(binding.metricSpec.id, valid)
-                }
-                val result = evaluate(binding, eventContext, nowMs, forceRecalculate = false)
-                MetricOutputMapper.publish(featureStore, binding.metricSpec.selectedOutputs, result, nowMs)
-            }
             }
         }
         runCatching { BaselineV2Runtime.observeFeatures(featureStore, evt.ts) }
     }
 
+    private fun processLegacyBinding(
+        evt: CepEvent<*>,
+        featureStore: FeatureStore,
+        binding: MetricSourceHookBinding,
+        nowMs: Long
+    ) {
+        val context = buildGatingContext(binding.metricSpec, featureStore, nowMs)
+        val state = registry.stateFor(binding.metricSpec.id)
+        if (context.activityContext == MetricActivityContext.UNKNOWN &&
+            binding.metricSpec.gating.activityContext != MetricActivityContext.ANY
+        ) {
+            state.unknownContextSamples += 1
+        }
+        if (!contextEligibleForIngestion(binding.metricSpec, context)) {
+            state.gatedSamples += 1
+            val result = evaluate(binding, context, nowMs, forceRecalculate = false)
+            MetricOutputMapper.publish(featureStore, binding.metricSpec.selectedOutputs, result, nowMs)
+            return
+        }
+        val eventContext = context.copy(isFresh = true, lastSampleAgeMs = 0L)
+        val normalized = when {
+            binding.sourceHook != null -> binding.sourceHook.normalize(evt.payload as Any, eventContext)
+            else -> dispatchRouter.extractScalar(evt, binding.metricSpec)?.let {
+                NormalizedMetricSample(it, nowMs)
+            }
+        }
+        val valid = normalized?.takeIf { isValidValue(binding.metricSpec, it.value) }
+        if (normalized != null && valid == null) state.invalidSamples += 1
+        if (valid != null) {
+            state.acceptedSamples += 1
+            state.latestSample = valid
+            historyStore.appendHotSample(binding.metricSpec.id, valid)
+        }
+        val result = evaluate(binding, eventContext, nowMs, forceRecalculate = false)
+        MetricOutputMapper.publish(featureStore, binding.metricSpec.selectedOutputs, result, nowMs)
+    }
+
     internal fun onTick(nowMs: Long, featureStore: FeatureStore) {
+        if (!legacyBaselineEnabled) return
         synchronized(runtimeLock) {
             observeActivityContext(featureStore, nowMs)
             registry.allBindings().forEach { binding ->
@@ -395,6 +401,7 @@ class MetricRuntimeOrchestrator(
      * baseline is established. Profile/static thresholds remain in place beforehand.
      */
     fun applyRestingHrThresholds(featureStore: FeatureStore, nowMs: Long) {
+        if (!legacyBaselineEnabled) return
         synchronized(runtimeLock) {
             if (featureStore.str("selected.baseline.hr.state") != MetricEstablishmentState.ESTABLISHED.name) {
                 return
@@ -407,6 +414,7 @@ class MetricRuntimeOrchestrator(
     }
 
     fun calculateNow(metricId: String, nowMs: Long, featureStore: FeatureStore): MetricComputationResult? {
+        if (!legacyBaselineEnabled) return null
         synchronized(runtimeLock) {
             observeActivityContext(featureStore, nowMs)
             val binding = registry.findById(metricId) ?: return null
@@ -418,6 +426,7 @@ class MetricRuntimeOrchestrator(
     }
 
     fun calculateAllNow(nowMs: Long, featureStore: FeatureStore): Map<String, MetricComputationResult> {
+        if (!legacyBaselineEnabled) return emptyMap()
         synchronized(runtimeLock) {
             observeActivityContext(featureStore, nowMs)
             return registry.allBindings().associate { binding ->
@@ -434,6 +443,7 @@ class MetricRuntimeOrchestrator(
      * or persists data when the inspection screen is opened.
      */
     fun inspectAll(nowMs: Long, featureStore: FeatureStore): Map<String, MetricInspectionSnapshot> {
+        if (!legacyBaselineEnabled) return emptyMap()
         synchronized(runtimeLock) {
             return registry.allBindings().associate { binding ->
                 val spec = binding.metricSpec

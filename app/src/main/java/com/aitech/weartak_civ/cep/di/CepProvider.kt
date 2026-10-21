@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.cep.engine.lifecycle.CepEngineHolder
 import com.aitech.weartak_civ.cep.plugin.PluginRegistry
 import com.aitech.weartak_civ.cep.plugin.PluginTrust
 import com.aitech.weartak_civ.cep.metric.MetricInspectionSnapshot
+import com.aitech.weartak_civ.cep.metric.BaselineTrendsFeatureFlags
 import java.io.File
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
@@ -329,7 +330,8 @@ object CepProvider {
             appContext = ctx,
             scope = freshScope,
             config = config,
-            dataRepository = app.repo
+            dataRepository = app.repo,
+            legacyBaselineEnabled = BaselineTrendsFeatureFlags.ENABLE_V1
         )
     }
 

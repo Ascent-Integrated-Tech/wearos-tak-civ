@@ -31,14 +31,16 @@ class CepEngine(
     private val appContext: Context,
     private val scope: CoroutineScope,
     private val config: CepConfig,
-    private val dataRepository: DataRepository
+    private val dataRepository: DataRepository,
+    private val legacyBaselineEnabled: Boolean = true
 ) {
     private val featureStore = FeatureStore()
     private val windows = WindowStore(RingConfig.default())
     private val metricOrchestrator = MetricRuntimeOrchestrator(
         dataRepository = dataRepository,
         metricSpecs = config.metrics,
-        appContext = appContext
+        appContext = appContext,
+        legacyBaselineEnabled = legacyBaselineEnabled
     )
     private val profileStore = CepProvider.getProfile(appContext)
     private val seenTierEventLru = ArrayDeque<String>(32)

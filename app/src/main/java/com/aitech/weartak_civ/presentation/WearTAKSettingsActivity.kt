@@ -193,6 +193,7 @@ import com.aitech.weartak_civ.presentation.WearTAKSettingsActivity.Constants.use
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.presentation.viewmodel.SitxViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
+import com.aitech.weartak_civ.cep.metric.BaselineTrendsFeatureFlags
 import com.aitech.weartak_civ.service.SitxTakService
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
@@ -851,9 +852,48 @@ fun WearTAKSettingsNav(
                             navController = navController
                         )
                     }
+                    item {
+                        WearTAKTitleChip(
+                            route = "my_base_trends",
+                            title = stringResource(R.string.my_base_trends),
+                            navController = navController
+                        )
+                    }
                 },
                 navController,
             )
+        }
+        composable("my_base_trends") {
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.my_base_trends),
+                columnContent = {
+                    item {
+                        WearTAKTitleChip(
+                            route = "baseline_trends_v2_screen",
+                            title = stringResource(R.string.baseline_trends_v2),
+                            navController = navController
+                        )
+                    }
+                    if (BaselineTrendsFeatureFlags.ENABLE_V1) {
+                        item {
+                            WearTAKTitleChip(
+                                route = "baseline_trends_screen",
+                                title = stringResource(R.string.baseline_trends),
+                                navController = navController
+                            )
+                        }
+                    }
+                },
+                navController,
+            )
+        }
+        if (BaselineTrendsFeatureFlags.ENABLE_V1) {
+            composable("baseline_trends_screen") {
+                BaselineTrendsScreen(navController)
+            }
+        }
+        composable("baseline_trends_v2_screen") {
+            BaselineTrendsV2Screen(navController)
         }
         composable("medical_profile_batdok") {
             WearTAKPageWithBackArrow(
