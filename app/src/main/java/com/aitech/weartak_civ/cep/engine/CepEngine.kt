@@ -85,6 +85,7 @@ class CepEngine(
     )
 
     private companion object {
+        const val BASELINE_METRICS_EXPORT_FILENAME = "weartak_metrics.zip"
         const val PRESSURE_IMMERSION_DISABLED_REASON = "settings.pressure.immersion_alerts_enabled=0"
         const val PHYSIO_ALERT_DISABLED_REASON = "settings.physio.alerts_enabled=0"
     }
@@ -663,7 +664,7 @@ class CepEngine(
     suspend fun exportBaselineMetrics(): File = withContext(Dispatchers.IO) {
         val output = File(
             appContext.cacheDir,
-            "weartak_metrics_${System.currentTimeMillis()}.zip"
+            BASELINE_METRICS_EXPORT_FILENAME
         )
         metricOrchestrator.exportFiles(output)
         output

@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.presentation
 
 import android.content.ContentValues
+import android.content.ContentUris
 import android.os.Environment
 import android.provider.MediaStore
 import android.widget.Toast
@@ -267,10 +268,31 @@ private fun formatCoveredDuration(seconds: Long): String {
 private fun saveExportToDownloads(context: android.content.Context, source: File): Boolean {
     if (!source.exists()) return false
     val resolver = context.contentResolver
+    val relativePath = "${Environment.DIRECTORY_DOWNLOADS}/WearTAK"
+    resolver.query(
+        MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+        arrayOf(MediaStore.MediaColumns._ID),
+        "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
+            "${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
+        arrayOf(source.name, relativePath),
+        null
+    )?.use { cursor ->
+        val idColumn = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+        while (cursor.moveToNext()) {
+            resolver.delete(
+                ContentUris.withAppendedId(
+                    MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                    cursor.getLong(idColumn)
+                ),
+                null,
+                null
+            )
+        }
+    }
     val values = ContentValues().apply {
         put(MediaStore.MediaColumns.DISPLAY_NAME, source.name)
         put(MediaStore.MediaColumns.MIME_TYPE, "application/zip")
-        put(MediaStore.MediaColumns.RELATIVE_PATH, "${Environment.DIRECTORY_DOWNLOADS}/WearTAK")
+        put(MediaStore.MediaColumns.RELATIVE_PATH, relativePath)
         put(MediaStore.MediaColumns.IS_PENDING, 1)
     }
     val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: return false

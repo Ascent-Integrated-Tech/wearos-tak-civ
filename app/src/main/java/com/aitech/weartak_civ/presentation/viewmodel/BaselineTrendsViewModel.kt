@@ -142,7 +142,9 @@ class BaselineTrendsViewModel : ViewModel() {
             _uiState.value = if (metrics == null) {
                 BaselineTrendsUiState.Unavailable(R.string.metric_engine_unavailable)
             } else {
-                BaselineTrendsUiState.Ready(metrics.values.toDisplayOrder())
+                BaselineTrendsUiState.Ready(
+                    metrics = metrics.values.toDisplayOrder(),
+                )
             }
         } catch (error: Exception) {
             _uiState.value = BaselineTrendsUiState.Error(

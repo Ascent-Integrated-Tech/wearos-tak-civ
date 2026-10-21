@@ -88,6 +88,9 @@ class FeatureStore {
         return (nowMs - t) / 1000.0
     }
 
+    /** Read-only timestamp lookup for consumers that need feature event-time semantics. */
+    fun timestampMs(key: String): Long? = ts[resolve(key)]
+
     // -------- lookup helpers --------
 
     private fun resolve(key: String): String {

@@ -30,6 +30,190 @@ class MetricRuntimeOrchestrator(
         }
     )
 ) {
+    private val v2CheckpointStore = BaselineV2RestingHrCheckpointStore(
+        BaselineV2GenerationStore(
+            File(
+                appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                "baseline_v2_resting_hr"
+            )
+        )
+    )
+    private val v2RestingHrCoordinator = BaselineV2RestingHrRuntimeFactory.create(
+        config = BaselineV2RestingHrDisplayPolicy.runtimeConfig,
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        checkpointStore = v2CheckpointStore
+    )
+    private val v2RmssdCoordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.RMSSD.metricId,
+        definition = BaselineV2MetricDefinitions.RMSSD,
+        strategy = BaselineV2Strategy.DIST_LOG,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 10,
+            distributionSamples = 20,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 86_400L,
+            logDomain = true
+        ),
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_rmssd"
+                )
+            )
+        )
+    )
+    private val v2SdnnCoordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.SDNN.metricId,
+        definition = BaselineV2MetricDefinitions.SDNN,
+        strategy = BaselineV2Strategy.DIST_VARIABILITY,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 10,
+            distributionSamples = 20,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 86_400L
+        ),
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_sdnn"
+                )
+            )
+        )
+    )
+    private val v2Spo2Coordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.SPO2.metricId,
+        definition = BaselineV2MetricDefinitions.SPO2,
+        strategy = BaselineV2Strategy.EMA_PERCENTILE,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 20,
+            distributionSamples = 40,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 0L,
+            expectedLowerScale = 1.0,
+            expectedUpperScale = 1.0,
+            lowWarningScale = 1.0,
+            lowAlertScale = 2.0,
+            highWarningScale = 2.0,
+            highAlertScale = 3.0,
+            minimumScale = 0.05,
+            lowerQuantile = 0.05
+        ),
+        absoluteLowGuardrail = 88.0,
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_spo2"
+                )
+            )
+        )
+    )
+    private val v2PpgCoordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.PPG.metricId,
+        definition = BaselineV2MetricDefinitions.PPG,
+        strategy = BaselineV2Strategy.DIST_RELATIVE,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 10,
+            distributionSamples = 20,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 3_600L,
+            minimumScale = 0.05
+        ),
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_ppg"
+                )
+            )
+        )
+    )
+    private val v2ActiveHrCoordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.ACTIVE_HR.metricId,
+        definition = BaselineV2MetricDefinitions.ACTIVE_HR,
+        strategy = BaselineV2Strategy.DIST_CONTEXT,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 10,
+            distributionSamples = 20,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 3_600L
+        ),
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_active_hr"
+                )
+            )
+        )
+    )
+    private val v2HrrCoordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.HRR.metricId,
+        definition = BaselineV2MetricDefinitions.HRR,
+        strategy = BaselineV2Strategy.DIST_CONTEXT,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 10,
+            distributionSamples = 20,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 3_600L
+        ),
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_hrr"
+                )
+            )
+        )
+    )
+    private val v2SkinTemperatureCoordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.SKIN_TEMPERATURE.metricId,
+        definition = BaselineV2MetricDefinitions.SKIN_TEMPERATURE,
+        strategy = BaselineV2Strategy.DIST_CONTEXT,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 10,
+            distributionSamples = 20,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 3_600L
+        ),
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_skin_temperature"
+                )
+            )
+        )
+    )
+    private val v2IbiCoordinator = BaselineV2ScalarMetricCoordinator(
+        snapshotStore = BaselineV2Runtime.snapshotStore,
+        metricId = BaselineV2MetricDefinitions.IBI.metricId,
+        definition = BaselineV2MetricDefinitions.IBI,
+        strategy = BaselineV2Strategy.DIST_VARIABILITY,
+        config = BaselineV2ScalarMetricConfig(
+            centreSamples = 10,
+            distributionSamples = 20,
+            minimumActiveDays = 3,
+            minimumCoveredSeconds = 3_600L
+        ),
+        checkpointStore = BaselineV2ScalarCheckpointStore(
+            BaselineV2GenerationStore(
+                File(
+                    appContext?.filesDir ?: File(System.getProperty("java.io.tmpdir")),
+                    "baseline_v2_ibi"
+                )
+            )
+        )
+    )
     private data class CachedHistory(val version: Long, val fullView: MetricHistoryView)
 
     private val runtimeLock = Any()
@@ -93,6 +277,18 @@ class MetricRuntimeOrchestrator(
     private val specs = metricSpecs
 
     suspend fun initialize() {
+        BaselineV2Runtime.configureRestingHrCoordinator(
+            coordinator = v2RestingHrCoordinator,
+            qualityProvider = ContextOnlyRestingHrQualityProvider
+        )
+        BaselineV2Runtime.configureRmssdCoordinator(v2RmssdCoordinator)
+        BaselineV2Runtime.configureSdnnCoordinator(v2SdnnCoordinator)
+        BaselineV2Runtime.configureSpo2Coordinator(v2Spo2Coordinator)
+        BaselineV2Runtime.configurePpgCoordinator(v2PpgCoordinator)
+        BaselineV2Runtime.configureActiveHrCoordinator(v2ActiveHrCoordinator)
+        BaselineV2Runtime.configureHrrCoordinator(v2HrrCoordinator)
+        BaselineV2Runtime.configureSkinTemperatureCoordinator(v2SkinTemperatureCoordinator)
+        BaselineV2Runtime.configureIbiCoordinator(v2IbiCoordinator)
         val merged = mergeRuntimeOverrides(specs)
         validateSpecs(merged)
         dispatchRouter = MetricDispatchRouter(merged)
@@ -126,6 +322,9 @@ class MetricRuntimeOrchestrator(
                 binding.metricSpec.selectedOutputs.slotsToSelectedKeys.values
                     .forEach(featureStore::clear)
             }
+            v2RestingHrCoordinator.reset()
+            v2CheckpointStore.clear()
+            BaselineV2Runtime.reset()
         }
         initialize()
     }
@@ -176,6 +375,7 @@ class MetricRuntimeOrchestrator(
             }
             }
         }
+        runCatching { BaselineV2Runtime.observeFeatures(featureStore, evt.ts) }
     }
 
     internal fun onTick(nowMs: Long, featureStore: FeatureStore) {

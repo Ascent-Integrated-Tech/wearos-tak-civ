@@ -68,7 +68,7 @@ class CrmPpgPreprocessor(
 
         if (totalSamples % 100 == 0) {
 
-            Log.d(
+            debugLog(
 
                 TAG,
 
@@ -111,7 +111,7 @@ class CrmPpgPreprocessor(
 
         val maxGap = maxGapMs(windowSamples)
 
-        Log.d(
+        debugLog(
             TAG,
             "CRM_WINDOW " +
                     "samples=${windowSamples.size} " +
@@ -141,7 +141,7 @@ class CrmPpgPreprocessor(
             maxValue = max(maxValue, value)
         }
         val amplitude = maxValue - minValue
-        Log.d(
+        debugLog(
             TAG,
             "CRM_SIGNAL " +
                     "min=$minValue " +
@@ -195,6 +195,11 @@ class CrmPpgPreprocessor(
             maxGap = max(maxGap, source[i].uptimeMillis - source[i - 1].uptimeMillis)
         }
         return maxGap
+    }
+
+    /** Android logging is best-effort so the signal processor remains JVM-testable. */
+    private fun debugLog(@Suppress("UNUSED_PARAMETER") tag: String, message: String) {
+        runCatching { Log.d(TAG, message) }
     }
 
     private fun resample(source: List<RawPpgSample>, targetSamples: Int, targetHz: Int): FloatArray {

@@ -66,6 +66,7 @@ class WindowStore(private val ringConfig: RingConfig) {
      * [FeatureStore] is intentionally not copied — profile and derived keys are re-seeded in
      * [CepEngine.warmUp]. Requires identical [RingConfig] so ring capacities match.
      */
+    @Synchronized
     fun adoptIngestionStateFrom(other: WindowStore) {
         require(ringConfig == other.ringConfig) {
             "RingConfig mismatch; retained rings are undefined across this swap."
@@ -88,6 +89,7 @@ class WindowStore(private val ringConfig: RingConfig) {
 
     // ── Ingestion ─────────────────────────────────────────────────────────────
 
+    @Synchronized
     fun ingest(evt: CepEvent<out CepPayload>, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         when (val p = evt.payload) {
             is HeartRatePayload -> {
@@ -232,6 +234,7 @@ class WindowStore(private val ringConfig: RingConfig) {
      * Phase 1: if [def.maxAgeSec] is set the feature is suppressed when the
      * most-recent sample is staler than that guard.
      */
+    @Synchronized
     fun computeWindow(def: FeatureDef.Window, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = num[def.source] ?: return
 
@@ -261,6 +264,7 @@ class WindowStore(private val ringConfig: RingConfig) {
      * Phase 2: time-based multi-channel window — mirrors [computeWindow] but
      * for array-valued rings (e.g. skin-temp with multiple peripheral sensors).
      */
+    @Synchronized
     fun computeMultiWindow(def: FeatureDef.MultiWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = arr[def.source] ?: return
 
@@ -304,6 +308,7 @@ class WindowStore(private val ringConfig: RingConfig) {
      *
      * Phase 1: optional freshness guard suppresses stale features.
      */
+    @Synchronized
     fun computeSlopeMulti(def: FeatureDef.SlopeMulti, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = arr[def.source] ?: return
 
@@ -345,6 +350,7 @@ class WindowStore(private val ringConfig: RingConfig) {
      * Phase 2: time-based delta — looks up the sample closest to
      * (tsMs - horizonSec * 1000) instead of indexing back [horizonSec * tickHz] slots.
      */
+    @Synchronized
     fun computeDelta(def: FeatureDef.Delta, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = num[def.source] ?: return
         val now  = ring.lastOrNull() ?: return
@@ -367,8 +373,10 @@ class WindowStore(private val ringConfig: RingConfig) {
      */
 
     /** Test-only: drop the numeric ring for [topic] so the next ingest starts from an empty buffer. */
+    @Synchronized
     fun clearRing(topic: String) { num.remove(topic) }
 
+    @Synchronized
     fun computeSampleWindow(def: FeatureDef.SampleWindow, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         //val isPressure = def.source == Topics.PRESSURE
         val ring = num[def.source] ?: run {
@@ -416,6 +424,7 @@ class WindowStore(private val ringConfig: RingConfig) {
      * Position 0 is the most-recently inserted sample; position [horizonSamples] is
      * [horizonSamples] samples older.  Writes nothing if insufficient history.
      */
+    @Synchronized
     fun computeSampleDelta(def: FeatureDef.SampleDelta, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         //val isPressure = def.source == Topics.PRESSURE
         val ring = num[def.source] ?: run {
@@ -460,6 +469,7 @@ class WindowStore(private val ringConfig: RingConfig) {
      *    when multiple samples share the same millisecond timestamp)
      *  - [def.maxAgeSec] freshness check fails
      */
+    @Synchronized
     fun computeSampleSlope(def: FeatureDef.SampleSlope, fs: FeatureStore, tsMs: Long = System.currentTimeMillis()) {
         val ring = num[def.source] ?: return
 

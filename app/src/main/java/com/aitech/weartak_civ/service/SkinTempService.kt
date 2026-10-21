@@ -236,6 +236,7 @@ class SkinTempService : Service() {
 
 	// ---- HRV / RMSSD buffer + params (mirrors WEAR-383) ----
 	private val nnBuffer = ArrayDeque<Int>(128)
+	private val nnBufferLock = Any()
 	private val MIN_NN_FOR_RMSSD = 10
 	private val MAX_NN_BUFFER = 60
 	private val NN_MIN_MS = 300
@@ -426,7 +427,12 @@ class SkinTempService : Service() {
                         "IBI=$effectiveIbi (raw=$batchMostRecentIbi lastNonZero=$lastNonZeroIbi) reason=$reason"
             )*/
 			// Update NN buffer with newly received (valid) intervals and compute RMSSD (mirror WEAR-383)
-			addValidNnIntervals(firstIbiList, firstIbiStatusList)
+			val validIbi = addValidNnIntervals(firstIbiList, firstIbiStatusList)
+			if (validIbi.isNotEmpty()) {
+				val engine = CepProvider.getOrCreateEngine(applicationContext)
+				val emittedAt = System.currentTimeMillis()
+				validIbi.forEach { engine.ingest("hrv.ibi_ms", it.toDouble(), emittedAt) }
+			}
 			val rmssd = computeRmssdMs()
 			if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) {
 				lastNonZeroRmssdMs = rmssd
@@ -656,7 +662,7 @@ class SkinTempService : Service() {
 
         return try {
             ppgStartUptimeMs = 0L
-            ppgSamples.clear()
+            synchronized(ppgBufferLock) { ppgSamples.clear() }
 
             tracker.setEventListener(ppgEventListener)
             ppgRunning = true
@@ -920,6 +926,7 @@ class SkinTempService : Service() {
     private var ppgStartUptimeMs: Long = 0L
     private var ppgBurstDurationMs: Long = 0L
     private val ppgSamples = mutableListOf<Float>()
+    private val ppgBufferLock = Any()
 
     private val ppgEventListener = object : HealthTracker.TrackerEventListener {
         override fun onDataReceived(dataPoints: List<DataPoint>) {
@@ -965,7 +972,11 @@ class SkinTempService : Service() {
                             measureState.get() == MeasurementState.PPG_RUNNING &&
                             ppgTrackerType == HealthTrackerType.PPG_ON_DEMAND
                         ) {
-                            ppgSamples.add(raw.toFloat())
+                            synchronized(ppgBufferLock) {
+                                if (measureState.get() == MeasurementState.PPG_RUNNING) {
+                                    ppgSamples.add(raw.toFloat())
+                                }
+                            }
                         }
                     } catch (_: Throwable) {
                         // ignore bad datapoint
@@ -1035,7 +1046,7 @@ class SkinTempService : Service() {
                 // ON_DEMAND burst path — reset timers/buffers
                 ppgStartUptimeMs = 0L
                 ppgBurstDurationMs = 20_000L
-                ppgSamples.clear()
+                synchronized(ppgBufferLock) { ppgSamples.clear() }
                 // On-demand: start 20s burst
                 try {
                     t.setEventListener(ppgEventListener)
@@ -1089,26 +1100,32 @@ class SkinTempService : Service() {
     }
 
 	// ---- HRV helpers (mirrors WEAR-383) ----
-	private fun addValidNnIntervals(ibiList: List<Int>?, ibiStatusList: List<Int>?) {
-		if (ibiList.isNullOrEmpty()) return
+	private fun addValidNnIntervals(ibiList: List<Int>?, ibiStatusList: List<Int>?): List<Int> {
+		if (ibiList.isNullOrEmpty()) return emptyList()
 		val hasStatus = !ibiStatusList.isNullOrEmpty() && ibiStatusList.size == ibiList.size
+		val valid = mutableListOf<Int>()
 		for (i in ibiList.indices) {
 			val ibi = ibiList[i]
 			val statusOk = if (hasStatus) (ibiStatusList!![i] == 0) else true
 			if (!statusOk) continue
 			if (ibi < NN_MIN_MS || ibi > NN_MAX_MS) continue
-			nnBuffer.addLast(ibi)
-			while (nnBuffer.size > MAX_NN_BUFFER) nnBuffer.removeFirst()
+			valid += ibi
+			synchronized(nnBufferLock) {
+				nnBuffer.addLast(ibi)
+				while (nnBuffer.size > MAX_NN_BUFFER) nnBuffer.removeFirst()
+			}
 		}
+		return valid
 	}
 
 	private fun computeRmssdMs(): Double? {
-		if (nnBuffer.size < MIN_NN_FOR_RMSSD) return null
+		val intervals = synchronized(nnBufferLock) { nnBuffer.toList() }
+		if (intervals.size < MIN_NN_FOR_RMSSD) return null
 		var sumSq = 0.0
 		var n = 0
-		var prev = nnBuffer.first()
-		for (i in 1 until nnBuffer.size) {
-			val cur = nnBuffer.elementAt(i)
+		var prev = intervals.first()
+		for (i in 1 until intervals.size) {
+			val cur = intervals[i]
 			val diff = (cur - prev).toDouble()
 			sumSq += diff * diff
 			n++
@@ -1155,22 +1172,24 @@ class SkinTempService : Service() {
     // Rolling window helpers
     private fun appendPpgSampleAndPrune(rawInt: Int, now: Long = SystemClock.uptimeMillis()) {
         val v = rawInt.toFloat()
-        ppgWindow.addLast(TimedSample(now, v))
-        val cutoff = now - PPG_WINDOW_MS
-        while (ppgWindow.isNotEmpty() && ppgWindow.first().tUptimeMs < cutoff) {
-            ppgWindow.removeFirst()
+        synchronized(ppgBufferLock) {
+            ppgWindow.addLast(TimedSample(now, v))
+            val cutoff = now - PPG_WINDOW_MS
+            while (ppgWindow.isNotEmpty() && ppgWindow.first().tUptimeMs < cutoff) {
+                ppgWindow.removeFirst()
+            }
+            lastPpgSampleCount = ppgWindow.size
         }
-        lastPpgSampleCount = ppgWindow.size
     }
     private fun computeAndCachePpgAmplitudeIfPossible(reason: String) {
-        if (ppgWindow.isEmpty()) {
+        val values = synchronized(ppgBufferLock) { ppgWindow.map { it.v } }
+        if (values.isEmpty()) {
             lastPpgAmplitude = null
             lastPpgTs = System.currentTimeMillis()
             Log.w(TAG, "[PPG] No samples in window; amplitude=null ($reason)")
             return
         }
         // Robust amplitude using 5th–95th percentile
-        val values = ppgWindow.map { it.v }
         val amp = computeAmplitudeP5P95(values)
         lastPpgAmplitude = amp
         lastPpgTs = System.currentTimeMillis()
@@ -1234,6 +1253,7 @@ class SkinTempService : Service() {
     }
 
     private fun completePpgPhase(reason: String) {
+        if (!measureState.compareAndSet(MeasurementState.PPG_RUNNING, MeasurementState.IDLE)) return
         // Only stop the tracker for on-demand mode; keep continuous listener running
         if (ppgTrackerType != HealthTrackerType.PPG_CONTINUOUS) {
             stopPpgTracker()
@@ -1243,14 +1263,17 @@ class SkinTempService : Service() {
         if (ppgTrackerType == HealthTrackerType.PPG_CONTINUOUS) {
             computeAndCachePpgAmplitudeIfPossible(reason)
         } else {
-            if (ppgSamples.isNotEmpty()) {
-                val min = ppgSamples.minOrNull() ?: 0f
-                val max = ppgSamples.maxOrNull() ?: 0f
+            val samples = synchronized(ppgBufferLock) {
+                ppgSamples.toList().also { ppgSamples.clear() }
+            }
+            if (samples.isNotEmpty()) {
+                val min = samples.minOrNull() ?: 0f
+                val max = samples.maxOrNull() ?: 0f
                 val amp = (max - min).toDouble()
                 lastPpgAmplitude = if (amp.isFinite()) amp else null
                 lastPpgTs = System.currentTimeMillis()
                 lastPpgQuality = (amp.toFloat() / (amp.toFloat() + 50f)).coerceIn(0f, 1f)
-                Log.i(TAG, "[PPG] Completed ($reason) samples=${ppgSamples.size} amp=${lastPpgAmplitude ?: -1.0} q=${lastPpgQuality}")
+                Log.i(TAG, "[PPG] Completed ($reason) samples=${samples.size} amp=${lastPpgAmplitude ?: -1.0} q=${lastPpgQuality}")
             } else {
                 lastPpgAmplitude = null
                 lastPpgTs = System.currentTimeMillis()
@@ -1259,7 +1282,6 @@ class SkinTempService : Service() {
             }
         }
         finishMeasurementCycle()
-        ppgSamples.clear()
         ppgStartUptimeMs = 0L
     }
 
