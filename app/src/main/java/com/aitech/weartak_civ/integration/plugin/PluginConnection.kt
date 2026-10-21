@@ -153,6 +153,7 @@ class PluginConnection(
             pluginIdExpected = pluginPackage,
             hostExtras = android.os.Bundle().apply {
                 putBoolean(HostControlImpl.HOST_EXTRA_COT_ROUTING_V1, true)
+                putBoolean(HostControlImpl.HOST_EXTRA_CHAT_DISPATCH_V1, true)
             },
         )
         try {

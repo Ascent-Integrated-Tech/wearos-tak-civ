@@ -7,6 +7,7 @@ import android.os.Looper
 import android.util.Log
 import android.widget.Toast
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.cot.ChatDestinations
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.weartak.plugin.sdk.DeviceStatusContract
@@ -75,6 +76,10 @@ class HostControlImpl(
     override fun requestCotDispatch(request: CotRequestParcel?) {
         if (!verifyCaller() || request == null) return
         val payload = request.payload
+        if (request.payloadFormat.equals(PAYLOAD_FORMAT_CHAT, ignoreCase = true)) {
+            dispatchPluginChat(payload)
+            return
+        }
         val xml = when (request.payloadFormat.lowercase()) {
             "cot_xml", "xml" -> payload.getString("xml")
                 ?: payload.getString("cotXml")
@@ -117,6 +122,28 @@ class HostControlImpl(
                 TAKConnectService.sendDataTAKServers(msg = xml, isNotPli = true)
             }.onFailure { Log.e(TAG, "requestCotDispatch relay failed", it) }
         }
+    }
+
+    /**
+     * Sends a plugin-authored chat message as this watch, through the same pipeline as WearTAK's own
+     * automated chat: it lands in the watch's chat history and goes out on every connected
+     * transport (TAK servers, SITX, multicast, companion) with the watch's UID and callsign.
+     */
+    private fun dispatchPluginChat(payload: Bundle) {
+        val message = payload.getString(KEY_CHAT_MESSAGE)?.trim()
+        if (message.isNullOrEmpty() || message.length > MAX_PLUGIN_CHAT_LENGTH) {
+            Log.w(TAG, "requestCotDispatch chat: rejected message from $pluginPackage (length=${message?.length ?: 0})")
+            return
+        }
+        val roomUid = payload.getString(KEY_CHAT_ROOM_UID)?.trim().takeUnless { it.isNullOrEmpty() }
+            ?: ChatDestinations.ALL_CHAT_ROOMS
+        val roomTitle = payload.getString(KEY_CHAT_ROOM_TITLE)?.trim().takeUnless { it.isNullOrEmpty() }
+            ?: roomUid
+        runCatching {
+            runBlocking {
+                app.repo.requestAutomatedChatSend(roomUid, roomTitle, message, System.currentTimeMillis())
+            }
+        }.onFailure { Log.e(TAG, "requestCotDispatch chat failed", it) }
     }
 
     /**
@@ -371,6 +398,14 @@ class HostControlImpl(
         internal const val HOST_EXTRA_COT_ROUTING_V1 = "cotDispatchRoutingV1"
         internal const val KEY_INGEST_LOCAL = "ingestLocal"
         internal const val KEY_RELAY_TO_NETWORK = "relayToNetwork"
+
+        /** Host extra advertising that [requestCotDispatch] accepts [PAYLOAD_FORMAT_CHAT]. */
+        internal const val HOST_EXTRA_CHAT_DISPATCH_V1 = "chatDispatchV1"
+        internal const val PAYLOAD_FORMAT_CHAT = "chat"
+        internal const val KEY_CHAT_MESSAGE = "message"
+        internal const val KEY_CHAT_ROOM_UID = "roomUid"
+        internal const val KEY_CHAT_ROOM_TITLE = "roomTitle"
+        internal const val MAX_PLUGIN_CHAT_LENGTH = 4000
 
         private const val TAG = "CEP-HostControl"
 
