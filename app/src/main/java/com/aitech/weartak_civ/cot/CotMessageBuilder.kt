@@ -9,6 +9,8 @@ import java.util.TimeZone
 import java.util.UUID
 
 object CotMessageBuilder {
+    private const val CHAT_STALE_MILLIS = 24L * 60 * 60 * 1000
+
     data class PliOptions(
         val callsign: String,
         val role: String,
@@ -168,9 +170,12 @@ object CotMessageBuilder {
         messageId: String = UUID.randomUUID().toString(),
         nowMillis: Long = System.currentTimeMillis(),
     ): String {
-        val time = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+        val cotFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
-        }.format(Date(nowMillis))
+        }
+        val time = cotFormat.format(Date(nowMillis))
+        // Match ATAK GeoChat (stale = time + 1 day); TAK Servers with ignoreStaleMessages drop already-stale chat.
+        val stale = cotFormat.format(Date(nowMillis + CHAT_STALE_MILLIS))
         val location = snapshot.location
         val point = listOf(
             "lat" to (location?.lat ?: 0.0), "lon" to (location?.lon ?: 0.0), "hae" to (location?.hae ?: 0.0),
@@ -203,7 +208,7 @@ object CotMessageBuilder {
                     CotXml.escape(snapshot.message)) + marti
         return CotXml.event(listOf(
             "version" to "2.0", "uid" to CotXml.escape("GeoChat.$senderUid.${snapshot.roomUid}.$messageId"), "type" to "b-t-f",
-            "time" to time, "start" to time, "stale" to time, "how" to "h-g-i-g-o", "access" to "Undefined",
+            "time" to time, "start" to time, "stale" to stale, "how" to "h-g-i-g-o", "access" to "Undefined",
         ), point, detail)
     }
 
