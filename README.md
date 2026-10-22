@@ -282,6 +282,9 @@ discovery still uses the A11A service UUID, and advertising still includes the c
 system device name; no `WT-` prefix is required. Bluetooth connection permissions remain
 necessary for GATT and bond handling.
 
+Callsigns are exchanged independently in `watch_info.payload.cs`, not inferred from
+the system Bluetooth name.
+
 An existing name such as `WT-ODIN-ATAK` is not automatically restored because the original
 name is unknown. Rename the watch manually in watch Settings if desired.
 
@@ -517,9 +520,9 @@ certificates, and other settings stay on the watch. If a one-time upload arrives
 bonded phone, the watch first restores its saved values and ends the bond, then applies the
 upload, so the configured settings stick.
 
-The saved values are restored, the Bluetooth name is recomputed from the restored callsign,
-the TAK service is asked to reconnect with the restored servers, and a PLI refresh is
-requested when any of these happen:
+The saved values are restored without changing the system Bluetooth name, the TAK service
+is asked to reconnect with the restored servers, and a PLI refresh is requested when any
+of these happen:
 - the phone releases management or sends a one-time (unmanaged) upload;
 - **Companion App** is turned off on the watch;
 - the managing phone is unpaired;
