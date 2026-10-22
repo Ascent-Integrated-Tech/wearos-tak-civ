@@ -294,16 +294,19 @@ class DataRepository(private val context: Context) {
     val takMissions: StateFlow<List<TakServerMissions>> =
         _takMissions.asStateFlow()
 
-    // Store routes using the server ID and route UID as the key
-    // This keeps routes from different TAK Servers separate
-    // Routes with the same UID on different servers can be stored independently
+    // Keep source ownership for mission bookkeeping and fallback; project versioned CoT by UID.
     private val _takRoutes = MutableStateFlow<Map<Pair<String, String>, TakRoute>>(emptyMap())
+    internal val takRouteCopies: List<TakRoute> get() = _takRoutes.value.values.toList()
 
-    // Expose stored routes as a list for the rest of the app
-    // Convert the internal map into a list whenever routes change
     val takRoutes: StateFlow<List<TakRoute>> =
         _takRoutes
-            .map { it.values.toList() }
+            .map { routes ->
+                val versioned = routes.values.filter { it.eventTime != null }.groupBy { it.uid }
+                    .mapValues { (_, copies) -> copies.maxBy { requireNotNull(it.eventTime) } }
+                routes.values.filter { route ->
+                    route.eventTime == null || versioned[route.uid] == route
+                }
+            }
             .stateIn(
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
                 started = SharingStarted.Eagerly,
@@ -313,6 +316,9 @@ class DataRepository(private val context: Context) {
     // Add a new route or update an existing route
     // A route is identified by its server ID and UID
     fun upsertTakRoute(route: TakRoute) {
+        if (route.eventTime == null) {
+            Log.d(TAG, "Route has no event version; cannot replace versioned state uid=${route.uid}")
+        }
 
         // Build a unique key for this route on its TAK Server
         val key = route.serverId to route.uid
@@ -321,7 +327,10 @@ class DataRepository(private val context: Context) {
         // An existing route with the same key will be replaced
         // Other stored routes will remain unchanged
         _takRoutes.update { current ->
-            current + (key to route)
+            val previous = current[key]
+            if (previous?.eventTime != null &&
+                (route.eventTime == null || route.eventTime < previous.eventTime)) current
+            else current + (key to route)
         }
 
         // Log the stored route information for debugging

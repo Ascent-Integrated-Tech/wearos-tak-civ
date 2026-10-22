@@ -26,7 +26,9 @@ data class TakRoute(
     // Null if the route is not linked to a mission
     val missionName: String? = null,
 
-    val sender: String? = null
+    val sender: String? = null,
+
+    val eventTime: Long? = null
 
 )
 
