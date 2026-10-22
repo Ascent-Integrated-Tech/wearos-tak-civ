@@ -344,7 +344,6 @@ class DittoService : Service() {
             if (leActual.isNaN()) leActual = 9999999.0F
             val bearingActual = location?.bearing ?: 0.0F
             val speedActual = location?.speed ?: 0.0F
-            val deviceModel = "$manufacturer $model"
             val typeString = "a-f-G-U-C"
             val access = "Undefined"
             val how = "m-g"
@@ -363,11 +362,6 @@ class DittoService : Service() {
                 speed = speedActual,
                 // if you need a custom endpoint/phone (these also have defaults):
                 endpoint = "*:-1:stcp",
-                // takv info:
-                takvOs = "WEAROS",           // e.g. "14"
-                takvVersion = "WearTAK-${Build.VERSION.RELEASE}",        // your APK version
-                takvDevice = deviceModel,                     // "$manufacturer $model"
-                takvPlatform = "ATAK-CIV",
                 // ditto payload:
                 dittoA = localPeerKeyString,                     // "a-f-G-U-C"
                 dittoIp = "0.0.0.0",                         // "Undefined"
@@ -609,5 +603,4 @@ class DittoService : Service() {
         }
     }
 }
-
 

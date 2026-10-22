@@ -1,8 +1,21 @@
 package com.aitech.weartak_civ.cot
 
 import android.os.Build
+import com.aitech.weartak_civ.BuildConfig
 
 object CotDetailBuilder {
+    fun takv(): String = CotXml.element("takv", listOf(
+        "os" to Build.VERSION.SDK_INT,
+        "version" to CotXml.escape(BuildConfig.VERSION_NAME),
+        "device" to CotXml.escape("${Build.MANUFACTURER} ${Build.MODEL}"),
+        "platform" to "WearTAK",
+    ))
+
+    fun status(battery: Int?, readiness: Boolean = false): String = CotXml.element("status", buildList {
+        if (readiness) add("readiness" to "true")
+        battery?.takeIf { it in 0..100 }?.let { add("battery" to it) }
+    })
+
     fun dittoTrack(
         heartRate: Int,
         battery: Int,
@@ -12,10 +25,6 @@ object CotDetailBuilder {
         uid: String,
         course: Float,
         speed: Float,
-        takvOs: String = "WEAROS",
-        takvVersion: String = "WearTAK-${Build.VERSION.RELEASE}",
-        takvDevice: String,
-        takvPlatform: String = "ATAK-CIV",
         altitudeSource: String = "GPS",
         geopointSource: String = "GPS",
         dittoA: String,
@@ -23,5 +32,21 @@ object CotDetailBuilder {
         dittoVersion: String,
         dittoDeviceName: String,
         endpoint: String = "*:-1:stcp",
-    ): String = "<detail><takv os='$takvOs' version='$takvVersion' device='$takvDevice' platform='$takvPlatform'/><contact endpoint='$endpoint' callsign='$callsign'/><uid Droid='$uid'/><precisionlocation altsrc='$altitudeSource' geopointsrc='$geopointSource'/><__group role='$role' name='$team'/><status battery='$battery'/><remarks>HR: $heartRate bpm; Batt: $battery%</remarks><biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics><track course='$course' speed='$speed'/><ditto a='$dittoA' ip='$dittoIp' version='$dittoVersion' deviceName='$dittoDeviceName'/></detail>"
+    ): String = CotXml.element("detail", content =
+        takv() +
+            CotXml.element("contact", listOf("endpoint" to CotXml.escape(endpoint), "callsign" to CotXml.escape(callsign))) +
+            CotXml.element("uid", listOf("Droid" to CotXml.escape(uid))) +
+            CotXml.element("precisionlocation", listOf(
+                "altsrc" to CotXml.escape(altitudeSource), "geopointsrc" to CotXml.escape(geopointSource),
+            )) +
+            CotXml.element("__group", listOf("role" to CotXml.escape(role), "name" to CotXml.escape(team))) +
+            status(battery) +
+            "<remarks>HR: $heartRate bpm; Batt: $battery%</remarks>" +
+            "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics>" +
+            CotXml.element("track", listOf("course" to course, "speed" to speed)) +
+            CotXml.element("ditto", listOf(
+                "a" to CotXml.escape(dittoA), "ip" to CotXml.escape(dittoIp),
+                "version" to CotXml.escape(dittoVersion), "deviceName" to CotXml.escape(dittoDeviceName),
+            )),
+    )
 }
