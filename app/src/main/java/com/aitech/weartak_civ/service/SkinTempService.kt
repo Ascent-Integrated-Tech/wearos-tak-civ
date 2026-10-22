@@ -242,6 +242,7 @@ class SkinTempService : Service() {
 	private val NN_MIN_MS = 300
 	private val NN_MAX_MS = 2000
 	@Volatile private var lastNonZeroRmssdMs: Double = 0.0
+	@Volatile private var lastNonZeroSdnnMs: Double = 0.0
 
     // ---- Strict measurement state machine for SpO2 → PPG ----
     private enum class MeasurementState { IDLE, SPO2_RUNNING, PPG_RUNNING }
@@ -436,6 +437,10 @@ class SkinTempService : Service() {
 			val rmssd = computeRmssdMs()
 			if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) {
 				lastNonZeroRmssdMs = rmssd
+			}
+			val sdnn = computeSdnnMs()
+			if (sdnn != null && sdnn > 0.0 && sdnn.isFinite()) {
+				lastNonZeroSdnnMs = sdnn
 			}
 			val effectiveRmssd = if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) rmssd else lastNonZeroRmssdMs
 			//Log.i(TAG, "HRV-RMSSD: rmssdMs=${"%.1f".format(effectiveRmssd)} nnCount=${nnBuffer.size} source=$reason")
@@ -1135,6 +1140,17 @@ class SkinTempService : Service() {
 		return kotlin.math.sqrt(sumSq / n)
 	}
 
+	private fun computeSdnnMs(): Double? {
+		val intervals = synchronized(nnBufferLock) { nnBuffer.toList() }
+		if (intervals.size < MIN_NN_FOR_RMSSD) return null
+		val mean = intervals.average()
+		val variance = intervals.sumOf { value ->
+			val delta = value - mean
+			delta * delta
+		} / (intervals.size - 1)
+		return kotlin.math.sqrt(variance)
+	}
+
     private val hrFlushRunnable = object : Runnable {
         override fun run() {
             if (!screenOffFlushEnabled || !deviceWorn || !isHrRunning) return
@@ -1653,7 +1669,10 @@ class SkinTempService : Service() {
 				CepBus.emit(
 					CepEvent(
 						topic = Topics.HRV,
-						payload = HrvPayload(rmssd_ms = lastNonZeroRmssdMs)
+						payload = HrvPayload(
+							rmssd_ms = lastNonZeroRmssdMs,
+							sdnn_ms = lastNonZeroSdnnMs.takeIf { it > 0.0 && it.isFinite() }
+						)
 					)
 				)
 			}

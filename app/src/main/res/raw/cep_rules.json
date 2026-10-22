@@ -12,6 +12,115 @@
     "rule_eval_interval_ms": 500,
     "_comment": "Phase 1: window_tick_ms sets the ring-buffer resolution; rule_eval_interval_ms controls how often rules are evaluated. Both default to 1000ms (1 Hz). Decoupling them is the Phase 5 goal."
   },
+  "baseline_v2": {
+    "enabled": true,
+    "metrics": [
+      {
+        "id": "hr.resting_bpm.v2",
+        "source": "heart_rate",
+        "strategy": "DIST_ROBUST",
+        "definition_version": "hr_rest_definition_v1",
+        "window_sec": 600,
+        "artifact_policy": "awake_on_wrist_still_quality_v1",
+        "normalization": "none",
+        "transform": "none",
+        "context_key": "AWAKE_REST",
+        "emission_identity": "segment_midpoint"
+      },
+      {
+        "id": "hrv.rmssd_ms.v2",
+        "source": "hrv.rmssd_ms",
+        "strategy": "DIST_LOG",
+        "definition_version": "rmssd_v2_definition_v1",
+        "window_sec": 300,
+        "artifact_policy": "existing_hrv_payload_v1",
+        "normalization": "none",
+        "transform": "ln",
+        "context_key": "AWAKE_REST_OR_SLEEP",
+        "emission_identity": "hrv_payload_timestamp"
+      },
+      {
+        "id": "hrv.sdnn_ms.v2",
+        "source": "hrv.sdnn_ms",
+        "strategy": "DIST_VARIABILITY",
+        "definition_version": "sdnn_v2_definition_v1",
+        "window_sec": 300,
+        "artifact_policy": "existing_hrv_payload_v1",
+        "normalization": "none",
+        "transform": "none",
+        "context_key": "AWAKE_REST_OR_SLEEP",
+        "emission_identity": "sdnn_5min_ms"
+      },
+      {
+        "id": "spo2.pct.v2",
+        "source": "spo2",
+        "strategy": "EMA_PERCENTILE",
+        "definition_version": "spo2_v2_definition_v1",
+        "artifact_policy": "sequencer_status_and_motion_v1",
+        "normalization": "family_altitude_profile",
+        "transform": "none",
+        "context_key": "QUALIFIED_SPO2_READING",
+        "emission_identity": "spo2.pct"
+      },
+      {
+        "id": "ppg.amplitude.v2",
+        "source": "ppg.amplitude",
+        "strategy": "DIST_RELATIVE",
+        "definition_version": "ppg_v2_definition_v1",
+        "window_sec": 20,
+        "artifact_policy": "quality_contact_wavelength_v1",
+        "normalization": "session_relative_pending",
+        "transform": "none",
+        "context_key": "ON_WRIST_QUALIFIED_PPG",
+        "emission_identity": "ppg_amplitude_window"
+      },
+      {
+        "id": "hr.active_bpm.v2",
+        "source": "heart_rate",
+        "strategy": "DIST_CONTEXT",
+        "definition_version": "active_hr_v2_definition_v1",
+        "artifact_policy": "on_wrist_activity_context_v1",
+        "normalization": "context_grouped",
+        "transform": "none",
+        "context_key": "ACTIVE_ACTIVITY_STATE",
+        "emission_identity": "heart_rate_timestamp"
+      },
+      {
+        "id": "hr.hrr_percent.v2",
+        "source": "heart_rate",
+        "strategy": "DIST_CONTEXT",
+        "definition_version": "hrr_v2_definition_v1",
+        "artifact_policy": "profile_versioned_hr_v1",
+        "normalization": "activity_response",
+        "transform": "none",
+        "context_key": "ACTIVE_ACTIVITY_STATE",
+        "emission_identity": "heart_rate_timestamp"
+      },
+      {
+        "id": "skin_temp.peripheral_median_c.v2",
+        "source": "skin_temp",
+        "strategy": "DIST_CONTEXT",
+        "definition_version": "skin_temperature_v2_definition_v1",
+        "artifact_policy": "peripheral_sensor_finite_v1",
+        "normalization": "context_circadian_segment",
+        "transform": "none",
+        "context_key": "ON_WRIST_CONTEXT",
+        "emission_identity": "skin_temp_timestamp"
+      },
+      {
+        "id": "hrv.ibi_ms.v2",
+        "source": "hrv.ibi_ms",
+        "strategy": "DIST_VARIABILITY",
+        "definition_version": "ibi_v2_definition_v1",
+        "window_sec": 300,
+        "artifact_policy": "status_zero_and_300_2000ms_v1",
+        "normalization": "none",
+        "transform": "none",
+        "context_key": "AWAKE_REST_OR_SLEEP",
+        "emission_identity": "ibi_timestamp"
+      }
+    ]
+  },
   "metrics": [
     {
       "id": "hrv.rmssd_ms",

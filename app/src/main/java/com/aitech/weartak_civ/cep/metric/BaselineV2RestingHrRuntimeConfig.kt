@@ -4,7 +4,11 @@ import com.aitech.weartak_civ.cep.engine.FeatureStore
 
 /** Quality must be supplied by the sensor/runtime integration; V2 does not guess it. */
 fun interface RestingHrQualityProvider {
-    fun assess(featureStore: FeatureStore, nowMs: Long): QualityAssessment?
+    fun assess(
+        featureStore: FeatureStore,
+        nowMs: Long,
+        sourceKey: String
+    ): QualityAssessment?
 }
 
 data class BaselineV2RestingHrRuntimeConfig(

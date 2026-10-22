@@ -48,7 +48,7 @@ object CepConfigMerger {
         // Metrics are built-in definitions today. They are not part of the feature/rule
         // precedence maps, so carry them explicitly into the merged config instead of
         // reconstructing CepConfig with its default empty metric list.
-        return buildMergeResult(state, finalCadence, builtIn.metrics)
+        return buildMergeResult(state, finalCadence, builtIn.metrics, builtIn.baselineV2)
     }
 
     private fun mergePluginLayer(state: MergeState, plugin: List<PluginContribution>) {
@@ -206,6 +206,7 @@ object CepConfigMerger {
         state: MergeState,
         finalCadence: RuleCompiler.EngineCadence,
         metrics: List<MetricSpec>,
+        baselineV2: com.aitech.weartak_civ.cep.metric.BaselineV2Config,
     ): MergeResult {
         val mergedConfig = CepConfig(
             tickHz = finalCadence.tickHz,
@@ -213,6 +214,7 @@ object CepConfigMerger {
             rules = state.rulesById.values.toList(),
             metrics = metrics,
             ruleEvalIntervalMs = finalCadence.ruleEvalIntervalMs,
+            baselineV2 = baselineV2,
         )
         return MergeResult(
             config = mergedConfig,

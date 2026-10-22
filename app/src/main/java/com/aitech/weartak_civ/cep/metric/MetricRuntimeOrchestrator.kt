@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.cep.metric
 
 import android.content.Context
+import android.util.Log
 import com.aitech.weartak_civ.cep.engine.FeatureStore
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.NumericSample
@@ -16,6 +17,7 @@ class MetricRuntimeOrchestrator(
     metricSpecs: List<MetricSpec>,
     private val appContext: Context? = null,
     private val legacyBaselineEnabled: Boolean = true,
+    private val baselineV2Config: BaselineV2Config = BaselineV2Config(),
     private val historyStore: MetricHistoryStore = FileBackedMetricHistoryStore(
         baseDir = if (appContext != null) {
             File(appContext.filesDir, "metric_history")
@@ -278,18 +280,7 @@ class MetricRuntimeOrchestrator(
     private val specs = metricSpecs
 
     suspend fun initialize() {
-        BaselineV2Runtime.configureRestingHrCoordinator(
-            coordinator = v2RestingHrCoordinator,
-            qualityProvider = ContextOnlyRestingHrQualityProvider
-        )
-        BaselineV2Runtime.configureRmssdCoordinator(v2RmssdCoordinator)
-        BaselineV2Runtime.configureSdnnCoordinator(v2SdnnCoordinator)
-        BaselineV2Runtime.configureSpo2Coordinator(v2Spo2Coordinator)
-        BaselineV2Runtime.configurePpgCoordinator(v2PpgCoordinator)
-        BaselineV2Runtime.configureActiveHrCoordinator(v2ActiveHrCoordinator)
-        BaselineV2Runtime.configureHrrCoordinator(v2HrrCoordinator)
-        BaselineV2Runtime.configureSkinTemperatureCoordinator(v2SkinTemperatureCoordinator)
-        BaselineV2Runtime.configureIbiCoordinator(v2IbiCoordinator)
+        configureBaselineV2()
         val merged = mergeRuntimeOverrides(specs)
         validateSpecs(merged)
         dispatchRouter = MetricDispatchRouter(merged)
@@ -302,6 +293,60 @@ class MetricRuntimeOrchestrator(
             MetricSourceHookBinding(spec, hook, processor, contract)
         }
         registry = MetricRegistry(bindings)
+    }
+
+    private fun configureBaselineV2() {
+        if (!baselineV2Config.enabled) {
+            BaselineV2Runtime.reset()
+            return
+        }
+        BaselineV2Runtime.configureSources(baselineV2Config)
+        val configuredIds = baselineV2Config.metrics.map { it.id }.toSet()
+        require(configuredIds.isNotEmpty()) { "Baseline V2 is enabled but no metrics are configured" }
+        val supportedIds = setOf(
+            "hr.resting_bpm.v2",
+            BaselineV2MetricDefinitions.RMSSD.metricId,
+            BaselineV2MetricDefinitions.SDNN.metricId,
+            BaselineV2MetricDefinitions.SPO2.metricId,
+            BaselineV2MetricDefinitions.PPG.metricId,
+            BaselineV2MetricDefinitions.ACTIVE_HR.metricId,
+            BaselineV2MetricDefinitions.HRR.metricId,
+            BaselineV2MetricDefinitions.SKIN_TEMPERATURE.metricId,
+            BaselineV2MetricDefinitions.IBI.metricId
+        )
+        require(configuredIds.all(supportedIds::contains)) {
+            "Unsupported Baseline V2 metric configured: ${configuredIds - supportedIds}"
+        }
+        if ("hr.resting_bpm.v2" in configuredIds) {
+            BaselineV2Runtime.configureRestingHrCoordinator(
+                coordinator = v2RestingHrCoordinator,
+                qualityProvider = ContextOnlyRestingHrQualityProvider
+            )
+        }
+        if (BaselineV2MetricDefinitions.RMSSD.metricId in configuredIds) {
+            BaselineV2Runtime.configureRmssdCoordinator(v2RmssdCoordinator)
+        }
+        if (BaselineV2MetricDefinitions.SDNN.metricId in configuredIds) {
+            BaselineV2Runtime.configureSdnnCoordinator(v2SdnnCoordinator)
+        }
+        if (BaselineV2MetricDefinitions.SPO2.metricId in configuredIds) {
+            BaselineV2Runtime.configureSpo2Coordinator(v2Spo2Coordinator)
+        }
+        if (BaselineV2MetricDefinitions.PPG.metricId in configuredIds) {
+            BaselineV2Runtime.configurePpgCoordinator(v2PpgCoordinator)
+        }
+        if (BaselineV2MetricDefinitions.ACTIVE_HR.metricId in configuredIds) {
+            BaselineV2Runtime.configureActiveHrCoordinator(v2ActiveHrCoordinator)
+        }
+        if (BaselineV2MetricDefinitions.HRR.metricId in configuredIds) {
+            BaselineV2Runtime.configureHrrCoordinator(v2HrrCoordinator)
+        }
+        if (BaselineV2MetricDefinitions.SKIN_TEMPERATURE.metricId in configuredIds) {
+            BaselineV2Runtime.configureSkinTemperatureCoordinator(v2SkinTemperatureCoordinator)
+        }
+        if (BaselineV2MetricDefinitions.IBI.metricId in configuredIds) {
+            BaselineV2Runtime.configureIbiCoordinator(v2IbiCoordinator)
+        }
     }
 
     /**
@@ -344,6 +389,7 @@ class MetricRuntimeOrchestrator(
             }
         }
         runCatching { BaselineV2Runtime.observeFeatures(featureStore, evt.ts) }
+            .onFailure { Log.e("CEP_V2", "Feature observation failed", it) }
     }
 
     private fun processLegacyBinding(
@@ -384,6 +430,8 @@ class MetricRuntimeOrchestrator(
     }
 
     internal fun onTick(nowMs: Long, featureStore: FeatureStore) {
+        runCatching { BaselineV2Runtime.observeFeatures(featureStore, nowMs) }
+            .onFailure { Log.e("CEP_V2", "Tick observation failed", it) }
         if (!legacyBaselineEnabled) return
         synchronized(runtimeLock) {
             observeActivityContext(featureStore, nowMs)

@@ -142,6 +142,11 @@ class WindowStore(private val ringConfig: RingConfig) {
                     num.getOrPut(hrv_rmssd_ms) { TimedDoubleRing(numCap()) }.add(h, tsMs)
                     fs.put(hrv_rmssd_ms, h, tsMs)
                 }
+                val sdnn = p.sdnn_ms
+                if (sdnn != null) {
+                    num.getOrPut("hrv.sdnn_ms") { TimedDoubleRing(numCap()) }.add(sdnn, tsMs)
+                    fs.put("hrv.sdnn_ms", sdnn, tsMs)
+                }
             }
             is ImmersionPayload -> {
                 latest[immersion_wet_flag] = p.wet_flag

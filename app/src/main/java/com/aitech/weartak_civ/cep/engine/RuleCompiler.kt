@@ -14,6 +14,9 @@ import com.aitech.weartak_civ.cep.metric.MetricSelectedOutputMapping
 import com.aitech.weartak_civ.cep.metric.MetricSpec
 import com.aitech.weartak_civ.cep.metric.MetricTrendPolicy
 import com.aitech.weartak_civ.cep.metric.MetricThresholdPolicy
+import com.aitech.weartak_civ.cep.metric.BaselineV2Config
+import com.aitech.weartak_civ.cep.metric.BaselineV2MetricConfig
+import com.aitech.weartak_civ.cep.metric.BaselineV2Strategy
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -52,7 +55,38 @@ object RuleCompiler {
         val features = parseFeatureDefs(root.optJSONArray("features"))
         val rules = if (root.has("rules")) parseRuleDefs(root.optJSONArray("rules")) else emptyList()
         val metrics = if (root.has("metrics")) parseMetrics(root.optJSONArray("metrics")) else emptyList()
-        return CepConfig(tickHz, features, rules, metrics, ruleEvalIntervalMs)
+        val baselineV2 = parseBaselineV2(root.optJSONObject("baseline_v2"))
+        return CepConfig(tickHz, features, rules, metrics, ruleEvalIntervalMs, baselineV2)
+    }
+
+    private fun parseBaselineV2(root: JSONObject?): BaselineV2Config {
+        if (root == null) return BaselineV2Config()
+        val metrics = root.optJSONArray("metrics") ?: JSONArray()
+        val definitions = buildList {
+            for (i in 0 until metrics.length()) {
+                val metric = metrics.getJSONObject(i)
+                add(
+                    BaselineV2MetricConfig(
+                        id = metric.getString("id"),
+                        source = metric.getString("source"),
+                        strategy = BaselineV2Strategy.valueOf(metric.getString("strategy")),
+                        definitionVersion = metric.getString("definition_version"),
+                        windowSec = if (metric.has("window_sec") && !metric.isNull("window_sec")) {
+                            metric.getLong("window_sec")
+                        } else null,
+                        artifactPolicy = metric.getString("artifact_policy"),
+                        normalization = metric.getString("normalization"),
+                        transform = metric.getString("transform"),
+                        contextKey = metric.getString("context_key"),
+                        emissionIdentity = metric.getString("emission_identity")
+                    )
+                )
+            }
+        }
+        return BaselineV2Config(
+            enabled = root.optBoolean("enabled", true),
+            metrics = definitions
+        )
     }
 
     private fun parseMetrics(arr: JSONArray?): List<MetricSpec> {

@@ -40,7 +40,8 @@ class CepEngine(
         dataRepository = dataRepository,
         metricSpecs = config.metrics,
         appContext = appContext,
-        legacyBaselineEnabled = legacyBaselineEnabled
+        legacyBaselineEnabled = legacyBaselineEnabled,
+        baselineV2Config = config.baselineV2
     )
     private val profileStore = CepProvider.getProfile(appContext)
     private val seenTierEventLru = ArrayDeque<String>(32)

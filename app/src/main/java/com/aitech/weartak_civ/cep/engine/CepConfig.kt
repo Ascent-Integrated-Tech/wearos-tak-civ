@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.cep.engine
 
 import com.aitech.weartak_civ.cep.metric.MetricSpec
+import com.aitech.weartak_civ.cep.metric.BaselineV2Config
 
 data class CepConfig(
     val tickHz: Int,
@@ -8,7 +9,8 @@ data class CepConfig(
     val rules: List<RuleDef>,
     val metrics: List<MetricSpec> = emptyList(),
     // Phase 1: explicit rule-evaluation interval (may differ from ingest tick in later phases)
-    val ruleEvalIntervalMs: Int = 1000
+    val ruleEvalIntervalMs: Int = 1000,
+    val baselineV2: BaselineV2Config = BaselineV2Config()
 )
 
 enum class MissingRenderPolicy {

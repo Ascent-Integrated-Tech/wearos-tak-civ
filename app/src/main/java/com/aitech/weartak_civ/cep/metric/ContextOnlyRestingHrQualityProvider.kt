@@ -10,10 +10,10 @@ import com.aitech.weartak_civ.cep.engine.FeatureStore
 object ContextOnlyRestingHrQualityProvider : RestingHrQualityProvider {
     override fun assess(
         featureStore: FeatureStore,
-        nowMs: Long
+        nowMs: Long,
+        sourceKey: String
     ): QualityAssessment? {
-        val bpm = featureStore.latestAsDouble("selected.metrics.hr.current_bpm")
-            ?: featureStore.latestAsDouble("features.hr.current_bpm")
+        val bpm = featureStore.latestAsDouble(sourceKey)
             ?: return null
         val onWrist = featureStore.latestAsDouble("offbody.on_wrist")?.let { it >= 0.5 } ?: return null
         val sleeping = featureStore.bool("sleep.is_sleeping") ?: return null

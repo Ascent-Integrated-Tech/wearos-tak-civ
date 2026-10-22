@@ -24,13 +24,22 @@ object BaselineV2FeatureAdapter {
     fun restingHrInput(
         featureStore: FeatureStore,
         qualityProvider: RestingHrQualityProvider,
-        nowMs: Long
+        nowMs: Long,
+        sourceKey: String = "selected.metrics.hr.current_bpm"
     ): RestingHrInput? {
-        val bpm = featureStore.latestAsDouble("selected.metrics.hr.current_bpm")
-            ?: featureStore.latestAsDouble("features.hr.current_bpm")
+        val bpm = featureStore.latestAsDouble(sourceKey)
+            ?: if (sourceKey == "selected.metrics.hr.current_bpm") {
+                featureStore.latestAsDouble("features.hr.current_bpm")
+            } else {
+                null
+            }
             ?: return null
-        val valueTimestampMs = featureStore.timestampMs("selected.metrics.hr.current_bpm")
-            ?: featureStore.timestampMs("features.hr.current_bpm")
+        val valueTimestampMs = featureStore.timestampMs(sourceKey)
+            ?: if (sourceKey == "selected.metrics.hr.current_bpm") {
+                featureStore.timestampMs("features.hr.current_bpm")
+            } else {
+                null
+            }
             ?: return null
         val context = ContextInputSnapshot(
             activityState = featureStore.str("activity.state"),
@@ -41,7 +50,7 @@ object BaselineV2FeatureAdapter {
             qualityScore = null,
             timestampMs = nowMs
         )
-        val quality = qualityProvider.assess(featureStore, nowMs) ?: return null
+        val quality = qualityProvider.assess(featureStore, nowMs, sourceKey) ?: return null
         return restingHrInput(bpm, valueTimestampMs, context, quality)
     }
 }

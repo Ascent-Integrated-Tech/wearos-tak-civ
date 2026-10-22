@@ -14,6 +14,25 @@ data class MetricSpec(
     val scalarField: String? = null
 )
 
+/** Configuration surface for the independently managed Baseline Trends V2 runtime. */
+data class BaselineV2Config(
+    val enabled: Boolean = false,
+    val metrics: List<BaselineV2MetricConfig> = emptyList()
+)
+
+data class BaselineV2MetricConfig(
+    val id: String,
+    val source: String,
+    val strategy: BaselineV2Strategy,
+    val definitionVersion: String,
+    val windowSec: Long?,
+    val artifactPolicy: String,
+    val normalization: String,
+    val transform: String,
+    val contextKey: String,
+    val emissionIdentity: String
+)
+
 data class MetricBaselinePolicy(
     val estimator: String = "trimmed_mean",
     val transform: String = "none",

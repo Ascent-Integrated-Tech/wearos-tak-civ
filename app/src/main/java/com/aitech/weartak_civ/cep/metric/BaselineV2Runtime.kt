@@ -5,6 +5,7 @@ import com.aitech.weartak_civ.cep.engine.FeatureStore
 /** Process-local V2 output holder. It has no CEP or FeatureStore ownership. */
 object BaselineV2Runtime {
     val snapshotStore: BaselineV2SnapshotStore = BaselineV2SnapshotStore()
+    private val sourceKeys = mutableMapOf<String, String>()
 
     @Volatile
     private var restingHrCoordinator: BaselineV2RestingHrCoordinator? = null
@@ -67,13 +68,24 @@ object BaselineV2Runtime {
         ibiCoordinator = coordinator
     }
 
+    fun configureSources(config: BaselineV2Config) {
+        synchronized(sourceKeys) {
+            sourceKeys.clear()
+            config.metrics.forEach { sourceKeys[it.id] = it.source }
+        }
+    }
+
+    private fun sourceKey(metricId: String, default: String): String =
+        synchronized(sourceKeys) { sourceKeys[metricId] ?: default }
+
     fun observeFeatures(featureStore: FeatureStore, nowMs: Long = System.currentTimeMillis()) {
         restingHrCoordinator?.let { coordinator ->
-            restingHrQualityProvider?.let { qualityProvider ->
+                restingHrQualityProvider?.let { qualityProvider ->
                 BaselineV2FeatureAdapter.restingHrInput(
                     featureStore = featureStore,
                     qualityProvider = qualityProvider,
-                    nowMs = nowMs
+                    nowMs = nowMs,
+                    sourceKey = sourceKey("hr.resting_bpm.v2", "selected.metrics.hr.current_bpm")
                 )?.let(coordinator::ingest)
             }
         }
@@ -88,20 +100,31 @@ object BaselineV2Runtime {
     }
 
     private fun observeRmssd(featureStore: FeatureStore, nowMs: Long) {
-        observeHrvScalar(featureStore, nowMs, "hrv.rmssd_ms", BaselineV2MetricDefinitions.RMSSD) {
+        observeHrvScalar(
+            featureStore,
+            nowMs,
+            sourceKey(BaselineV2MetricDefinitions.RMSSD.metricId, "hrv.rmssd_ms"),
+            BaselineV2MetricDefinitions.RMSSD
+        ) {
             rmssdCoordinator?.ingest(it)
         }
     }
 
     private fun observeSdnn(featureStore: FeatureStore, nowMs: Long) {
-        observeHrvScalar(featureStore, nowMs, "hrv.sdnn_ms", BaselineV2MetricDefinitions.SDNN) {
+        observeHrvScalar(
+            featureStore,
+            nowMs,
+            sourceKey(BaselineV2MetricDefinitions.SDNN.metricId, "hrv.sdnn_ms"),
+            BaselineV2MetricDefinitions.SDNN
+        ) {
             sdnnCoordinator?.ingest(it)
         }
     }
 
     private fun observeSpo2(featureStore: FeatureStore, nowMs: Long) {
-        val value = featureStore.latestAsDouble("spo2.pct") ?: return
-        val timestamp = featureStore.timestampMs("spo2.pct") ?: return
+        val source = sourceKey(BaselineV2MetricDefinitions.SPO2.metricId, "spo2.pct")
+        val value = featureStore.latestAsDouble(source) ?: return
+        val timestamp = featureStore.timestampMs(source) ?: return
         val statusOk = featureStore.latestAsDouble("spo2.status_ok")?.let { it >= 0.5 } ?: return
         val onWrist = featureStore.latestAsDouble("offbody.on_wrist")?.let { it >= 0.5 } ?: return
         val activity = featureStore.str("activity.state") ?: return
@@ -129,8 +152,9 @@ object BaselineV2Runtime {
     }
 
     private fun observePpg(featureStore: FeatureStore, nowMs: Long) {
-        val value = featureStore.latestAsDouble("ppg.amplitude") ?: return
-        val timestamp = featureStore.timestampMs("ppg.amplitude") ?: return
+        val source = sourceKey(BaselineV2MetricDefinitions.PPG.metricId, "ppg.amplitude")
+        val value = featureStore.latestAsDouble(source) ?: return
+        val timestamp = featureStore.timestampMs(source) ?: return
         val quality = featureStore.latestAsDouble("ppg.quality") ?: return
         val wavelength = featureStore.str("ppg.wavelength") ?: return
         val onWrist = featureStore.latestAsDouble("offbody.on_wrist")?.let { it >= 0.5 } ?: return
@@ -155,8 +179,9 @@ object BaselineV2Runtime {
     }
 
     private fun observeActiveHr(featureStore: FeatureStore, nowMs: Long) {
-        val value = featureStore.latestAsDouble("heart_rate") ?: return
-        val timestamp = featureStore.timestampMs("heart_rate") ?: return
+        val source = sourceKey(BaselineV2MetricDefinitions.ACTIVE_HR.metricId, "heart_rate")
+        val value = featureStore.latestAsDouble(source) ?: return
+        val timestamp = featureStore.timestampMs(source) ?: return
         val onWrist = featureStore.latestAsDouble("offbody.on_wrist")?.let { it >= 0.5 } ?: return
         val activity = featureStore.str("activity.state") ?: return
         if (!onWrist || !value.isFinite() || value !in 25.0..240.0 || activity == "STILL" || activity == "UNKNOWN") return
@@ -174,8 +199,9 @@ object BaselineV2Runtime {
     }
 
     private fun observeHrr(featureStore: FeatureStore, nowMs: Long) {
-        val heartRate = featureStore.latestAsDouble("heart_rate") ?: return
-        val timestamp = featureStore.timestampMs("heart_rate") ?: return
+        val source = sourceKey(BaselineV2MetricDefinitions.HRR.metricId, "heart_rate")
+        val heartRate = featureStore.latestAsDouble(source) ?: return
+        val timestamp = featureStore.timestampMs(source) ?: return
         val rest = featureStore.latestAsDouble("profile.hr_rest_bpm") ?: return
         val maximum = featureStore.latestAsDouble("profile.hr_max_bpm") ?: return
         val activity = featureStore.str("activity.state") ?: return
@@ -196,8 +222,9 @@ object BaselineV2Runtime {
     }
 
     private fun observeSkinTemperature(featureStore: FeatureStore, nowMs: Long) {
-        val value = featureStore.latestAsDouble("skin_temp") ?: return
-        val timestamp = featureStore.timestampMs("skin_temp") ?: return
+        val source = sourceKey(BaselineV2MetricDefinitions.SKIN_TEMPERATURE.metricId, "skin_temp")
+        val value = featureStore.latestAsDouble(source) ?: return
+        val timestamp = featureStore.timestampMs(source) ?: return
         val onWrist = featureStore.latestAsDouble("offbody.on_wrist")?.let { it >= 0.5 } ?: return
         val activity = featureStore.str("activity.state") ?: return
         if (!onWrist || !value.isFinite() || value !in 0.0..50.0 || activity == "UNKNOWN") return
@@ -221,8 +248,9 @@ object BaselineV2Runtime {
     }
 
     private fun observeIbi(featureStore: FeatureStore, nowMs: Long) {
-        val value = featureStore.latestAsDouble("hrv.ibi_ms") ?: return
-        val timestamp = featureStore.timestampMs("hrv.ibi_ms") ?: return
+        val source = sourceKey(BaselineV2MetricDefinitions.IBI.metricId, "hrv.ibi_ms")
+        val value = featureStore.latestAsDouble(source) ?: return
+        val timestamp = featureStore.timestampMs(source) ?: return
         val onWrist = featureStore.latestAsDouble("offbody.on_wrist")?.let { it >= 0.5 } ?: return
         val sleeping = featureStore.bool("sleep.is_sleeping") ?: return
         val activity = featureStore.str("activity.state") ?: return
@@ -294,6 +322,7 @@ object BaselineV2Runtime {
         resetRestingHr()
         restingHrCoordinator = null
         restingHrQualityProvider = null
+        synchronized(sourceKeys) { sourceKeys.clear() }
         rmssdCoordinator?.reset()
         rmssdCoordinator = null
         sdnnCoordinator?.reset()

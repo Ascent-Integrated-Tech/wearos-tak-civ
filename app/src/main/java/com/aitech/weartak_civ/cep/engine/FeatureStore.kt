@@ -67,7 +67,7 @@ class FeatureStore {
     }
 
     fun latestAsDouble(id: String): Double? {
-        val v = kv[id] ?: return null
+        val v = kv[resolve(id)] ?: return null
 
         return when (v) {
             is Double  -> v
