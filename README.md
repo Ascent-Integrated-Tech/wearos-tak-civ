@@ -61,6 +61,21 @@ to Unpair once paired. Enabling Sensor Manager does not start scanning or connec
 
 Some capabilities depend on hardware, permissions, credentials, configuration, and separately provisioned services or SDKs. In particular, mesh, companion, SITX, plugin, audio-detection, and managed-configuration features are optional.
 
+### PLI metadata compatibility
+
+Watch-built PLI XML and Ditto track details include `takv`, `status`, and `__group`
+as immediate children of `detail`. `takv` identifies WearTAK using the installed
+app's build version, Android SDK level, and actual watch manufacturer/model, not
+phone or ATAK metadata. Callsign, UID, team, role, and device strings are XML-escaped.
+Structured `status battery` is emitted only for an available percentage in 0..100;
+existing remarks and biometrics are retained.
+
+Direct XML routes and the negotiated raw-XML companion gateway preserve those
+fields. The legacy companion PLI JSON envelope is unchanged: it includes battery
+and callsign but not team, role, or `takv`. Separate legacy settings snapshots carry
+team/role, but `settings_changed` deltas do not; phone-side conversion must be
+verified separately. Passing local tests does not establish server/ATAK receipt.
+
 ### WEARTAK-121: Bloodhound to a map user
 
 Tap a user on the map, then **Start Bloodhound** immediately below **Open Chat** to

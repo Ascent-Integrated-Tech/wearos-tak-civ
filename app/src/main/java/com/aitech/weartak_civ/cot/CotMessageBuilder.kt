@@ -37,36 +37,30 @@ object CotMessageBuilder {
         val remarks = "Exert:$exertion%;HR:$heartRate;SkinTemp:$skinTemp"
         val batdok = if (options.includeBatdok) batdokDetail(physio, time, heartRate, skinTemp) else ""
         val biometrics = if (options.includeBatdok) {
-            "<biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><skt>$skinTemp</skt><exert>$exertion</exert></device></biometrics>"
+            "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid><hr>$heartRate</hr><skt>$skinTemp</skt><exert>$exertion</exert></device></biometrics>"
         } else ""
 
-        val status = CotXml.element(
-            "status",
-            listOf(
-                "readiness" to "true",
-                "battery" to snapshot.systemData.batteryPercent
-            )
-        )
+        val status = CotDetailBuilder.status(snapshot.systemData.batteryPercent, readiness = true)
 
         val point = listOf(
             "lat" to "%.6f".format(lat), "lon" to "%.6f".format(lon), "hae" to "%.1f".format(hae),
             "ce" to ce, "le" to le,
         )
         val detail =
-            status +
+            CotDetailBuilder.takv() + status +
                     "<remarks>$remarks</remarks>$batdok$biometrics" +
                     CotXml.element(
                         "contact",
                         listOf(
                             "endpoint" to "*:-1:stcp",
-                            "callsign" to options.callsign
+                            "callsign" to CotXml.escape(options.callsign)
                         )
                     ) +
                     CotXml.element(
                         "__group",
                         listOf(
-                            "role" to options.role,
-                            "name" to options.team
+                            "role" to CotXml.escape(options.role),
+                            "name" to CotXml.escape(options.team)
                         )
                     ) +
                     CotXml.element(
@@ -78,7 +72,7 @@ object CotMessageBuilder {
                     ) +
                     options.hailDetail
         return CotXml.event(listOf(
-            "version" to "2.0", "uid" to uid, "type" to "a-f-G-U-C", "time" to time.startCot,
+            "version" to "2.0", "uid" to CotXml.escape(uid), "type" to "a-f-G-U-C", "time" to time.startCot,
             "start" to time.startCot, "stale" to time.staleCot, "how" to "m-g",
         ), point, detail)
     }
