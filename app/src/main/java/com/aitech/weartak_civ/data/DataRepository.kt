@@ -212,6 +212,16 @@ private const val DEFAULT_COMMUNITY_PDL =
     BuildConfig.DITTO_COMMUNITY_IDENTITY
 
 class DataRepository(private val context: Context) {
+    internal val dittoPointLedger by lazy {
+        com.aitech.weartak_civ.cot.DittoPointLedger(
+            context.getSharedPreferences("ditto-local-points-v1", Context.MODE_PRIVATE)
+        )
+    }
+    internal val dittoPointIngress by lazy {
+        com.aitech.weartak_civ.cot.DittoPointIngress(
+            context.getSharedPreferences("ditto-point-watermarks-v1", Context.MODE_PRIVATE)
+        )
+    }
     data class Spo2DebugState(
         val activeBaselinePct: Double,
         val activeBaselineFamily: String,
@@ -2269,6 +2279,7 @@ class DataRepository(private val context: Context) {
 
     // Backend-only mutators (UI never calls these)
     suspend fun appendDroppedMarker(item: DroppedMarker) {
+        dittoPointLedger.created(item.uid, MainActivity.device_uid)
         deletedLocalPointUids.remove(item.uid)
         _droppedMarkerList.emit(_droppedMarkerList.value + item)
     }
@@ -2380,6 +2391,12 @@ class DataRepository(private val context: Context) {
     suspend fun deleteDroppedPointLocally(uid: String, bloodhounds: BloodhoundRepository): Boolean =
         markerIngressMutex.withLock {
             if (_droppedMarkerList.value.none { it.uid == uid }) return@withLock false
+            try {
+                dittoPointLedger.delete(uid, MainActivity.device_uid, System.currentTimeMillis())
+            } catch (error: Exception) {
+                Log.e(TAG, "Point clear blocked: could not persist Ditto deletion intent", error)
+                return@withLock false
+            }
             deletedLocalPointUids.add(uid)
             companionPointRevisions.current(uid, companionPointGeneration)?.let {
                 bloodhounds.removeMarkerCopy(uid, "companion-phone", it.time, System.currentTimeMillis())
@@ -2403,6 +2420,7 @@ class DataRepository(private val context: Context) {
         if (receivedMarkerStore.item(key)?.timeReceived?.let { it > revision.time } == true) {
             return@withLock false
         }
+
         val receivedAt = System.currentTimeMillis()
         bloodhounds.removeMarkerCopy(uid, "companion-phone", revision.time, receivedAt)
         val removed = receivedMarkerStore.removeIfNotOlder(key, revision.time, receivedAt) != null
@@ -2414,6 +2432,16 @@ class DataRepository(private val context: Context) {
         }
         companionPointRevisions.forget(uid)
         removed || (revision.local && local != null)
+    }
+
+    internal suspend fun receiveDittoPointDeletion(
+        uid: String, sourceId: String, time: Long, bloodhounds: BloodhoundRepository
+    ) = markerIngressMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        if (_droppedMarkerList.value.any { it.uid == uid } || isDeletedLocalPoint(uid)) return@withLock
+        val receivedAt = System.currentTimeMillis()
+        receivedMarkerStore.removeIfNotOlder(SourceCotKey(sourceId, uid), time, receivedAt)
+        bloodhounds.removeMarkerCopy(uid, sourceId, time, receivedAt)
     }
 
     /** Serializes map and navigation ingestion across BLE and TAK receive paths. */

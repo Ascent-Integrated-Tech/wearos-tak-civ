@@ -106,10 +106,11 @@ otherwise new identities are rejected with diagnostics rather than silently
 evicting replay protection. No exactly-once delivery guarantee is implied.
 
 Replay retention covers **observed** lifetimes, not arbitrary unseen revisions.
-After an identity's journal entry is pruned, an older still-synced document with
-an unobserved, longer stale time can be accepted again after restart. Ordinary
-expired documents cannot become live again. This journal is not a permanent
-deletion ledger and must not be used to authorize mesh deletion.
+After an identity's journal entry is pruned, an older still-synced PLI/route
+document with an unobserved, longer stale time can be accepted again after
+restart. Ordinary expired documents cannot become live again. Point ordering
+and terminal deletion use the separate non-pruning ledger described below;
+the time-bounded receive journal does not authorize deletion.
 
 Repository/event delivery happens **before** the replay-journal commit. A failed
 commit emits an explicit diagnostic but does not roll back already delivered
@@ -155,14 +156,78 @@ Different UIDs are not merged merely because coordinates or text match. This
 prevents local duplicate presentation, not loops or rewritten identities
 introduced by external peers.
 
-**Mesh point deletion is not included in this reception change.** Local clear retains its existing local and
-eligible paired-companion behavior. `_r=true`, hidden documents, observer
-disappearance, local eviction and CoT `t-x-d-d` are not deletion authority and
-cannot render new points. There is no mesh-delete UI status or physical store
-removal. Own-created-point deletion is separate work requiring dedicated durable
-ownership and deletion records. Writable `AuthorId`/`a` fields and revision hashes
-do not authenticate an individual author. No ATAK-compatible delete protocol is
-claimed.
+### WearTAK own-created-point deletion
+
+**Trust model:** all members provisioned with the shared Ditto mission key are
+trusted not to forge point ownership or deletion fields. `AuthorId`, peer alias
+`a`, and revision hashes are writable data, **not authenticated individual
+authorship**. A malicious provisioned writer can forge them. This is a
+WearTAK-to-WearTAK cooperative contract, not an ATAK deletion interoperability
+claim or hostile-peer protection.
+
+The watch records local drop creation before adding the point to application
+state; imports and received points cannot acquire local publication ownership by
+claiming `AuthorId`. A supported point publication records its exact document
+and revision before writing to Ditto. Local clear persists a terminal intent
+before local removal, then the running Ditto service retries its pending store
+write every ten seconds, including after service/process restart. Clearing an
+unpublished or pre-ledger point remains local/eligible-companion only. There is
+no new remote-delivery success status: a completed local clear or SDK store write
+does not prove any peer received it. Existing companion-over-Ditto precedence
+can defer mesh publication until Ditto runs.
+
+The original `mapitem` keeps its `_id`, `d`, `a`, `AuthorId`, base timing,
+coordinates, type and detail aliases. Live WearTAK-owned points add:
+
+```json
+"weartakPoint": {
+  "version": 1,
+  "owner": "<AuthorId>",
+  "revision": "<SHA-256 of reconstructed live CoT>",
+  "deleted": false
+}
+```
+
+Clear updates **that same document** to `_r=true`, `visible=false`, `f=false`,
+sets `weartakPoint.deleted=true`, and adds integral epoch-millisecond
+`deletedAt >= b`. The revision still identifies the original live payload;
+`deletedAt` is informational, not an ordering override. A tombstone can arrive
+before its live revision, and remains meaningful after the original stale time.
+Plain `_r=true` without this validated contract, hidden documents, query
+disappearance, local eviction, and CoT `t-x-d-d` do not authorize deletion.
+No SDK document removal, eviction or collection delete is used.
+
+Receivers pin source/UID ownership and event-time/revision ordering before
+mutating repositories. A valid tombstone removes only the matching Ditto
+map/Bloodhound source copy, never watch-local, another peer's, TAK, multicast or
+companion copies. Cross-owner, older and conflicting equal-time revisions are
+rejected. Legacy points without an author cannot later be upgraded into
+author-owned deletion authority. A deleted source/UID is **terminal**: repeated
+deletion is idempotent; even a newer live revision cannot resurrect it. Recreating
+a deleted point requires a new UID. Local origins are also never reused, and
+pending writes are not replayed into a different native local-peer store.
+
+Local ownership/pending publication records use app-private
+`ditto-local-points-v1` preferences, including the retained point payload.
+Limits are **4,096 local origins**, **384 KiB per serialized record**, and
+**8 MiB total**. `ditto-point-watermarks-v1` holds **8,192 source/UID records**,
+**8 MiB total**, separately from ordinary receive dedup. Neither point ledger
+prunes or evicts records. Capacity exhaustion explicitly rejects new drops or
+new inbound point identities rather than losing ownership/replay protection.
+Deleting an already recorded point does not require another identity slot.
+
+Checked persistence failures are logged and fail closed: failed local intent
+keeps the point/clear queue, and failed inbound watermark storage cannot remove
+the repository copy. Failed store writes or write-ack persistence keep a pending
+publication for idempotent retry. An unacknowledged in-memory preference change
+is repaired before another successful ledger write. A crash after durable
+tombstone storage but before repository mutation is completed by replaying the
+retained tombstone snapshot; a crash after store write but before acknowledgment
+may repeat the same write. There is no atomic SDK/preferences/repository
+transaction. The existing local dropped-marker UI list itself remains
+in-memory; these ledgers provide ownership and publication recovery, not a new
+point-history restoration UI. Clearing app storage or a failed storage device
+loses these guarantees.
 
 Local observer tests use mocked SDK callbacks and synthetic data. Native Android
 SDK/peer interoperability and over-the-air receipt still require a separate,

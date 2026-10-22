@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cot.CotDetailBuilder
 import com.aitech.weartak_civ.cot.DittoCotReceiver
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -38,6 +39,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -115,6 +118,12 @@ class DittoService : Service() {
                 )
             )
             ditto.startSync() // Start syncing
+            ioScope.launch {
+                while (isActive) {
+                    retryPointPublications()
+                    delay(10_000)
+                }
+            }
             startDispatchScheduler()
             dataRepository.setEndpointConnected(DataRepository.Endpoint.DITTO)
             Log.i(TAG, "DittoService startSync()")
@@ -335,16 +344,44 @@ class DittoService : Service() {
                 }
 
                 // 5) Upsert into Ditto
-                ditto.store.write { tx ->
-                    tx.scoped(evt.collection).upsert(doc)
+                if (publishDocument(evt.collection, doc)) {
+                    Log.v(TAG, "Wrote to ${evt.collection}: $doc")
                 }
-                Log.v(TAG, "Wrote to ${evt.collection}: $doc")
 
             } catch (t: Throwable) {
                 Log.e(TAG, "Ditto write failed", t)
             }
 
         }
+    }
+
+    internal fun retryPointPublications() {
+        dataRepository.dittoPointLedger.retry(
+            write = ::writeOwnedPointDocument,
+            onError = { Log.e(TAG, "Ditto point publication pending; retrying later", it) }
+        )
+    }
+
+    internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {
+        if (collection == "mapitem" && CotMessageParser.isMarkerType(document["w"] as? String ?: "")) {
+            val published = dataRepository.dittoPointLedger.publish(document, ::writeOwnedPointDocument)
+            if (!published) {
+                Log.w(TAG, "Ditto point not published: no active local-origin ownership")
+            }
+            return published
+        } else {
+            writeDocument(collection, document)
+            return true
+        }
+    }
+
+    internal fun writeDocument(collection: String, document: Map<String, Any?>) {
+        ditto.store.write { tx -> tx.scoped(collection).upsert(document) }
+    }
+
+    private fun writeOwnedPointDocument(document: Map<String, Any?>) {
+        require(document["a"] == localPeerKeyString) { "Pending Ditto point belongs to another local peer store" }
+        writeDocument("mapitem", document)
     }
 
     private fun updateTrackDocument() {
