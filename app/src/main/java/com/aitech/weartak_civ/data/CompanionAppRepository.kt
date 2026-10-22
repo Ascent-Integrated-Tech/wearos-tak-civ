@@ -526,7 +526,9 @@ class CompanionAppRepository(private val context: Context) {
     data class SettingsChangedPayload(
         val callsign: String? = null,
         val reportIntSecs: Int? = null,
-        val takServerList: List<TakServerItem>? = null
+        val takServerList: List<TakServerItem>? = null,
+        val team: String? = null,
+        val role: String? = null
     )
 
     suspend fun buildSettingsChangedEnvelope(delta: SettingsChangedPayload): Envelope<SettingsChangedPayload> {
@@ -614,15 +616,19 @@ class CompanionAppRepository(private val context: Context) {
             val callsignChanged = (p == null) || (p.callsign != cur.callsign)
             val intChanged      = (p == null) || (p.reportIntSecs != cur.reportIntSecs)
             val serversChanged  = (p == null) || (p.takServerList != cur.takServerList)
+            val teamChanged     = (p == null) || (p.team != cur.team)
+            val roleChanged     = (p == null) || (p.role != cur.role)
 
             // If nothing changed (should be rare because wearTakSettingsFlow is distinct, but safe):
-            if (!callsignChanged && !intChanged && !serversChanged) return@collect
+            if (!callsignChanged && !intChanged && !serversChanged && !teamChanged && !roleChanged) return@collect
 
             emit(
                 SettingsChangedPayload(
                     callsign = if (callsignChanged) cur.callsign else null,
                     reportIntSecs = if (intChanged) cur.reportIntSecs else null,
-                    takServerList = if (serversChanged) cur.takServerList else null
+                    takServerList = if (serversChanged) cur.takServerList else null,
+                    team = if (teamChanged) cur.team else null,
+                    role = if (roleChanged) cur.role else null
                 )
             )
         }

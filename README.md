@@ -244,9 +244,14 @@ existing remarks and biometrics are retained.
 
 Direct XML routes and the negotiated raw-XML companion gateway preserve those
 fields. The legacy companion PLI JSON envelope is unchanged: it includes battery
-and callsign but not team, role, or `takv`. Separate legacy settings snapshots carry
-team/role, but `settings_changed` deltas do not; phone-side conversion must be
-verified separately. Passing local tests does not establish server/ATAK receipt.
+and callsign but not team, role, or `takv`. Separate legacy settings snapshots and
+`settings_changed` deltas carry team/role. The initial delta includes both; later
+deltas include only changed fields, including team-only or role-only changes,
+without changing the envelope version or notification queue.
+Legacy phone-side PLI reconstruction still uses the phone/EUD identity and location;
+these settings messages do not make it watch-source PLI or supply watch `takv`.
+Companion observation/conversion requires a separate phone-side update. Passing
+local tests does not establish phone consumption or server/ATAK receipt.
 
 ### WEARTAK-121: Bloodhound to a map user
 
