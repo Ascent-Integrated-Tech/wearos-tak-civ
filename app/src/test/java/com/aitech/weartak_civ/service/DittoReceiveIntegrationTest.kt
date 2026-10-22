@@ -1,6 +1,10 @@
 package com.aitech.weartak_civ.service
 
 import android.app.Application
+import com.aitech.weartak_civ.cot.DittoPointLedger
+import com.aitech.weartak_civ.cot.DittoPointIngress
+import kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn
+import io.mockk.spyk
 import android.content.Context
 import android.content.SharedPreferences
 import android.os.Handler
@@ -74,6 +78,25 @@ import org.robolectric.shadows.ShadowLog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class DittoReceiveIntegrationTest {
+    private class CommitResultPreferences(
+        private val delegate: SharedPreferences,
+        private val fail: () -> Boolean
+    ) : SharedPreferences by delegate {
+        override fun edit(): SharedPreferences.Editor {
+            val editor = delegate.edit()
+            return object : SharedPreferences.Editor by editor {
+                override fun putString(key: String?, value: String?): SharedPreferences.Editor {
+                    editor.putString(key, value)
+                    return this
+                }
+                override fun commit(): Boolean {
+                    check(editor.commit())
+                    return !fail()
+                }
+            }
+        }
+    }
+
     class ChatDelivery(private val service: ChatService, val events: MutableList<TakChatEvent>) {
         val outboundDitto = mutableListOf<DittoDocumentEvent>()
         @Subscribe fun chat(event: TakChatEvent) {
@@ -105,7 +128,10 @@ class DittoReceiveIntegrationTest {
         init {
             MainActivity.device_uid = "watch"
             MainActivity.versionNumber = "test"
+            DittoService.localPeerKeyString = "local-peer"
             repo = DataRepository(app)
+            MainActivity.mainActivity = mockk { every { applicationContext } returns app }
+            MainActivity.dataRepository = repo
             val preferences = object : DataStore<Preferences> {
                 override val data = MutableStateFlow(emptyPreferences())
                 private val mutex = Mutex()
@@ -134,6 +160,73 @@ class DittoReceiveIntegrationTest {
             repository, bh, preferences, { uid }, { "WATCH" }, { peer },
             log = { message, _ -> logs += message }
         ))
+
+        suspend fun drop(uid: String = "point") {
+            repo.appendDroppedMarker(DataRepository.DroppedMarker(
+                DataRepository.MarkerCotType.DROP, uid, DataRepository.MarkerType.HOSTILE,
+                "Local point", "", time, null, true, true))
+        }
+
+        fun ownedDoc(uid: String = "point", at: Long = time) =
+            doc(uid, at = at) + ("AuthorId" to "watch") + ("a" to "local-peer")
+
+        fun contracted(raw: Map<String, Any?> = doc(), deleted: Boolean = false): Map<String, Any?> {
+            val doc = DittoCotDocument.decode(raw)
+            return raw + mapOf(
+                "_r" to deleted,
+                DittoPointLedger.METADATA to mapOf(
+                    "version" to 1, "owner" to doc.author, "revision" to doc.fingerprint,
+                    "deleted" to deleted, "deletedAt" to time + 500
+                )
+            )
+        }
+
+        fun publisher(writes: MutableList<Map<String, Any?>>, repository: DataRepository = repo): DittoService {
+            val service = spyk(Robolectric.buildService(DittoService::class.java).get())
+            DittoService::class.java.getDeclaredField("dataRepository").apply {
+                isAccessible = true
+                set(service, repository)
+            }
+            every { service.writeDocument(any(), any()) } answers {
+                assertEquals("mapitem", firstArg<String>())
+                writes += secondArg<Map<String, Any?>>()
+            }
+            return service
+        }
+
+        suspend fun clear(uid: String = "point", queueRetry: Boolean? = null) {
+            MainActivity.Constants.bhRepo = bh
+            val service = Robolectric.buildService(CotDispatchService::class.java).get()
+            CotDispatchService::class.java.getDeclaredField("dataRepository").apply {
+                isAccessible = true
+                set(service, repo)
+            }
+            val queue = java.util.concurrent.CopyOnWriteArrayList<DataRepository.DroppedMarker>()
+            if (queueRetry != null) {
+                queue += repo.droppedMarkerList.value.single { it.uid == uid }
+                    .copy(cotType = DataRepository.MarkerCotType.CLEAR)
+                CotDispatchService::class.java.getDeclaredField("pendingMarkerCotList").apply {
+                    isAccessible = true
+                    set(service, queue)
+                }
+            }
+            try {
+                suspendCoroutineUninterceptedOrReturn<Any?> { continuation ->
+                    if (queueRetry == null) {
+                        CotDispatchService::class.java.declaredMethods.single { it.name == "handleClearMarkerUid" }
+                            .apply { isAccessible = true }.invoke(service, uid, continuation)
+                    } else {
+                        CotDispatchService::class.java.declaredMethods.single { it.name == "sendPendingMarkerCots" }
+                            .apply { isAccessible = true }.invoke(service, continuation)
+                    }
+                }
+                if (queueRetry != null) assertEquals(queueRetry, queue.any { it.uid == uid })
+            } finally {
+                (CotDispatchService::class.java.getDeclaredField("serviceScope")
+                    .apply { isAccessible = true }.get(service) as kotlinx.coroutines.CoroutineScope)
+                    .coroutineContext[Job]?.cancel()
+            }
+        }
 
         fun emit(collection: String = "mapitem", vararg docs: Map<String, Any?>) {
             val result = mockk<DittoQueryResult>(relaxed = true)
@@ -938,4 +1031,390 @@ class DittoReceiveIntegrationTest {
         }
     }
 
+    @Test fun localClearProducesRetainedSameDocumentTombstoneAndReceiverDeletesOnlyDittoCopy() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            publisher.publishDocument("mapitem", f.ownedDoc())
+            val live = writes.single()
+            assertEquals(false, live["_r"])
+            f.clear()
+            assertTrue(f.repo.droppedMarkerList.value.isEmpty())
+            publisher.retryPointPublications()
+            val tombstone = writes.last()
+            assertEquals(true, tombstone["_r"])
+            assertEquals(live["_id"], tombstone["_id"])
+            assertEquals(live["b"], tombstone["b"])
+            assertEquals(live["r"], tombstone["r"])
+            val remote = DataRepository(f.app)
+            f.observers.close()
+            f.observers = f.start(repository = remote, uid = "receiving-watch", peer = "receiving-peer")
+            val decoded = DittoCotDocument.decode(live)
+            remote.receiveMarkerEvent(CotMessageParser.parseMarkerOrNull(decoded.xml)!!,
+                f.bh, "TAK", "tak-copy", f.time)
+            f.emit("mapitem", live)
+            f.drain()
+            f.emit("mapitem", tombstone)
+            f.drain()
+            assertEquals("tak-copy", remote.receivedMarkerList.value.single().sourceServerId)
+            assertTrue(f.bh.isUidValid("point"))
+            f.emit("mapitem", tombstone, live)
+            f.drain()
+            assertEquals("tak-copy", remote.receivedMarkerList.value.single().sourceServerId)
+        } finally { f.close() }
+    }
+
+    @Test fun deletionBeforeLiveAndReplayAcrossRestartAreTerminalButNewUidIsAllowed() = runTest {
+        val f = Fixture(this)
+        try {
+            val live = f.contracted()
+            val deleted = f.contracted(deleted = true)
+            f.emit("mapitem", deleted)
+            f.drain()
+            f.observers.close()
+            f.repo.clearReceivedMarkers()
+            f.observers = f.start()
+            f.emit("mapitem", live, f.contracted(f.doc(at = f.time + 300)),
+                f.contracted(f.doc("new-uid")))
+            f.drain()
+            assertEquals(listOf("new-uid"), f.repo.receivedMarkerList.value.map { it.uid })
+            assertFalse(f.bh.isUidValid("point"))
+        } finally { f.close() }
+    }
+
+    @Test fun staleDeletionAndCrossOwnerOrRevisionMismatchCannotEraseCurrentPoint() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("mapitem", f.contracted())
+            f.drain()
+            f.emit("mapitem", f.contracted(f.doc(at = f.time + 200)))
+            f.drain()
+            val mismatch = f.contracted(deleted = true).toMutableMap()
+            mismatch[DittoPointLedger.METADATA] = mapOf(
+                "version" to 1, "owner" to "alice", "revision" to "bad", "deleted" to true)
+            f.emit("mapitem", f.contracted(deleted = true),
+                f.contracted(f.doc(at = f.time + 300) + ("AuthorId" to "bob"), true), mismatch)
+            f.drain()
+            assertEquals(f.time + 200, f.repo.receivedMarkerList.value.single().timeReceived)
+            assertTrue(f.logs.any { it.contains("Cross-owner") })
+            assertTrue(f.logs.any { it.contains("revision mismatch") })
+        } finally { f.close() }
+    }
+
+    @Test fun deletingPeerDoesNotRemoveDifferentPeerSameUidOrLocallyOwnedPoint() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("mapitem", f.contracted(), f.contracted(f.doc(at = f.time + 100) + ("a" to "peer-two")))
+            f.drain()
+            f.emit("mapitem", f.contracted(deleted = true))
+            f.drain()
+            assertEquals("ditto:${DittoCotDocument.digest("peer-two")}",
+                f.repo.receivedMarkerList.value.single().sourceServerId)
+            f.drop("local-only")
+            f.emit("mapitem", f.contracted(f.doc("local-only"), true))
+            f.drain()
+            assertEquals("local-only", f.repo.droppedMarkerList.value.single().uid)
+        } finally { f.close() }
+    }
+
+    @Test fun pendingDeleteSurvivesWriteFailureAndRestartWithoutRepublishingTheLiveRevision() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            publisher.publishDocument("mapitem", f.ownedDoc())
+            f.clear()
+            every { publisher.writeDocument(any(), any()) } throws IllegalStateException("synthetic offline store")
+            publisher.retryPointPublications()
+            assertTrue(ShadowLog.getLogsForTag("WearTAK-DittoService").any {
+                it.msg.contains("pending") && it.throwable?.message == "synthetic offline store"
+            })
+            val recreatedPublisher = f.publisher(writes, DataRepository(f.app))
+            recreatedPublisher.retryPointPublications()
+            assertEquals(true, writes.last()["_r"])
+            val size = writes.size
+            recreatedPublisher.publishDocument("mapitem", f.ownedDoc(at = f.time + 100))
+            recreatedPublisher.retryPointPublications()
+            assertEquals(size, writes.size)
+            assertThrows(IllegalArgumentException::class.java) {
+                f.repo.dittoPointLedger.created("point", "watch")
+            }
+        } finally { f.close() }
+    }
+
+    @Test fun foreignOrUnpublishedPointClearNeverPublishesAMeshDelete() = runTest {
+        val f = Fixture(this)
+        try {
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            publisher.publishDocument("mapitem", f.ownedDoc("foreign"))
+            f.clear("foreign")
+            f.drop("never-published")
+            f.clear("never-published")
+            publisher.retryPointPublications()
+            assertTrue(writes.isEmpty())
+            assertTrue(f.repo.droppedMarkerList.value.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun failedDurableDeletionWatermarkDoesNotMutateRepositoryAndRetrySucceeds() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("mapitem", f.contracted())
+            f.drain()
+            var fail = true
+            val real = f.app.getSharedPreferences("ditto-point-watermarks-v1", Context.MODE_PRIVATE)
+            val prefs = CommitResultPreferences(real) { fail }
+            val ingress = DittoPointIngress(prefs)
+            DataRepository::class.java.getDeclaredField("dittoPointIngress\$delegate").apply {
+                isAccessible = true
+                set(f.repo, lazyOf(ingress))
+            }
+            f.emit("mapitem", f.contracted(deleted = true))
+            f.drain()
+            assertEquals("point", f.repo.receivedMarkerList.value.single().uid)
+            assertTrue(f.logs.any { it.contains("Could not persist Ditto point watermark") })
+            f.emit("mapitem", f.contracted(f.doc("blocked-1")), f.contracted(f.doc("blocked-2")))
+            f.drain()
+            assertEquals(1, real.all.size)
+            assertEquals("point", f.repo.receivedMarkerList.value.single().uid)
+            fail = false
+            f.emit("mapitem", f.contracted(f.doc("other")))
+            f.drain()
+            val key = DittoCotDocument.decode(f.doc()).key
+            assertFalse(org.json.JSONObject(real.getString(key, null)!!).getBoolean("deleted"))
+            f.emit("mapitem", f.contracted(deleted = true))
+            f.drain()
+            assertEquals("other", f.repo.receivedMarkerList.value.single().uid)
+        } finally { f.close() }
+    }
+
+    @Test fun actualOutboundDocumentCallbackRecordsPublishedOwnershipThenClearPublishesDeletion() = runTest {
+        val f = Fixture(this)
+        val writes = mutableListOf<Map<String, Any?>>()
+        val publisher = f.publisher(writes)
+        val completed = CompletableDeferred<Unit>()
+        every { publisher.writeDocument(any(), any()) } answers {
+            writes += secondArg<Map<String, Any?>>()
+            completed.complete(Unit)
+            Unit
+        }
+        try {
+            f.drop()
+            MainActivity.Constants.callsign = "WATCH"
+            DittoService.localPeerKeyString = "local-peer"
+            publisher.onDittoDoc(DittoDocumentEvent("mapitem", DittoCotDocument.decode(f.ownedDoc()).xml))
+            withContext(Dispatchers.Default) { withTimeout(10_000) { completed.await() } }
+            assertTrue(DittoPointLedger.METADATA in writes.single())
+            f.clear()
+            publisher.retryPointPublications()
+            assertEquals(true, writes.last()["_r"])
+        } finally {
+            (DittoService::class.java.getDeclaredField("ioScope").apply { isAccessible = true }
+                .get(publisher) as kotlinx.coroutines.CoroutineScope).coroutineContext[Job]?.cancel()
+            f.close()
+        }
+    }
+
+    @Test fun failedLocalIntentCommitLeavesPointAndQueueEligibleForExplicitClearRetry() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            publisher.publishDocument("mapitem", f.ownedDoc())
+            var fail = true
+            // Android can update in-memory preferences even when commit reports failure.
+            val preferences = CommitResultPreferences(
+                f.app.getSharedPreferences("ditto-local-points-v1", Context.MODE_PRIVATE)
+            ) { fail }
+            val ledger = DittoPointLedger(preferences)
+            val field = DataRepository::class.java.getDeclaredField("dittoPointLedger\$delegate")
+                .apply { isAccessible = true }
+            field.set(f.repo, lazyOf(ledger))
+            f.clear(queueRetry = true)
+            assertEquals("point", f.repo.droppedMarkerList.value.single().uid)
+            publisher.retryPointPublications()
+            assertEquals(1, writes.size)
+            repeat(3) {
+                val failure = runCatching { f.drop("blocked-$it") }.exceptionOrNull()
+                assertTrue(failure?.message.orEmpty().contains("Could not repair"))
+            }
+            assertEquals(1, preferences.all.size)
+            fail = false
+            ledger.created("additional", "watch")
+            val repaired = preferences.getString(DittoCotDocument.digest("point"), null)!!
+            assertFalse(org.json.JSONObject(repaired).getBoolean("deleted"))
+            f.clear(queueRetry = false)
+            publisher.retryPointPublications()
+            assertTrue(f.repo.droppedMarkerList.value.isEmpty())
+            assertEquals(true, writes.last()["_r"])
+        } finally { f.close() }
+    }
+
+    @Test fun deletionLedgerCapacityDoesNotEvictOldTombstonesOrPartiallyDeleteANewIdentity() = runTest {
+        val f = Fixture(this)
+        try {
+            f.observers.close()
+            val prefs = f.app.getSharedPreferences("ditto-point-watermarks-v1", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            repeat(DittoPointIngress.MAX_ENTRIES) {
+                editor.putString("permanent-$it",
+                    """{"owner":"alice","time":1,"revision":"hash","deleted":true}""")
+            }
+            assertTrue(editor.commit())
+            f.observers = f.start(repository = DataRepository(f.app))
+            f.emit("mapitem", f.contracted(deleted = true))
+            f.drain()
+            assertEquals(DittoPointIngress.MAX_ENTRIES, prefs.all.size)
+            assertTrue(f.logs.any { it.contains("permanent point ledger full") })
+        } finally { f.close() }
+    }
+
+    @Test fun localPublisherFailureBeforeWriteIsRetriedAndADeleteSupersedesPendingLiveEdit() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            every { publisher.writeDocument(any(), any()) } throws IllegalStateException("offline")
+            assertThrows(IllegalStateException::class.java) {
+                publisher.publishDocument("mapitem", f.ownedDoc())
+            }
+            f.clear()
+            val restarted = f.publisher(writes, DataRepository(f.app))
+            restarted.retryPointPublications()
+            assertEquals(1, writes.size)
+            assertEquals(true, writes.single()["_r"])
+        } finally { f.close() }
+    }
+
+    @Test fun permanentDeletedPointDoesNotReturnWhenReceiveDedupJournalHasBeenPruned() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("mapitem", f.contracted(deleted = true))
+            f.drain()
+            f.observers.close()
+            assertTrue(f.journal.edit().clear().commit())
+            val restartedRepo = DataRepository(f.app)
+            f.observers = f.start(repository = restartedRepo)
+            f.emit("mapitem", f.doc(), f.contracted(f.doc(at = f.time + 300)))
+            f.drain()
+            assertTrue(restartedRepo.receivedMarkerList.value.isEmpty())
+            assertFalse(f.bh.isUidValid("point"))
+        } finally { f.close() }
+    }
+
+    @Test fun failedWriteAcknowledgementCommitKeepsPendingPublicationForRetry() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            var commits = 0
+            val preferences = CommitResultPreferences(
+                f.app.getSharedPreferences("ditto-local-points-v1", Context.MODE_PRIVATE)
+            ) { ++commits == 2 }
+            DataRepository::class.java.getDeclaredField("dittoPointLedger\$delegate").apply {
+                isAccessible = true
+                set(f.repo, lazyOf(DittoPointLedger(preferences)))
+            }
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            assertThrows(IllegalStateException::class.java) {
+                publisher.publishDocument("mapitem", f.ownedDoc())
+            }
+            assertEquals(1, writes.size)
+            publisher.retryPointPublications()
+            assertEquals(2, writes.size)
+            assertEquals(DittoCotDocument.decode(writes[0]), DittoCotDocument.decode(writes[1]))
+            assertEquals(writes[0][DittoPointLedger.METADATA], writes[1][DittoPointLedger.METADATA])
+            publisher.retryPointPublications()
+            assertEquals(2, writes.size)
+        } finally { f.close() }
+    }
+
+    @Test fun durableLocalOriginCannotBeReintroducedAsADittoCopyAfterRepositoryRestart() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            f.clear()
+            f.observers.close()
+            val restarted = DataRepository(f.app)
+            f.observers = f.start(repository = restarted)
+            f.emit("mapitem", f.doc(), f.contracted())
+            f.drain()
+            assertTrue(restarted.receivedMarkerList.value.isEmpty())
+            assertFalse(f.bh.isUidValid("point"))
+        } finally { f.close() }
+    }
+
+    @Test fun persistedDeletionBeforeRepositoryMutationCompletesFromRestartedObserverSnapshot() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("mapitem", f.contracted())
+            f.drain()
+            val ingress = f.repo.dittoPointIngress
+            assertTrue(ingress.accept(ingress.decode(f.contracted(deleted = true))))
+            assertEquals("point", f.repo.receivedMarkerList.value.single().uid)
+            f.observers.close()
+            f.observers = f.start()
+            f.emit("mapitem", f.contracted(), f.contracted(deleted = true), f.contracted(deleted = true))
+            f.drain()
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
+            assertFalse(f.bh.isUidValid("point"))
+        } finally { f.close() }
+    }
+
+    @Test fun localOwnershipCapacityRejectsNewDropWithoutEvictingPriorOriginOrPublishing() = runTest {
+        val f = Fixture(this)
+        try {
+            val prefs = f.app.getSharedPreferences("ditto-local-points-v1", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            repeat(DittoPointLedger.MAX_ENTRIES) {
+                editor.putString("origin-$it", """{"uid":"old-$it","owner":"watch","deleted":true}""")
+            }
+            assertTrue(editor.commit())
+            val failure = runCatching { f.drop() }.exceptionOrNull()
+            assertTrue(failure?.message.orEmpty().contains("local point ledger full"))
+            assertTrue(f.repo.droppedMarkerList.value.isEmpty())
+            val writes = mutableListOf<Map<String, Any?>>()
+            f.publisher(writes).publishDocument("mapitem", f.ownedDoc())
+            assertTrue(writes.isEmpty())
+            assertEquals(DittoPointLedger.MAX_ENTRIES, prefs.all.size)
+        } finally { f.close() }
+    }
+
+    @Test fun localPublicationRecordByteLimitFailsClosedBeforeAnyStoreWrite() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            val writes = mutableListOf<Map<String, Any?>>()
+            val doc = f.ownedDoc() + ("r" to "<detail><remarks>${"\"".repeat(200_000)}</remarks></detail>")
+            val publisher = f.publisher(writes)
+            assertThrows(IllegalArgumentException::class.java) { publisher.publishDocument("mapitem", doc) }
+            assertTrue(writes.isEmpty())
+            publisher.retryPointPublications()
+            assertTrue(writes.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun pendingDeletionIsNotReplayedIntoADifferentLocalPeerStore() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            publisher.publishDocument("mapitem", f.ownedDoc())
+            f.clear()
+            DittoService.localPeerKeyString = "different-peer-store"
+            publisher.retryPointPublications()
+            assertEquals(1, writes.size)
+            assertTrue(ShadowLog.getLogs().any { it.msg.contains("publication pending") })
+            DittoService.localPeerKeyString = "local-peer"
+            publisher.retryPointPublications()
+            assertEquals(true, writes.last()["_r"])
+        } finally { f.close() }
+    }
 }

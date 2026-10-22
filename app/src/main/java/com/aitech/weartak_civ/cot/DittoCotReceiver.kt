@@ -47,6 +47,7 @@ internal class DittoCotReceiver(
             override suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope) {
                 currentCoroutineContext().ensureActive()
                 if (event.detail.creator?.uid == deviceUid() ||
+                    repository.dittoPointLedger.owns(event.uid) ||
                     repository.droppedMarkerList.value.any { it.uid == event.uid } ||
                     repository.isDeletedLocalPoint(event.uid)) return
                 repository.receiveMarkerEvent(event, bloodhounds, envelope.sourceServerAddress,
@@ -75,8 +76,24 @@ internal class DittoCotReceiver(
             currentCoroutineContext().ensureActive()
             // A hidden/removed document is not a signed deletion instruction.
             try {
+                if (DittoPointLedger.METADATA in raw) {
+                    require(collection == "mapitem") { "WearTAK point contract outside mapitem" }
+                    val point = repository.dittoPointIngress.decode(raw)
+                    val doc = point.document
+                    if (doc.peer == localPeer() || doc.author == deviceUid() ||
+                        doc.uid == deviceUid() || repository.dittoPointLedger.owns(doc.uid) ||
+                        repository.isDeletedLocalPoint(doc.uid) ||
+                        repository.droppedMarkerList.value.any { it.uid == doc.uid }) continue
+                    require(doc.time <= now() + MAX_FUTURE_MS) { "Future-dated Ditto point" }
+                    if (!repository.dittoPointIngress.accept(point)) continue
+                    if (point.deleted) {
+                        repository.receiveDittoPointDeletion(doc.uid, doc.sourceId, doc.time, bloodhounds)
+                        continue
+                    }
+                }
                 if (raw["_r"] == true || raw["visible"] == false || raw["f"] == false) continue
                 val doc = DittoCotDocument.decode(raw)
+                if (repository.dittoPointIngress.deleted(doc)) continue
                 require(collection != "track" || CotMessageParser.isUserPositionType(doc.type)) {
                     "Non-PLI document in Ditto track"
                 }
@@ -86,6 +103,11 @@ internal class DittoCotReceiver(
                 if (doc.peer == localPeer() || doc.author == deviceUid() || doc.uid == deviceUid()) continue
                 val currentTime = now()
                 require(doc.time <= currentTime + MAX_FUTURE_MS) { "Future-dated Ditto event" }
+                if (CotMessageParser.isMarkerType(doc.type) &&
+                    repository.dittoPointLedger.owns(doc.uid)) continue
+                if (collection == "mapitem" && CotMessageParser.isMarkerType(doc.type) &&
+                    DittoPointLedger.METADATA !in raw &&
+                    !repository.dittoPointIngress.accept(DittoPointIngress.Point(doc, false))) continue
                 val expired = doc.stale <= currentTime
                 if (expired && doc.type == "b-t-f") continue
                 val key = doc.key

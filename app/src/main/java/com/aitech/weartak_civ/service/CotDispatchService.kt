@@ -765,9 +765,14 @@ class CotDispatchService : Service() {
                     title = finalMarkerTitle(req.title), remark = req.remark, timeDropped = req.timeMillis,
                     location = dataRepository.snapshotMarkerLocation(req.uid, req.lat, req.lon, req.timeMillis), enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
 
+                try {
+                    dataRepository.appendDroppedMarker(droppedMarker)
+                } catch (error: Exception) {
+                    Log.e(TAG, "Point creation blocked: could not persist local ownership", error)
+                    return@collect
+                }
                 enqueueMarkerDrop(droppedMarker)
                 markerDropMap[droppedMarker.uid] = droppedMarker
-                dataRepository.appendDroppedMarker(droppedMarker)
 
                     if (waitingForUpdatedLocation) {
                     Log.i(TAG, "Drop lat(${req.lat}) and lon(${req.lon}) is null or location is stale. En-queued marker drop...")
@@ -1092,7 +1097,10 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun handleClearMarkerUid(uid: String) {
-        if (dataRepository.deleteDroppedPointLocally(uid, bhRepo)) {
+        val wasLocal = dataRepository.droppedMarkerList.value.any { it.uid == uid }
+        val removed = dataRepository.deleteDroppedPointLocally(uid, bhRepo)
+        if (wasLocal && !removed) return
+        if (removed) {
             requestBloodhoundComplicationUpdate(this)
         }
         markerDropMap.remove(uid)
@@ -1292,6 +1300,10 @@ class CotDispatchService : Service() {
         for ((i, item) in pendingMarkerCotList.withIndex()) {
             if (item.cotType == DataRepository.MarkerCotType.CLEAR) {
                 handleClearMarkerUid(item.uid)
+                if (dataRepository.droppedMarkerList.value.any { it.uid == item.uid }) {
+                    newPendingMarkerDropList.add(item)
+                    sentAllReadyToSend = false
+                }
                 continue
             }
             if (dataRepository.isDeletedLocalPoint(item.uid)) {
