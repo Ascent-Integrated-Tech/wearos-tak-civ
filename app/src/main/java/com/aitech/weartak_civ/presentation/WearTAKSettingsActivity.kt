@@ -1458,14 +1458,6 @@ fun WearTAKSettingsNav(
                         )
                     }
                     item {
-                        WearTAKToggleChip(
-                            checkedLive = enableCompanionAppService,
-                            onCheckedChange = { settingsVm.storeEnableCompanionAppService(it) },
-                            title = stringResource(R.string.companion_app),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
-                    item {
                     WearTAKToggleChip(
                     checkedLive = enableSmsAlerts,
                     onCheckedChange = { settingsVm.storeEnableSmsForAlerts(it) },
@@ -2827,10 +2819,16 @@ fun WearTAKSettingsNav(
             )
 
         }
+        composable(COMPANION_DETAILS_ROUTE) {
+            CompanionDetailsPage(companionPluginStatus(enableCompanionAppService), navController)
+        }
+
         composable("plugins") {
+            val companionStatus = companionPluginStatus(enableCompanionAppService)
             val menuEntries = (
                 listOf(
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, stringResource(R.string.chat_commands)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.COMPANION, stringResource(R.string.companion_app)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.CRM, "CRM"),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DART, stringResource(R.string.gunshot_detection)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DATA_SYNC, "Data Sync"),
@@ -2874,6 +2872,14 @@ fun WearTAKSettingsNav(
                     itemsIndexed(items = menuEntries, key = { _, entry -> entry.key }) { _, entry ->
                         when (entry) {
                             is PluginMenuEntry.BuiltIn -> when (entry.kind) {
+                                BuiltInPlugin.COMPANION -> {
+                                    CompanionPluginChip(
+                                        enabled = enableCompanionAppService,
+                                        status = companionStatus,
+                                        onToggle = { settingsVm.storeEnableCompanionAppService(it) },
+                                        onDetails = { navController.navigate(COMPANION_DETAILS_ROUTE) }
+                                    )
+                                }
                                 BuiltInPlugin.DATA_SYNC -> {
                                     WearTAKTitleChipWithState(
                                         route = "data_sync",

@@ -27,6 +27,18 @@ is not used for this override. Missing, empty, or whitespace-only values retain 
 subtitle. This changes only the menu subtitle: the info popup still shows the actual loading status,
 and the toggle, tap-to-open, and swipe remove/info actions are unchanged.
 
+Companion Plugin is a built-in split chip in Plugins, not Network Preferences.
+Its switch uses the existing saved enable setting and service policies. Tap the
+row for connection status, phone-side connection-method guidance, and a link to
+normal Android Bluetooth settings. Opening the link does not pair, reset, or
+enable Bluetooth automatically. Team Lead EUD Priority is a disabled
+**Not available yet** placeholder, not a priority or failover setting.
+Status distinguishes Off, Bluetooth off/unavailable, missing permissions, waiting,
+connecting/disconnecting, ready Connected, and connection errors. Connected means
+the companion notification subscription is ready, not just that a Bluetooth bond
+exists. The watch does not infer Samsung-versus-Traditional mode from a bond or
+device brand; choose the method in the phone companion app.
+
 Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
 Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
 Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.
