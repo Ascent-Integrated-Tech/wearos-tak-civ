@@ -3,10 +3,13 @@ package com.aitech.weartak_civ.service
 import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
+import android.content.Context
+import android.content.ContextWrapper
 import android.os.ParcelUuid
 import com.aitech.weartak_civ.cot.CompanionGatewaySession
 import com.aitech.weartak_civ.data.CompanionAppRepository
@@ -19,6 +22,7 @@ import io.mockk.mockk
 import io.mockk.slot
 import io.mockk.verify
 import kotlinx.coroutines.runBlocking
+import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -57,6 +61,46 @@ class CompanionBluetoothNameTest {
 
     @Test fun provisioningCallsignWhileConnectedDoesNotRenameWatch() = runBlocking {
         applyProvisionedCallsign(connected = true)
+    }
+
+    @Test fun provisioningDoesNotRestoreAnExistingWearTakBluetoothName() = runBlocking {
+        every { adapter.name } returns "WT-OLD-CALLSIGN"
+
+        applyProvisionedCallsign(connected = false)
+
+        assertEquals("WT-OLD-CALLSIGN", adapter.name)
+    }
+
+    @Test fun watchInfoExchangesUpdatedCallsignIndependentlyOfSystemBluetoothName() = runBlocking {
+        val manager = mockk<BluetoothManager>()
+        every { manager.adapter } returns adapter
+        every { adapter.address } returns "02:00:00:00:00:00"
+        val context = object : ContextWrapper(RuntimeEnvironment.getApplication()) {
+            override fun getSystemService(name: String): Any? =
+                if (name == Context.BLUETOOTH_SERVICE) manager else super.getSystemService(name)
+        }
+        val snapshot = mockk<DataRepository.SystemSnapshot>(relaxed = true)
+        var storedCallsign = "WATCH"
+        every { snapshot.callsign } answers { storedCallsign }
+        every { snapshot.deviceId } returns "test-watch"
+        val repo = mockk<DataRepository>()
+        coEvery { repo.snapshotSystem() } returns snapshot
+        val cap = CompanionAppRepository(context)
+        CompanionAppRepository::class.java.getDeclaredField("repo\$delegate").apply {
+            isAccessible = true
+            set(cap, lazyOf(repo))
+        }
+
+        for (callsign in listOf("WATCH", "PHONE")) {
+            storedCallsign = callsign
+            val envelope = JSONObject(cap.envelopeToJson(cap.buildWatchInfoEnvelope()))
+            assertEquals("watch_info", envelope.getString("msgType"))
+            val payload = envelope.getJSONObject("payload")
+            assertEquals("test-watch", payload.getString("uid"))
+            assertEquals(callsign, payload.getString("cs"))
+        }
+        verify(exactly = 0) { adapter.name }
+        assertEquals("Galaxy Watch", adapter.name)
     }
 
     private suspend fun applyProvisionedCallsign(connected: Boolean) {
