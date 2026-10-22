@@ -1702,7 +1702,7 @@ class TAKConnectService: Service() {
                 Log.d(
                     TAG,
                     "Stored routes for mission=$missionName: " +
-                            dataRepository.takRoutes.value.map {
+                            dataRepository.takRouteCopies.map {
                                 "${it.name} uid=${it.uid} mission=${it.missionName}"
                             }
                 )
@@ -1712,7 +1712,7 @@ class TAKConnectService: Service() {
                 // Also download if the server reports any unprocessed changes
                 // Otherwise skip downloading the same mission content again
                 if (
-                    dataRepository.takRoutes.value.none {
+                    dataRepository.takRouteCopies.none {
                         it.serverId == serverId && it.missionName == missionName
                     } || newChanges.isNotEmpty()
                 ) {
@@ -1782,7 +1782,7 @@ class TAKConnectService: Service() {
 
 
                 // Attach mission creator information to matching routes
-                dataRepository.takRoutes.value
+                dataRepository.takRouteCopies
                     .filter { route ->
                         route.serverId == serverId &&
                                 creatorByRouteUid.containsKey(route.uid) &&

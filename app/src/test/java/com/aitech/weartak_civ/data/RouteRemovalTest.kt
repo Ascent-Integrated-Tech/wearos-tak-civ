@@ -17,6 +17,22 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class RouteRemovalTest {
+    @Test fun versionedCopiesRemainOwnedAndOlderOrUnversionedUpdatesCannotReplaceCurrentRevision() = runBlocking {
+        val repo = DataRepository(RuntimeEnvironment.getApplication())
+        val latest = TakRoute("shared", "New", listOf(TakRoutePoint(34.0, -117.0)), "server-1", eventTime = 200)
+        repo.upsertTakRoute(latest)
+        repo.upsertTakRoute(latest.copy(serverId = "server-2"))
+        repo.upsertTakRoute(latest.copy(name = "Old", eventTime = 100))
+        repo.upsertTakRoute(latest.copy(name = "Unversioned", eventTime = null))
+        assertEquals(2, repo.takRouteCopies.size)
+        assertEquals(setOf("New"), repo.takRouteCopies.map { it.name }.toSet())
+        assertEquals(listOf(latest), withTimeout(5000) { repo.takRoutes.first { it.size == 1 } })
+        repo.removeTakRoute("server-1", "shared")
+        assertEquals(listOf(latest.copy(serverId = "server-2")), withTimeout(5000) {
+            repo.takRoutes.first { it.singleOrNull()?.serverId == "server-2" }
+        })
+    }
+
     @Test fun removesOnlySelectedServerAndRouteAndAllowsExplicitResend() = runBlocking {
         MainActivity.device_uid = "watch"
         val repo = DataRepository(RuntimeEnvironment.getApplication())

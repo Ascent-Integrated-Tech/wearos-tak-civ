@@ -61,6 +61,113 @@ to Unpair once paired. Enabling Sensor Manager does not start scanning or connec
 
 Some capabilities depend on hardware, permissions, credentials, configuration, and separately provisioned services or SDKs. In particular, mesh, companion, SITX, plugin, audio-detection, and managed-configuration features are optional.
 
+### Ditto receive support and deletion boundary
+
+With Ditto running, SDK **4.10.2** store observers consume initial local snapshots
+(including reconnect/restart snapshots) and subsequent changes, not just sync
+subscriptions. They reconstruct CoT from the v2 aliases already written by this
+watch and use `TakServerCotIngestor` and the existing application handlers:
+
+| Collection | Supported data | Application destination |
+| --- | --- | --- |
+| `track` | Supported PLI types | Source-aware received-user map state |
+| `mapitem` | Supported PLI, GeoChat, emergency, point and `b-m-r` route CoT | Map, ChatService inbox, remote alerts/Bloodhound, route repository/UI |
+| `alert` | Supported emergency CoT, including cancellation | Existing remote-alert/Bloodhound handler |
+
+The supported document shape is `_v=2`, `_r=false`, a string `_id` equal to `d`
+(event UID), string `a` (peer key), `g` (CoT version), `w` (CoT type), `p` (how),
+`q` (access), and `r` (one complete `<detail>...</detail>` element). `AuthorId`
+is optional. `b`, `n`, `o` are integral epoch milliseconds (time, start, stale);
+`h`, `i`, `j`, `k`, `l` are finite numeric CE, HAE, latitude, LE, longitude.
+Latitude/longitude must be in range. Unsupported versions, types, raw-XML-only
+documents, missing aliases, malformed XML, DTDs/entities, and invalid timestamps
+are rejected with diagnostics; there is no fallback parser. Compatibility with
+other producers is limited to this shape, not a claim of general ATAK Ditto support.
+
+Maximum reconstructed CoT is **256 KiB UTF-8**; maximum snapshot is **4,096
+documents** and **2,097,152 detail characters** per collection. An oversized
+snapshot is rejected as a whole. SDK next-snapshot signalling supplies
+backpressure while ingestion is serialized. Native results and observer handles
+are closed, queued work is cancelled on stop, and late callbacks are fenced.
+An exception in one document does not discard other valid documents.
+
+Live events over five minutes in the future are rejected. A private replay journal
+stores hashed peer/UID keys, event times, stale times and SHA-256 payload digests,
+not message bodies. It suppresses older revisions, repeated snapshots and
+track/mapitem duplicates from the same peer; conflicting equal-time revisions
+are first-accepted-wins. Expired input cannot introduce live points/routes.
+Receiving an expired revision removes only the matching source's copy, never
+another transport's copy; this does not add a route lifetime scheduler.
+At restart, equal current live revisions can rehydrate the repositories; already
+recorded chat documents are not re-notified or used as historical inbox restoration.
+The journal holds **8,192 identities**; entries whose previously accepted
+lifetimes have all expired are pruned when full,
+otherwise new identities are rejected with diagnostics rather than silently
+evicting replay protection. No exactly-once delivery guarantee is implied.
+
+Replay retention covers **observed** lifetimes, not arbitrary unseen revisions.
+After an identity's journal entry is pruned, an older still-synced document with
+an unobserved, longer stale time can be accepted again after restart. Ordinary
+expired documents cannot become live again. This journal is not a permanent
+deletion ledger and must not be used to authorize mesh deletion.
+
+Repository/event delivery happens **before** the replay-journal commit. A failed
+commit emits an explicit diagnostic but does not roll back already delivered
+state; later documents continue. A crash before commit can replay the event
+(the ChatService inbox merge still deduplicates by message identity when that
+inbox survives). A crash after commit can rehydrate equal live point/PLI/route
+state from the next snapshot, but recorded chat is suppressed rather than
+restored into a fresh in-memory inbox. There is no atomic durable inbox/journal
+transaction. Lint's `UseKtx` suggestion is style-only; explicit `commit()` and
+its checked Boolean result are intentional.
+
+Recipient/group membership, self-chat filtering and chat enablement use the shared
+chat parser/settings. Local peer/author/UID echoes and locally owned/deleted points
+are suppressed. Receive callbacks do not dispatch or relay inbound CoT to TAK,
+companion, Ditto, multicast or plugins. This is intentionally **data-only**:
+command text can appear as ordinary addressed chat, but no command runtime,
+configuration/plugin control, geofence, channel-change or data-package handler is
+installed. Existing companion-over-Ditto service precedence is unchanged.
+
+Across TAK server, multicast and Ditto ingress, PLI and point repositories retain
+each source-owned copy but expose one logical item per event UID. Newer event
+times win; an older arrival cannot replace a newer visible copy. Losing a source
+can reveal another source's copy without creating a second entity. Source
+metadata may legitimately change; secondary ingress is not discarded.
+Bloodhound registers those copies without emitting a second unread/notification
+event for the same UID and event time. Emergency cancellation remains
+UID/version scoped across sources, so a delayed active revision cannot undo it.
+
+GeoChat history uses sender UID plus `messageId`, independent of transport.
+The same message produces one history entry/unread message; distinct message IDs
+remain distinct even when their text and timestamps match. Legacy chat without
+an ID retains the existing sender/time/text fallback and its inherent ambiguity.
+These paths do not add a new operating-system notification mechanism.
+
+CoT routes with an event `time` retain their source-owned copies and expose the
+newest revision per UID. Identical copies do not duplicate route rows, and
+identical-source fallback preserves active route navigation. Mission bookkeeping
+still sees every source copy. Legacy routes lacking an event time keep their
+existing source-specific identity rather than guessing a revision from geometry;
+they cannot provide the same cross-transport version guarantee. Producers must
+preserve the original UID/message ID and advance event time for updates.
+Different UIDs are not merged merely because coordinates or text match. This
+prevents local duplicate presentation, not loops or rewritten identities
+introduced by external peers.
+
+**Mesh point deletion is not included in this reception change.** Local clear retains its existing local and
+eligible paired-companion behavior. `_r=true`, hidden documents, observer
+disappearance, local eviction and CoT `t-x-d-d` are not deletion authority and
+cannot render new points. There is no mesh-delete UI status or physical store
+removal. Own-created-point deletion is separate work requiring dedicated durable
+ownership and deletion records. Writable `AuthorId`/`a` fields and revision hashes
+do not authenticate an individual author. No ATAK-compatible delete protocol is
+claimed.
+
+Local observer tests use mocked SDK callbacks and synthetic data. Native Android
+SDK/peer interoperability and over-the-air receipt still require a separate,
+authorized hardware check; passing these tests does not prove mesh delivery.
+
 ### PLI metadata compatibility
 
 Watch-built PLI XML and Ditto track details include `takv`, `status`, and `__group`
