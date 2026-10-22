@@ -2164,6 +2164,28 @@ class TAKConnectService: Service() {
         private val cotIngestor by lazy {
             TakServerCotIngestor(
                 sink = object : TakServerCotSink {
+                    // Offer every inbound CoT to the plugins before WearTAK parses it, the same way
+                    // WearTakCotIpcService and SitxTakService already do. Without this override the
+                    // interface default (false) applies, so CoT arriving from a TAK server or over
+                    // multicast never reaches a plugin: configuration CoT is not delivered, and a
+                    // plugin declaring receiveInboundCot is never called for either source.
+                    //
+                    // Returning true means a plugin consumed it and normal processing stops, which
+                    // is what keeps configuration CoT off the map — it is addressed to a plugin and
+                    // has nothing to draw.
+                    override suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean =
+                        runCatching {
+                            PluginCotIngress.offer(
+                                envelope,
+                                (context as WearTakApplication).pluginManager.settingsCoordinator,
+                            )
+                        }.getOrElse {
+                            // Never let the plugin layer break inbound CoT: an unconsumed event
+                            // still has a map to reach.
+                            Log.w(TAG, "plugin inbound CoT offer failed: ${it.message}")
+                            false
+                        }
+
                     override suspend fun onChat(event: TakChatEvent) {
                         Log.d(
                             TAG,
