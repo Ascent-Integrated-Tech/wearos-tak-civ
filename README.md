@@ -1022,6 +1022,13 @@ Profile commands take the same values as the settings screens (case-insensitive)
 
 The callsign, team and role fields (including in `setprofile`) are refused when settings are managed by the phone.
 
+Allowed Callsigns uses the same full-screen text-entry page as other settings
+when adding an entry, with the standard confirm/cancel controls instead of a
+dialog. Keyboard **Done** also validates and adds the callsign, so saving does
+not depend on a button behind the keyboard. Invalid (outside the existing
+1-32-character callsign format) or case-insensitive duplicate entries stay on the
+entry page with an error. Cancel/back does not save.
+
 `#weartakcommandloadprofile name=odin-weartak` applies a preset saved on the watch as `Android/data/<package>/files/presets/<name>.json`. Presets are provisioned with adb and are never part of this repository, because they can hold server credentials:
 
 ```json

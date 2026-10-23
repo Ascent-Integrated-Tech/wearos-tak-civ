@@ -2160,9 +2160,6 @@ fun WearTAKSettingsNav(
         }
 
         composable("chat_command_callsigns") {
-            var showAddDialog by rememberSaveable { mutableStateOf(false) }
-            var newCallsign by rememberSaveable { mutableStateOf("") }
-            var callsignError by rememberSaveable { mutableStateOf<String?>(null) }
             val sortedCallsigns = ChatCommandAuthorizer.sortedAllowList(chatCommandCallsigns)
 
             WearTAKPageWithBackArrow(
@@ -2217,11 +2214,7 @@ fun WearTAKSettingsNav(
                     }
                     item {
                         Chip(
-                            onClick = {
-                                newCallsign = ""
-                                callsignError = null
-                                showAddDialog = true
-                            },
+                            onClick = { navController.navigate("chat_command_callsign_add") },
                             label = { Text(stringResource(R.string.add_callsign)) },
                             icon = { Icon(Icons.Filled.Add, contentDescription = null) },
                             modifier = Modifier.fillMaxWidth(),
@@ -2235,68 +2228,10 @@ fun WearTAKSettingsNav(
                 navController = navController
             )
 
-            if (showAddDialog) {
-                AlertDialog(
-                    containerColor = colors.background,
-                    onDismissRequest = { showAddDialog = false },
-                    title = { Text(stringResource(R.string.add_callsign)) },
-                    text = {
-                        Column {
-                            OutlinedTextField(
-                                value = newCallsign,
-                                onValueChange = {
-                                    newCallsign = it
-                                    callsignError = null
-                                },
-                                singleLine = true,
-                                label = { Text(stringResource(R.string.callsign)) },
-                                keyboardOptions = KeyboardOptions(
-                                    keyboardType = KeyboardType.Ascii,
-                                    imeAction = ImeAction.Done
-                                ),
-                                isError = callsignError != null
-                            )
-                            callsignError?.let { error ->
-                                Text(
-                                    text = error,
-                                    color = Color.Red,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                            }
-                        }
-                    },
-                    confirmButton = {
-                        Button(
-                            onClick = {
-                                val callsign = ChatCommandAuthorizer.validatedCallsign(newCallsign)
-                                when {
-                                    callsign == null -> {
-                                        callsignError = getString(context, R.string.invalid_chat_command_callsign)
-                                    }
-                                    chatCommandCallsigns.any {
-                                        ChatCommandAuthorizer.normalize(it) ==
-                                            ChatCommandAuthorizer.normalize(callsign)
-                                    } -> {
-                                        callsignError = getString(context, R.string.duplicate_chat_command_callsign)
-                                    }
-                                    else -> {
-                                        settingsVm.storeChatCommandCallsigns(
-                                            ChatCommandAuthorizer.sortedAllowList(chatCommandCallsigns + callsign)
-                                        )
-                                        showAddDialog = false
-                                    }
-                                }
-                            }
-                        ) {
-                            Text(stringResource(R.string.add_callsign))
-                        }
-                    },
-                    dismissButton = {
-                        Button(onClick = { showAddDialog = false }) {
-                            Text(stringResource(R.string.cancel))
-                        }
-                    }
-                )
+        }
+        composable("chat_command_callsign_add") {
+            CommandCallsignEntryPage(navController, chatCommandCallsigns) {
+                settingsVm.storeChatCommandCallsigns(it)
             }
         }
         composable("sms_number_list"){
@@ -4219,8 +4154,12 @@ fun WearTAKStringEntryPage(
     item: String, //What value is being edited by textfield
     label: String, //Title of the textfield
     confirmFunction: (String) -> Unit, //What happens when string is confirmed,
-    keyboardActions: KeyboardActions = KeyboardActions.Default
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    validate: (String) -> String? = { null },
+    confirmOnImeDone: Boolean = false
 ) {
+    val context = LocalContext.current
+    val focusManager = LocalFocusManager.current
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -4231,10 +4170,21 @@ fun WearTAKStringEntryPage(
     ) {
         var textField = TextFieldValue()
 
+        fun confirm() {
+            focusManager.clearFocus()
+            val error = validate(textField.text)
+            if (error != null) {
+                Toast.makeText(context, error, Toast.LENGTH_LONG).show()
+                return
+            }
+            confirmFunction(textField.text)
+            navController.popBackStack()
+        }
+
         textField = WearTAKOutlinedTextField(
             item,
             label,
-            keyboardActions = keyboardActions
+            keyboardActions = if (confirmOnImeDone) KeyboardActions(onDone = { confirm() }) else keyboardActions
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             WearTAKConfirmCancelButtons(
@@ -4242,10 +4192,7 @@ fun WearTAKStringEntryPage(
                     Log.d(TAG, "$label Settings NOT saved")
                     navController.popBackStack()
                 },
-                onClickConfirm = {
-                    confirmFunction(textField.text)
-                    navController.popBackStack()
-                })
+                onClickConfirm = { confirm() })
         }
     }
 }
