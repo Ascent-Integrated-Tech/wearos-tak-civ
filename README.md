@@ -99,6 +99,24 @@ advertising has no reliable callback for a silently terminated confirmed set;
 this change deliberately removes speculative periodic recovery in favor of
 observed start failures and connection lifecycle events.
 
+### Bonded phone transport (WEARTAK-272)
+
+An active bonded Companion BLE connection carries both inbound and outbound CoT
+through the phone only. The transport becomes active after the bonded peer
+subscribes to notifications, not merely because a bond or saved phone-managed
+profile exists. Direct multicast receive/publish and TAK-server connections stop;
+late direct packets and queued TAK writes are gated before delivery. SITX and
+Ditto pause without changing their saved enable preferences, and direct plugin
+CoT is excluded while the bonded phone transport is active. BLE CoT continues
+through its existing authenticated receive path.
+
+Notification unsubscribe, disconnect, bond loss, connection error, or Companion
+shutdown immediately clears the runtime transport gate. Configured direct
+networking then resumes automatically, even when the phone remains bonded or
+phone-managed settings remain saved. Reconnecting and subscribing switches back
+to phone-only routing. Standalone route selection and configured service
+preferences are unchanged; this does not unpair or rename any device.
+
 Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
 Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
 Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.

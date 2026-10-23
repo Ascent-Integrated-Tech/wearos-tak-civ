@@ -43,6 +43,7 @@ import javax.net.ssl.X509TrustManager
 @Config(sdk = [34], manifest = Config.NONE, application = Application::class)
 class TakServerRegistrationServiceTest {
     private lateinit var repository: DataRepository
+    private val companionConnected = MutableStateFlow(false)
     private val serverId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     private var stored = DataRepository.TakServerItem(
         true, "Test", "tak.example.invalid", 8089, false, "user", "password", "", "", serverId,
@@ -55,11 +56,10 @@ class TakServerRegistrationServiceTest {
         repository = mockk(relaxed = true)
         MainActivity.dataRepository = repository
         every { repository.takChannels } returns MutableStateFlow(emptyList())
-        every { repository.isCompanionConnected } returns MutableStateFlow(false)
+        every { repository.isCompanionConnected } returns companionConnected
         coEvery { repository.tryAwaitTakServerList() } answers { listOf(stored) }
         // Online-path tests mock configuration transport; no test performs network I/O.
         TAKConnectService.isNetworkConnected = false
-        TAKConnectService.isCompanionAppConnected = false
         TAKConnectService.takServerDetails = mutableListOf()
     }
 
@@ -135,7 +135,7 @@ class TakServerRegistrationServiceTest {
 
     @Test fun companionGateTerminatesRegistrationWithoutPretendingSuccess() {
         TAKConnectService.isNetworkConnected = true
-        TAKConnectService.isCompanionAppConnected = true
+        companionConnected.value = true
         register()
         assertFalse(TAKConnectService.serverRegistration.state.value.isLoading)
         assertEquals(TakServerRegistration.Status.FAILED, TAKConnectService.serverRegistration.state.value.status)

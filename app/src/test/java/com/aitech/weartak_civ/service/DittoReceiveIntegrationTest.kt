@@ -633,6 +633,29 @@ class DittoReceiveIntegrationTest {
         } finally { f.close() }
     }
 
+    @Test fun companionTransportPausesDirectDittoReceiveAndPublishWithoutConsumingReplayState() = runTest {
+        val f = Fixture(this)
+        try {
+            f.drop()
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            val incoming = f.doc("remote-point")
+            f.repo.setCompanionAppConnected()
+            f.emit("mapitem", incoming)
+            f.drain()
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
+            assertFalse(publisher.publishDocument("mapitem", f.ownedDoc()))
+            assertTrue(writes.isEmpty())
+
+            f.repo.setCompanionAppDisconnected()
+            f.emit("mapitem", incoming)
+            f.drain()
+            assertEquals(listOf("remote-point"), f.repo.receivedMarkerList.value.map { it.uid })
+            assertTrue(publisher.publishDocument("mapitem", f.ownedDoc()))
+            assertEquals(1, writes.size)
+        } finally { f.close() }
+    }
+
     @Test fun receiveNeverRequestsOutboundChatOrDittoRelay() = runTest {
         val f = Fixture(this)
         var outbound = 0

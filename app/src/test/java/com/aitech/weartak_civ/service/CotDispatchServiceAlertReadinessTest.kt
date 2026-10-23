@@ -156,6 +156,7 @@ class CotDispatchServiceAlertReadinessTest {
             every { repo.getEnableSitxService } returns MutableStateFlow(false)
             every { repo.getEnableCompanionAppService } returns companionEnabled
             every { companion.companionAppReady } returns companionReady
+            every { repo.isCompanionConnected } returns companionReady
             coEvery { repo.snapshotEmergencyEvent(any()) } coAnswers {
                 delay(1)
                 val alert = firstArg<DataRepository.CustomEmergencyAlert>()

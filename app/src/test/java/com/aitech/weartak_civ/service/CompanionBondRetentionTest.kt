@@ -40,6 +40,7 @@ class CompanionBondRetentionTest {
         set("repo\$delegate", lazyOf(repo))
         set("capRepo\$delegate", lazyOf(mockk<CompanionAppRepository>(relaxed = true)))
         every { repo.clearCompanionUsers() } returns Unit
+        every { repo.setCompanionAppDisconnected() } returns Unit
         coEvery { repo.clearPhoneManagedSettingsForPeer(any(), any()) } returns null
         connect()
     }
@@ -81,6 +82,7 @@ class CompanionBondRetentionTest {
         assertNull(get("connectedDevice"))
         assertEquals(false, get("notificationsEnabled"))
         assertEquals(false, get("helloSentForConnection"))
+        verify { repo.setCompanionAppDisconnected() }
     }
 
     @Test fun repeatedPreSessionRetryNeverUnpairsOrReleasesManagement() {

@@ -15,7 +15,7 @@ data class CotEndpointAvailability(
 )
 
 object CotDispatchPolicy {
-    // PLUGIN is offered first on live kinds. A plugin's transport may be the only one available -
+    // In standalone mode PLUGIN is offered first on live kinds. It may be the only transport -
     // a mesh plugin on LoRa still works with no wifi, no cell and no TAK server - so it must not be
     // conditional on any other endpoint being up.
 
@@ -23,10 +23,7 @@ object CotDispatchPolicy {
         // Point removal is a local paired-device operation, never outbound clear CoT.
         if (kind == CotMessageKind.MARKER_CLEAR) emptyList()
         else if (availability.companion) {
-            buildList {
-                if (availability.plugin) add(CotRoute.PLUGIN)
-                add(CotRoute.COMPANION)
-            }
+            listOf(CotRoute.COMPANION)
         } else when (kind) {
             CotMessageKind.PLI -> buildList {
                 if (availability.plugin) add(CotRoute.PLUGIN)

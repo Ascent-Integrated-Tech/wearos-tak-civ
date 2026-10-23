@@ -25,6 +25,42 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class TakServerCotIngestorTest {
+    @Test
+    fun phoneOnlyGateBlocksEveryDirectTypeBeforePluginCommandsOrPackagesAndResumesAfterDisconnect() = runTest {
+        var connected = false
+        val sink = RecordingSink()
+        val logs = mutableListOf<String>()
+        var offers = 0
+        var commands = 0
+        val ingestor = TakServerCotIngestor(
+            sink, { true }, { true }, { "watch-1" }, { "EAGLE" },
+            chatCommandHandler = { commands++; false },
+            dataPackageHandler = { _, _ -> offers++ },
+            isInboundAllowed = { !connected },
+            logger = { message, _ -> logs += message }
+        )
+        assertEquals(TakServerCotIngestResult.USER, ingestor.ingest(envelope(USER_XML, 1)))
+        repeat(2) {
+            connected = true
+            sink.acceptConfiguration = true
+            for (xml in listOf(USER_XML, MARKER_XML, EMERGENCY_XML, CHAT_XML, GEOFENCE_XML,
+                CHANNEL_CHANGE_XML, "<event type='b-f-t-r'><detail/></event>")) {
+                for (source in listOf(SERVER_ID, "multicast:239.2.3.1:6969", "plugin:mesh")) {
+                    assertEquals(TakServerCotIngestResult.SUPPRESSED,
+                        ingestor.ingest(envelope(xml, 2).copy(sourceServerId = source)))
+                }
+            }
+            assertTrue(sink.configurations.isEmpty())
+            assertEquals(0, offers)
+            assertEquals(0, commands)
+            connected = false
+            sink.acceptConfiguration = false
+            assertEquals(TakServerCotIngestResult.USER, ingestor.ingest(envelope(USER_XML, 3)))
+        }
+        assertEquals(3, sink.users.size)
+        assertTrue(logs.any { it.contains("Suppressing direct CoT") })
+    }
+
     private class RecordingSink : TakServerCotSink {
         val chats = mutableListOf<TakChatEvent>()
         val geofences = mutableListOf<GeofenceCot>()

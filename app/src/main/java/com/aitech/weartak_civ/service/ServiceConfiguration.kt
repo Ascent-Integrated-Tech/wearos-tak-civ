@@ -49,7 +49,9 @@ class ServiceConfiguration(
             dataRepository.getEnableLocationService.distinctUntilChanged()
 
         ServiceType.SITX_SERVICE ->
-            dataRepository.getEnableSitxService.distinctUntilChanged()
+            combine(dataRepository.getEnableSitxService, dataRepository.isCompanionConnected) {
+                enabled, connected -> enabled && !connected
+            }.distinctUntilChanged()
 
         /* PHYSIO Service is virtual group – not used to start a real service.
          * It is like an API for the UI and Knox to gate the HR, Skin, and
@@ -82,7 +84,9 @@ class ServiceConfiguration(
             if (!physioOn) { false } else { actOn }
         }.distinctUntilChanged()
 
-        ServiceType.DITTO -> dataRepository.getEnableDittoService.distinctUntilChanged()
+        ServiceType.DITTO -> combine(dataRepository.getEnableDittoService, dataRepository.isCompanionConnected) {
+            enabled, connected -> enabled && !connected
+        }.distinctUntilChanged()
         ServiceType.HAIL -> dataRepository.getEnableHailService.distinctUntilChanged()
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()

@@ -74,6 +74,10 @@ internal class DittoCotReceiver(
         require(collection in DittoCotDocument.COLLECTIONS)
         for (raw in documents) {
             currentCoroutineContext().ensureActive()
+            if (repository.isCompanionConnected.value) {
+                log("Suppressing direct Ditto CoT while bonded companion is connected", null)
+                return@withLock
+            }
             // A hidden/removed document is not a signed deletion instruction.
             try {
                 if (DittoPointLedger.METADATA in raw) {
