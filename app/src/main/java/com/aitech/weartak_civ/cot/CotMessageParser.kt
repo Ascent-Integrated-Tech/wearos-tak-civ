@@ -1,6 +1,5 @@
 package com.aitech.weartak_civ.cot
 
-import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import java.io.StringReader
 import java.time.Instant
 import javax.xml.XMLConstants
@@ -190,9 +189,7 @@ object CotMessageParser {
             type == "a-f-G-E" || type.startsWith("a-f-G-E-")
 
     fun isMarkerType(type: String): Boolean =
-        MarkerType.entries.any { it.type == type } || type == "b-m-p-s-p-i" || type in UAV_TYPES
-
-    private val UAV_TYPES = setOf("a-f-A-M-F-Q", "a-u-A-M-F-Q", "a-h-A-M-F-Q")
+        (CotAffiliation.isAtomType(type) && !isUserPositionType(type)) || type == "b-m-p-s-p-i"
 
     fun eventTypeOrNull(rawXml: String): String? = eventAttribute(rawXml, "type")
 

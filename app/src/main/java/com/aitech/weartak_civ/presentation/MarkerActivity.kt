@@ -718,7 +718,7 @@ fun SwipeableMarkerChip(
                     Column {
                         Text(
                             text =
-                                markerTitle,
+                                markerTitle.ifBlank { markerTextFromString(markerType) },
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
 //                    modifier = Modifier
@@ -774,7 +774,7 @@ fun SwipeableMarkerChip(
                 Column {
                     Text(
                         text =
-                            markerTitle,
+                            markerTitle.ifBlank { markerTextFromString(markerType) },
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
 //                    modifier = Modifier
@@ -889,39 +889,16 @@ fun donutArcShape(
 
 @Composable
 fun markerIconFromString(markerType: String): Painter {
-    val painter: Painter = when (markerType) {
-        MarkerType.UNKNOWN.displayName -> painterResource(R.drawable.unknown)
-        MarkerType.UNKNOWN.type -> painterResource(R.drawable.unknown)
-        MarkerType.FRIENDLY.displayName -> painterResource(R.drawable.friendly)
-        MarkerType.FRIENDLY.type -> painterResource(R.drawable.friendly)
-        MarkerType.HOSTILE.displayName -> painterResource(R.drawable.hostile)
-        MarkerType.HOSTILE.type -> painterResource(R.drawable.hostile)
-        MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral)
-        MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral)
-        "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
-        "a-f-A-M-F-Q" -> painterResource(R.drawable.drone_icon_friendly)
-        "a-u-A-M-F-Q" -> painterResource(R.drawable.drone_icon)
-        "a-h-A-M-F-Q" -> painterResource(R.drawable.drone_icon_hostile)
-        else ->  //TODO: Change to error icon
-            painterResource(R.drawable.unknown)
-    }
-    return painter
+    return markerPainter(markerVisualSpec(markerType))
+}
+
+fun markerTextFromString(markerType: String): String {
+    return markerVisualSpec(markerType).label
 }
 
 @Composable
-fun markerTextFromString(markerType: String): String {
-    val markerString: String = when (markerType) {
-        MarkerType.UNKNOWN.type -> "Unknown"
-        MarkerType.FRIENDLY.type -> "Friendly"
-        MarkerType.HOSTILE.type -> "Hostile"
-        MarkerType.NEUTRAL.type -> "Neutral"
-        "a-f-A-M-F-Q" -> "Friendly UAV"
-        "a-u-A-M-F-Q" -> "Unknown UAV"
-        "a-h-A-M-F-Q" -> "Hostile UAV"
-        else -> "ERROR"
-    }
-    return markerString
-}
+internal fun markerPainter(spec: MarkerVisualSpec): Painter =
+    spec.tintArgb?.let { tintedPainter(spec.icon, Color(it)) } ?: painterResource(spec.icon)
 
 @Composable
 fun MarkerSuccessDialog(

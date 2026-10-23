@@ -86,6 +86,35 @@ class CompanionPhoneMarkerLifecycleTest {
         repository.companionPointRevisions.remember(uid, CompanionPointRevisions.Revision(token, time, local, 0))
     }
 
+    @Test fun genericTypesReachReceivedMapStateFromPhoneAndGatewayWithStaleAndBoundsUnchanged() = runBlocking {
+        for (type in listOf("a-n-A-C-F", "a-h-G-U-C", "a-s-S", "a-a-G-X")) {
+            val phoneUid = "phone-$type"
+            val xml = cot(phoneUid, now).replace("type='a-h-G'", "type='$type'")
+            receive(xml)
+            assertTrue("Phone marker missing for $type",
+                repository.receivedMarkerList.value.any { it.uid == phoneUid })
+            val marker = repository.receivedMarkerList.value.single { it.uid == phoneUid }
+            assertEquals(type, marker.markerType)
+            assertEquals("Target", marker.title)
+            assertEquals("companion-phone", marker.sourceServerId)
+            receive(cot("invalid-$type", now, lat = 91.0).replace("type='a-h-G'", "type='$type'"))
+            assertFalse(repository.receivedMarkerList.value.any { it.uid == "invalid-$type" })
+            receive(cot(phoneUid, now + 1, stale = now - 1).replace("type='a-h-G'", "type='$type'"))
+            assertFalse(repository.receivedMarkerList.value.any { it.uid == phoneUid })
+            receive(xml)
+            assertFalse(repository.receivedMarkerList.value.any { it.uid == phoneUid })
+        }
+        gateway.negotiate(JSONObject().put("version", 1).put("session", "generic-session"))
+        gateway.confirm("generic-session")
+        for (type in listOf("a-n-A-C-F", "a-h-G-U-C", "a-s-S", "a-a-G-X")) {
+            val xml = cot("gateway-$type", now).replace("type='a-h-G'", "type='$type'")
+            service.receiveGatewayMap(xml, "generic-session", 0)
+            assertTrue("Gateway marker missing for $type",
+                repository.receivedMarkerList.value.any { it.uid == "gateway-$type" })
+            assertEquals(type, repository.receivedMarkerList.value.single { it.uid == "gateway-$type" }.markerType)
+        }
+    }
+
     @Test fun explicitDeletionRemovesOnlyPhoneCopyAndClearsSelectedNavigationWithoutReplay() = runBlocking {
         tak(cot("shared", now - 1, lat = 37.0))
         receive(cot("shared", now))
