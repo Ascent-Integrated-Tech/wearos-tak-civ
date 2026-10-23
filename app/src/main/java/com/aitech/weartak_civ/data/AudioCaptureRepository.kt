@@ -17,7 +17,6 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -29,11 +28,6 @@ private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 class AudioCaptureRepository(private val context: Context) {
 
     private val TAG = "WearTAK-" + AudioCaptureRepository::class.java.simpleName
-    enum class RecordAction {
-        START,
-        STOP,
-        PAUSE
-    }
 
     enum class RecordingState {
         RECORDING,
@@ -62,6 +56,39 @@ class AudioCaptureRepository(private val context: Context) {
     fun tryEmitChunk(chunk: AudioPcmChunk): Boolean = _pcmChunks.tryEmit(chunk)
     val getPcmChunks: SharedFlow<AudioPcmChunk> = _pcmChunks
 
+    private val consumerLock = Any()
+    private val _activeConsumers = MutableStateFlow<Set<String>>(emptySet())
+    val activeConsumers: StateFlow<Set<String>> = _activeConsumers
+
+    /**
+     * Acquires an idempotent lease on the single microphone capture session.
+     *
+     * Stable owner keys let local detectors and trusted plugins coexist without duplicate starts.
+     */
+    fun acquireConsumer(consumerId: String): Boolean {
+        if (consumerId.isBlank()) return false
+        return synchronized(consumerLock) {
+            val current = _activeConsumers.value
+            if (consumerId in current) {
+                false
+            } else {
+                _activeConsumers.value = current + consumerId
+                true
+            }
+        }
+    }
+
+    /** Releases a lease; repeated releases are safe no-ops. */
+    fun releaseConsumer(consumerId: String): Boolean = synchronized(consumerLock) {
+        val current = _activeConsumers.value
+        if (consumerId !in current) {
+            false
+        } else {
+            _activeConsumers.value = current - consumerId
+            true
+        }
+    }
+
     /*
     MediaRecorder.AudioSource:
     CAMCORDER = 5,
@@ -78,14 +105,6 @@ class AudioCaptureRepository(private val context: Context) {
     */
     val audioSource: Int = MediaRecorder.AudioSource.UNPROCESSED
 
-    // AudoCapService listens for commands to start,
-    private val _recordAudioRequest = MutableSharedFlow<RecordAction>(
-        replay = 0,
-        extraBufferCapacity = 1,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val getRecordRequest: SharedFlow<RecordAction> = _recordAudioRequest
-
     // So the UI knows what buttons to show the user (e.g. stop, pause, record)
     private val _recordingState = MutableStateFlow<RecordingState>(RecordingState.AVAILABLE)
     val getRecordingState: StateFlow<RecordingState> = _recordingState
@@ -93,18 +112,6 @@ class AudioCaptureRepository(private val context: Context) {
     // So the UI knows when to start/stop showing the user that a recording session is in session. Like the macro event of a recording sesh.
     private val _recordingSessionState = MutableStateFlow<Boolean>(false)
     val getRecordingSessionState: StateFlow<Boolean> = _recordingSessionState
-
-    suspend fun requestStartRecording() {
-        _recordAudioRequest.emit(RecordAction.START)
-    }
-
-    suspend fun requestStopRecording() {
-        _recordAudioRequest.emit(RecordAction.STOP)
-    }
-
-    suspend fun requestPauseRecording() {
-        _recordAudioRequest.emit(RecordAction.PAUSE)
-    }
 
     suspend fun updateRecordingSessionState(isSessionRunnning: Boolean) {
         _recordingSessionState.emit(isSessionRunnning)

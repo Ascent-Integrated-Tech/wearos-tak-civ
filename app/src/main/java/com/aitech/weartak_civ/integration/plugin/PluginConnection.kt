@@ -13,6 +13,7 @@ import com.weartak.plugin.sdk.aidl.IWearTakPlugin
 import com.weartak.plugin.sdk.model.PluginInitParcel
 import com.weartak.plugin.sdk.model.PluginInfoParcel
 import com.weartak.plugin.sdk.v2.WearTakPluginV2Contract
+import com.weartak.plugin.sdk.v3.WearTakPluginV3Contract
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -44,6 +45,7 @@ class PluginConnection(
     private var apiVersionSnapshot: Int = -1
     private var hostControl: HostControlImpl? = null
     private var hostCallback: HostCallbackImpl? = null
+    private var hostPcmControlV3: HostPcmControlV3Impl? = null
 
     /**
      * Set when [onServiceConnected] fails before [PluginManager.bind] registers this connection.
@@ -126,15 +128,24 @@ class PluginConnection(
 
         val api = runCatching { iface.apiVersion }.getOrDefault(-1)
         apiVersionSnapshot = api
-        if (api != WearTakPluginContract.CONTRACT_API_VERSION && api != WearTakPluginV2Contract.CONTRACT_API_VERSION) {
+        if (
+            api != WearTakPluginContract.CONTRACT_API_VERSION &&
+            api != WearTakPluginV2Contract.CONTRACT_API_VERSION &&
+            api != WearTakPluginV3Contract.CONTRACT_API_VERSION
+        ) {
             Log.w(TAG, "plugin apiVersion=$api unsupported pkg=$pluginPackage")
             failBind("api_version_mismatch:$api")
             return
         }
 
         val control = HostControlImpl(app, ingress, pluginPackage, pluginUid)
-        val controlV2 = if (api == WearTakPluginV2Contract.CONTRACT_API_VERSION) {
+        val controlV2 = if (api >= WearTakPluginV2Contract.CONTRACT_API_VERSION) {
             HostControlV2Impl(app, ingress, pluginPackage, pluginUid)
+        } else {
+            null
+        }
+        val controlV3 = if (api == WearTakPluginV3Contract.CONTRACT_API_VERSION) {
+            HostPcmControlV3Impl(app.audioRepo, pluginPackage, pluginUid)
         } else {
             null
         }
@@ -146,6 +157,7 @@ class PluginConnection(
         )
         hostControl = control
         hostCallback = callback
+        hostPcmControlV3 = controlV3
 
         val init = PluginInitParcel(
             hostPackageName = app.packageName,
@@ -157,7 +169,11 @@ class PluginConnection(
             },
         )
         try {
-            iface.initializePluginV2(init, control, controlV2)
+            if (controlV3 != null) {
+                iface.initializePluginV3(init, control, controlV2, controlV3)
+            } else {
+                iface.initializePluginV2(init, control, controlV2)
+            }
             iface.registerHostCallback(callback)
             iface.startPlugin()
             manager.settingsCoordinator.onPluginConnected(pluginPackage, iface)
@@ -197,6 +213,7 @@ class PluginConnection(
             }
         }
         runCatching { iface?.stopPlugin() }
+        hostPcmControlV3?.close()
         runCatching { iface?.shutdownPlugin() }
         runCatching {
             if (binder != null) binder.unlinkToDeath(deathRecipient, 0)
@@ -207,6 +224,7 @@ class PluginConnection(
         apiVersionSnapshot = -1
         hostControl = null
         hostCallback = null
+        hostPcmControlV3 = null
         pluginBinder = null
     }
 

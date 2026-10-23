@@ -114,7 +114,7 @@ class PluginConnectionBindTrustTest {
     fun bind_rejectsUnsupportedApiVersion() {
         val ri = resolveInfoFor(pluginPkg)
         val app = mockHostApp(listOf(ri)) { intent, conn ->
-            conn.onServiceConnected(intent.component!!, FakeWearTakPlugin(pluginPkg, apiVersion = 3).asBinder())
+            conn.onServiceConnected(intent.component!!, FakeWearTakPlugin(pluginPkg, apiVersion = 4).asBinder())
         }
         val ingress = mockk<PluginIngressPort>(relaxed = true)
         every { ingress.packagesForUid(any(), any()) } returns setOf(pluginPkg)
@@ -144,6 +144,28 @@ class PluginConnectionBindTrustTest {
         assertEquals(0, plugin.initializePluginCalls)
         assertTrue(plugin.lastInit!!.hostExtras.getBoolean(HostControlImpl.HOST_EXTRA_COT_ROUTING_V1))
         assertTrue(plugin.lastInit!!.hostExtras.getBoolean(HostControlImpl.HOST_EXTRA_CHAT_DISPATCH_V1))
+    }
+
+    @Test
+    fun bind_usesInitializePluginV3ForApiVersion3() {
+        val ri = resolveInfoFor(pluginPkg)
+        lateinit var plugin: FakeWearTakPlugin
+        val audioRepo = mockk<com.aitech.weartak_civ.data.AudioCaptureRepository>(relaxed = true)
+        val app = mockHostApp(listOf(ri)) { intent, conn ->
+            plugin = FakeWearTakPlugin(pluginPkg, apiVersion = 3)
+            conn.onServiceConnected(intent.component!!, plugin.asBinder())
+        }
+        every { app.audioRepo } returns audioRepo
+        val ingress = mockk<PluginIngressPort>(relaxed = true)
+        every { ingress.packagesForUid(any(), any()) } returns setOf(pluginPkg)
+        val trust = mockk<PluginTrust>(relaxed = true)
+        val mgr = PluginManager(app, ingress, trust)
+
+        mgr.refreshBindings()
+
+        assertTrue(mgr.hasConnectionForTest(pluginPkg))
+        assertEquals(1, plugin.initializePluginV3Calls)
+        assertEquals(0, plugin.initializePluginV2Calls)
     }
 
     @Test
