@@ -1019,6 +1019,11 @@ class SitxTakService : Service() {
                 }
             }
             val markerCotEvent: CotMarkerEvent? = CotMessageParser.parseMarkerOrNull(rawXml)
+            CotMessageParser.parseDeletionOrNull(rawXml)?.let { deletion ->
+                if (deletion.uid != MainActivity.device_uid) serviceScope.launch {
+                    dataRepo.receiveCotDeletion(deletion, null, bhRepo)
+                }
+            }
 
             if (markerCotEvent != null) {
                 serviceScope.launch {

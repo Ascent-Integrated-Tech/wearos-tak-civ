@@ -480,14 +480,29 @@ class DittoReceiveIntegrationTest {
                 f.doc("entity", detail = "<!DOCTYPE detail [<!ENTITY x SYSTEM 'file:///not-read'>]><detail>&x;</detail>"),
                 f.doc("large", detail = "<detail>${"x".repeat(DittoCotDocument.MAX_PAYLOAD_BYTES)}</detail>"),
                 f.doc("control", "t-x-g-c"),
-                f.doc("delete", "t-x-d-d"),
                 f.doc("package", "b-f-t-r")
             )
             f.emit("mapitem", *bad.toTypedArray(), f.doc("valid"))
             f.drain()
             assertEquals(listOf("valid"), f.repo.receivedMarkerList.value.map { it.uid })
             assertTrue(f.chats.isEmpty())
-            assertTrue(f.logs.count { it.contains("Rejected") } >= 13)
+            assertTrue(f.logs.count { it.contains("Rejected") } >= 12)
+        } finally { f.close() }
+    }
+
+    @Test fun cotDeleteRemovesOnlyThatPeersCopyAndRejectsReplay() = runTest {
+        val f = Fixture(this)
+        try {
+            val original = f.doc("remote")
+            f.emit("mapitem", original)
+            f.drain()
+            assertEquals(listOf("remote"), f.repo.receivedMarkerList.value.map { it.uid })
+            f.emit("mapitem", f.doc("remote", "t-x-d-d", at = f.time + 1))
+            f.drain()
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
+            f.emit("mapitem", original)
+            f.drain()
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
         } finally { f.close() }
     }
 

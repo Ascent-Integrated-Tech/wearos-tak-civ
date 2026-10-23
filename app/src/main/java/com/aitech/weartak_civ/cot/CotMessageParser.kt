@@ -189,7 +189,24 @@ object CotMessageParser {
             type == "a-f-G-E" || type.startsWith("a-f-G-E-")
 
     fun isMarkerType(type: String): Boolean =
-        (CotAffiliation.isAtomType(type) && !isUserPositionType(type)) || type == "b-m-p-s-p-i"
+        (CotAffiliation.isAtomType(type) && !isUserPositionType(type)) ||
+            type in setOf("b-m-p-s-p-i", "b-m-p-s-m", "u-d-c-c")
+
+    fun isGenericMapType(type: String): Boolean =
+        isMarkerType(type) && type !in setOf("a-f-G", "a-h-G", "a-n-G", "a-u-G", "b-m-p-s-p-i",
+            "a-f-A-M-F-Q", "a-u-A-M-F-Q", "a-h-A-M-F-Q")
+
+    fun parseDeletionOrNull(rawXml: String): CotDeletion? {
+        val root = parseDocumentOrNull(rawXml)?.documentElement ?: return null
+        if (root.tagName != "event" || root.getAttribute("type") != "t-x-d-d") return null
+        val time = parseIsoToEpochMs(root.getAttribute("time")).takeIf { it > 0 } ?: return null
+        val links = root.getElementsByTagName("link")
+        val target = (0 until links.length).mapNotNull { links.item(it) as? Element }
+            .firstOrNull { it.getAttribute("relation") == "none" }?.getAttribute("uid")
+            ?: root.getAttribute("uid")
+        if (target.isBlank() || target.length > 512 || target.any(Char::isISOControl)) return null
+        return CotDeletion(target, time)
+    }
 
     fun eventTypeOrNull(rawXml: String): String? = eventAttribute(rawXml, "type")
 
@@ -326,8 +343,15 @@ object CotMessageParser {
         link = linkOf(rawXml),
         usericon = null,
         remarks = extractElementText(rawXml, "remarks"),
-        contact = null,
+        contact = extractAttribute(rawXml, "contact", "endpoint")?.takeIf(String::isNotBlank),
+        circleRadiusMeters = if (eventTypeOrNull(rawXml) == "u-d-c-c") circleRadius(rawXml) else null,
     )
+
+    private fun circleRadius(rawXml: String): Double? {
+        val major = extractAttribute(rawXml, "ellipse", "major")?.toDoubleOrNull() ?: return null
+        val minor = extractAttribute(rawXml, "ellipse", "minor")?.toDoubleOrNull() ?: return null
+        return major.takeIf { it.isFinite() && minor.isFinite() && it > 0 && it <= 100_000 && it == minor }
+    }
 
     private fun pointOf(rawXml: String): CotPoint? {
         val lat = extractAttribute(rawXml, "point", "lat")?.toDoubleOrNull() ?: return null

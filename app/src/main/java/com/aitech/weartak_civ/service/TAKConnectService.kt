@@ -27,7 +27,6 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.NetworkUtils
 import com.aitech.weartak_civ.WifiMulticastReceiver
 import com.aitech.weartak_civ.cot.CotMarkerEvent
-import com.aitech.weartak_civ.cot.CotMarkerMapItem
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.cot.CotStreamFramer
 import com.aitech.weartak_civ.cot.TakServerCotEnvelope
@@ -2252,8 +2251,9 @@ class TAKConnectService: Service() {
                         event: CotMarkerEvent,
                         envelope: TakServerCotEnvelope
                     ) {
-                        val shouldTrack = dataRepository.applyReceivedMarkerEvent(
+                        val shouldTrack = dataRepository.receiveMarkerEvent(
                             event = event,
+                            bloodhoundRepository = bhRepo,
                             source = envelope.sourceServerAddress,
                             sourceServerId = envelope.sourceServerId,
                             receivedAt = envelope.receivedAt
@@ -2273,18 +2273,6 @@ class TAKConnectService: Service() {
                             return
                         }
 
-                        val mapItem = CotMarkerMapItem(event)
-                        bhRepo.updateBloodhoundEvent(
-                            BloodhoundRepository.BloodhoundEvent(
-                                mapItem = mapItem,
-                                server = envelope.sourceServerAddress,
-                                timeIssued = mapItem.link?.productionTime,
-                                timeCompleted = null,
-                                remark = event.detail.remarks ?: "",
-                                sourceServerId = envelope.sourceServerId,
-                                receivedAt = envelope.receivedAt
-                            )
-                        )
                         Log.d(
                             TAG,
                             "Inbound marker delivered to Bloodhound state uid=${event.uid} " +
@@ -2292,6 +2280,12 @@ class TAKConnectService: Service() {
                         )
                     }
 
+                    override suspend fun onDelete(
+                        event: com.aitech.weartak_civ.cot.CotDeletion,
+                        envelope: TakServerCotEnvelope
+                    ) {
+                        dataRepository.receiveCotDeletion(event, envelope.sourceServerId, bhRepo, envelope.receivedAt)
+                    }
 
                     // Handle routes received from incoming TAK CoT messages
                     // Routes may come through the normal CoT connection or mission sync

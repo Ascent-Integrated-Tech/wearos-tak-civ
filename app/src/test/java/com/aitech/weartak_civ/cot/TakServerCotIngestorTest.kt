@@ -30,7 +30,7 @@ class TakServerCotIngestorTest {
         val sink = RecordingSink()
         val ingestor = ingestor(sink)
         for (source in listOf(SERVER_ID, "multicast:239.2.3.1:6969", "plugin:mesh")) {
-            for (type in listOf("a-n-A-C-F", "a-h-G-U-C", "a-s-S", "a-a-G-X")) {
+            for (type in listOf("a-n-A-C-F", "a-n-A-C-H", "a-f-Z", "a-h-G-U-C", "a-s-S", "a-a-G-X", "b-m-p-s-m", "u-d-c-c")) {
                 val message = envelope(MARKER_XML.replace("type='a-h-G'", "type='$type'"), 102L)
                     .copy(sourceServerId = source)
                 assertEquals(TakServerCotIngestResult.MARKER, ingestor.ingest(message))
@@ -38,8 +38,17 @@ class TakServerCotIngestorTest {
                 assertEquals(message, sink.markers.last().second)
             }
         }
-        assertEquals(12, sink.markers.size)
+        assertEquals(24, sink.markers.size)
         assertEquals(TakServerCotIngestResult.USER, ingestor.ingest(envelope(USER_XML, 103L)))
+    }
+
+    @Test fun deletionKeepsSourceAndDoesNotNeedAPoint() = runTest {
+        val sink = RecordingSink()
+        val message = envelope(MARKER_XML.replace("type='a-h-G'", "type='t-x-d-d'"), 102L)
+        assertEquals(TakServerCotIngestResult.DELETE, ingestor(sink).ingest(message))
+        assertEquals("marker-1", sink.deletions.single().first.uid)
+        assertEquals(message, sink.deletions.single().second)
+        assertTrue(sink.markers.isEmpty())
     }
 
     @Test
@@ -90,6 +99,10 @@ class TakServerCotIngestorTest {
         }
         val users = mutableListOf<Pair<CotUserPositionEvent, TakServerCotEnvelope>>()
         val markers = mutableListOf<Pair<CotMarkerEvent, TakServerCotEnvelope>>()
+        val deletions = mutableListOf<Pair<CotDeletion, TakServerCotEnvelope>>()
+        override suspend fun onDelete(event: CotDeletion, envelope: TakServerCotEnvelope) {
+            deletions += event to envelope
+        }
         val emergencies = mutableListOf<Pair<CotEmergencyEvent, TakServerCotEnvelope>>()
         val channelChanges = mutableListOf<TakServerCotEnvelope>()
         val configurations = mutableListOf<TakServerCotEnvelope>()

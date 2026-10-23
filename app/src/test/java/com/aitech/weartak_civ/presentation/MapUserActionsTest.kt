@@ -33,7 +33,18 @@ class MapUserActionsTest {
 
     private fun user(uid: String = "alice") = DataRepository.ReceivedUser(
         uid, "a-f-G-U-C", "Blue", "Alice", "Team Member", 1, 100,
-        DataRepository.LocationSnapshot(1, 38.0, -77.0, null, null, null, null, null), "server")
+        DataRepository.LocationSnapshot(1, 38.0, -77.0, null, null, null, null, null), "server", chatEndpoint = "*:4242:tcp")
+
+    @Test fun pointWithoutChatEndpointKeepsNavigationButDisablesChat() {
+        val point = user().copy(chatEndpoint = null)
+        compose.setContent {
+            SelectedUser(androidx.wear.compose.navigation.rememberSwipeDismissableNavController(),
+                point.uid, listOf(point), LocalContext.current)
+        }
+        compose.onNodeWithTag("map-user-actions").performScrollToNode(hasText("Open Chat"))
+        compose.onNodeWithText("Open Chat").assertIsNotEnabled()
+        compose.onNodeWithText("Start Bloodhound").assertIsEnabled()
+    }
 
     @Before fun setDeviceUid() {
         MainActivity.device_uid = "watch"

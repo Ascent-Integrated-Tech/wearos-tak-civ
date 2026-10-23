@@ -16,6 +16,7 @@ fun resolveChatContact(
     selfUid: String
 ): DirectChatContact {
     val user = requireNotNull(users.firstOrNull { it.uid == selectedUid }) { "Selected person is no longer available" }
+    require(!user.chatEndpoint.isNullOrBlank()) { "Selected point has no chat endpoint" }
     ChatDestinations.direct(user.uid, user.title, selfUid)
     return DirectChatContact(user.uid, user.title)
 }

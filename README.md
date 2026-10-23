@@ -16,10 +16,29 @@ handling are unchanged.
 
 UAV and SPI symbols take precedence over generic frames. Fixed-wing, rotary-wing,
 surface/boat, and ground-vehicle hierarchies use the existing platform symbols,
-tinted by affiliation, in both marker lists and maps. Cleared markers retain gray
+tinted by affiliation in marker lists and details. Cleared markers retain gray
 variants. ATOS tag types still select their specific symbols and GPS-off variants
 without replacing the packet's affiliation. Friendly ATOS tags retain configured
 team colors; nonfriendly tags use affiliation colors.
+
+WEARTAK-280 also accepts spot points (`b-m-p-s-m`) and circle centers (`u-d-c-c`).
+Additional atom/spot/shape points use affiliation-colored dots and zoom-dependent
+callsign labels (UID when no callsign is supplied); existing drop-marker, UAV,
+SPI and user symbols are preserved. Platform symbols remain in marker details
+and lists. A circular `<detail><shape><ellipse major="100" minor="100"/></shape></detail>`
+draws a geodesic outline with a 100-meter radius. Only equal positive radii up
+to 100 km are drawn; other shapes retain their center point.
+
+Generic received map copies are capped at 512 across sources (oldest received
+evicted first), expire at sender `stale` or 15 minutes without a refresh,
+whichever comes first, and are swept within approximately one second. Their
+navigation copies are removed too. Existing user/drop-marker lifetimes are
+unchanged. `t-x-d-d` removes the event UID (or a `link relation="none"` target)
+only from its originating source, including its navigation/route copy; local
+watch-created points and other sources are not deleted. Event-time watermarks
+reject delayed resurrection, with bounded 2,048-entry removal histories.
+Chat selection/actions require a nonblank `contact endpoint`; a callsign alone
+does not advertise chat capability.
 
 Configure Ditto Edge Sync under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
 tap the Ditto Edge Sync row to select Community or configure a custom PDL in Ditto Edge Sync Identity. The row subtitle shows

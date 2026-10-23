@@ -54,7 +54,7 @@ class ChatPickerActionsTest {
     @Test fun selectedPersonConfirmationSurvivesReorderingAndDisablesWhenPersonDisappears() {
         MainActivity.device_uid = "watch"
         fun user(uid: String, title: String) = DataRepository.ReceivedUser(
-            uid, "a-f-G-U-C", "Blue", title, "Team Member", 1, 100, null, "server")
+            uid, "a-f-G-U-C", "Blue", title, "Team Member", 1, 100, null, "server", chatEndpoint = "*:4242:tcp")
         val alice = user("alice", "Alice")
         val bob = user("bob", "Bob")
         val users = mutableStateOf(listOf(alice, bob))
@@ -77,7 +77,7 @@ class ChatPickerActionsTest {
         MainActivity.device_uid = "watch"
         fun user(uid: String, title: String) = DataRepository.ReceivedUser(
             uid, "a-f-G-U-C", "Blue", title, "Team Member", 1, 100,
-            DataRepository.LocationSnapshot(1, 38.0, -77.0, null, null, null, null, null), "server")
+            DataRepository.LocationSnapshot(1, 38.0, -77.0, null, null, null, null, null), "server", chatEndpoint = "*:4242:tcp")
         val alice = user("alice", "Alice")
         val bob = user("bob", "Bob")
         val users = mutableStateOf(listOf(alice, bob))

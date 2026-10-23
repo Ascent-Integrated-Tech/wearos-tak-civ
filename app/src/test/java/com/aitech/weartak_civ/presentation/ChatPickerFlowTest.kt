@@ -86,7 +86,14 @@ class ChatPickerFlowTest {
     }
 
     private fun user(uid: String, title: String = uid) = DataRepository.ReceivedUser(
-        uid, "a-f-G-U-C", "Blue", title, "Team Member", 1, 100, null, "server")
+        uid, "a-f-G-U-C", "Blue", title, "Team Member", 1, 100, null, "server", chatEndpoint = "*:4242:tcp")
+
+    @Test fun aCallsignAloneDoesNotEnableChat() {
+        val point = user("point").copy(chatEndpoint = null)
+        assertThrows(IllegalArgumentException::class.java) {
+            resolveChatContact(point.uid, listOf(point), "watch")
+        }
+    }
 
     @Test fun mapSelectionUsesLiveUidNotListIndexAndRejectsDisappearedPeople() {
         val alice = user("alice", "Alice")

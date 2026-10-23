@@ -306,6 +306,9 @@ class DataRepository(private val context: Context) {
 
     // Keep source ownership for mission bookkeeping and fallback; project versioned CoT by UID.
     private val _takRoutes = MutableStateFlow<Map<Pair<String, String>, TakRoute>>(emptyMap())
+    private val routeRemovals = object : LinkedHashMap<Pair<String, String>, Long>() {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<String, String>, Long>?) = size > 2048
+    }
     internal val takRouteCopies: List<TakRoute> get() = _takRoutes.value.values.toList()
 
     val takRoutes: StateFlow<List<TakRoute>> =
@@ -325,13 +328,14 @@ class DataRepository(private val context: Context) {
 
     // Add a new route or update an existing route
     // A route is identified by its server ID and UID
-    fun upsertTakRoute(route: TakRoute) {
+    fun upsertTakRoute(route: TakRoute) = synchronized(routeRemovals) {
         if (route.eventTime == null) {
             Log.d(TAG, "Route has no event version; cannot replace versioned state uid=${route.uid}")
         }
 
         // Build a unique key for this route on its TAK Server
         val key = route.serverId to route.uid
+        if (routeRemovals[key]?.let { (route.eventTime ?: 0) <= it } == true) return@synchronized
 
         // Update the route map with the latest route data
         // An existing route with the same key will be replaced
@@ -2128,7 +2132,8 @@ class DataRepository(private val context: Context) {
         val location: LocationSnapshot?,
         val source: String,
         val sourceServerId: String? = null,
-        val receivedAt: Long = timeReceived
+        val receivedAt: Long = timeReceived,
+        val chatEndpoint: String? = null
     )
 
     private val receivedUserStore = SourceAwareCotStore(
@@ -2234,7 +2239,8 @@ class DataRepository(private val context: Context) {
             ),
             source = source,
             sourceServerId = sourceServerId,
-            receivedAt = receivedAt
+            receivedAt = receivedAt,
+            chatEndpoint = event.detail.contact
         )
         val result = receivedUserStore.upsertWithResult(item)
         Log.d(
@@ -2273,7 +2279,8 @@ class DataRepository(private val context: Context) {
         val location: LocationSnapshot?,
         val source: String,
         val sourceServerId: String? = null,
-        val receivedAt: Long = timeReceived
+        val receivedAt: Long = timeReceived,
+        val circleRadiusMeters: Double? = null
     )
 
     private val _droppedMarkerList = MutableStateFlow<List<DroppedMarker>>(emptyList())
@@ -2455,6 +2462,7 @@ class DataRepository(private val context: Context) {
         receivedAt: Long = System.currentTimeMillis(),
         companionRevision: CompanionPointRevisions.Revision? = null
     ): Boolean = markerIngressMutex.withLock {
+        genericBloodhounds = bloodhoundRepository
         currentCoroutineContext().ensureActive()
         if (event.uid.isBlank() || event.time <= 0 || event.start <= 0 || event.stale <= 0) {
             return@withLock false
@@ -2462,6 +2470,7 @@ class DataRepository(private val context: Context) {
         val now = System.currentTimeMillis()
         bloodhoundRepository.applyReceivedMarkerEvent(event, source, sourceServerId, receivedAt, now)
         val applied = applyReceivedMarkerEvent(event, source, sourceServerId, receivedAt, now)
+        pruneGenericMarkers(now)
         if (applied && sourceServerId == "companion-phone") {
             companionPointRevisions.forget(event.uid)
             companionRevision?.let { companionPointRevisions.remember(event.uid, it) }
@@ -2496,7 +2505,8 @@ class DataRepository(private val context: Context) {
         val item = ReceivedMarker(
             uid = event.uid,
             markerType = event.type,
-            title = event.detail.markerCallsign.orEmpty(),
+            title = event.detail.markerCallsign?.takeIf(String::isNotBlank)
+                ?: if (com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(event.type)) event.uid else "",
             timeReceived = event.time,
             staleTime = event.stale,
             location = LocationSnapshot(
@@ -2511,9 +2521,14 @@ class DataRepository(private val context: Context) {
             ),
             source = source,
             sourceServerId = sourceServerId,
-            receivedAt = receivedAt
+            receivedAt = receivedAt,
+            circleRadiusMeters = event.detail.circleRadiusMeters
         )
         val result = upsertReceivedMarker(item)
+        if (com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(event.type)) {
+            pruneGenericMarkers(now)
+            startGenericExpiry()
+        }
         Log.d(
             TAG,
             "Map state marker upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
@@ -2522,6 +2537,56 @@ class DataRepository(private val context: Context) {
                 "activeChannelsAtIngest=${activeChannelsForLog(sourceServerId)} channelOwnership=unavailable"
         )
         return result.applied
+    }
+
+    private var genericBloodhounds: BloodhoundRepository? = null
+    private var genericExpiryJob: kotlinx.coroutines.Job? = null
+
+    private fun startGenericExpiry() = synchronized(receivedMarkerStore) {
+        if (genericExpiryJob?.isActive != true) {
+            genericExpiryJob = repoScope.launch {
+                while (true) {
+                    kotlinx.coroutines.delay(1_000)
+                    markerIngressMutex.withLock { pruneGenericMarkers() }
+                    val keepRunning = synchronized(receivedMarkerStore) {
+                        val hasGeneric = receivedMarkerStore.allItems.value.values.any {
+                            com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(it.markerType)
+                        }
+                        if (!hasGeneric) genericExpiryJob = null
+                        hasGeneric
+                    }
+                    if (!keepRunning) break
+                }
+            }
+        }
+    }
+
+    fun pruneGenericMarkers(now: Long = System.currentTimeMillis()) {
+        receivedMarkerStore.pruneSelected(
+            selected = { com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(it.markerType) },
+            expired = { it.staleTime <= now || now - it.receivedAt >= 15 * 60_000L },
+            maxCount = 512
+        ).forEach {
+            genericBloodhounds?.removeMarkerCopy(it.uid, it.sourceServerId, it.timeReceived, now)
+        }
+    }
+
+    suspend fun receiveCotDeletion(
+        deletion: com.aitech.weartak_civ.cot.CotDeletion,
+        sourceId: String?,
+        bloodhounds: BloodhoundRepository,
+        receivedAt: Long = System.currentTimeMillis()
+    ) = markerIngressMutex.withLock {
+        val source = sourceId ?: NON_TAK_COT_SOURCE_ID
+        receivedUserStore.removeIfNotOlder(SourceCotKey(source, deletion.uid), deletion.time, receivedAt)
+        receivedMarkerStore.removeIfNotOlder(SourceCotKey(source, deletion.uid), deletion.time, receivedAt)
+        bloodhounds.removeMarkerCopy(deletion.uid, sourceId, deletion.time, receivedAt)
+        synchronized(routeRemovals) {
+            val key = source to deletion.uid
+            routeRemovals[key] = maxOf(routeRemovals[key] ?: Long.MIN_VALUE, deletion.time)
+            takRouteCopies.firstOrNull { it.uid == deletion.uid && it.serverId == source &&
+                (it.eventTime ?: 0) <= deletion.time }?.let { removeTakRoute(source, it.uid) }
+        }
     }
 
     data class SourceClearSummary(
