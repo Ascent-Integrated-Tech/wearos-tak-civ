@@ -2095,6 +2095,13 @@ fun WearTAKSettingsNav(
                         )
                     }
                     item {
+                        WearTAKTitleChip(
+                            route = "chat_command_profiles",
+                            title = stringResource(R.string.command_profiles),
+                            navController = navController
+                        )
+                    }
+                    item {
                         Text(
                             text = stringResource(R.string.chat_command_examples),
                             fontSize = 14.sp,
@@ -2120,6 +2127,13 @@ fun WearTAKSettingsNav(
                 },
                 navController,
             )
+        }
+
+        composable("chat_command_profiles") {
+            CommandProfilesPage(navController)
+        }
+        composable("chat_command_profile/{name}") { entry ->
+            CommandProfilesPage(navController, entry.arguments?.getString("name"))
         }
 
         composable("sensor_manager") {

@@ -1016,7 +1016,8 @@ Profile commands take the same values as the settings screens (case-insensitive)
 | `setbirthyear` | `birthyear=<1900-current year>` |
 | `setsex` | `sex=<Male, Female, N/A>` |
 | `setusertype` | `usertype="Coalition Civilian"` |
-| `setpants`, `setwaist` | `pants=<20-50>`, `waist=<20-60>` |
+| `setpants`, `setuniformpantslengthinches` | `pants=<20-50>` (inches) |
+| `setwaist`, `setwaistsize` | `waist=<20-60>` (inches) |
 | `setprofile` | any combination of the fields above plus `callsign` |
 
 The callsign, team and role fields (including in `setprofile`) are refused when settings are managed by the phone.
@@ -1031,6 +1032,16 @@ The callsign, team and role fields (including in `setprofile`) are refused when 
 ```
 
 The profile is validated and applied, then each server is added through the normal add-server path (servers already present are skipped). Names are lowercase letters, digits and `-`. The reply says only how many servers were added. Refused when network settings are locked.
+
+**Settings > Tool Preferences > Plugins > Commands > Profiles** lists saved preset
+files and opens a read-only view of their profile fields and server names, hosts,
+and ports. Passwords, usernames, and unknown fields are omitted; opening a profile
+does not apply it or connect to its servers. Missing presets show an empty state;
+unreadable, malformed, or oversized (over 64 KiB) files show an error instead of
+raw JSON or credential-bearing parser errors. Reopen Profiles after changing files.
+The long command aliases use the same fields and ranges as their short forms:
+`#weartakcommandsetuniformpantslengthinches pants=30` and
+`#weartakcommandsetwaistsize waist=32`.
 
 The watch replies in chat with the outcome. Callsigns are not authenticated:
 another participant on the server or anyone able to inject multicast on the LAN

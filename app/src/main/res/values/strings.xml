@@ -65,6 +65,21 @@
     <string name="invalid_chat_command_callsign" translatable="false">Enter a valid callsign (1-32 letters, numbers, spaces, ., _ or -)</string>
     <string name="duplicate_chat_command_callsign" translatable="false">That callsign is already allowed</string>
     <string name="chat_command_examples" translatable="false">Command Examples</string>
+    <string name="command_profiles" translatable="false">Profiles</string>
+    <string name="command_profiles_loading" translatable="false">Loading saved profiles...</string>
+    <string name="command_profiles_read_only" translatable="false">View only. Passwords and usernames are hidden.</string>
+    <string name="command_profiles_empty" translatable="false">No saved profiles. Add preset JSON files to the app\'s presets folder.</string>
+    <string name="command_profiles_error" translatable="false">Could not read saved profiles. Check the preset files and reopen Profiles.</string>
+    <string name="command_profiles_servers" translatable="false">Servers</string>
+    <string name="command_profiles_no_servers" translatable="false">No servers saved.</string>
+    <string name="command_profiles_no_fields" translatable="false">No profile fields saved.</string>
+    <string name="command_profile_height" translatable="false">Height (ft/in)</string>
+    <string name="command_profile_weight" translatable="false">Weight (lb)</string>
+    <string name="command_profile_pants" translatable="false">Pants length (in)</string>
+    <string name="command_profile_waist" translatable="false">Waist (in)</string>
+    <string name="command_profile_birthyear" translatable="false">Birth year</string>
+    <string name="command_profile_sex" translatable="false">Sex</string>
+    <string name="command_profile_usertype" translatable="false">User type</string>
     <string name="chat_command_example_team" translatable="false">#weartakcommandsetteam team=\"Dark Green\"</string>
     <string name="chat_command_example_role" translatable="false">#weartakcommandsetrole role=\"Team Member\"</string>
     <string name="chat_command_example_callsign" translatable="false">#weartakcommandsetcallsign callsign=ALPHA-1</string>
