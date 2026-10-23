@@ -336,7 +336,7 @@ fun BloodhoundCivApp(
                 RouteBloodhoundDetails(route, routeSession, routeLocation, activeTarget,
                     onStart = { mode ->
                         if (bhRepo.startRoute(route, mode, routeLocation) && destination == "bloodhound_route_start") {
-                            navController.popBackStack()
+                            exitActivity()
                         }
                         requestBloodhoundComplicationUpdate(context)
                     },
