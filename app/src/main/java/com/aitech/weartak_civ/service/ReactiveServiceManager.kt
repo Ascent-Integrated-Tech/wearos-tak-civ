@@ -355,8 +355,9 @@ class ReactiveServiceManager : Service() {
         var anyChange = false
         val changedTypes = mutableListOf<ServiceType>()
 
-        // START phase (deps before dependents)
-        anyChange = reconcileStartPhase(order, changedTypes) || anyChange
+        // START phase (deps before dependents). Companion has no dependencies or dependents; start it
+        // first so its BLE advertising is not queued behind slower main-thread service startups.
+        anyChange = reconcileStartPhase(order.sortedBy { it != ServiceType.COMPANION_APP }, changedTypes) || anyChange
 
         // STOP phase (dependents before deps)
         anyChange = reconcileStopPhase(order.asReversed(), changedTypes) || anyChange

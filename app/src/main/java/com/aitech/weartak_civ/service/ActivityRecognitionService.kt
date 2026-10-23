@@ -16,8 +16,8 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.IBinder
 import android.util.Log
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.presentation.MainActivity
 import com.google.android.gms.location.ActivityRecognition
 import com.google.android.gms.location.ActivityRecognitionClient
 import com.google.android.gms.location.ActivityRecognitionResult
@@ -70,8 +70,8 @@ class ActivityRecognitionService : Service() {
 
     private lateinit var activityRecognitionClient: ActivityRecognitionClient
     private lateinit var callbackIntent: PendingIntent
-    private val repo: DataRepository
-        get() = MainActivity.dataRepository
+    // App-owned repository: the system may (re)start this service before MainActivity initializes its copy.
+    private val repo: DataRepository by lazy { (applicationContext as WearTakApplication).repo }
 
     private val healthClient by lazy { HealthServices.getClient(this) }
     private val passiveMonitoringClient by lazy { healthClient.passiveMonitoringClient }

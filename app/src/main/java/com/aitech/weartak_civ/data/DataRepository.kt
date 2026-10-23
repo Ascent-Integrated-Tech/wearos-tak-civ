@@ -212,6 +212,16 @@ private const val DEFAULT_COMMUNITY_PDL =
     BuildConfig.DITTO_COMMUNITY_IDENTITY
 
 class DataRepository(private val context: Context) {
+    internal val dittoPointLedger by lazy {
+        com.aitech.weartak_civ.cot.DittoPointLedger(
+            context.getSharedPreferences("ditto-local-points-v1", Context.MODE_PRIVATE)
+        )
+    }
+    internal val dittoPointIngress by lazy {
+        com.aitech.weartak_civ.cot.DittoPointIngress(
+            context.getSharedPreferences("ditto-point-watermarks-v1", Context.MODE_PRIVATE)
+        )
+    }
     data class Spo2DebugState(
         val activeBaselinePct: Double,
         val activeBaselineFamily: String,
@@ -294,16 +304,19 @@ class DataRepository(private val context: Context) {
     val takMissions: StateFlow<List<TakServerMissions>> =
         _takMissions.asStateFlow()
 
-    // Store routes using the server ID and route UID as the key
-    // This keeps routes from different TAK Servers separate
-    // Routes with the same UID on different servers can be stored independently
+    // Keep source ownership for mission bookkeeping and fallback; project versioned CoT by UID.
     private val _takRoutes = MutableStateFlow<Map<Pair<String, String>, TakRoute>>(emptyMap())
+    internal val takRouteCopies: List<TakRoute> get() = _takRoutes.value.values.toList()
 
-    // Expose stored routes as a list for the rest of the app
-    // Convert the internal map into a list whenever routes change
     val takRoutes: StateFlow<List<TakRoute>> =
         _takRoutes
-            .map { it.values.toList() }
+            .map { routes ->
+                val versioned = routes.values.filter { it.eventTime != null }.groupBy { it.uid }
+                    .mapValues { (_, copies) -> copies.maxBy { requireNotNull(it.eventTime) } }
+                routes.values.filter { route ->
+                    route.eventTime == null || versioned[route.uid] == route
+                }
+            }
             .stateIn(
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
                 started = SharingStarted.Eagerly,
@@ -313,6 +326,9 @@ class DataRepository(private val context: Context) {
     // Add a new route or update an existing route
     // A route is identified by its server ID and UID
     fun upsertTakRoute(route: TakRoute) {
+        if (route.eventTime == null) {
+            Log.d(TAG, "Route has no event version; cannot replace versioned state uid=${route.uid}")
+        }
 
         // Build a unique key for this route on its TAK Server
         val key = route.serverId to route.uid
@@ -321,7 +337,10 @@ class DataRepository(private val context: Context) {
         // An existing route with the same key will be replaced
         // Other stored routes will remain unchanged
         _takRoutes.update { current ->
-            current + (key to route)
+            val previous = current[key]
+            if (previous?.eventTime != null &&
+                (route.eventTime == null || route.eventTime < previous.eventTime)) current
+            else current + (key to route)
         }
 
         // Log the stored route information for debugging
@@ -330,6 +349,10 @@ class DataRepository(private val context: Context) {
             "Route stored uid=${route.uid} name=${route.name} " +
                     "serverId=${route.serverId} points=${route.points.size}"
         )
+    }
+
+    fun removeTakRoute(serverId: String, routeUid: String) {
+        _takRoutes.update { it - (serverId to routeUid) }
     }
 
     // Remove routes that belong to a specific mission on a specific server
@@ -2256,6 +2279,7 @@ class DataRepository(private val context: Context) {
 
     // Backend-only mutators (UI never calls these)
     suspend fun appendDroppedMarker(item: DroppedMarker) {
+        dittoPointLedger.created(item.uid, MainActivity.device_uid)
         deletedLocalPointUids.remove(item.uid)
         _droppedMarkerList.emit(_droppedMarkerList.value + item)
     }
@@ -2348,7 +2372,10 @@ class DataRepository(private val context: Context) {
 
     @Volatile var companionPointGeneration = -1L
 
-    suspend fun deleteReceivedPointLocally(uid: String, bloodhounds: BloodhoundRepository) =
+    suspend fun deleteReceivedPointLocally(
+        uid: String,
+        bloodhounds: BloodhoundRepository,
+    ): List<ReceivedMarker> =
         markerIngressMutex.withLock {
             if (receivedMarkerStore.visibleKey(uid)?.sourceId == "companion-phone") {
                 companionPointRevisions.current(uid, companionPointGeneration)?.let {
@@ -2364,6 +2391,12 @@ class DataRepository(private val context: Context) {
     suspend fun deleteDroppedPointLocally(uid: String, bloodhounds: BloodhoundRepository): Boolean =
         markerIngressMutex.withLock {
             if (_droppedMarkerList.value.none { it.uid == uid }) return@withLock false
+            try {
+                dittoPointLedger.delete(uid, MainActivity.device_uid, System.currentTimeMillis())
+            } catch (error: Exception) {
+                Log.e(TAG, "Point clear blocked: could not persist Ditto deletion intent", error)
+                return@withLock false
+            }
             deletedLocalPointUids.add(uid)
             companionPointRevisions.current(uid, companionPointGeneration)?.let {
                 bloodhounds.removeMarkerCopy(uid, "companion-phone", it.time, System.currentTimeMillis())
@@ -2387,6 +2420,7 @@ class DataRepository(private val context: Context) {
         if (receivedMarkerStore.item(key)?.timeReceived?.let { it > revision.time } == true) {
             return@withLock false
         }
+
         val receivedAt = System.currentTimeMillis()
         bloodhounds.removeMarkerCopy(uid, "companion-phone", revision.time, receivedAt)
         val removed = receivedMarkerStore.removeIfNotOlder(key, revision.time, receivedAt) != null
@@ -2398,6 +2432,16 @@ class DataRepository(private val context: Context) {
         }
         companionPointRevisions.forget(uid)
         removed || (revision.local && local != null)
+    }
+
+    internal suspend fun receiveDittoPointDeletion(
+        uid: String, sourceId: String, time: Long, bloodhounds: BloodhoundRepository
+    ) = markerIngressMutex.withLock {
+        currentCoroutineContext().ensureActive()
+        if (_droppedMarkerList.value.any { it.uid == uid } || isDeletedLocalPoint(uid)) return@withLock
+        val receivedAt = System.currentTimeMillis()
+        receivedMarkerStore.removeIfNotOlder(SourceCotKey(sourceId, uid), time, receivedAt)
+        bloodhounds.removeMarkerCopy(uid, sourceId, time, receivedAt)
     }
 
     /** Serializes map and navigation ingestion across BLE and TAK receive paths. */

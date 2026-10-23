@@ -153,6 +153,7 @@ class PluginConnection(
             pluginIdExpected = pluginPackage,
             hostExtras = android.os.Bundle().apply {
                 putBoolean(HostControlImpl.HOST_EXTRA_COT_ROUTING_V1, true)
+                putBoolean(HostControlImpl.HOST_EXTRA_CHAT_DISPATCH_V1, true)
             },
         )
         try {
@@ -166,14 +167,23 @@ class PluginConnection(
             return
         }
         PluginDiagnostics.markConnected(pluginPackage)
+        manager.onConnectionReady(pluginPackage)
         Log.i(TAG, "initialized plugin pkg=$pluginPackage api=$api")
     }
 
     override fun onServiceDisconnected(name: ComponentName?) {
         Log.w(TAG, "onServiceDisconnected pkg=$pluginPackage")
-        tearDownBinder(reason = "disconnected")
-        PluginDiagnostics.markDisconnected(pluginPackage)
         manager.onConnectionLost(this@PluginConnection)
+    }
+
+    override fun onBindingDied(name: ComponentName?) {
+        Log.w(TAG, "onBindingDied pkg=$pluginPackage")
+        manager.onConnectionLost(this)
+    }
+
+    override fun onNullBinding(name: ComponentName?) {
+        Log.w(TAG, "onNullBinding pkg=$pluginPackage")
+        failBind("null_binder")
     }
 
     fun tearDownBinder(reason: String) {

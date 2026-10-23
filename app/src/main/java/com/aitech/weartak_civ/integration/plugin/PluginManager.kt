@@ -18,6 +18,9 @@ import java.util.concurrent.CopyOnWriteArraySet
 /**
  * Discovers plugin services, binds with [Context.BIND_AUTO_CREATE], and coordinates
  * [PluginConnection] teardown on death or explicit eviction.
+ * Unexpected disconnects release the dead binding and retry discovery/binding after
+ * 1, 2, 4, 8 and 16 seconds. Explicit unbind/shutdown cancels recovery; admission
+ * failures are not retried. A successful handshake resets the retry budget.
  */
 open class PluginManager(
     private val app: WearTakApplication,
@@ -28,6 +31,8 @@ open class PluginManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val connections = ConcurrentHashMap<String, PluginConnection>()
     private val topologyListeners = CopyOnWriteArraySet<PluginTopologyListener>()
+    private val reconnectTasks = mutableMapOf<String, Runnable>()
+    private val reconnectAttempts = mutableMapOf<String, Int>()
 
     fun startDeferred() {
         mainHandler.post { refreshBindings() }
@@ -51,12 +56,14 @@ open class PluginManager(
 
     fun bindPackage(packageName: String): Boolean {
         if (connections.containsKey(packageName)) return true
+        cancelReconnect(packageName)
         val cn = discoverPluginComponents().firstOrNull { it.packageName == packageName } ?: return false
         bind(cn)
         return connections.containsKey(packageName)
     }
 
     fun unbindPackage(packageName: String) {
+        cancelReconnect(packageName)
         val c = connections.remove(packageName) ?: return
         runCatching { app.unbindService(c) }
         c.tearDownBinder(reason = "unbindPackage")
@@ -65,22 +72,55 @@ open class PluginManager(
     }
 
     fun shutdownAll() {
+        reconnectTasks.keys.toList().forEach(::cancelReconnect)
         for (pkg in connections.keys.toList()) {
             unbindPackage(pkg)
         }
     }
 
     internal open fun onConnectionDied(conn: PluginConnection) {
-        val entry = connections.entries.firstOrNull { it.value === conn } ?: return
-        unbindPackage(entry.key)
+        onConnectionLost(conn)
     }
 
     internal open fun onConnectionLost(conn: PluginConnection) {
         val entry = connections.entries.firstOrNull { it.value === conn } ?: return
-        connections.remove(entry.key)
+        if (!connections.remove(entry.key, conn)) return
+        runCatching { app.unbindService(conn) }
+            .onFailure { Log.w(TAG, "unbind disconnected plugin pkg=${entry.key}", it) }
         conn.tearDownBinder(reason = "service_disconnected")
         PluginDiagnostics.markDisconnected(entry.key)
         notifyTopologyChanged()
+        scheduleReconnect(entry.key)
+    }
+
+    internal fun onConnectionReady(packageName: String) {
+        cancelReconnect(packageName)
+    }
+
+    private fun cancelReconnect(packageName: String) {
+        reconnectTasks.remove(packageName)?.let(mainHandler::removeCallbacks)
+        reconnectAttempts.remove(packageName)
+    }
+
+    private fun scheduleReconnect(packageName: String) {
+        if (reconnectTasks.containsKey(packageName)) return
+        val attempt = reconnectAttempts[packageName] ?: 0
+        if (attempt >= 5) {
+            Log.e(TAG, "Plugin reconnect exhausted pkg=$packageName; refresh bindings to retry")
+            return
+        }
+        reconnectAttempts[packageName] = attempt + 1
+        val delayMillis = 1_000L shl attempt
+        val task = Runnable {
+            reconnectTasks.remove(packageName)
+            if (!connections.containsKey(packageName)) {
+                val target = discoverPluginComponents().firstOrNull { it.packageName == packageName }
+                if (target != null) bind(target) else cancelReconnect(packageName)
+            }
+        }
+        reconnectTasks[packageName] = task
+        Log.i(TAG, "Scheduling plugin reconnect pkg=$packageName attempt=${attempt + 1} delayMs=$delayMillis")
+        mainHandler.postDelayed(task, delayMillis)
     }
 
     internal open fun onConnectionFailed(conn: PluginConnection, reason: String) {
@@ -98,6 +138,11 @@ open class PluginManager(
             reason,
         )
         notifyTopologyChanged()
+        if (reason == "remote_exception" || reason == "get_plugin_info") {
+            scheduleReconnect(pkg)
+        } else {
+            cancelReconnect(pkg)
+        }
     }
 
     private fun bind(cn: ComponentName) {
@@ -134,6 +179,7 @@ open class PluginManager(
             notifyTopologyChanged()
         } else {
             PluginDiagnostics.recordBindFailure(cn.flattenToString(), null)
+            scheduleReconnect(cn.packageName)
         }
     }
 

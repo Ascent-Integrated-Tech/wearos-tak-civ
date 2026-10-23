@@ -45,6 +45,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
@@ -168,6 +169,10 @@ import androidx.navigation.navArgument
 import androidx.wear.compose.material.Chip
 import androidx.wear.compose.material.ChipDefaults
 import androidx.wear.compose.material.Icon
+import androidx.wear.compose.material.PositionIndicator
+import androidx.wear.compose.material.Scaffold
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
+import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -202,6 +207,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.teamValue
 import com.aitech.weartak_civ.presentation.viewmodel.MapViewModel
 import com.aitech.weartak_civ.presentation.viewmodel.RoutePointDetails
 import com.aitech.weartak_civ.presentation.viewmodel.RoutePointsDetailsView
+import com.aitech.weartak_civ.presentation.viewmodel.RouteDetailsView
 import com.aitech.weartak_civ.presentation.viewmodel.findRoutePoint
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.TAK_SERVER_CONNECTED_STRING
@@ -229,6 +235,10 @@ import kotlin.math.pow
 open class MapActivity : ComponentActivity() {
 
     companion object Constants {
+        const val EXTRA_FOCUS_LAT = "bloodhound_focus_lat"
+        const val EXTRA_FOCUS_LON = "bloodhound_focus_lon"
+        const val EXTRA_FOCUS_ROUTE_SERVER = "bloodhound_focus_route_server"
+        const val EXTRA_FOCUS_ROUTE_UID = "bloodhound_focus_route_uid"
         val TAG = "WearTAK-" + MapActivity::class.java.simpleName
         lateinit var mapActivity: MapActivity
         val orange = Color(0xFFFF7700)
@@ -240,8 +250,27 @@ open class MapActivity : ComponentActivity() {
         val brown = Color(0xFF964B00)
     }
 
+    private val requestedFocus = mutableStateOf<BloodhoundMapFocus?>(null)
+
+    private fun readFocus(intent: Intent): BloodhoundMapFocus? {
+        val server = intent.getStringExtra(EXTRA_FOCUS_ROUTE_SERVER)
+        val route = intent.getStringExtra(EXTRA_FOCUS_ROUTE_UID)
+        if (server != null && route != null) return BloodhoundMapFocus(serverId = server, routeUid = route)
+        if (!intent.hasExtra(EXTRA_FOCUS_LAT) || !intent.hasExtra(EXTRA_FOCUS_LON)) return null
+        val point = com.aitech.weartak_civ.data.model.TakRoutePoint(
+            intent.getDoubleExtra(EXTRA_FOCUS_LAT, Double.NaN), intent.getDoubleExtra(EXTRA_FOCUS_LON, Double.NaN))
+        return point.takeIf(com.aitech.weartak_civ.data.RouteFollow::validLocation)?.let { BloodhoundMapFocus(point = it) }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        requestedFocus.value = readFocus(intent)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        requestedFocus.value = readFocus(intent)
         mapActivity = this
         Log.i(TAG, "MapActivity onCreate called")
 
@@ -252,7 +281,7 @@ open class MapActivity : ComponentActivity() {
                 val mapVm: MapViewModel = viewModel ()
 
                 val selectingChatContact = intent.getBooleanExtra(ChatContactContract.EXTRA_SELECT_CHAT_CONTACT, false)
-                MapCivApp({ if (selectingChatContact) finish() else finishAndRemoveTask() }, context, mapVm, selectingChatContact) { contact ->
+                MapCivApp({ if (selectingChatContact) finish() else finishAndRemoveTask() }, context, mapVm, selectingChatContact, requestedFocus.value) { contact ->
                     setResult(Activity.RESULT_OK, ChatContactContract.result(contact))
                     finish()
                 }
@@ -268,25 +297,55 @@ fun MapCivApp(
     context: Context,
     mapVm: MapViewModel,
     selectingChatContact: Boolean = false,
+    mapFocus: BloodhoundMapFocus? = null,
     onChatContactSelected: (DirectChatContact) -> Unit = {}
 ) {
     val app = context.applicationContext as WearTakApplication
 
     val dataRepository = remember(app) { app.repo }
-    val bhRepo = remember(app) { app.bhRepo }
-
-    val navController = rememberSwipeDismissableNavController()
-
     val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
 
+    MapUserNavigation(
+        users = receivedUserListSetting,
+        context = context,
+        selectingChatContact = selectingChatContact,
+        onChatContactSelected = onChatContactSelected,
+        mapFocus = mapFocus
+    ) { onUserClick ->
+        MapApp(exitActivity, mapVm, selectingChatContact, mapFocus, onUserClick)
+    }
+}
+
+@Composable
+internal fun MapUserNavigation(
+    users: List<DataRepository.ReceivedUser>,
+    context: Context,
+    selectingChatContact: Boolean = false,
+    onChatContactSelected: (DirectChatContact) -> Unit = {},
+    onBloodhoundUserSelected: (DataRepository.ReceivedUser) -> Boolean = { user ->
+        startMapUserBloodhound(context, user)
+    },
+    mapFocus: BloodhoundMapFocus? = null,
+    mapContent: @Composable ((String) -> Unit) -> Unit
+) {
+    val navController = rememberSwipeDismissableNavController()
+    LaunchedEffect(mapFocus) {
+        if (mapFocus != null) navController.popBackStack("map_screen", inclusive = false)
+    }
+    val currentUsers by rememberUpdatedState(users)
+    val currentMapContent by rememberUpdatedState(mapContent)
+    val currentOnChatContactSelected by rememberUpdatedState(onChatContactSelected)
+    val currentOnBloodhoundUserSelected by rememberUpdatedState(onBloodhoundUserSelected)
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = "map_screen"
     ) {
         composable("map_screen" ) {
-            MapApp({ exitActivity() }, navController, mapVm, selectingChatContact)
+            currentMapContent { uid ->
+                navController.navigate("selected_user/${Uri.encode(uid)}") { launchSingleTop = true }
+            }
         }
 
         composable(
@@ -294,8 +353,8 @@ fun MapCivApp(
             arguments = listOf(navArgument("uid") { type = NavType.StringType })
         ) { backStackEntry ->
             val selectedUid = backStackEntry.arguments?.getString("uid")
-            SelectedUser(navController, selectedUid, receivedUserListSetting, context,
-                selectingChatContact, onChatContactSelected)
+            SelectedUser(navController, selectedUid, currentUsers, context,
+                selectingChatContact, currentOnChatContactSelected, currentOnBloodhoundUserSelected)
         }
     }
 }
@@ -1008,6 +1067,7 @@ fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
 
         if (
             item.hasPoint &&
+            !item.pointTitle.isNullOrBlank() &&
             lat != null &&
             lon != null
         ) {
@@ -1031,13 +1091,13 @@ fun RouteCollection.toPointFeatures(): List<Feature<Point, JsonObject?>> {
 fun RoutesLayer(
     routes: List<RouteCollection>,
     camera: CameraState,
-    onPointClick: (String, String, Int) -> Unit
+    onPointClick: (String, String, Int) -> Unit,
+    onRouteClick: (String, String) -> Unit = { _, _ -> }
 ) {
     if (routes.isEmpty()) return
     val featureCollection = remember(routes) {
         routes.toFeatureCollection()
     }
-    if (featureCollection.features.isEmpty()) return
     val source = rememberGeoJsonSource(
         data = GeoJsonData.Features(featureCollection)
     )
@@ -1057,6 +1117,23 @@ fun RoutesLayer(
 
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
+    LineLayer(
+        id = "routes-hit-layer",
+        source = source,
+        color = const(Color.Transparent),
+        width = const(24.dp),
+        onClick = { features ->
+            val feature = features.firstOrNull() ?: return@LineLayer ClickResult.Pass
+            val serverId = feature.getStringProperty("serverId").orEmpty()
+            val routeUid = feature.getStringProperty("uid").orEmpty()
+            if (serverId.isBlank() || routeUid.isBlank()) {
+                ClickResult.Pass
+            } else {
+                onRouteClick(serverId, routeUid)
+                ClickResult.Consume
+            }
+        }
+    )
     LineLayer(
         id = "routes-layer",
         source = source,
@@ -1676,8 +1753,9 @@ fun LayerChannelsPopup(
 // MAIN MAP SCREEN
 // Connects repository data, map layers, popups, and controls
 @Composable
-fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapViewModel,
-           selectingChatContact: Boolean = false) {
+fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
+           selectingChatContact: Boolean = false, mapFocus: BloodhoundMapFocus? = null,
+           onUserClick: (String) -> Unit) {
     // Access the application repository used by the map
     val context = LocalContext.current
 
@@ -1758,6 +1836,20 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     )
 
 
+
+    val screen = androidx.compose.ui.platform.LocalConfiguration.current
+    val focusPoints = mapFocus?.point?.let { listOf(it) } ?: takRoutes.firstOrNull {
+        it.serverId == mapFocus?.serverId && it.uid == mapFocus?.routeUid
+    }?.points
+    LaunchedEffect(mapFocus, focusPoints, screen.screenWidthDp, screen.screenHeightDp) {
+        if (mapFocus != null && !focusPoints.isNullOrEmpty()) {
+            val frame = runCatching {
+                routeCameraFrame(focusPoints, screen.screenWidthDp.toDouble(), screen.screenHeightDp.toDouble())
+            }.getOrNull() ?: return@LaunchedEffect
+            cameraState.animateTo(CameraPosition(
+                target = Position(frame.longitude, frame.latitude), zoom = frame.zoom, bearing = 0.0, tilt = 0.0))
+        }
+    }
 
     // LAYER MENU CONFIGURATION
     // Connects each menu option to its MapLibre style layer IDs
@@ -1855,6 +1947,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     // Show the coordinate popup for the user location puck
     var showPopup by remember { mutableStateOf(false) }
     var selectedRoutePoint by remember {mutableStateOf<RoutePointDetails?>(null)}
+    var selectedRoute by remember { mutableStateOf<Pair<String, String>?>(null) }
 
     // Show or hide connected users
     var showUsers by remember { mutableStateOf(mapPreferences.getBoolean(
@@ -2032,6 +2125,20 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
     val receivedUserListSetting by dataRepository
         .receivedUserList
         .collectAsStateWithLifecycle(initialValue = emptyList())
+    val selectRoutePoint: (String, String, Int) -> Unit = { serverId, routeUid, index ->
+        val point = findRoutePoint(takRoutes, serverId, routeUid, index)
+        if (point != null) {
+            selectedRoutePoint = point.copy(
+                droppedBy = point.droppedBy?.let { senderUid ->
+                    receivedUserListSetting.firstOrNull {
+                        it.uid == senderUid && it.sourceServerId == serverId
+                    }?.title ?: senderUid
+                }
+            )
+        } else {
+            Log.w(TAG, "Selected route point is no longer available")
+        }
+    }
     val bhRepo = remember(context) {
         (context.applicationContext as WearTakApplication).bhRepo
     }
@@ -2333,6 +2440,28 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             // Keeps zoom within the supported range
             zoomRange = 0f..25.5f,
 
+            onMapClick = { _, offset ->
+                val mapProjection = cameraState.projection
+                val hit = mapProjection?.let { map ->
+                    findRouteMapSelection(
+                        takRoutes,
+                        RouteScreenPoint(offset.x.value.toDouble(), offset.y.value.toDouble()),
+                        pointsVisible = cameraState.position.zoom > 10.0
+                    ) { latitude, longitude ->
+                        val screen = map.screenLocationFromPosition(Position(longitude, latitude))
+                        RouteScreenPoint(screen.x.value.toDouble(), screen.y.value.toDouble())
+                    }
+                }
+                if (hit == null) {
+                    ClickResult.Pass
+                } else {
+                    selectedRoute = hit.serverId to hit.routeUid
+                    selectedRoutePoint = null
+                    hit.pointIndex?.let { selectRoutePoint(hit.serverId, hit.routeUid, it) }
+                    ClickResult.Consume
+                }
+            },
+
             // Drops a marker when the user long presses the map
             onMapLongClick = { coordinates, offset ->
 
@@ -2538,7 +2667,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                         }
                     },
                     onUserClick = { id, _ ->
-                        navController.navigate("selected_user/${Uri.encode(id)}") { launchSingleTop = true }
+                        onUserClick(id)
                     },
                     camera = cameraState
                 )
@@ -2555,24 +2684,14 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
             RoutesLayer(
                 routes = missionMapRoutes,
                 camera = cameraState,
-
-                onPointClick = { serverId, routeUid, pointIndex ->
-                    val point = findRoutePoint(takRoutes, serverId, routeUid, pointIndex)
-                    if (point != null) {
-                        selectedRoutePoint = point.copy(
-                            droppedBy = point.droppedBy?.let { senderUid ->
-                                receivedUserListSetting.firstOrNull { user ->
-                                    user.uid == senderUid &&
-                                            user.sourceServerId == serverId
-                                }?.title ?: senderUid
-                            }
-                        )
-                    } else {
-                        Log.w(TAG, "Selected route point is no longer available")
-                    }
+                onPointClick = { serverId, routeUid, index ->
+                    selectedRoute = serverId to routeUid
+                    selectRoutePoint(serverId, routeUid, index)
+                },
+                onRouteClick = { serverId, routeUid ->
+                    selectedRoutePoint = null
+                    selectedRoute = serverId to routeUid
                 }
-
-
             )
         }
 
@@ -2825,15 +2944,50 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                 takServers = takChannels
             )
         }
-        // Show details when a route point is selected
-        // Show details when a route point is selected
+        selectedRoute?.let { (serverId, routeUid) ->
+            val route = takRoutes.firstOrNull { it.serverId == serverId && it.uid == routeUid }
+            if (route != null && selectedRoutePoint == null) {
+                RouteDetailsView(
+                    route = route,
+                    onPoint = { index -> selectRoutePoint(serverId, routeUid, index) },
+                    onRemove = {
+                        dataRepository.removeTakRoute(serverId, routeUid)
+                        selectedRoutePoint = null
+                        selectedRoute = null
+                    },
+                    onBack = { selectedRoute = null }
+                )
+            }
+        }
         selectedRoutePoint?.let { point ->
+            val pointUid = "route-point-${point.serverId}-${point.routeUid}-${point.pointIndex}"
+            val heading by dataRepository.azimuthTrueDegSmoothed.collectAsStateWithLifecycle()
+            val vector = locationFlow?.let {
+                com.aitech.weartak_civ.provider.LocationVectorCalculator.calculate(
+                    it.latitude, it.longitude, point.latitude, point.longitude
+                )
+            }
+            val orientation = com.aitech.weartak_civ.provider.LocationVectorCalculator
+                .needleAngle(vector?.bearing, heading) ?: vector?.bearing ?: 0.0
             RoutePointsDetailsView(
-                pointName = point.title.ifBlank { "Route Point" },
+                pointName = point.title.ifBlank {
+                    context.getString(R.string.route_point_number, point.pointIndex + 1)
+                },
                 latitude = point.latitude,
                 longitude = point.longitude,
                 sender = point.droppedBy,
                 missionName = point.missionName,
+                distance = vector?.distance,
+                orientation = orientation.toFloat(),
+                isBloodhounding = activeItem?.uid == pointUid,
+                onInPosition = {
+                    bhRepo.requestInPosition(pointUid)
+                    requestBloodhoundComplicationUpdate(context)
+                },
+                onWholeRoute = {
+                    selectedRoute = point.serverId to point.routeUid
+                    selectedRoutePoint = null
+                },
 
                 onChat = {
                     val senderUid = takRoutes
@@ -2865,6 +3019,7 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
 
                         context.startActivity(intent)
                         selectedRoutePoint = null
+                        selectedRoute = null
                     }
                 },
 
@@ -2889,8 +3044,6 @@ fun MapApp(exitActivity: () -> Unit, navController: NavController, mapVm: MapVie
                     // Refresh the Bloodhound complication
                     requestBloodhoundComplicationUpdate(context)
 
-                    // Close the point details
-                    selectedRoutePoint = null
                 },
 
                 onBack = {
@@ -2910,6 +3063,9 @@ fun SelectedUser(
     context: Context,
     selectingChatContact: Boolean = false,
     onChatContactSelected: (DirectChatContact) -> Unit = {},
+    onBloodhoundUserSelected: (DataRepository.ReceivedUser) -> Boolean = { user ->
+        startMapUserBloodhound(context, user)
+    },
 ) {
     Log.i(TAG, "User list: $receivedUserSetting")
     val user = receivedUserSetting.firstOrNull { it.uid == selectedUid }
@@ -2917,91 +3073,122 @@ fun SelectedUser(
     val title = user?.title.orEmpty()
     val team = user?.team.orEmpty()
 
-// MAP UI STATE
-// Controls popups, overlays, filters, and map buttons
     WearTAKCIVTheme {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(
+        val listState = rememberScalingLazyListState(initialCenterItemIndex = 1)
+        Scaffold(positionIndicator = { PositionIndicator(scalingLazyListState = listState) }) {
+            Box(
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp)
-                    .verticalScroll(rememberScrollState()),
-
-                horizontalAlignment = Alignment.CenterHorizontally
+                    .fillMaxSize()
+                    .background(colors.background)
+                    .padding(horizontal = 16.dp),
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.user_white),
-                    contentDescription = "Favorite icon",
-                    tint = TeamColors(team),
-                    modifier = Modifier.size(25.dp),
-                )
-                androidx.compose.material3.Text(
-                    text = if (user == null) stringResource(R.string.chat_invalid_contact)
-                        else title.ellipsizeMarkerTitle(14),
-                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                ScalingLazyColumn(
+                    state = listState,
                     modifier = Modifier
-                        .padding(horizontal = 20.dp)
-                        .padding(top = 10.dp, bottom = 5.dp)
-                        .align(Alignment.CenterHorizontally)
-                )
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                Chip(
-                    onClick = {
-                        val contact = try {
-                            resolveChatContact(selectedUid, receivedUserSetting, MainActivity.device_uid)
-                        } catch (error: IllegalArgumentException) {
-                            Log.w(TAG, "Invalid selected chat contact", error)
-                            Toast.makeText(context, R.string.chat_invalid_contact, Toast.LENGTH_SHORT).show()
-                            return@Chip
+                        .fillMaxSize()
+                        .padding(bottom = 60.dp)
+                        .testTag("map-user-actions"),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    item {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.user_white),
+                                contentDescription = null,
+                                tint = TeamColors(team),
+                                modifier = Modifier.size(25.dp),
+                            )
+                            androidx.compose.material3.Text(
+                                text = if (user == null) stringResource(R.string.chat_invalid_contact)
+                                    else title.ellipsizeMarkerTitle(14),
+                                fontSize = 15.sp,
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White,
+                            )
                         }
-                        if (selectingChatContact) {
-                            onChatContactSelected(contact)
-                        } else {
-                            val intent = Intent(context, ChatActivity::class.java).apply {
-                                putExtra("user_uid", contact.uid)
-                                putExtra("user_callsign", contact.callsign)
-                                putExtra("from_maps", true)
-                            }
-                            context.startActivity(intent)
-                            navController.popBackStack()
-                        }
-                    },
-                    enabled = user != null && uid.isNotBlank() && title.isNotBlank() &&
-                        uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS,
-                    label = { Text(stringResource(if (selectingChatContact)
-                        R.string.chat_select_person_confirm else R.string.chat_open)) },
-                    colors = ChipDefaults.chipColors(
-                        backgroundColor = Color.DarkGray,
-                        contentColor = Color.White,
-                        secondaryContentColor = Color.LightGray
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 10.dp)
-                )
-            }
+                    }
+                    item {
+                        Chip(
+                            onClick = {
+                                val contact = try {
+                                    resolveChatContact(selectedUid, receivedUserSetting, MainActivity.device_uid)
+                                } catch (error: IllegalArgumentException) {
+                                    Log.w(TAG, "Invalid selected chat contact", error)
+                                    Toast.makeText(context, R.string.chat_invalid_contact, Toast.LENGTH_SHORT).show()
+                                    return@Chip
+                                }
+                                if (selectingChatContact) {
+                                    onChatContactSelected(contact)
+                                } else {
+                                    val intent = Intent(context, ChatActivity::class.java).apply {
+                                        putExtra("user_uid", contact.uid)
+                                        putExtra("user_callsign", contact.callsign)
+                                        putExtra("from_maps", true)
+                                    }
+                                    context.startActivity(intent)
+                                    navController.popBackStack()
+                                }
+                            },
+                            enabled = user != null && uid.isNotBlank() && title.isNotBlank() &&
+                                uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS,
+                            label = { Text(stringResource(if (selectingChatContact)
+                                R.string.chat_select_person_confirm else R.string.chat_open)) },
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White,
+                                secondaryContentColor = Color.LightGray
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    item {
+                        val location = user?.location
+                        Chip(
+                            onClick = {
+                                if (user != null && onBloodhoundUserSelected(user)) {
+                                    navController.popBackStack()
+                                }
+                            },
+                            enabled = user != null && uid.isNotBlank() &&
+                                uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS &&
+                                location != null && location.lat.isFinite() && location.lon.isFinite() &&
+                                location.lat in -90.0..90.0 && location.lon in -180.0..180.0,
+                            label = { Text(stringResource(R.string.bloodhound_start)) },
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White,
+                                secondaryContentColor = Color.LightGray
+                            ),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
 
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                WearTAKBackButton(
-                    onClick = { navController.popBackStack()}
-                )
+                Row(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 10.dp)) {
+                    WearTAKBackButton(
+                        onClick = { navController.popBackStack()}
+                    )
+                }
             }
         }
     }
+}
+
+private fun startMapUserBloodhound(context: Context, user: DataRepository.ReceivedUser): Boolean {
+    val repository = (context.applicationContext as WearTakApplication).bhRepo
+    if (!repository.addUserTarget(user)) {
+        Toast.makeText(context, R.string.remote_emergency_no_location, Toast.LENGTH_SHORT).show()
+        return false
+    }
+    repository.requestActivateBloodhound(user.uid)
+    requestBloodhoundComplicationUpdate(context)
+    return true
 }
 
 

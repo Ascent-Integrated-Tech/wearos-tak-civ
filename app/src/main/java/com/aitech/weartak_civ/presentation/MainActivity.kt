@@ -612,6 +612,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        com.aitech.weartak_civ.service.DebugStayAwakeService.restoreIfEnabled(this)
         try { registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED)) } catch (_: Exception) {}
         Log.i(TAG, "MainActivity onStart()")
     }
@@ -1629,7 +1630,11 @@ class MainActivity : ComponentActivity() {
         val dittoAppIdConfigUpdate = appRestrictions.getString("ditto_app_id", "")
         val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
 
-        val enableCompanionAppServiceConfigUpdate = appRestrictions.getBoolean("enable_companion_plugin", enableCompanionAppService)
+        val companionServiceSetting = resolveManagedCompanionServiceSetting(
+            managedOverride = appRestrictions.getNullableBoolean("enable_companion_plugin"),
+            persistedValue = enableCompanionAppService
+        )
+        val enableCompanionAppServiceConfigUpdate = companionServiceSetting.enabled
 
         val enableDynamicReportingStrategyConfigUpdate = appRestrictions.getBoolean("enable_dynamic_reporting_strategy", enableDynamicReportingStrategy)
         val constantReportingIntervalConfigUpdate = appRestrictions.getInt("constant_reporting_interval", constantReportingInterval)
@@ -1889,7 +1894,9 @@ class MainActivity : ComponentActivity() {
             )
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
-            dataRepository.storeEnableCompanionAppService(enableCompanionAppServiceConfigUpdate)
+            if (companionServiceSetting.persistManagedOverride) {
+                dataRepository.storeEnableCompanionAppService(enableCompanionAppServiceConfigUpdate)
+            }
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             if (constantReportingInterval != constantReportingIntervalConfigUpdate) {
                 constantReportingInterval = constantReportingIntervalConfigUpdate
@@ -2037,7 +2044,6 @@ class MainActivity : ComponentActivity() {
             if (enableCompanionAppServiceConfigUpdate != enableCompanionAppService) {
                 enableCompanionAppService = enableCompanionAppServiceConfigUpdate
                 Log.d(TAG, "enableCompanionAppService=$enableCompanionAppService")
-                if (!calledOnCreate) dataRepository.storeEnableCompanionAppService(enableCompanionAppService)
             }
             if (enableBleBeaconServiceConfigUpdate != enableBleBeaconService) {
                 enableBleBeaconService = enableBleBeaconServiceConfigUpdate

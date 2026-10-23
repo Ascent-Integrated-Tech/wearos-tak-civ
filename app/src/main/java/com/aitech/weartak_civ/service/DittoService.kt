@@ -24,7 +24,10 @@ import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cot.CotDetailBuilder
+import com.aitech.weartak_civ.cot.DittoCotReceiver
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -36,6 +39,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -63,6 +68,7 @@ class DittoService : Service() {
     private var subscriptionTrack: DittoSyncSubscription? = null
     private var subscriptionAlert: DittoSyncSubscription? = null
     private var subscriptionMapItem: DittoSyncSubscription? = null
+    private var storeObservers: DittoStoreObservers? = null
     private var changeCounterTrackDocument: Int = 1
 
     private val model = Build.MODEL
@@ -77,7 +83,8 @@ class DittoService : Service() {
             notificationId = DITTO_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
         )
-        dataRepository = MainActivity.dataRepository
+        val application = applicationContext as WearTakApplication
+        dataRepository = application.repo
 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -97,16 +104,37 @@ class DittoService : Service() {
 
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
 
-        startDispatchScheduler() // we want to update our ditto data at fixed interval
-        subscribeToCollections() // must subscribe to a collection before upserting
-        configureDitto() // configure all peer transports
-
         try {
+            configureDitto()
+            subscribeToCollections()
+            storeObservers = DittoStoreObservers(
+                ditto.store, ioScope, DittoCotReceiver(
+                    repository = dataRepository,
+                    bloodhounds = application.bhRepo,
+                    journal = getSharedPreferences("ditto-cot-replay-v2", Context.MODE_PRIVATE),
+                    deviceUid = { MainActivity.device_uid },
+                    callsign = { callsign },
+                    localPeer = { localPeerKeyString }
+                )
+            )
             ditto.startSync() // Start syncing
+            ioScope.launch {
+                while (isActive) {
+                    retryPointPublications()
+                    delay(10_000)
+                }
+            }
+            startDispatchScheduler()
             dataRepository.setEndpointConnected(DataRepository.Endpoint.DITTO)
             Log.i(TAG, "DittoService startSync()")
-        } catch (e: DittoError) {
-            Log.e(TAG, "DittoService ERROR startSync(): ${e.message}")
+        } catch (e: Exception) {
+            Log.e(TAG, "DittoService failed to start", e)
+            storeObservers?.close()
+            storeObservers = null
+            unSubscribeToCollections()
+            isRunning.set(false)
+            dataRepository.setEndpointDisconnected(DataRepository.Endpoint.DITTO)
+            stopSelf()
         }
     }
 
@@ -316,15 +344,44 @@ class DittoService : Service() {
                 }
 
                 // 5) Upsert into Ditto
-                ditto.store.write { tx ->
-                    tx.scoped(evt.collection).upsert(doc)
+                if (publishDocument(evt.collection, doc)) {
+                    Log.v(TAG, "Wrote to ${evt.collection}: $doc")
                 }
-                Log.v(TAG, "Wrote to ${evt.collection}: $doc")
 
             } catch (t: Throwable) {
                 Log.e(TAG, "Ditto write failed", t)
             }
+
         }
+    }
+
+    internal fun retryPointPublications() {
+        dataRepository.dittoPointLedger.retry(
+            write = ::writeOwnedPointDocument,
+            onError = { Log.e(TAG, "Ditto point publication pending; retrying later", it) }
+        )
+    }
+
+    internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {
+        if (collection == "mapitem" && CotMessageParser.isMarkerType(document["w"] as? String ?: "")) {
+            val published = dataRepository.dittoPointLedger.publish(document, ::writeOwnedPointDocument)
+            if (!published) {
+                Log.w(TAG, "Ditto point not published: no active local-origin ownership")
+            }
+            return published
+        } else {
+            writeDocument(collection, document)
+            return true
+        }
+    }
+
+    internal fun writeDocument(collection: String, document: Map<String, Any?>) {
+        ditto.store.write { tx -> tx.scoped(collection).upsert(document) }
+    }
+
+    private fun writeOwnedPointDocument(document: Map<String, Any?>) {
+        require(document["a"] == localPeerKeyString) { "Pending Ditto point belongs to another local peer store" }
+        writeDocument("mapitem", document)
     }
 
     private fun updateTrackDocument() {
@@ -344,7 +401,6 @@ class DittoService : Service() {
             if (leActual.isNaN()) leActual = 9999999.0F
             val bearingActual = location?.bearing ?: 0.0F
             val speedActual = location?.speed ?: 0.0F
-            val deviceModel = "$manufacturer $model"
             val typeString = "a-f-G-U-C"
             val access = "Undefined"
             val how = "m-g"
@@ -363,11 +419,6 @@ class DittoService : Service() {
                 speed = speedActual,
                 // if you need a custom endpoint/phone (these also have defaults):
                 endpoint = "*:-1:stcp",
-                // takv info:
-                takvOs = "WEAROS",           // e.g. "14"
-                takvVersion = "WearTAK-${Build.VERSION.RELEASE}",        // your APK version
-                takvDevice = deviceModel,                     // "$manufacturer $model"
-                takvPlatform = "ATAK-CIV",
                 // ditto payload:
                 dittoA = localPeerKeyString,                     // "a-f-G-U-C"
                 dittoIp = "0.0.0.0",                         // "Undefined"
@@ -436,6 +487,13 @@ class DittoService : Service() {
         Log.d(TAG, "DittoService onDestroy()")
         isRunning.set(false)
         stopForeground(STOP_FOREGROUND_DETACH)
+        dittoUpdateHandler?.removeCallbacks(dittoUpdateRunnable)
+        dittoUpdateThread?.quitSafely()
+        dittoUpdateHandler = null
+        dittoUpdateThread = null
+        storeObservers?.close()
+        storeObservers = null
+        ioScope.cancel()
 
         val initializedDitto = getDittoInstance()
 
@@ -456,8 +514,6 @@ class DittoService : Service() {
 
         unSubscribeToCollections()
         dataRepository.setEndpointDisconnected(DataRepository.Endpoint.DITTO)
-
-        ioScope.cancel()
 
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
@@ -609,5 +665,3 @@ class DittoService : Service() {
         }
     }
 }
-
-

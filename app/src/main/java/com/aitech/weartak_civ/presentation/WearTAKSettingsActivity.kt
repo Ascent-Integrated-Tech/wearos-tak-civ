@@ -63,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -81,6 +82,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -90,6 +92,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -158,6 +162,7 @@ import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.setAirplaneMode
+import com.aitech.weartak_civ.data.takserver.SideloadedClientCert
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxGroupStatus
 import com.aitech.weartak_civ.events.MessageEvent
@@ -165,6 +170,7 @@ import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.integration.plugin.PluginCompatibilityStatus
+import com.aitech.weartak_civ.integration.plugin.PluginActivityLauncher
 import com.aitech.weartak_civ.integration.plugin.PluginLoadingStatus
 import com.aitech.weartak_civ.integration.plugin.PluginUI
 import com.aitech.weartak_civ.integration.plugin.PluginViewModel
@@ -1452,14 +1458,6 @@ fun WearTAKSettingsNav(
                         )
                     }
                     item {
-                        WearTAKToggleChip(
-                            checkedLive = enableCompanionAppService,
-                            onCheckedChange = { settingsVm.storeEnableCompanionAppService(it) },
-                            title = stringResource(R.string.companion_app),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
-                    item {
                     WearTAKToggleChip(
                     checkedLive = enableSmsAlerts,
                     onCheckedChange = { settingsVm.storeEnableSmsForAlerts(it) },
@@ -1521,7 +1519,7 @@ fun WearTAKSettingsNav(
             val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
             val disconnectedStatus = remember { androidx.lifecycle.MutableLiveData(TAK_SERVER_DISCONNECTED_STRING) }
             WearTAKPageWithBackArrow(
-                stringResource(R.string.tak_server_connections),
+                stringResource(R.string.tak_servers_title),
                 {
                     itemsIndexed(
                         takServerList.alphabetizedServerEntries { it.name },
@@ -1600,16 +1598,16 @@ fun WearTAKSettingsNav(
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
                     }
-                    item {
-                        WearTAKTitleChip(
-                            icon = { Icon(Icons.Filled.Add, contentDescription = "Add") },
-                            title = stringResource(R.string.add_network),
-                            route = "new_server_screen",
-                            navController = navController
-                        )
-                    }
                 },
                 navController,
+                titleAction = {
+                    WearTAKTitleAddButton(
+                        contentDescription = stringResource(R.string.add_tak_server),
+                        onClick = {
+                            navController.navigate("new_server_screen") { launchSingleTop = true }
+                        }
+                    )
+                },
             )
         }
 
@@ -1625,6 +1623,8 @@ fun WearTAKSettingsNav(
             var isP12Cert = false
             val serverSettingsChanged = remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
+            val certStatus = rememberSideloadedCertStatus(address)
+            val credentialsOptional = certStatus is SideloadedClientCert.Status.Found
 
             WearTAKPageWithConfirmCancel(
                 title = stringResource(R.string.new_server),
@@ -1650,17 +1650,24 @@ fun WearTAKSettingsNav(
                             keyboardType = KeyboardType.Number,
                         ).text
                     }
+                    if (certStatus != SideloadedClientCert.Status.None) {
+                        item { SideloadedCertNotice(certStatus) }
+                    }
                     item {
                         username = WearTAKOutlinedTextField(
                             string = username,
-                            label = stringResource(R.string.username),
+                            label = stringResource(
+                                if (credentialsOptional) R.string.username_optional else R.string.username
+                            ),
                             keyboardType = KeyboardType.Text
                         ).text
                     }
                     item {
                         password = WearTAKOutlinedTextField(
                             string = password,
-                            label = stringResource(R.string.password),
+                            label = stringResource(
+                                if (credentialsOptional) R.string.password_optional else R.string.password
+                            ),
                             keyboardType = KeyboardType.Text
                         ).text
                     }
@@ -1671,9 +1678,9 @@ fun WearTAKSettingsNav(
                 navController = navController,
                 onClickCancel = {},
                 onClickConfirm = {
-                    if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() &&
-                        password.isNotBlank()) {
-                        val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
+                    if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() &&
+                        (credentialsOptional || (username.isNotBlank() && password.isNotBlank()))) {
+                        val takServerItem = DataRepository.TakServerItem(true, name, address.trim(), port.toInt(),
                             isP12Cert, username, password, "", "")
                         settingsVm.saveAndRegisterTakServer(takServerItem)
                         serverSettingsChanged.value = true
@@ -1705,6 +1712,8 @@ fun WearTAKSettingsNav(
             var password by remember { mutableStateOf(takServerList.getOrNull(index)?.password.orEmpty()) }
             var isP12Cert by remember { mutableStateOf(takServerList.get(index)?.isP12Cert ?: false) }
             val serverConnSettingsChanged = remember { mutableStateOf(false) }
+            val certStatus = rememberSideloadedCertStatus(address)
+            val credentialsOptional = certStatus is SideloadedClientCert.Status.Found
             Log.d(TAG, "address=$address, serverSettingsChanged=${serverConnSettingsChanged.value}")
 
             WearTAKPageWithConfirmCancel(
@@ -1747,17 +1756,24 @@ fun WearTAKSettingsNav(
                                 keyboardType = KeyboardType.Number
                             ).text
                         }
+                        if (certStatus != SideloadedClientCert.Status.None) {
+                            item { SideloadedCertNotice(certStatus) }
+                        }
                         item {
                             username = WearTAKOutlinedTextField(
                                 string = username,
-                                label = stringResource(R.string.username),
+                                label = stringResource(
+                                    if (credentialsOptional) R.string.username_optional else R.string.username
+                                ),
                                 keyboardType = KeyboardType.Text
                             ).text
                         }
                         item {
                             password = WearTAKOutlinedTextField(
                                 string = password,
-                                label = stringResource(R.string.password),
+                                label = stringResource(
+                                    if (credentialsOptional) R.string.password_optional else R.string.password
+                                ),
                                 keyboardType = KeyboardType.Text
                             ).text
                         }
@@ -1779,8 +1795,8 @@ fun WearTAKSettingsNav(
                    },
                 onClickConfirm = {
                     if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() &&
-                        (if (isP12Cert) { true } else { username.isNotBlank() } ) &&
-                        (if (isP12Cert) { true } else { password.isNotBlank() } ) ) {
+                        (if (isP12Cert || credentialsOptional) { true } else { username.isNotBlank() } ) &&
+                        (if (isP12Cert || credentialsOptional) { true } else { password.isNotBlank() } ) ) {
                         val takServerDetails = takServerList.get(index)
                         Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
                         Log.d(
@@ -2078,7 +2094,29 @@ fun WearTAKSettingsNav(
                             navController = navController
                         )
                     }
-
+                    item {
+                        Text(
+                            text = stringResource(R.string.chat_command_examples),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    itemsIndexed(
+                        listOf(
+                            R.string.chat_command_example_team,
+                            R.string.chat_command_example_role,
+                            R.string.chat_command_example_callsign,
+                        )
+                    ) { _, example ->
+                        Text(
+                            text = stringResource(example),
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
+                            softWrap = true,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
                 },
                 navController,
             )
@@ -2108,14 +2146,144 @@ fun WearTAKSettingsNav(
         }
 
         composable("chat_command_callsigns") {
-            WearTAKStringEntryPage(
-                navController = navController,
-                item = chatCommandCallsigns.joinToString(","),
-                label = stringResource(R.string.chat_command_callsigns),
-                confirmFunction = {
-                    settingsVm.storeChatCommandCallsigns(ChatCommandAuthorizer.parseAllowList(it))
-                }
+            var showAddDialog by rememberSaveable { mutableStateOf(false) }
+            var newCallsign by rememberSaveable { mutableStateOf("") }
+            var callsignError by rememberSaveable { mutableStateOf<String?>(null) }
+            val sortedCallsigns = ChatCommandAuthorizer.sortedAllowList(chatCommandCallsigns)
+
+            WearTAKPageWithBackArrow(
+                title = stringResource(R.string.chat_command_callsigns),
+                columnContent = {
+                    if (sortedCallsigns.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.no_chat_command_callsigns),
+                                modifier = Modifier.padding(8.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        items(
+                            count = sortedCallsigns.size,
+                            key = { index -> sortedCallsigns[index] }
+                        ) { index ->
+                            val callsign = sortedCallsigns[index]
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.DarkGray, RoundedCornerShape(24.dp))
+                                    .padding(start = 16.dp, end = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = callsign,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                IconButton(
+                                    onClick = {
+                                        settingsVm.storeChatCommandCallsigns(
+                                            ChatCommandAuthorizer.sortedAllowList(
+                                                chatCommandCallsigns.filterNot {
+                                                    ChatCommandAuthorizer.normalize(it) ==
+                                                        ChatCommandAuthorizer.normalize(callsign)
+                                                }
+                                            )
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = stringResource(R.string.remove)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Chip(
+                            onClick = {
+                                newCallsign = ""
+                                callsignError = null
+                                showAddDialog = true
+                            },
+                            label = { Text(stringResource(R.string.add_callsign)) },
+                            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White
+                            )
+                        )
+                    }
+                },
+                navController = navController
             )
+
+            if (showAddDialog) {
+                AlertDialog(
+                    containerColor = colors.background,
+                    onDismissRequest = { showAddDialog = false },
+                    title = { Text(stringResource(R.string.add_callsign)) },
+                    text = {
+                        Column {
+                            OutlinedTextField(
+                                value = newCallsign,
+                                onValueChange = {
+                                    newCallsign = it
+                                    callsignError = null
+                                },
+                                singleLine = true,
+                                label = { Text(stringResource(R.string.callsign)) },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Ascii,
+                                    imeAction = ImeAction.Done
+                                ),
+                                isError = callsignError != null
+                            )
+                            callsignError?.let { error ->
+                                Text(
+                                    text = error,
+                                    color = Color.Red,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val callsign = ChatCommandAuthorizer.validatedCallsign(newCallsign)
+                                when {
+                                    callsign == null -> {
+                                        callsignError = getString(context, R.string.invalid_chat_command_callsign)
+                                    }
+                                    chatCommandCallsigns.any {
+                                        ChatCommandAuthorizer.normalize(it) ==
+                                            ChatCommandAuthorizer.normalize(callsign)
+                                    } -> {
+                                        callsignError = getString(context, R.string.duplicate_chat_command_callsign)
+                                    }
+                                    else -> {
+                                        settingsVm.storeChatCommandCallsigns(
+                                            ChatCommandAuthorizer.sortedAllowList(chatCommandCallsigns + callsign)
+                                        )
+                                        showAddDialog = false
+                                    }
+                                }
+                            }
+                        ) {
+                            Text(stringResource(R.string.add_callsign))
+                        }
+                    },
+                    dismissButton = {
+                        Button(onClick = { showAddDialog = false }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    }
+                )
+            }
         }
         composable("sms_number_list"){
             val focusManager = LocalFocusManager.current
@@ -2781,10 +2949,22 @@ fun WearTAKSettingsNav(
             )
 
         }
+        composable(COMPANION_DETAILS_ROUTE) {
+            val diagnosticsEnabled by settingsVm.savedBondedLocationDiagnosticsEnabled.collectAsState()
+            CompanionDetailsPage(
+                companionPluginStatus(enableCompanionAppService),
+                navController,
+                diagnosticsEnabled,
+                settingsVm::storeBondedLocationDiagnosticsEnabled
+            )
+        }
+
         composable("plugins") {
+            val companionStatus = companionPluginStatus(enableCompanionAppService)
             val menuEntries = (
                 listOf(
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, stringResource(R.string.chat_commands)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.COMPANION, stringResource(R.string.companion_app)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.CRM, "CRM"),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DART, stringResource(R.string.gunshot_detection)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DATA_SYNC, "Data Sync"),
@@ -2828,17 +3008,33 @@ fun WearTAKSettingsNav(
                     itemsIndexed(items = menuEntries, key = { _, entry -> entry.key }) { _, entry ->
                         when (entry) {
                             is PluginMenuEntry.BuiltIn -> when (entry.kind) {
+                                BuiltInPlugin.COMPANION -> {
+                                    CompanionPluginChip(
+                                        enabled = enableCompanionAppService,
+                                        status = companionStatus,
+                                        onToggle = { settingsVm.storeEnableCompanionAppService(it) },
+                                        onDetails = { navController.navigate(COMPANION_DETAILS_ROUTE) }
+                                    )
+                                }
                                 BuiltInPlugin.DATA_SYNC -> {
-                                    WearTAKTitleChip(
+                                    WearTAKTitleChipWithState(
                                         route = "data_sync",
                                         title = entry.title,
+                                        state = stringResource(R.string.unfunded_request),
                                         navController = navController
                                     )
                                 }
                                 BuiltInPlugin.COMMANDS -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = {
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_commands_megaphone),
+                                                contentDescription = null,
+                                                modifier = Modifier.padding(end = 4.dp).size(24.dp),
+                                            )
+                                        },
                                         title = entry.title,
-                                        label = stringResource(if (enableChatCommands) R.string.enabled else R.string.disabled),
+                                        label = stringResource(R.string.unfunded_request),
                                         checked = enableChatCommands,
                                         onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
                                         onClick = { navController.navigate("chat_commands") }
@@ -2846,6 +3042,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.DITTO -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = when (dittoPdlSource) {
                                             DittoPdlSource.COMMUNITY -> stringResource(R.string.ditto_community_subtitle)
@@ -2869,6 +3066,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.DART -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableGunshotDetection,
@@ -2878,6 +3076,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.FALCON -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableUasDetection,
@@ -2896,6 +3095,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.GOTENNA, BuiltInPlugin.SOMEWEAR_LABS -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = false,
@@ -2932,7 +3132,7 @@ fun WearTAKSettingsNav(
                                                 }
                                             },
                                             title = item.title,
-                                            label = item.loadingStatus.toString(),
+                                            label = item.menuLabel,
                                             checked = item.isLoaded,
                                             onCheckedChange = {
                                                 when (it) {
@@ -2940,7 +3140,13 @@ fun WearTAKSettingsNav(
                                                     false -> pluginVm.unloadPlugin(item.pluginId)
                                                 }
                                             },
-                                            onClick = { it.first.launch { it.second.animateTo(targetValue = RevealValue.RightRevealing) } },
+                                            onClick = {
+                                                if (!PluginActivityLauncher.launch(context, item.packageName)) {
+                                                    it.first.launch {
+                                                        it.second.animateTo(targetValue = RevealValue.RightRevealing)
+                                                    }
+                                                }
+                                            },
                                         )
                                     },
                                 )
@@ -3445,6 +3651,17 @@ fun <T> WearTAKTitleChipWithState(
             .fillMaxWidth()
 //            .padding(bottom = 7.dp)
     )
+}
+
+@Composable
+private fun BuiltInPluginBrandIcon(plugin: BuiltInPlugin) {
+    plugin.brandIconRes?.let { resource ->
+        Image(
+            painter = painterResource(resource),
+            contentDescription = null,
+            modifier = Modifier.padding(end = 4.dp).size(24.dp),
+        )
+    }
 }
 
 //Used for services and settings with a boolean state of ON/OFF
@@ -4205,6 +4422,7 @@ fun WearTakScreenDimensions(
     columnContent: ScalingLazyListScope.(ScalingLazyListState) -> Unit,
     rowContent: @Composable () -> Unit,
     text: String,
+    titleAction: (@Composable () -> Unit)? = null,
 ) {
     WearTAKCIVTheme {
         val listState = rememberScalingLazyListState()
@@ -4232,15 +4450,38 @@ fun WearTakScreenDimensions(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     item {
-                        Text(
-                            text = text,
-                            fontSize = if (text.length!! < 20) 17.sp else 15.sp,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .padding(horizontal = 10.dp)
-                                .padding(bottom = 8.dp)
-                        )
+                        if (titleAction == null) {
+                            Text(
+                                text = text,
+                                fontSize = if (text.length!! < 20) 17.sp else 15.sp,
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .padding(horizontal = 10.dp)
+                                    .padding(bottom = 8.dp)
+                            )
+                        } else {
+                            // Title and action share one line; the title ellipsizes rather than wrapping.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .padding(horizontal = 10.dp)
+                                    .padding(bottom = 8.dp)
+                            ) {
+                                Text(
+                                    text = text,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                titleAction()
+                            }
+                        }
                     }
                    columnContent(listState)
                 }
@@ -4254,6 +4495,38 @@ fun WearTakScreenDimensions(
     }
 }
 
+// Watches certs/<address>.p12 (as side-loaded over adb) while the user types the address.
+@Composable
+fun rememberSideloadedCertStatus(address: String): SideloadedClientCert.Status {
+    val context = LocalContext.current
+    val status by produceState<SideloadedClientCert.Status>(SideloadedClientCert.Status.None, address) {
+        value = withContext(Dispatchers.IO) {
+            SideloadedClientCert.detect(
+                context.getExternalFilesDir(null)?.let { java.io.File(it, "certs") },
+                address
+            )
+        }
+    }
+    return status
+}
+
+@Composable
+fun SideloadedCertNotice(status: SideloadedClientCert.Status) {
+    val text = when (status) {
+        is SideloadedClientCert.Status.Found ->
+            stringResource(R.string.cert_on_watch, status.commonName)
+        SideloadedClientCert.Status.Unreadable -> stringResource(R.string.cert_on_watch_unreadable)
+        SideloadedClientCert.Status.None -> return
+    }
+    Text(
+        text = text,
+        textAlign = TextAlign.Center,
+        fontSize = 12.sp,
+        color = if (status is SideloadedClientCert.Status.Unreadable) colors.error else colors.onSurface,
+        modifier = Modifier.padding(5.dp)
+    )
+}
+
 //Used for any page that needs a title and back button, used for most screens
 @Composable
 fun WearTAKPageWithBackArrow(
@@ -4261,7 +4534,8 @@ fun WearTAKPageWithBackArrow(
     columnContent: ScalingLazyListScope.(ScalingLazyListState) -> Unit, //Screen contents
     navController: NavController, //Navcontroller passed from navhost,
     exitActivity: Boolean = false,
-    exitFunction: () -> Unit = {}
+    exitFunction: () -> Unit = {},
+    titleAction: (@Composable () -> Unit)? = null,
 ) {
     WearTakScreenDimensions(
         columnContent = { columnContent(it) },
@@ -4276,8 +4550,30 @@ fun WearTAKPageWithBackArrow(
                 },
             )
         },
-        title
+        title,
+        titleAction
     )
+}
+
+// Compact circular "+" used beside a page title, e.g. to add a TAK server.
+@Composable
+fun WearTAKTitleAddButton(contentDescription: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(colors.primary)
+            .clickable(onClickLabel = contentDescription, role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription }
+    ) {
+        Icon(
+            Icons.Filled.Add,
+            contentDescription = null,
+            tint = colors.onPrimary,
+            modifier = Modifier.size(20.dp)
+        )
+    }
 }
 
 //Used for any page that needs a title and back button, used for most screens

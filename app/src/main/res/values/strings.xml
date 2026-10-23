@@ -1,4 +1,21 @@
 <resources>
+    <string name="route_package_imported">Imported %1$d route(s). Open the map to view.</string>
+    <string name="route_package_failed">Route package import failed. Check the server connection and package, then resend.</string>
+    <string name="multicast_receive_failed">Multicast receive unavailable. Check Wi-Fi and multicast settings.</string>
+    <string name="route_peer_tls_failed">Local route transfer failed: secure connection to the phone could not be established. No routes imported.</string>
+    <string name="route_unnamed">Route</string>
+    <string name="route_point_count">%1$d points</string>
+    <string name="route_named_point_count">%1$d named points / %2$d total points</string>
+    <string name="route_no_named_points">No named points. Tap the route on the map to select unnamed points.</string>
+    <string name="route_point_number">Point %1$d</string>
+    <string name="route_point_open">Details and Bloodhound</string>
+    <string name="route_remove">Remove from watch</string>
+    <string name="route_remove_confirm">Remove route</string>
+    <string name="route_remove_explanation">Remove this whole route from this watch only? The server copy is unchanged. A later resend or mission sync can restore it.</string>
+    <string name="route_cancel">Cancel</string>
+    <string name="route_back">Back</string>
+    <string name="route_whole">Whole route</string>
+    <string name="point_bloodhound">Bloodhound to Marker</string>
     <string name="app_name" translatable="false">WearTAK</string>
     <!--
     This string is used for square devices and overridden by hello_world in
@@ -19,11 +36,38 @@
     <string name="location_service">Location Service</string>
     <string name="service_on_off">Service ON/OFF</string>
     <string name="biometrics">Biometrics</string>
-    <string name="ditto">Ditto</string>
-    <string name="companion_app" translatable="false">Companion Plugin</string>
+    <string name="ditto">Ditto Edge Sync</string>
+    <string name="companion_app" translatable="false">WearTAK Companion</string>
+    <string name="companion_status_off">Off</string>
+    <string name="companion_status_bluetooth_off">Bluetooth off</string>
+    <string name="companion_status_permission">Permissions required</string>
+    <string name="companion_status_unavailable">Bluetooth unavailable</string>
+    <string name="companion_status_waiting">Waiting for phone</string>
+    <string name="companion_status_connecting">Connecting</string>
+    <string name="companion_status_disconnecting">Disconnecting</string>
+    <string name="companion_status_connected">Connected</string>
+    <string name="companion_status_failed">Connection failed</string>
+    <string name="companion_status_error">Connection error</string>
+    <string name="companion_connection_guidance">Choose connection method in the phone companion app.</string>
+    <string name="companion_bluetooth_settings">Android Bluetooth settings</string>
+    <string name="companion_bluetooth_settings_unavailable">Bluetooth settings are not available on this watch.</string>
+    <string name="companion_team_lead_priority">Team Lead EUD Priority</string>
+    <string name="companion_not_available_yet">Not available yet</string>
+    <string name="companion_location_diagnostics">Bonded Location Diagnostics</string>
+    <string name="companion_location_diagnostics_guidance">Compare watch and phone GNSS quality over a bonded Companion connection.</string>
+    <string name="companion_location_diagnostics_enabled_hint">GNSS quality only. No diagnostic CoT is sent.</string>
+    <string name="companion_location_diagnostics_disabled_hint">Off. Enable in Plugins > WearTAK Companion.</string>
     <string name="chat_commands" translatable="false">Commands</string>
     <string name="chat_commands_description" translatable="false">Allow chat commands</string>
     <string name="chat_command_callsigns" translatable="false">Allowed Callsigns</string>
+    <string name="add_callsign" translatable="false">Add</string>
+    <string name="no_chat_command_callsigns" translatable="false">No callsigns allowed</string>
+    <string name="invalid_chat_command_callsign" translatable="false">Enter a valid callsign (1-32 letters, numbers, spaces, ., _ or -)</string>
+    <string name="duplicate_chat_command_callsign" translatable="false">That callsign is already allowed</string>
+    <string name="chat_command_examples" translatable="false">Command Examples</string>
+    <string name="chat_command_example_team" translatable="false">#weartakcommandsetteam team=\"Dark Green\"</string>
+    <string name="chat_command_example_role" translatable="false">#weartakcommandsetrole role=\"Team Member\"</string>
+    <string name="chat_command_example_callsign" translatable="false">#weartakcommandsetcallsign callsign=ALPHA-1</string>
     <string name="chat_command_enroll_title" translatable="false">Add server</string>
     <string name="chat_command_enroll_text" translatable="false">%1$s: enter your login</string>
     <string name="beta_features">Beta Features</string>
@@ -79,6 +123,12 @@
     <string name="connected_to_toast">Connected to %1$s</string>
     <string name="connection_failed">Connection Failed</string>
     <string name="tak_server_connections">TAK Server Connections</string>
+    <string name="tak_servers_title">TAK Servers</string>
+    <string name="add_tak_server">Add TAK server</string>
+    <string name="cert_on_watch">Certificate on watch: %1$s</string>
+    <string name="cert_on_watch_unreadable">Certificate on watch can\'t be opened. Check its .pwd file.</string>
+    <string name="username_optional">Username (optional)</string>
+    <string name="password_optional">Password (optional)</string>
     <string name="new_server">New Server</string>
     <string name="reporting_interval_empty_enter_again">Reporting Interval Empty, Enter Again</string>
     <string name="reporting_interval_0_enter_again">Reporting Interval 0, Enter Again</string>
@@ -602,7 +652,7 @@
     <string name="enable_companion_plugin" translatable="false">Enable Companion Plugin</string>
     <string name="enable_companion_plugin_desc" translatable="false">Enable the service for the companion WearTAK ATAK app</string>
     <string name="enable_companion_plugin_default" translatable="false">false</string>
-    <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound/Compass</string>
+    <string name="enable_bloodhound_compass" translatable="false">Enable Bloodhound Proximity</string>
     <string name="enable_bloodhound_compass_desc" translatable="false">Enable the ability to bloodhound and use the compass</string>
     <string name="enable_bloodhound_compass_default" translatable="false">true</string>
     <string name="bloodhound_settings">Bloodhound Settings</string>
@@ -727,7 +777,7 @@
     <string name="exertion_warning_threshold">Exertion Warning Threshold</string>
     <string name="seconds">seconds</string>
     <string name="exertion_alert_threshold">Exertion Alert Threshold</string>
-    <string name="bloodhound_compass">Bloodhound/Compass</string>
+    <string name="bloodhound_compass">Bloodhound Proximity</string>
     <string name="plugins">Plugins</string>
     <string name="n_a">N/A</string>
     <string name="male">Male</string>
@@ -764,14 +814,14 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">Airplane Mode, Some Servers Connected, Location Enabled</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">Airplane Mode, Some Servers Connected, Location Disabled</string>
     <string name="some_servers_connected">Some Servers Connected</string>
-    <string name="ditto_identity">Ditto Identity</string>
+    <string name="ditto_identity">Ditto Edge Sync Identity</string>
     <string name="community_pdl">Community PDL</string>
     <string name="custom_pdl">Custom PDL</string>
     <string name="use_default_community_identity">Use default community identity</string>
     <string name="enter_your_own_identity">Enter your own identity</string>
     <string name="no_custom_pdl_saved">No custom PDL saved</string>
     <string name="ditto_community_subtitle">Community</string>
-    <string name="everywhere_comms" translatable="false">Everywhere Comms</string>
+    <string name="everywhere_comms" translatable="false">Everywhere</string>
     <string name="gotenna" translatable="false">GoTenna</string>
     <string name="sensor_manager">Sensor Manager</string>
     <string name="scan_sensor">Scan</string>
@@ -781,4 +831,25 @@
     <string name="pdl_help">PDL Help</string>
     <string name="pdl_help_summary">How to copy &amp; paste a custom PDL</string>
     <string name="pdl_help_instructions">1. Send only the PDL in a chat message. Do not add other text, spaces, or characters.\n\n2. On the watch, press and hold the message, then release it. A toast confirms the PDL was copied.\n\n3. Open Custom PDL. Before opening the keyboard, press and hold the text field, then tap Paste.</string>
+    <string name="route_bloodhound_summary">Route · %1$d points</string>
+    <string name="route_bloodhound_nearest">Nearest: %1$s</string>
+    <string name="route_bloodhound_start_nearest">Start nearest</string>
+    <string name="route_bloodhound_start_beginning">Start from beginning</string>
+    <string name="route_bloodhound_stop">Stop route</string>
+    <string name="route_bloodhound_progress">Point %1$d of %2$d</string>
+    <string name="route_bloodhound_remaining">Remaining: %1$s</string>
+    <string name="route_bloodhound_complete">Route complete</string>
+    <string name="route_bloodhound_no_location">Waiting for location. Start nearest needs a location fix.</string>
+    <string name="route_bloodhound_invalid">This route has no usable points.</string>
+    <string name="route_bloodhound_distance_unknown">Waiting for location</string>
+    <string name="bloodhound_picker_route_summary">Route · %1$d pts · %2$s</string>
+    <string name="bloodhound_picker_route_progress">Pt %1$d of %2$d · %3$s left</string>
+    <string name="bloodhound_picker_target_summary">%1$s · %2$s</string>
+    <string name="bloodhound_picker_marker">Marker</string>
+    <string name="bloodhound_picker_contact">Contact</string>
+    <string name="bloodhound_picker_point">Point</string>
+    <string name="bloodhound_picker_show_map">Show %1$s on map</string>
+    <string name="bloodhound_picker_start">Start Bloodhound to %1$s</string>
+    <string name="bloodhound_picker_stop">Stop Bloodhound to %1$s</string>
+    <string name="bloodhound_picker_start_title">Start Bloodhound</string>
 </resources>

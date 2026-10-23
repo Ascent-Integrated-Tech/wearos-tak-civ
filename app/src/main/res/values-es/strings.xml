@@ -13,7 +13,7 @@
     <string name="location_service">Servicio de ubicación</string>
     <string name="service_on_off">Servicio ACTIVADO/DESACTIVADO</string>
     <string name="biometrics">Biometría</string>
-    <string name="ditto">Ditto</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">Versión %1$s</string>
     <string name="tak_servers">Servidores del TAK</string>
     <string name="edit_server">Editar servidor</string>
@@ -57,6 +57,12 @@
     <string name="connected_to_toast">Conectado a %1$s</string>
     <string name="connection_failed">Conexión fallida</string>
     <string name="tak_server_connections">Conexiones con el servidor TAK</string>
+    <string name="tak_servers_title">Servidores TAK</string>
+    <string name="add_tak_server">Agregar servidor TAK</string>
+    <string name="cert_on_watch">Certificado en el reloj: %1$s</string>
+    <string name="cert_on_watch_unreadable">No se puede abrir el certificado del reloj. Revise su archivo .pwd.</string>
+    <string name="username_optional">Usuario (opcional)</string>
+    <string name="password_optional">Contraseña (opcional)</string>
     <string name="new_server">Nuevo servidor</string>
     <string name="reporting_interval_empty_enter_again">Intervalo de reporte vacío, ingrese de nuevo</string>
     <string name="reporting_interval_0_enter_again">Intervalo de reporte 0, ingrese de nuevo</string>
@@ -229,7 +235,7 @@
     <string name="exertion_warning_threshold">Exertion Warning Threshold</string>
     <string name="seconds">seconds</string>
     <string name="exertion_alert_threshold">Exertion Alert Threshold</string>
-    <string name="bloodhound_compass">Bloodhound/Compass</string>
+    <string name="bloodhound_compass">Bloodhound Proximity</string>
     <string name="plugins">Plugins</string>
     <string name="n_a">N/A</string>
     <string name="male">Male</string>

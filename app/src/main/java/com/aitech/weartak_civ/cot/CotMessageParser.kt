@@ -387,7 +387,7 @@ object CotMessageParser {
         participantUids = participantUids,
     )
 
-    private fun parseDocumentOrNull(rawXml: String) = try {
+    internal fun parseDocumentOrNull(rawXml: String) = try {
         val cleaned = rawXml.trimStart { it <= ' ' || it == '\uFEFF' }
         val factory = DocumentBuilderFactory.newInstance().apply {
             isNamespaceAware = true

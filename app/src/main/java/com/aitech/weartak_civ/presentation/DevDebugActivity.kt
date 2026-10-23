@@ -34,7 +34,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,12 +65,11 @@ import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
-import kotlinx.coroutines.launch
 import java.io.IOException
 
 private const val DEBUG_SERVER_PORT = 8000
 
-private data class DebugDisplayInfo(
+internal data class DebugDisplayInfo(
     val versionName: String,
     val versionCode: Int,
     val buildType: String,
@@ -125,7 +123,6 @@ private fun DebugScreen(
     var showLocationDiagnostics by remember { mutableStateOf(false) }
     var exportStatus by remember { mutableStateOf("") }
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val diagnosticsEnabled by dataRepository.getBondedLocationDiagnosticsEnabled.collectAsState(initial = false)
     val diagnostics = (context.applicationContext as WearTakApplication).locationDiagnostics
     val watchSample by diagnostics.watch.collectAsState()
@@ -214,10 +211,6 @@ private fun DebugScreen(
                     onShowQrCode = {
                         showQrCode = true
                     },
-                    diagnosticsEnabled = diagnosticsEnabled,
-                    onDiagnosticsEnabledChanged = { enabled ->
-                        scope.launch { dataRepository.storeBondedLocationDiagnosticsEnabled(enabled) }
-                    },
                     onShowLocationDiagnostics = { showLocationDiagnostics = true }
                 )
             }
@@ -226,12 +219,10 @@ private fun DebugScreen(
 }
 
 @Composable
-private fun DebugInformationPage(
+internal fun DebugInformationPage(
     debugInfo: DebugDisplayInfo,
     onBack: () -> Unit,
     onShowQrCode: () -> Unit,
-    diagnosticsEnabled: Boolean,
-    onDiagnosticsEnabledChanged: (Boolean) -> Unit,
     onShowLocationDiagnostics: () -> Unit
 ) {
     val rows = listOf(
@@ -290,16 +281,10 @@ private fun DebugInformationPage(
             )
         }
 
+        item { DebugStayAwakeSetting() }
+
         items(rows) { row ->
             DebugInformationRow(row)
-        }
-
-        item {
-            WearTAKToggleChip(
-                checkedLive = diagnosticsEnabled,
-                onCheckedChange = onDiagnosticsEnabledChanged,
-                title = "Bonded Location Diagnostics"
-            )
         }
 
         item {
@@ -309,10 +294,6 @@ private fun DebugInformationPage(
             ) {
                 Text("Location Diagnostics", textAlign = TextAlign.Center, fontSize = 11.sp)
             }
-        }
-
-        item {
-            DebugStayAwakeSetting()
         }
 
         item {
@@ -370,7 +351,7 @@ private fun DebugLocationDiagnosticsPage(
     ) {
         item {
             Text(
-                "Bonded Location Diagnostics",
+                stringResource(R.string.companion_location_diagnostics),
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -381,8 +362,10 @@ private fun DebugLocationDiagnosticsPage(
         item { DiagnosticSummary("Phone", phone) }
         item {
             Text(
-                if (enabled) "GNSS observation only; no location is sent as CoT."
-                else "Disabled. Enabling requires an authenticated bonded Companion session.",
+                stringResource(
+                    if (enabled) R.string.companion_location_diagnostics_enabled_hint
+                    else R.string.companion_location_diagnostics_disabled_hint
+                ),
                 fontSize = 10.sp,
                 textAlign = TextAlign.Center,
                 color = MaterialTheme.colors.onSurface
@@ -604,8 +587,6 @@ private fun PreviewDebugInformationPage() {
             ),
             onBack = {},
             onShowQrCode = {},
-            diagnosticsEnabled = false,
-            onDiagnosticsEnabledChanged = {},
             onShowLocationDiagnostics = {}
         )
     }

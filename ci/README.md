@@ -3,8 +3,12 @@
 Successful **protected `develop` push pipelines** from
 `git.tak.gov/core/weartak-core/wearos-tak-civ` publish the final production-signed
 `develop_release` APK to the fixed GitHub mirror
-`Ascent-Integrated-Tech/wearos-tak-civ`. The visible title is exactly
-**TAK.gov CI/CD Pipeline Release**.
+`Ascent-Integrated-Tech/wearos-tak-civ`. The visible title is
+**TAK.gov Forge CI/CD Pipeline Release (<version>)**, e.g.
+`TAK.gov Forge CI/CD Pipeline Release (5.8.0.3-p105)`, where `<version>` is the APK
+versionName without its `+<sha>` build metadata. The APK is attached as
+`WearTAK-<version>.apk`. The release tag is
+`TAK.gov-Forge-CI-CD-Pipeline-Release` (git tags cannot contain spaces or `/`).
 
 By project policy, `develop` builds are stable: this release uses
 `prerelease=false`, not a prerelease. This classification is an explicit project
@@ -16,15 +20,18 @@ Official `v...` pipelines and all existing numbered/stable releases remain uncha
 
 ## Administrator setup (separate approval required)
 
-1. Confirm distribution to this exact GitHub destination is approved.
-   Read-only inspection on 2026-10-18 found the mirror **private**, with no releases;
-   this job does not change visibility and checks it before every update. Public
-   or archived destinations fail closed. Recheck visibility before activation and
-   obtain separate approval/policy changes before public distribution.
+1. Public signed-APK distribution to the exact fixed destination
+   `Ascent-Integrated-Tech/wearos-tak-civ` was explicitly approved on 2026-10-19.
+   The mirror was private at the original setup and is now public. The publisher
+   permits either visibility for this approved destination only and checks its
+   exact identity and active status before every update. Other, archived, disabled
+   or unknown-status destinations fail closed. This job never changes repository
+   visibility or access; any different destination needs separate approval.
 2. Protect canonical GitLab `develop` and restrict who may push/merge, edit pipeline
    configuration, use protected runners, or override pipeline variables.
-3. In the GitHub mirror, create the fixed tag `wearos-development` on an existing
-   mirrored commit, with separate approval. There is currently no such tag.
+3. In the GitHub mirror, create the fixed tag `TAK.gov-Forge-CI-CD-Pipeline-Release` on an
+   existing mirrored commit, with separate approval. (It replaced the original
+   `wearos-development` anchor, whose release is no longer updated.)
    Do not move the tag on each build. The publisher checks that it exists before
    creating a release, never pushes commits, and has no tag-management calls.
    The mirror was behind canonical `gov/develop` at inspection, so a GitLab
@@ -73,13 +80,27 @@ pipeline (including retries) from replacing a successfully published newer one.
 Reusing a pipeline IID with different bytes/source fails rather than overwriting.
 This is not a cross-project/distributed lock against other writers.
 
-The first release is created as a draft. Each APK receives a unique pipeline/hash
-name, is uploaded alongside the previous APK, then is downloaded using the
+Generated release prose is bounded by hidden
+`weartak-release-managed:start` / `weartak-release-managed:end` comments.
+Manual notes before or after that block are preserved byte-for-byte; keep notes
+outside it and do not edit its provenance marker or boundaries. Existing unbounded
+releases migrate only an exact recognized historical generated block. Otherwise
+only the ownership marker is replaced by a new managed block and all unknown
+prose is retained, even if it resembles old generated text. Missing, duplicate or
+misordered boundaries fail before upload or cleanup. The complete updated body,
+including retained notes, must match the API readback before old assets are removed.
+This prevents automated overwrites of existing notes, not concurrent editing by
+another writer during a publish; retain the single-writer restriction above.
+
+The first release is created as a draft. Each APK receives a unique `WearTAK-<version>.apk`
+name (the pipeline IID is part of `<version>`), is uploaded alongside the previous APK, then is downloaded using the
 authenticated asset API and checked for exact size and SHA256. Only after that
 does the job publish/update the release metadata and confirm it by reading it back.
 It then deletes **only older assets on this one release** with both the exact
-`weartak-development-p<IID>-<SHA256>.apk` naming scheme and its matching
-`weartak-rolling-v1:<SHA256>` ownership label.
+`WearTAK-<version>-p<IID>.apk` naming scheme and an identical label (GitHub
+shows the label in place of the file name), or the legacy
+`weartak-development-p<IID>-<SHA256>.apk` name with its
+`weartak-rolling-v1:<SHA256>` label.
 
 Other releases, tags, unrelated assets, and future-pipeline assets are untouched.
 There is no historical-release sweep. A failure before replacement verification
@@ -111,3 +132,30 @@ pagination, and stripping authorization on storage redirects. These checks do no
 prove runner registry/network access, protected-variable delivery, token authorization,
 or real GitHub upload behavior. Those remain end-to-end acceptance checks after
 separate approval and administrator setup. No Android build is needed for CI-only tests.
+
+## Release-testing checklist for testers
+
+After a release is published **and verified**, the publisher sends a GitHub
+`repository_dispatch` (`weartak-release-published`) with the pipeline ID. The
+token's existing Contents: write permission covers this; no new scopes are needed.
+If the notification fails, the job fails with a clear message and can be retried;
+nothing is duplicated.
+
+`.github/workflows/release-testing.yml` handles it on the GitHub mirror. GitHub only
+runs workflows from the default branch, so `.github/workflows/release-testing.yml`
+and `ci/release-testing/` must also be present on the mirror's `develop` (an approved
+exception to publishing source to GitHub). Keep both copies identical.
+
+The workflow re-reads the release (it never trusts the payload), skips superseded
+pipelines, and opens one issue per pipeline titled
+`Release testing: <release title>`. The issue has the APK download link, the release
+details and `ci/release-testing/checklist.md`, and is assigned to the user in the
+repository variable `RELEASE_TESTER` (currently `paul-weartak`, with Write access so
+they can tick boxes). Existing issues, including closed ones, are never recreated.
+If the tester has not accepted the repository invitation yet, the issue @mentions
+them unassigned; running the workflow again (**Actions > Release testing checklist >
+Run workflow**) assigns it.
+
+Edit `ci/release-testing/checklist.md` when features change. Tests:
+`python -m unittest discover -s ci/tests` and
+`node --test ci/release-testing/create_release_test_issue.test.cjs`.

@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">No se pudo sincronizar el seguimiento de Bloodhound con el teléfono. Comprueba la conexión de la aplicación complementaria.</string>
     <string name="debug_stay_awake">Mantener la pantalla activa</string>
     <string name="debug_stay_awake_warning">Aumenta el consumo de batería. El reloj puede calentarse.</string>
-    <string name="debug_stay_awake_active">Activo hasta que se detenga o finalice el proceso. Solo se reanuda tras las actualizaciones si se ha habilitado.</string>
-    <string name="debug_stay_awake_resume_update">Reanudar después de actualizar</string>
+    <string name="debug_stay_awake_active">Activado hasta que lo desactives. Se reanuda tras actualizaciones y reinicios si Android lo permite.</string>
     <string name="debug_stay_awake_channel">Depuración: mantener pantalla activa</string>
     <string name="debug_stay_awake_stop">Detener</string>
-    <string name="debug_stay_awake_failed">No se pudo iniciar «Mantener la pantalla activa». Consulta los registros de depuración de WearTAK.</string>
+    <string name="debug_stay_awake_failed">Activado, pero no se pudo iniciar. Abre WearTAK para reintentar. Consulta los registros de depuración.</string>
     <string name="remote_emergency_alert">Emergencia remota</string>
     <string name="remote_emergency_no_location">Ubicación no disponible. Navegación desactivada.</string>
     <string name="remote_emergency_description">Emergencia: %1$s</string>
@@ -53,7 +52,7 @@
     <string name="airplane_mode_some_servers_connected_location_enabled">Modo avión, algunos servidores conectados, ubicación activada</string>
     <string name="airplane_mode_some_servers_connected_location_disabled">Modo avión, algunos servidores conectados, ubicación desactivada</string>
     <string name="some_servers_connected">Algunos servidores conectados</string>
-    <string name="ditto_identity">Identidad de Ditto</string>
+    <string name="ditto_identity">Identidad de Ditto Edge Sync</string>
     <string name="community_pdl">PDL de la comunidad</string>
     <string name="custom_pdl">PDL personalizada</string>
     <string name="use_default_community_identity">Usar la identidad predeterminada de la comunidad</string>

@@ -2,9 +2,11 @@
 <resources>
     <string name="debug_stay_awake">Stay awake</string>
     <string name="debug_stay_awake_warning">Extra battery use. May heat watch.</string>
-    <string name="debug_stay_awake_active">Active until stopped or the process ends. Resumes after updates only if opted in.</string>
-    <string name="debug_stay_awake_resume_update">Resume after update</string>
+    <string name="debug_stay_awake_active">Enabled until you turn it off. Restores after updates and restart when Android allows.</string>
+    <string name="debug_stay_awake_running">Running</string>
+    <string name="debug_stay_awake_waiting">Enabled, not running</string>
+    <string name="debug_stay_awake_details">Keeps screen, CPU and Wi-Fi awake when Android allows. Your choice survives updates and restart until you turn it off. Cannot unlock the watch or keep it awake while powered off.</string>
     <string name="debug_stay_awake_channel">Debug stay awake</string>
     <string name="debug_stay_awake_stop">Stop</string>
-    <string name="debug_stay_awake_failed">Unable to start Stay awake. See WearTAK debug logs.</string>
+    <string name="debug_stay_awake_failed">Stay awake is enabled but could not start. Open WearTAK to retry. See debug logs.</string>
 </resources>

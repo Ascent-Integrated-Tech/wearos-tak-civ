@@ -135,18 +135,18 @@ class DebugStayAwakeServiceTest {
     }
 
     @Test
-    fun nullRestartReleasesExistingLocks() {
+    fun nullRestartRetainsEnabledIntentAndExistingLocks() {
         start()
         val screen = lock<PowerManager.WakeLock>("screenLock")
         val cpu = lock<PowerManager.WakeLock>("cpuLock")
         val wifi = lock<WifiManager.WifiLock>("wifiLock")
-        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 2))
-        assertFalse(screen.isHeld)
-        assertFalse(cpu.isHeld)
-        assertFalse(wifi.isHeld)
-        assertFalse(DebugStayAwakeService.active.value)
-        assertTrue(shadowOf(service).isStoppedBySelf)
-        assertTrue(connectivity.networkCallbacks.isEmpty())
+        assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 2))
+        assertTrue(screen.isHeld)
+        assertTrue(cpu.isHeld)
+        assertTrue(wifi.isHeld)
+        assertTrue(DebugStayAwakeService.active.value)
+        assertFalse(shadowOf(service).isStoppedBySelf)
+        assertEquals(1, connectivity.networkCallbacks.size)
     }
 
     @Test
@@ -172,7 +172,7 @@ class DebugStayAwakeServiceTest {
 
     @Test
     fun deniedWifiRequestReleasesLocksAndStopsSession() {
-        DebugStayAwakePreferences(service).resumeAfterUpdate = true
+        legacyOptIn(true)
         lateinit var screen: PowerManager.WakeLock
         lateinit var cpu: PowerManager.WakeLock
         lateinit var wifi: WifiManager.WifiLock
@@ -193,32 +193,36 @@ class DebugStayAwakeServiceTest {
         assertEquals(0, shadowOf(service.getSystemService(WifiManager::class.java)).activeLockCount)
         assertTrue(connectivity.networkCallbacks.isEmpty())
         assertTrue(shadowOf(service).isStoppedBySelf)
-        assertFalse(DebugStayAwakePreferences(service).shouldResumeAfterUpdate())
-    }
-
-    @Test
-    fun optedInSessionResumesAfterPackageReplacement() {
-        val preferences = DebugStayAwakePreferences(service)
-        preferences.resumeAfterUpdate = true
-        start()
-        service.onDestroy()
-        assertFalse(DebugStayAwakeService.active.value)
-        assertTrue(DebugStayAwakePreferences(service).shouldResumeAfterUpdate())
-
-        DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
-        val restart = shadowOf(RuntimeEnvironment.getApplication()).nextStartedService
-        assertEquals(DebugStayAwakeService::class.java.name, restart.component?.className)
-        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(restart, 0, 2))
+        assertTrue(DebugStayAwakePreferences(service).enabled)
+        connectivity.denyRequest = false
+        assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 2))
         assertTrue(DebugStayAwakeService.active.value)
     }
 
     @Test
-    fun updateDoesNotResumeWithoutOptInOrWithoutEnabledSession() {
+    fun optedInSessionResumesAfterPackageReplacement() {
+        legacyOptIn(true)
         start()
+        service.onDestroy()
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(DebugStayAwakePreferences(service).enabled)
+
         DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
-        assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+        val restart = shadowOf(RuntimeEnvironment.getApplication()).nextStartedService
+        assertEquals(DebugStayAwakeService::class.java.name, restart?.component?.className)
+        assertEquals(Service.START_STICKY, service.onStartCommand(restart, 0, 2))
+        assertTrue(DebugStayAwakeService.active.value)
+    }
+
+    @Test
+    fun updateResumesWithoutOldOptInButNeverWhenExplicitlyOff() {
+        start()
+        service.onDestroy()
+        DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertEquals(DebugStayAwakeService::class.java.name,
+            shadowOf(RuntimeEnvironment.getApplication()).nextStartedService?.component?.className)
         service.onStartCommand(Intent().setAction(DebugStayAwakeService.ACTION_STOP), 0, 2)
-        DebugStayAwakePreferences(service).resumeAfterUpdate = true
+        legacyOptIn(true)
         DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
         assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
     }
@@ -226,38 +230,67 @@ class DebugStayAwakeServiceTest {
     @Test
     fun explicitSwitchStopAndNotificationStopPreventUpdateResume() {
         val preferences = DebugStayAwakePreferences(service)
-        preferences.resumeAfterUpdate = true
+        legacyOptIn(true)
         start()
         DebugStayAwakeService.stop(service)
-        assertFalse(preferences.shouldResumeAfterUpdate())
+        assertFalse(preferences.enabled)
         start()
         service.onStartCommand(Intent().setAction(DebugStayAwakeService.ACTION_STOP), 0, 2)
-        assertFalse(preferences.shouldResumeAfterUpdate())
-        assertTrue(preferences.resumeAfterUpdate)
+        assertFalse(preferences.enabled)
     }
 
     @Test
-    fun uncheckingUpdateResumePreventsRestoration() {
-        val preferences = DebugStayAwakePreferences(service)
-        preferences.resumeAfterUpdate = true
+    fun legacyOptOutDoesNotOverrideEnabledIntent() {
+        legacyOptIn(true)
         start()
-        preferences.resumeAfterUpdate = false
+        legacyOptIn(false)
+        service.onDestroy()
         DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
-        assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
-        assertTrue(DebugStayAwakeService.active.value)
+        assertEquals(DebugStayAwakeService::class.java.name,
+            shadowOf(RuntimeEnvironment.getApplication()).nextStartedService?.component?.className)
+        assertFalse(DebugStayAwakeService.active.value)
     }
 
     @Test
-    fun rebootAndOtherBroadcastsDoNotRestoreRememberedSession() {
+    fun rebootRestoresEnabledIntentRegardlessOfOldBootCount() {
         val preferences = DebugStayAwakePreferences(service)
-        preferences.resumeAfterUpdate = true
+        legacyOptIn(true)
         start()
+        service.onDestroy()
         DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_BOOT_COMPLETED))
-        assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+        assertEquals(DebugStayAwakeService::class.java.name,
+            shadowOf(RuntimeEnvironment.getApplication()).nextStartedService?.component?.className)
         Settings.Global.putInt(service.contentResolver, Settings.Global.BOOT_COUNT, 2)
         DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_MY_PACKAGE_REPLACED))
+        assertEquals(DebugStayAwakeService::class.java.name,
+            shadowOf(RuntimeEnvironment.getApplication()).nextStartedService?.component?.className)
+        assertTrue(preferences.enabled)
+    }
+
+    @Test
+    fun migrationPreservesEveryLegacyEnabledOffCombination() {
+        for (enabled in listOf(false, true)) for (oldOptIn in listOf(false, true)) {
+            val preferences = DebugStayAwakePreferences(service)
+            legacyOptIn(oldOptIn)
+            preferences.recordSession(enabled)
+            Settings.Global.putInt(service.contentResolver, Settings.Global.BOOT_COUNT, 99)
+            assertEquals(enabled, DebugStayAwakePreferences(service).enabled)
+        }
+    }
+
+    @Test
+    fun processRecreationRestoresLocksFromIntentWithoutStartingOtherServices() {
+        start()
+        controller.destroy()
+        controller = Robolectric.buildService(DebugStayAwakeService::class.java).create()
+        service = controller.get()
+        connectivity = Shadow.extract(service.getSystemService(ConnectivityManager::class.java))
+        assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 2))
+        assertTrue(DebugStayAwakeService.active.value)
+        assertTrue(lock<PowerManager.WakeLock>("screenLock").isHeld)
+        assertTrue(lock<PowerManager.WakeLock>("cpuLock").isHeld)
+        assertTrue(lock<WifiManager.WifiLock>("wifiLock").isHeld)
         assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
-        assertFalse(preferences.shouldResumeAfterUpdate())
     }
 
     @Test
@@ -275,6 +308,62 @@ class DebugStayAwakeServiceTest {
         assertFalse(DebugStayAwakeService.active.value)
         assertTrue(connectivity.networkCallbacks.isEmpty())
         assertEquals(1, connectivity.unregisterCalls)
+    }
+
+    @Test
+    fun queuedRestoreCannotOverrideExplicitOff() {
+        DebugStayAwakePreferences(service).recordSession(true)
+        DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_BOOT_COMPLETED))
+        val restore = shadowOf(RuntimeEnvironment.getApplication()).nextStartedService
+        DebugStayAwakeService.stop(service)
+
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(restore, 0, 1))
+        assertFalse(DebugStayAwakePreferences(service).enabled)
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(connectivity.requests.isEmpty())
+    }
+
+    @Test
+    fun defaultOffAndExplicitOffNeverStartFromBootUpdateOrUnrelatedBroadcast() {
+        for (enabled in listOf(false, true)) {
+            DebugStayAwakePreferences(service).recordSession(enabled)
+            DebugStayAwakeUpdateReceiver().onReceive(service, Intent(Intent.ACTION_TIME_CHANGED))
+            assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+        }
+        DebugStayAwakeService.stop(service)
+        for (action in listOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) {
+            DebugStayAwakeUpdateReceiver().onReceive(service, Intent(action))
+            assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+        }
+    }
+
+    @Test
+    fun restoreStartDeniedByAndroidKeepsSavedIntentAndOnlyTargetsStayAwake() {
+        DebugStayAwakePreferences(service).recordSession(true)
+        val context = object : android.content.ContextWrapper(service) {
+            override fun startForegroundService(intent: Intent): android.content.ComponentName? {
+                assertEquals(DebugStayAwakeService::class.java.name, intent.component?.className)
+                throw IllegalStateException("Background foreground-service start denied")
+            }
+        }
+        DebugStayAwakeUpdateReceiver().onReceive(context, Intent(Intent.ACTION_BOOT_COMPLETED))
+        assertTrue(DebugStayAwakePreferences(service).enabled)
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(connectivity.requests.isEmpty())
+        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("WearTAK-DebugStayAwake")
+            .any { it.msg.contains("saved intent remains enabled") && it.throwable is IllegalStateException })
+        assertEquals(Service.START_STICKY, service.onStartCommand(null, 0, 2))
+        assertTrue(DebugStayAwakeService.active.value)
+    }
+
+    @Test
+    fun bareOrUnknownStartCannotEnableSavedOff() {
+        for (intent in listOf(Intent(), Intent().setAction("unknown"))) {
+            assertEquals(Service.START_NOT_STICKY, service.onStartCommand(intent, 0, 1))
+            assertFalse(DebugStayAwakePreferences(service).enabled)
+            assertFalse(DebugStayAwakeService.active.value)
+            assertTrue(connectivity.requests.isEmpty())
+        }
     }
 
     @Implements(ConnectivityManager::class)
@@ -305,8 +394,13 @@ class DebugStayAwakeServiceTest {
     }
 
     private fun start() {
-        assertEquals(Service.START_NOT_STICKY,
-            service.onStartCommand(Intent(service, DebugStayAwakeService::class.java), 0, 1))
+        DebugStayAwakePreferences(service).recordSession(true)
+        service.onStartCommand(Intent(service, DebugStayAwakeService::class.java), 0, 1)
+    }
+
+    private fun legacyOptIn(value: Boolean) {
+        service.getSharedPreferences("debug_stay_awake", Application.MODE_PRIVATE)
+            .edit().putBoolean("resume_after_update", value).commit()
     }
 
     private fun setWirelessDebugging(enabled: Boolean) {

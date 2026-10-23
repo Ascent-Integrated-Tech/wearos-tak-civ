@@ -39,6 +39,7 @@ import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.integration.plugin.PluginRepository
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
@@ -85,6 +86,9 @@ class WearTakApplication : Application() {
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            repo.takRoutes.collect { routes -> bhRepo.reconcileRoutes(routes) }
+        }
         capRepo = CompanionAppRepository(applicationContext)
         locationDiagnostics = BondedLocationDiagnostics(applicationContext)
         audioRepo = AudioCaptureRepository(applicationContext)

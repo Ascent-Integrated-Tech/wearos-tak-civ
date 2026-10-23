@@ -4,6 +4,7 @@ import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import com.weartak.plugin.sdk.WearTakPluginContract
 
 /**
@@ -11,6 +12,24 @@ import com.weartak.plugin.sdk.WearTakPluginContract
  * [com.aitech.weartak_civ.WearTakApplication].
  */
 internal object PluginServiceQuery {
+    const val MENU_SUBTITLE = "com.weartak.plugin.MENU_SUBTITLE"
+
+    fun menuSubtitle(pm: PackageManager, component: ComponentName): String? {
+        return try {
+            val service = pm.getServiceInfo(
+                component,
+                PackageManager.ComponentInfoFlags.of(PackageManager.GET_META_DATA.toLong()),
+            )
+            service.metaData?.getString(MENU_SUBTITLE)?.takeIf { it.isNotBlank() }
+        } catch (e: PackageManager.NameNotFoundException) {
+            Log.w("PluginServiceQuery", "Plugin service unavailable: $component", e)
+            null
+        } catch (e: SecurityException) {
+            Log.w("PluginServiceQuery", "Plugin service metadata denied: $component", e)
+            null
+        }
+    }
+
     fun discoverPluginComponents(pm: PackageManager, hostPackage: String): List<ComponentName> {
         val intent = Intent(WearTakPluginContract.ACTION_PLUGIN_SERVICE)
         val resolves = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {

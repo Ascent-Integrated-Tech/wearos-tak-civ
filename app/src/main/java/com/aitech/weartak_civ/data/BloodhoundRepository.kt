@@ -17,6 +17,8 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.aitech.weartak_civ.data.model.TakRoute
+import com.aitech.weartak_civ.data.model.TakRoutePoint
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.cot.ChatRoom
 import com.aitech.weartak_civ.cot.CotLink
@@ -131,7 +133,9 @@ class BloodhoundRepository(
         val remark: String = "",
         val sourceServerId: String? = null,
         val receivedAt: Long = System.currentTimeMillis(),
-        val remoteAlert: RemoteAlert? = null
+        val remoteAlert: RemoteAlert? = null,
+        val tracksUserPosition: Boolean = false,
+        val isRouteFollow: Boolean = false
     )
 
     data class RemoteAlert(
@@ -264,13 +268,16 @@ class BloodhoundRepository(
                 vector = TargetVector(), compass = BloodhoundItem.Compass()
             ) ?: BloodhoundItem(e)
             val isNew = !_remoteAlerts.value.containsKey(event.uid)
+            val visibleTime = _remoteAlerts.value[event.uid]?.bhEvent?.mapItem?.cotEvent?.time
             if (!bloodhoundStore.upsertWithResult(item).applied) {
                 Log.i(TAG, "Emergency ignored reason=not-newer uid=${event.uid} source=$source time=${event.time}")
                 return@synchronized false
             }
             publishVisibleBloodhounds()
             reconcileActiveTrackingSource(event.uid)
-            _bloodhoundEvent.value = BloodhoundUpdate(e, isNew, false)
+            if (visibleTime == null || event.time > visibleTime) {
+                _bloodhoundEvent.value = BloodhoundUpdate(e, isNew, false)
+            }
             alertExpiryJobs.remove(key)?.cancel()
             alertExpiryJobs[key] = scope.launch {
                 delay((event.stale - System.currentTimeMillis()).coerceAtLeast(0))
@@ -313,6 +320,69 @@ class BloodhoundRepository(
     private val _activeUid = MutableStateFlow<String?>(null)
     val activeUid: StateFlow<String?> = _activeUid
 
+    private val _routeFollow = MutableStateFlow<RouteFollowSession?>(null)
+    val routeFollow: StateFlow<RouteFollowSession?> = _routeFollow
+
+    fun startRoute(route: TakRoute, mode: RouteFollow.StartMode, location: TakRoutePoint?): Boolean =
+        synchronized(bloodhoundStateLock) {
+            val navigation = runCatching { RouteFollow.start(route.points, mode, location) }.getOrNull()
+                ?: return@synchronized false
+            stopRoute()
+            val session = RouteFollowSession(route, navigation, location?.let(navigation::remainingDistanceMeters))
+            _routeFollow.value = session
+            updateRouteTarget(session)
+            // Use the same single-active selection as ordinary and companion targets, without an ACK.
+            activate(session.uid)
+            _activeUid.value == session.uid
+        }
+
+    fun stopRoute() = synchronized(bloodhoundStateLock) {
+        val session = _routeFollow.value ?: return@synchronized
+        _routeFollow.value = null
+        removeTarget(session.uid)
+    }
+
+    fun reconcileRoutes(routes: List<TakRoute>) = synchronized(bloodhoundStateLock) {
+        val session = _routeFollow.value ?: return@synchronized
+        val current = routes.firstOrNull(session::matches)
+        // A changed geometry invalidates the index; never silently navigate a different route.
+        if (current == null || current.points != session.route.points) stopRoute()
+    }
+
+    fun updateRouteLocation(location: TakRoutePoint) = synchronized(bloodhoundStateLock) {
+        val session = _routeFollow.value ?: return@synchronized
+        if (session.navigation.completed || _activeUid.value != session.uid || !RouteFollow.validLocation(location)) {
+            return@synchronized
+        }
+        val navigation = session.navigation.advance(location)
+        val updated = session.copy(navigation = navigation, remainingMeters = navigation.remainingDistanceMeters(location))
+        if (navigation.completed) {
+            // Keep completion visible, but remove the synthetic target and clear active navigation.
+            _routeFollow.value = null
+            removeTarget(session.uid)
+            _routeFollow.value = updated
+        } else {
+            _routeFollow.value = updated
+            if (navigation.currentIndex != session.navigation.currentIndex) updateRouteTarget(updated)
+        }
+    }
+
+    private fun updateRouteTarget(session: RouteFollowSession) {
+        val old = _bloodhoundMap.value[session.uid]?.bhEvent?.mapItem?.cotEvent
+        val time = maxOf(System.currentTimeMillis(), (old?.time ?: 0L) + 1L)
+        val point = session.navigation.target
+        val marker = CotMarkerEvent(
+            version = "2.0", uid = session.uid, type = "b-m-p-s-m", how = "h-g-i-g-o",
+            time = time, start = time, stale = Long.MAX_VALUE, access = null,
+            point = CotPoint(point.latitude, point.longitude, point.altitude ?: 0.0, 999999.0, 999999.0),
+            detail = CotMarkerDetail(session.route.name, null, null, null, null, null)
+        )
+        upsertFromEvent(BloodhoundEvent(
+            mapItem = CotMarkerMapItem(marker), server = "local", timeIssued = time,
+            timeCompleted = null, isRouteFollow = true
+        ))
+    }
+
     // --- UI Adapter function
     //  - backend domain item -> frontend UI model item (Utils.BloodhoundItem)
     private fun BloodhoundItem.toUi(isActive: Boolean): Utils.BloodhoundItem {
@@ -334,7 +404,13 @@ class BloodhoundRepository(
             alertCategory = bhEvent.remoteAlert?.category,
             isRemoteAlert = bhEvent.remoteAlert != null,
             isStale = bhEvent.remoteAlert?.isStale == true,
-            hasLocation = bhEvent.remoteAlert?.hasLocation != false
+            hasLocation = bhEvent.remoteAlert?.hasLocation != false,
+            targetKind = when {
+                bhEvent.remoteAlert != null -> Utils.BloodhoundTargetKind.ALERT
+                uid.startsWith("route-point-") -> Utils.BloodhoundTargetKind.POINT
+                bhEvent.tracksUserPosition || target.type.startsWith("a-") -> Utils.BloodhoundTargetKind.CONTACT
+                else -> Utils.BloodhoundTargetKind.MARKER
+            }
         )
     }
     fun addMarkerTarget(
@@ -387,11 +463,66 @@ class BloodhoundRepository(
         )
     }
 
+    fun addUserTarget(user: DataRepository.ReceivedUser): Boolean =
+        synchronized(bloodhoundStateLock) {
+            val location = user.location
+            if (user.uid.isBlank() || location == null ||
+                !location.lat.isFinite() || !location.lon.isFinite() ||
+                location.lat !in -90.0..90.0 || location.lon !in -180.0..180.0
+            ) {
+                Log.w(TAG, "User tracking rejected: missing identity or invalid location")
+                return@synchronized false
+            }
+            val marker = CotMarkerEvent(
+                version = "2.0", uid = user.uid, type = user.type, how = "h-g-i-g-o",
+                time = user.timeReceived, start = user.timeReceived, stale = user.staleTime,
+                access = null,
+                point = CotPoint(
+                    location.lat, location.lon, location.hae ?: 0.0,
+                    location.ce?.toDouble() ?: 999999.0,
+                    location.le?.toDouble() ?: 999999.0
+                ),
+                detail = CotMarkerDetail(user.title, null, null, null, null, null)
+            )
+            val event = BloodhoundEvent(
+                mapItem = CotMarkerMapItem(marker), server = user.source,
+                timeIssued = user.timeReceived, timeCompleted = null,
+                sourceServerId = user.sourceServerId, receivedAt = user.receivedAt,
+                tracksUserPosition = true
+            )
+            val existing = bloodhoundStore.item(sourceKey(event))
+            // Preserve an existing assignment's issuer and acknowledgement semantics.
+            if (existing != null) {
+                bloodhoundStore.update(sourceKey(event)) {
+                    it.copy(bhEvent = it.bhEvent.copy(tracksUserPosition = true))
+                }
+            }
+            upsertFromEvent(
+                existing?.bhEvent?.copy(
+                    mapItem = CotMarkerMapItem(marker.copy(
+                        detail = existing.bhEvent.mapItem.cotEvent.detail.copy(markerCallsign = user.title)
+                    )),
+                    receivedAt = event.receivedAt,
+                    tracksUserPosition = true
+                ) ?: event
+            )
+            isUidValid(user.uid)
+        }
+
+    fun refreshUserTargets(users: List<DataRepository.ReceivedUser>) =
+        synchronized(bloodhoundStateLock) {
+            users.forEach { user ->
+                val key = SourceCotKey(user.sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID, user.uid)
+                if (bloodhoundStore.item(key)?.bhEvent?.tracksUserPosition == true) addUserTarget(user)
+            }
+        }
+
 
     // UI adapter, list to populate chips in the bloodhounds screen
     val listBhItemsUi: StateFlow<List<Utils.BloodhoundItem>> =
         combine(bloodhoundMap, _activeKey) { map, activeKey ->
             map.values
+                .filterNot { it.bhEvent.isRouteFollow }
                 .sortedWith(
                     compareByDescending<BloodhoundItem> { it.bhEvent.remoteAlert != null }
                         .thenByDescending { if (it.bhEvent.remoteAlert != null) it.bhEvent.mapItem.cotEvent.time else Long.MIN_VALUE }
@@ -432,7 +563,7 @@ class BloodhoundRepository(
         } else {
             // Preserve state; refresh event payload for this source-owned copy.
             current.copy(
-                bhEvent = e,
+                bhEvent = e.copy(tracksUserPosition = e.tracksUserPosition || current.bhEvent.tracksUserPosition),
                 target = BloodhoundItem.Target(e.mapItem),
                 origin = BloodhoundItem.Origin(e)
             )
@@ -606,6 +737,9 @@ class BloodhoundRepository(
     }
 
     fun setInPos(uid: String): BloodhoundItem? = synchronized(bloodhoundStateLock) {
+        if (_routeFollow.value?.let { it.uid == uid && !it.navigation.completed } == true) {
+            return@synchronized null
+        }
         val activeKey = _activeKey.value
         val key = activeKey?.takeIf { it.cotUid == uid }
             ?: visibleKey(uid)
@@ -749,6 +883,12 @@ class BloodhoundRepository(
     }
 
     private fun setActiveKey(key: SourceCotKey?) {
+        val route = _routeFollow.value
+        if (route != null && !route.navigation.completed && key?.cotUid != route.uid) {
+            _routeFollow.value = null
+            bloodhoundStore.removeUid(route.uid)
+            publishVisibleBloodhounds()
+        }
         _activeKey.value = key
         _activeUid.value = key?.cotUid
     }
@@ -788,6 +928,7 @@ class BloodhoundRepository(
     suspend fun updateBloodhoundEvent(event: BloodhoundEvent) {
         synchronized(bloodhoundStateLock) {
             val isNewUid = !isUidValid(event.uid)
+            val visibleTime = _bloodhoundMap.value[event.uid]?.bhEvent?.mapItem?.cotEvent?.time
             val previouslyFromHoundmaster = if (isNewUid) {
                 false
             } else {
@@ -796,6 +937,7 @@ class BloodhoundRepository(
             if (!upsertFromEvent(event) || visibleKey(event.uid) != sourceKey(event)) {
                 return@synchronized
             }
+            if (visibleTime != null && event.mapItem.cotEvent.time <= visibleTime) return@synchronized
             _bloodhoundEvent.value = BloodhoundUpdate(
                 event = event,
                 isNewUid = isNewUid,

@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import com.aitech.weartak_civ.data.model.TakRoutePoint
 import kotlin.math.PI
 
 class BloodhoundService: Service() {
@@ -123,6 +124,12 @@ class BloodhoundService: Service() {
         collectActivationReqFlow()
         collectInPosReqFlow()
         collectActiveSelection()
+        scope.launch {
+            repo.receivedUserList.collect { users ->
+                bhRepo.refreshUserTargets(users)
+                updateVectors()
+            }
+        }
     }
 
     private fun collectActiveSelection() {
@@ -131,7 +138,7 @@ class BloodhoundService: Service() {
                 if (activeUid == null) {
                     cancelActiveProximityAlert()
                 } else {
-                    evaluateActiveTargetProximity()
+                    updateVectors()
                 }
             }
         }
@@ -225,6 +232,7 @@ class BloodhoundService: Service() {
                     when (result) {
                         ActivationResult.FIRST_ACK,
                         ActivationResult.SWITCH_ONLY -> {
+                            updateVectors()
                             resetProximityAlertState(item?.uid)
                             evaluateActiveTargetProximity()
                             sendBloodhoundReply(item, "Roger: Bloodhounding to")
@@ -258,7 +266,7 @@ class BloodhoundService: Service() {
 
     private suspend fun sendBloodhoundReply(item: BloodhoundItem?, messagePrefix: String) {
         // Remote emergencies are not assignments; navigating must not send unsolicited chat.
-        if (item?.bhEvent?.remoteAlert != null) return
+        if (item?.bhEvent?.remoteAlert != null || item?.bhEvent?.isRouteFollow == true) return
         val issuerUid = item?.origin?.issuerUid
         val chatTitle = item?.originLabel ?: "Unknown sender"
         val targetTitle = item?.target?.name
@@ -372,8 +380,9 @@ class BloodhoundService: Service() {
 
     private fun updateVectors() {
         scope.launch {
-            val map = bhRepo.bloodhoundMap.value
             val currentLoc = repo.latestLocation.value ?: return@launch
+            bhRepo.updateRouteLocation(TakRoutePoint(currentLoc.latitude, currentLoc.longitude))
+            val map = bhRepo.bloodhoundMap.value
             val currentAzimuth = repo.azimuthTrueDegSmoothed.value
 
             map.values.forEach { item ->

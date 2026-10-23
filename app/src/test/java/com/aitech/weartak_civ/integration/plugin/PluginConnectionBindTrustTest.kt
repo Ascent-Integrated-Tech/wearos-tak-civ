@@ -143,6 +143,7 @@ class PluginConnectionBindTrustTest {
         assertEquals(1, plugin.initializePluginV2Calls)
         assertEquals(0, plugin.initializePluginCalls)
         assertTrue(plugin.lastInit!!.hostExtras.getBoolean(HostControlImpl.HOST_EXTRA_COT_ROUTING_V1))
+        assertTrue(plugin.lastInit!!.hostExtras.getBoolean(HostControlImpl.HOST_EXTRA_CHAT_DISPATCH_V1))
     }
 
     @Test

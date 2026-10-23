@@ -4,12 +4,64 @@ WearTAK-CIV is a standalone Wear OS application that connects a watch to the Tea
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
-Configure Ditto under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
-tap the Ditto row to select Community or configure a custom PDL in Ditto Identity. The row subtitle shows
+Configure Ditto Edge Sync under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
+tap the Ditto Edge Sync row to select Community or configure a custom PDL in Ditto Edge Sync Identity. The row subtitle shows
 Community or the saved custom PDL, truncated to fit. Ditto is off by default on fresh installs, and saved
 enablement settings are preserved. PDL Help provides scrollable instructions for copying and pasting a custom identity.
-Plugins are listed alphabetically, including installed plugins. Everywhere Comms, GoTenna and Somewear Labs are
+Plugins are listed alphabetically, including installed plugins. Everywhere, GoTenna and Somewear Labs are
 unfunded placeholders: each displays **Unfunded Request**, and their switches remain off without activating any integration.
+Installed plugins use split chips: tap the row to open the plugin's launcher activity, or use the switch
+to load/unload it. Swipe the row to access remove and info. Plugins without a launchable activity
+(or whose activity cannot be opened) reveal those actions on tap instead. Opening an activity does not load the plugin.
+Plugin authors can override the menu subtitle by placing this metadata **inside the plugin's
+`<service>` element** (the service advertising `com.weartak.plugin.action.PLUGIN_SERVICE`):
+
+```xml
+<meta-data
+    android:name="com.weartak.plugin.MENU_SUBTITLE"
+    android:value="Unfunded Request" />
+```
+
+The host reads service metadata without requiring the plugin to be loaded. Application metadata
+is not used for this override. Missing, empty, or whitespace-only values retain the loading-status
+subtitle. This changes only the menu subtitle: the info popup still shows the actual loading status,
+and the toggle, tap-to-open, and swipe remove/info actions are unchanged.
+
+WearTAK Companion is a built-in split chip in Plugins, not Network Preferences,
+with the same icon as the ATAK-side WearTAK Companion plugin.
+Its switch uses the existing saved enable setting and service policies. Turning
+it off stops Companion BLE advertising, pending starts, refreshes, and its GATT
+connection; other BLE/beacon settings are independent and unchanged. Tap the
+row for connection status, phone-side connection-method guidance, and a link to
+normal Android Bluetooth settings. Opening the link does not pair, reset, or
+enable Bluetooth automatically. Team Lead EUD Priority is a disabled
+**Not available yet** placeholder, not a priority or failover setting.
+Bonded Location Diagnostics is also configured on this details page, using its
+existing saved preference. It compares watch and phone GNSS quality over a bonded
+Companion connection. Developer Preferences retains the diagnostic readout and
+export tools, but no longer duplicates the enable switch.
+Status distinguishes Off, Bluetooth off/unavailable, missing permissions, waiting,
+connecting/disconnecting, ready Connected, and connection errors. Connected means
+the companion notification subscription is ready, not just that a Bluetooth bond
+exists. The watch does not infer Samsung-versus-Traditional mode from a bond or
+device brand; choose the method in the phone companion app.
+
+Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
+Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
+Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.
+The six integration rows use the artwork below, fitted proportionally into 24 dp without theme tint.
+The user confirmed permission to use these identified assets on 2026-10-21; this is user-confirmed
+permission, not a claim of a public redistribution license. Only Ditto is the exact ATAK plugin icon;
+the other marks are approved official-company backups, not claimed as ATAK plugin artwork.
+
+| Integration | Artwork and provenance | Preparation |
+| --- | --- | --- |
+| Somewear Labs | [Official 192 px symbol](https://somewearlabs.com/wp-content/uploads/2026/07/cropped-somewear-favicon-rounded-corners-192x192.png) | Unchanged PNG, `ic_integration_somewear.png`. |
+| GoTenna | [Official original favicon](https://gotenna.com/cdn/shop/files/favicon.webp?v=1680207627) | Native 100 x 100 WebP, requested with `Accept: image/webp`; no enlargement. `ic_integration_gotenna.webp`. |
+| Everywhere | [Official white logo](https://everywherecomms.com/cdn/shop/files/everywhere_logo_white.png?v=1727986047) | Left 232 x 232 globe crop from the 1517 x 232 logo, proportionally reduced to 192 px; no redrawing. `ic_integration_everywhere.png`. |
+| DART and FALCON | [Official Certus Innovations symbol](https://images.squarespace-cdn.com/content/v1/687cf63b5a78985697612a02/8c2c76c6-79ac-4cf4-8dca-a3e9f8f0293c/CI-Icon-Arrow_white%2Bteal.png) | 1920 px artwork proportionally reduced to 192 px, retaining white/teal and transparency. Both use `ic_integration_certus.png`; labels distinguish the products. Product identity: [DART](https://www.certusinnovations.com/products/dart), [FALCON](https://www.certusinnovations.com/products/falcon). |
+| Ditto Edge Sync | Installed `com.dittofederal.atak.plugin.ditto` APK, `drawable/ic_ditto_menu` (`0x7f07006b`), compiled `res/AC.xml` | `ic_integration_ditto.xml` preserves all four original paths and `#F6F6F6` fills. Transparent margins trimmed from the 376 x 416 viewport to the artwork bounds (284 x 324), with proportional intrinsic size. |
+
 Sensor Manager displays **Unfunded Request** and has a saved enable/disable preference (off by default). Tap its row to open the preview
 configuration showing **Unfunded Request**, **Button is Placeholder**, and a single inert **Scan** button.
 The future workflow will list discovered sensors with per-sensor Pair controls and change the main action
@@ -28,10 +80,218 @@ to Unpair once paired. Enabling Sensor Manager does not start scanning or connec
 
 Some capabilities depend on hardware, permissions, credentials, configuration, and separately provisioned services or SDKs. In particular, mesh, companion, SITX, plugin, audio-detection, and managed-configuration features are optional.
 
+### Ditto receive support and deletion boundary
+
+With Ditto running, SDK **4.10.2** store observers consume initial local snapshots
+(including reconnect/restart snapshots) and subsequent changes, not just sync
+subscriptions. They reconstruct CoT from the v2 aliases already written by this
+watch and use `TakServerCotIngestor` and the existing application handlers:
+
+| Collection | Supported data | Application destination |
+| --- | --- | --- |
+| `track` | Supported PLI types | Source-aware received-user map state |
+| `mapitem` | Supported PLI, GeoChat, emergency, point and `b-m-r` route CoT | Map, ChatService inbox, remote alerts/Bloodhound, route repository/UI |
+| `alert` | Supported emergency CoT, including cancellation | Existing remote-alert/Bloodhound handler |
+
+The supported document shape is `_v=2`, `_r=false`, a string `_id` equal to `d`
+(event UID), string `a` (peer key), `g` (CoT version), `w` (CoT type), `p` (how),
+`q` (access), and `r` (one complete `<detail>...</detail>` element). `AuthorId`
+is optional. `b`, `n`, `o` are integral epoch milliseconds (time, start, stale);
+`h`, `i`, `j`, `k`, `l` are finite numeric CE, HAE, latitude, LE, longitude.
+Latitude/longitude must be in range. Unsupported versions, types, raw-XML-only
+documents, missing aliases, malformed XML, DTDs/entities, and invalid timestamps
+are rejected with diagnostics; there is no fallback parser. Compatibility with
+other producers is limited to this shape, not a claim of general ATAK Ditto support.
+
+Maximum reconstructed CoT is **256 KiB UTF-8**; maximum snapshot is **4,096
+documents** and **2,097,152 detail characters** per collection. An oversized
+snapshot is rejected as a whole. SDK next-snapshot signalling supplies
+backpressure while ingestion is serialized. Native results and observer handles
+are closed, queued work is cancelled on stop, and late callbacks are fenced.
+An exception in one document does not discard other valid documents.
+
+Live events over five minutes in the future are rejected. A private replay journal
+stores hashed peer/UID keys, event times, stale times and SHA-256 payload digests,
+not message bodies. It suppresses older revisions, repeated snapshots and
+track/mapitem duplicates from the same peer; conflicting equal-time revisions
+are first-accepted-wins. Expired input cannot introduce live points/routes.
+Receiving an expired revision removes only the matching source's copy, never
+another transport's copy; this does not add a route lifetime scheduler.
+At restart, equal current live revisions can rehydrate the repositories; already
+recorded chat documents are not re-notified or used as historical inbox restoration.
+The journal holds **8,192 identities**; entries whose previously accepted
+lifetimes have all expired are pruned when full,
+otherwise new identities are rejected with diagnostics rather than silently
+evicting replay protection. No exactly-once delivery guarantee is implied.
+
+Replay retention covers **observed** lifetimes, not arbitrary unseen revisions.
+After an identity's journal entry is pruned, an older still-synced PLI/route
+document with an unobserved, longer stale time can be accepted again after
+restart. Ordinary expired documents cannot become live again. Point ordering
+and terminal deletion use the separate non-pruning ledger described below;
+the time-bounded receive journal does not authorize deletion.
+
+Repository/event delivery happens **before** the replay-journal commit. A failed
+commit emits an explicit diagnostic but does not roll back already delivered
+state; later documents continue. A crash before commit can replay the event
+(the ChatService inbox merge still deduplicates by message identity when that
+inbox survives). A crash after commit can rehydrate equal live point/PLI/route
+state from the next snapshot, but recorded chat is suppressed rather than
+restored into a fresh in-memory inbox. There is no atomic durable inbox/journal
+transaction. Lint's `UseKtx` suggestion is style-only; explicit `commit()` and
+its checked Boolean result are intentional.
+
+Recipient/group membership, self-chat filtering and chat enablement use the shared
+chat parser/settings. Local peer/author/UID echoes and locally owned/deleted points
+are suppressed. Receive callbacks do not dispatch or relay inbound CoT to TAK,
+companion, Ditto, multicast or plugins. This is intentionally **data-only**:
+command text can appear as ordinary addressed chat, but no command runtime,
+configuration/plugin control, geofence, channel-change or data-package handler is
+installed. Existing companion-over-Ditto service precedence is unchanged.
+
+Across TAK server, multicast and Ditto ingress, PLI and point repositories retain
+each source-owned copy but expose one logical item per event UID. Newer event
+times win; an older arrival cannot replace a newer visible copy. Losing a source
+can reveal another source's copy without creating a second entity. Source
+metadata may legitimately change; secondary ingress is not discarded.
+Bloodhound registers those copies without emitting a second unread/notification
+event for the same UID and event time. Emergency cancellation remains
+UID/version scoped across sources, so a delayed active revision cannot undo it.
+
+GeoChat history uses sender UID plus `messageId`, independent of transport.
+The same message produces one history entry/unread message; distinct message IDs
+remain distinct even when their text and timestamps match. Legacy chat without
+an ID retains the existing sender/time/text fallback and its inherent ambiguity.
+These paths do not add a new operating-system notification mechanism.
+
+CoT routes with an event `time` retain their source-owned copies and expose the
+newest revision per UID. Identical copies do not duplicate route rows, and
+identical-source fallback preserves active route navigation. Mission bookkeeping
+still sees every source copy. Legacy routes lacking an event time keep their
+existing source-specific identity rather than guessing a revision from geometry;
+they cannot provide the same cross-transport version guarantee. Producers must
+preserve the original UID/message ID and advance event time for updates.
+Different UIDs are not merged merely because coordinates or text match. This
+prevents local duplicate presentation, not loops or rewritten identities
+introduced by external peers.
+
+### WearTAK own-created-point deletion
+
+**Trust model:** all members provisioned with the shared Ditto mission key are
+trusted not to forge point ownership or deletion fields. `AuthorId`, peer alias
+`a`, and revision hashes are writable data, **not authenticated individual
+authorship**. A malicious provisioned writer can forge them. This is a
+WearTAK-to-WearTAK cooperative contract, not an ATAK deletion interoperability
+claim or hostile-peer protection.
+
+The watch records local drop creation before adding the point to application
+state; imports and received points cannot acquire local publication ownership by
+claiming `AuthorId`. A supported point publication records its exact document
+and revision before writing to Ditto. Local clear persists a terminal intent
+before local removal, then the running Ditto service retries its pending store
+write every ten seconds, including after service/process restart. Clearing an
+unpublished or pre-ledger point remains local/eligible-companion only. There is
+no new remote-delivery success status: a completed local clear or SDK store write
+does not prove any peer received it. Existing companion-over-Ditto precedence
+can defer mesh publication until Ditto runs.
+
+The original `mapitem` keeps its `_id`, `d`, `a`, `AuthorId`, base timing,
+coordinates, type and detail aliases. Live WearTAK-owned points add:
+
+```json
+"weartakPoint": {
+  "version": 1,
+  "owner": "<AuthorId>",
+  "revision": "<SHA-256 of reconstructed live CoT>",
+  "deleted": false
+}
+```
+
+Clear updates **that same document** to `_r=true`, `visible=false`, `f=false`,
+sets `weartakPoint.deleted=true`, and adds integral epoch-millisecond
+`deletedAt >= b`. The revision still identifies the original live payload;
+`deletedAt` is informational, not an ordering override. A tombstone can arrive
+before its live revision, and remains meaningful after the original stale time.
+Plain `_r=true` without this validated contract, hidden documents, query
+disappearance, local eviction, and CoT `t-x-d-d` do not authorize deletion.
+No SDK document removal, eviction or collection delete is used.
+
+Receivers pin source/UID ownership and event-time/revision ordering before
+mutating repositories. A valid tombstone removes only the matching Ditto
+map/Bloodhound source copy, never watch-local, another peer's, TAK, multicast or
+companion copies. Cross-owner, older and conflicting equal-time revisions are
+rejected. Legacy points without an author cannot later be upgraded into
+author-owned deletion authority. A deleted source/UID is **terminal**: repeated
+deletion is idempotent; even a newer live revision cannot resurrect it. Recreating
+a deleted point requires a new UID. Local origins are also never reused, and
+pending writes are not replayed into a different native local-peer store.
+
+Local ownership/pending publication records use app-private
+`ditto-local-points-v1` preferences, including the retained point payload.
+Limits are **4,096 local origins**, **384 KiB per serialized record**, and
+**8 MiB total**. `ditto-point-watermarks-v1` holds **8,192 source/UID records**,
+**8 MiB total**, separately from ordinary receive dedup. Neither point ledger
+prunes or evicts records. Capacity exhaustion explicitly rejects new drops or
+new inbound point identities rather than losing ownership/replay protection.
+Deleting an already recorded point does not require another identity slot.
+
+Checked persistence failures are logged and fail closed: failed local intent
+keeps the point/clear queue, and failed inbound watermark storage cannot remove
+the repository copy. Failed store writes or write-ack persistence keep a pending
+publication for idempotent retry. An unacknowledged in-memory preference change
+is repaired before another successful ledger write. A crash after durable
+tombstone storage but before repository mutation is completed by replaying the
+retained tombstone snapshot; a crash after store write but before acknowledgment
+may repeat the same write. There is no atomic SDK/preferences/repository
+transaction. The existing local dropped-marker UI list itself remains
+in-memory; these ledgers provide ownership and publication recovery, not a new
+point-history restoration UI. Clearing app storage or a failed storage device
+loses these guarantees.
+
+Local observer tests use mocked SDK callbacks and synthetic data. Native Android
+SDK/peer interoperability and over-the-air receipt still require a separate,
+authorized hardware check; passing these tests does not prove mesh delivery.
+
+### PLI metadata compatibility
+
+Watch-built PLI XML and Ditto track details include `takv`, `status`, and `__group`
+as immediate children of `detail`. `takv` identifies WearTAK using the installed
+app's build version, Android SDK level, and actual watch manufacturer/model, not
+phone or ATAK metadata. Callsign, UID, team, role, and device strings are XML-escaped.
+Structured `status battery` is emitted only for an available percentage in 0..100;
+existing remarks and biometrics are retained.
+
+Direct XML routes and the negotiated raw-XML companion gateway preserve those
+fields. The legacy companion PLI JSON envelope is unchanged: it includes battery
+and callsign but not team, role, or `takv`. Separate legacy settings snapshots and
+`settings_changed` deltas carry team/role. The initial delta includes both; later
+deltas include only changed fields, including team-only or role-only changes,
+without changing the envelope version or notification queue.
+Legacy phone-side PLI reconstruction still uses the phone/EUD identity and location;
+these settings messages do not make it watch-source PLI or supply watch `takv`.
+Companion observation/conversion requires a separate phone-side update. Passing
+local tests does not establish phone consumption or server/ATAK receipt.
+
+### WEARTAK-121: Bloodhound to a map user
+
+Tap a user on the map, then **Start Bloodhound** immediately below **Open Chat** to
+start the existing Bloodhound action and return to the map. The action uses the
+selected user's UID and location; subsequent PLI from that same source refreshes
+the target while preserving tracking state. Users without a valid position cannot
+be selected for Bloodhound. If the user disappears, the last known target remains
+until stopped or removed through the existing Bloodhound controls. This action is
+also available on the map opened from Chat: it starts Bloodhound and returns to
+that map without selecting a chat contact or sending a message. **Open Chat**
+retains the chat picker's existing contact-selection behavior.
+The user menu uses the standard Wear scrolling list and position indicator so both
+actions remain reachable on round screens. The ordinary Bloodhound detail action
+also reads **Start Bloodhound** instead of **RGR**; acknowledgement and stop behavior
+are unchanged.
+
 ## GitHub pipeline release
 
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
-**TAK.gov CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
+**TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
 as stable builds, not prereleases. See [CI release setup and retention](ci/README.md)
 for required administrator configuration, provenance, and verified replacement behavior.
 Other numbered releases and unrelated assets are preserved.
@@ -45,6 +305,9 @@ a callsign from the phone, or when restoring the watch's own settings. Companion
 discovery still uses the A11A service UUID, and advertising still includes the current
 system device name; no `WT-` prefix is required. Bluetooth connection permissions remain
 necessary for GATT and bond handling.
+
+Callsigns are exchanged independently in `watch_info.payload.cs`, not inferred from
+the system Bluetooth name.
 
 An existing name such as `WT-ODIN-ATAK` is not automatically restored because the original
 name is unknown. Rename the watch manually in watch Settings if desired.
@@ -138,9 +401,82 @@ the payload; service binding itself does not establish a trusted caller identity
 
 ### Route point selection
 
+TAK-server Data Package offers (`b-f-t-r`) can import routes from version 2
+Mission Package ZIPs. WearTAK downloads the content hash from the **source server's
+configured HTTPS host on port 8443**, using that server's client certificate and
+certificate/hostname verification. Advertised hosts and redirects are never followed.
+Non-route package content is not supported.
+Offers are bound to the receiving TLS socket's current connection attempt, not
+its asynchronously updated display status. Replaced/disabled/disconnected
+sessions cannot borrow a new connection's credentials. A reconnect or busy importer
+is reported as an operational import failure, not malformed sender XML.
+Only manifest-listed, non-ignored `b-m-r` CoT entries are imported, through the
+existing route parser; package commands and import/delete instructions are not executed.
+Downloads are limited to 8 MiB, expanded archives to 16 MiB, individual entries to
+4 MiB (manifest: 256 KiB), 256 entries, and 10,000 total route points.
+SHA-256 and advertised size must match before import. Unsafe paths, DTDs/entities,
+missing content and invalid routes reject the package without importing partial routes.
+One package is processed at a time without blocking incoming CoT; failed imports
+are logged and show a watch toast. Resend after an import failure.
+When requested, transfer success/failure acknowledgements are routed back to the
+sender through the source TAK server; success is sent only after route import.
+Imported routes use the existing in-memory route store; restart recovery requires
+a resend or a subscribed Data Sync mission.
+
+Ordinary route geometry CoT (`b-m-r`) received on the configured Wi-Fi multicast
+subscriptions uses the same route store, complete geometry and point actions as
+server/Data Sync routes. A Mission Package ZIP is not raw route CoT over UDP:
+its local `b-f-t-r` offer uses a separate source-bound peer download. Only a private
+IPv4 UDP sender on the receiving Wi-Fi link, HTTPS port 8443 and `/getfile` with
+exactly one numeric `file` ID and one `sender` parameter are accepted (CommonCommo
+`MissionPackageManager::getLocalUrl`). The offered host must exactly match the UDP
+sender. Downloads are bound to that Wi-Fi network/session with no proxy or redirects;
+server credentials/client certificates are never used. ATAK serves `/getfile` with a
+self-signed certificate that does not name the phone's IP, so the peer download accepts
+the phone's certificate (HTTPS only, hostname must equal the UDP sender IP, no HTTP
+fallback). Integrity comes from the offer's mandatory SHA-256 and size, which must match
+the downloaded bytes before any route is imported. TAK server connections keep full
+platform/enrolled-CA trust and hostname validation.
+Peer imports share the same ZIP/hash/size bounds and route UI; identities are
+scoped to the multicast source and peer IP. Peer ACK routing is not yet supported,
+so a sender may report a timeout even after a verified watch import.
+Live peer ZIP interoperability is not yet accepted; an observed local offer alone
+does not establish successful HTTPS download or route import.
+Debug multicast diagnostics record only the peer IP, offer URL scheme/port/path
+host/source equality, query key names/count, and hash/size presence, not the full
+offer, credentials, query values or hash values.
+
+Tap a route line to view the whole route and select any of its points (including
+unnamed vertices) for the existing point details and Bloodhound action. **Remove
+from watch** requires confirmation and removes only that source server/route UID
+from local map state, never the server copy or another server's matching UID.
+A later resend or Data Sync update can restore a locally removed route. Existing
+single-point Bloodhound targets remain until stopped or removed using Bloodhound controls.
+
+The Bloodhound picker also lists each received **whole route** once, with its total
+point count and distance to the nearest vertex when a location fix is available.
+Open a route and choose **Start nearest** (requires a location fix) or **Start from
+beginning**. Navigation follows every vertex in its received order, including
+unnamed points, advancing past consecutive targets within **20 m**. The route
+screen shows **Point X of N**, remaining distance along the route, the existing
+Bloodhound compass, and **Stop route**. Reaching the final point shows **Route
+complete** and clears the active target. Starting another Bloodhound stops route
+following; removing the route from the watch also stops it. A received geometry
+change stops following so an old point index cannot target a different path.
+Following is local only (no CoT, chat or acknowledgement to the sender), and both
+routes and follow progress are in memory, not restored after app restart.
+
 Route lines and named point markers remain visible on the map. Selecting a point
-opens its details, with Chat and Bloodhound range/bearing tracking available as
-before. Selection and sender lookup use both the source server ID and route UID,
+uses the standard marker range/bearing display, Bloodhound/In Position action,
+and Back control. **Whole route** returns from point details to route removal
+and the named point list. The list excludes blank names but keeps original point
+indices; its count distinguishes named entries from all geometry points. Routes
+without named points show an empty-state explanation; unnamed points remain
+selectable on the map. Route taps have a 12 dp tolerance; individual vertex
+selection is available above zoom 10, including unnamed vertices. Only nonblank
+waypoint names produce map dots/labels, avoiding thousands of empty track markers
+without dropping any line geometry. Hit testing runs on taps, not on each frame.
+Selection and sender lookup use both the source server ID and route UID,
 so matching route UIDs received from different servers cannot select each other's
 points. Route parsing does not log raw CoT XML.
 
@@ -208,9 +544,9 @@ certificates, and other settings stay on the watch. If a one-time upload arrives
 bonded phone, the watch first restores its saved values and ends the bond, then applies the
 upload, so the configured settings stick.
 
-The saved values are restored, the Bluetooth name is recomputed from the restored callsign,
-the TAK service is asked to reconnect with the restored servers, and a PLI refresh is
-requested when any of these happen:
+The saved values are restored without changing the system Bluetooth name, the TAK service
+is asked to reconnect with the restored servers, and a PLI refresh is requested when any
+of these happen:
 - the phone releases management or sends a one-time (unmanaged) upload;
 - **Companion App** is turned off on the watch;
 - the managing phone is unpaired;
@@ -373,21 +709,29 @@ are not logged by enrollment.
 
 ### Dev Mode Stay Awake
 
-Debug and release APKs include an opt-in **Stay awake** switch under **Dev Debug Tools** (tap the
+Debug and release APKs include one opt-in **Stay awake** split-toggle chip at the top of
+**Developer Preferences** (tap the
 version eight times in Preferences to reveal these tools). This standalone demo/development
 session control does not require Wireless debugging or read its system setting. The switch
 holds screen, CPU and Wi-Fi locks and keeps a Wi-Fi network actively requested, including
 while viewing system settings. The request does not require Internet access, so local-only
 hotspots can satisfy it. It shows an ongoing notification with a Stop action. It remains
-enabled until you turn off the switch,
-tap notification Stop, or the app process ends. Leaving the UI or swiping the recent task
-does not stop the foreground service. The adjacent **Resume after update** checkbox is
-off by default. When checked, an enabled session is remembered and restored after an
-in-place app update on the same watch boot. Updates briefly release the locks while replacing
-the process. Turning off Stay awake or tapping notification Stop clears this remembered
-session. The service uses `START_NOT_STICKY`: ordinary process restarts and watch reboots
-do not start it automatically. A remembered session can still resume on a later update
-in the same boot unless explicitly stopped or update resumption is unchecked.
+enabled until you turn off the switch or tap notification Stop. Tap the chip body for
+read-only behavior details. The switch reflects saved intent; **Running** and
+**Enabled, not running** distinguish that intent from actual service activity.
+Leaving the UI or swiping the recent task does not stop the foreground service.
+There is no separate update-persistence option: enabled users retain their choice
+regardless of the old checkbox. Explicitly disabled users stay disabled.
+The service requests `START_STICKY` recovery after ordinary process death; the
+package-update and post-unlock boot receiver restore only this service when enabled.
+Opening WearTAK retries a previously blocked restore. Startup failure releases partial
+locks and reports an error without turning the saved choice off. These hooks never
+launch the main activity or enable the full WearTAK/Companion BLE service stack.
+Updates and restarts temporarily release locks. Android can defer or deny service
+recovery (including force-stop, system task-manager stop, battery policy or permission
+restrictions), so recovery is best-effort, not uninterrupted operation. Boot restoration
+is not direct-boot/lock-screen bypass. Saved intent survives reboot/power cycle, not
+uninstall, app-data clearing or factory reset; no screen can stay awake while powered off.
 There is no timed expiry. The warning **Extra battery use. May heat watch.** appears only while
 enabled. The Wi-Fi request is released on stop, service destruction, or startup failure.
 It does not force Wi-Fi on or guarantee connectivity against RF conditions, hotspot
@@ -504,7 +848,35 @@ Asynchronous repository failures are logged; cancellation is not treated as an e
 
 ### WEARTAK-130: chat commands
 
-Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. Only direct messages from callsigns in **Allowed Callsigns** (comma separated, case-insensitive) are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
+Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. Only direct messages from allowed callsigns are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
+
+TAK-server and Wi-Fi multicast receive already share the same command runtime and
+recipient checks. A server is not required for multicast commands. After a reset,
+first open WearTAK, grant its required permissions and connect watch and sender to
+the same multicast-capable Wi-Fi network. Enable **Network Preferences > TAK SA
+Multicast** (with valid address/port), then **Plugins > Commands** and add the
+sender's callsign to **Allowed Callsigns**. Keep Chat enabled for the normal inbox
+and outcome replies. This is bootstrap configuration, not a full backup restore.
+Enabling multicast also enables normal multicast publishing, not a receive-only
+provisioning mode; use an appropriately scoped test network.
+
+The receiver listens on the configured group/port plus standard GeoChat
+`224.10.10.1:17012` and direct CoT `224.10.10.1:6969`. In the sender, choose the
+actual watch contact for a **direct** chat, not a group or All Chat Rooms. CoT must
+identify the watch as a recipient: normally `__chat.id`/`chatgrp.id` is the watch UID
+and `chatgrp.uid1` is that UID (`uid0` is the sender); `remarks.to` can name the watch
+UID/current callsign. Watch UID membership also supports direct chats without
+`remarks.to`. Missing or other-device recipients are not a provisioning shortcut.
+Keep the device clocks within five minutes. Phone-managed identity/network locks
+still apply. A factory reset may change the UID: discover the current contact
+rather than replaying a saved recipient UID.
+
+The shared process-local replay cache ignores repeat sender/message-ID pairs
+across server and multicast, including either arrival order. It remembers the
+last 128 accepted pairs, not a durable execution ledger across app restarts.
+Consumed commands are not inserted as ordinary chat or rebroadcast; one normal
+outcome reply is generated for a newly accepted command. With Commands disabled,
+addressed command-looking text retains normal chat behavior.
 
 Format: `#weartakcommand<name> key=value key2="value with spaces"`
 
@@ -540,7 +912,15 @@ The callsign, team and role fields (including in `setprofile`) are refused when 
 
 The profile is validated and applied, then each server is added through the normal add-server path (servers already present are skipped). Names are lowercase letters, digits and `-`. The reply says only how many servers were added. Refused when network settings are locked.
 
-The watch replies in chat with the outcome. Callsigns are not authenticated, so anyone on the same server can pick an allowed callsign; this is why server enrollment always needs the user at the watch. Command arguments are never logged.
+The watch replies in chat with the outcome. Callsigns are not authenticated:
+another participant on the server or anyone able to inject multicast on the LAN
+can impersonate an allowed callsign. Neither recipient UIDs nor replay filtering
+prove origin; only enable this convenience feature on a trusted, scoped network.
+Multicast is plaintext. Never put passwords, enrollment secrets or other
+credentials in chat. Server enrollment still prompts on the watch and uses the
+normal TLS/enrollment path; it does not accept credentials through either chat
+transport. Command audit messages omit argument values, but ordinary chat and
+packet diagnostics are not a secret-storage channel.
 ### WEARTAK-112: explicit shared-point deletion
 
 **Local paired-device mirrors only.** A watch deletion removes the selected local
@@ -749,3 +1129,20 @@ Unlimited Rights granted to TPC
 Keep changes focused and validate them with the narrowest relevant Gradle task or test. When adding or changing a service, account for its manifest declaration, permission requirements, persisted enablement, and registration with the service orchestration layer.
 
 ### Point of Contact: Alex Gorsuch on chat.tak.gov or Signal
+
+
+#### Bloodhound picker controls and artwork
+
+Each picker row has a type/name/subtitle, a grey crosshair (**Show on map**, no
+navigation activation), and a green ATAK hound (**Bloodhound**). Routes open a
+**Start nearest / Start from beginning / Cancel** chooser; other located targets
+start immediately. Active rows turn amber, show route progress and remaining
+distance, and replace the hound with a red **Stop** button. The row body still
+opens details. Route crosshairs fit the whole geometry within the round watch;
+point/contact/marker crosshairs center the map at the target.
+
+The bundled `atak_nav_bloodhound.png` and `atak_ic_crosshair.png` artwork comes
+from [deptofdefense/AndroidTacticalAssaultKit-CIV](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV)
+(`atak/ATAK/app/src/main/res/drawable-xxxhdpi/nav_bloodhound.png` and
+`drawable-hdpi/ic_crosshair.png`), licensed GPLv3. Distribution/licensing review
+of this artwork is pending with the project owner.

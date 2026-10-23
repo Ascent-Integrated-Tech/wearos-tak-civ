@@ -9,6 +9,8 @@ import java.util.TimeZone
 import java.util.UUID
 
 object CotMessageBuilder {
+    private const val CHAT_STALE_MILLIS = 24L * 60 * 60 * 1000
+
     data class PliOptions(
         val callsign: String,
         val role: String,
@@ -35,36 +37,30 @@ object CotMessageBuilder {
         val remarks = "Exert:$exertion%;HR:$heartRate;SkinTemp:$skinTemp"
         val batdok = if (options.includeBatdok) batdokDetail(physio, time, heartRate, skinTemp) else ""
         val biometrics = if (options.includeBatdok) {
-            "<biometrics><device><model>WEAROS</model><uid>$uid</uid><hr>$heartRate</hr><skt>$skinTemp</skt><exert>$exertion</exert></device></biometrics>"
+            "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid><hr>$heartRate</hr><skt>$skinTemp</skt><exert>$exertion</exert></device></biometrics>"
         } else ""
 
-        val status = CotXml.element(
-            "status",
-            listOf(
-                "readiness" to "true",
-                "battery" to snapshot.systemData.batteryPercent
-            )
-        )
+        val status = CotDetailBuilder.status(snapshot.systemData.batteryPercent, readiness = true)
 
         val point = listOf(
             "lat" to "%.6f".format(lat), "lon" to "%.6f".format(lon), "hae" to "%.1f".format(hae),
             "ce" to ce, "le" to le,
         )
         val detail =
-            status +
+            CotDetailBuilder.takv() + status +
                     "<remarks>$remarks</remarks>$batdok$biometrics" +
                     CotXml.element(
                         "contact",
                         listOf(
                             "endpoint" to "*:-1:stcp",
-                            "callsign" to options.callsign
+                            "callsign" to CotXml.escape(options.callsign)
                         )
                     ) +
                     CotXml.element(
                         "__group",
                         listOf(
-                            "role" to options.role,
-                            "name" to options.team
+                            "role" to CotXml.escape(options.role),
+                            "name" to CotXml.escape(options.team)
                         )
                     ) +
                     CotXml.element(
@@ -76,7 +72,7 @@ object CotMessageBuilder {
                     ) +
                     options.hailDetail
         return CotXml.event(listOf(
-            "version" to "2.0", "uid" to uid, "type" to "a-f-G-U-C", "time" to time.startCot,
+            "version" to "2.0", "uid" to CotXml.escape(uid), "type" to "a-f-G-U-C", "time" to time.startCot,
             "start" to time.startCot, "stale" to time.staleCot, "how" to "m-g",
         ), point, detail)
     }
@@ -168,9 +164,12 @@ object CotMessageBuilder {
         messageId: String = UUID.randomUUID().toString(),
         nowMillis: Long = System.currentTimeMillis(),
     ): String {
-        val time = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+        val cotFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
-        }.format(Date(nowMillis))
+        }
+        val time = cotFormat.format(Date(nowMillis))
+        // Match ATAK GeoChat (stale = time + 1 day); TAK Servers with ignoreStaleMessages drop already-stale chat.
+        val stale = cotFormat.format(Date(nowMillis + CHAT_STALE_MILLIS))
         val location = snapshot.location
         val point = listOf(
             "lat" to (location?.lat ?: 0.0), "lon" to (location?.lon ?: 0.0), "hae" to (location?.hae ?: 0.0),
@@ -203,7 +202,7 @@ object CotMessageBuilder {
                     CotXml.escape(snapshot.message)) + marti
         return CotXml.event(listOf(
             "version" to "2.0", "uid" to CotXml.escape("GeoChat.$senderUid.${snapshot.roomUid}.$messageId"), "type" to "b-t-f",
-            "time" to time, "start" to time, "stale" to time, "how" to "h-g-i-g-o", "access" to "Undefined",
+            "time" to time, "start" to time, "stale" to stale, "how" to "h-g-i-g-o", "access" to "Undefined",
         ), point, detail)
     }
 
@@ -212,8 +211,8 @@ object CotMessageBuilder {
         return when {
             physio.heartRateBpm == -1 && physio.skinTempF == -1f -> ""
             physio.heartRateBpm == -1 -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.startCot}\">(Temp,$skinTemp (F) $celsius (C),${time.time})</vitalSign></_atmist_>"
-            physio.skinTempF == -1f -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.staleCot}\">(HR,$heartRate,${time.time})</vitalSign></_atmist_>"
-            else -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.staleCot}\">(HR,$heartRate,${time.time})</vitalSign><vitalSign index=\"1\" timestamp=\"${time.startCot}\">(Temp,$skinTemp (F) $celsius (C),${time.time})</vitalSign></_atmist_>"
+            physio.skinTempF == -1f -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.startCot}\">(HR,$heartRate,${time.time})</vitalSign></_atmist_>"
+            else -> "<_atmist_ age=\"${physio.ageYears}\" timeOfIncident=\"${time.startCot}\"><vitalSign index=\"0\" timestamp=\"${time.startCot}\">(HR,$heartRate,${time.time})</vitalSign><vitalSign index=\"1\" timestamp=\"${time.startCot}\">(Temp,$skinTemp (F) $celsius (C),${time.time})</vitalSign></_atmist_>"
         }
     }
 

@@ -1,13 +1,16 @@
 package com.aitech.weartak_civ.integration.plugin
 
 import android.content.Intent
+import android.content.ComponentName
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
 import android.content.pm.ServiceInfo
+import android.os.Bundle
 import com.weartak.plugin.sdk.WearTakPluginContract
 import io.mockk.every
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,6 +20,61 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
 class PluginServiceQueryTest {
+
+    private val component = ComponentName("com.weartak.plugin.sample", ".SamplePluginService")
+
+    private fun metadataPackageManager(metadata: Bundle?): PackageManager = mockk {
+        every {
+            getServiceInfo(
+                component,
+                match<PackageManager.ComponentInfoFlags> {
+                    it.value and PackageManager.GET_META_DATA.toLong() != 0L
+                },
+            )
+        } returns ServiceInfo().apply { metaData = metadata }
+    }
+
+    @Test
+    fun menuSubtitle_readsNonBlankServiceMetadata() {
+        val metadata = Bundle().apply {
+            putString("com.weartak.plugin.MENU_SUBTITLE", "Unfunded Request")
+        }
+
+        assertEquals(
+            "Unfunded Request",
+            PluginServiceQuery.menuSubtitle(metadataPackageManager(metadata), component),
+        )
+    }
+
+    @Test
+    fun menuSubtitle_ignoresMissingOrBlankMetadata() {
+        val cases = listOf(null, Bundle()) + listOf("", " \n\t ").map { value ->
+            Bundle().apply { putString(PluginServiceQuery.MENU_SUBTITLE, value) }
+        }
+        for (metadata in cases) {
+            assertNull(PluginServiceQuery.menuSubtitle(metadataPackageManager(metadata), component))
+        }
+    }
+
+    @Test
+    fun menuSubtitle_fallsBackWhenServiceIsRemoved() {
+        val pm = mockk<PackageManager> {
+            every { getServiceInfo(component, any<PackageManager.ComponentInfoFlags>()) } throws
+                PackageManager.NameNotFoundException("Removed")
+        }
+
+        assertNull(PluginServiceQuery.menuSubtitle(pm, component))
+    }
+
+    @Test
+    fun menuSubtitle_fallsBackWhenMetadataAccessIsDenied() {
+        val pm = mockk<PackageManager> {
+            every { getServiceInfo(component, any<PackageManager.ComponentInfoFlags>()) } throws
+                SecurityException("Denied")
+        }
+
+        assertNull(PluginServiceQuery.menuSubtitle(pm, component))
+    }
 
     private fun packageManager(vararg services: ResolveInfo): PackageManager = mockk {
         every {

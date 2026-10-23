@@ -12,11 +12,17 @@ import urllib.request
 
 
 REPO = "Ascent-Integrated-Tech/wearos-tak-civ"
-TAG = "wearos-development"
-TITLE = "TAK.gov CI/CD Pipeline Release"
+# Git tags cannot contain spaces or "/", so the tag is the title in tag-safe form.
+TAG = "TAK.gov-Forge-CI-CD-Pipeline-Release"
+TITLE = "TAK.gov Forge CI/CD Pipeline Release"
 MARKER = "weartak-rolling-v1"
-ASSET_PATTERN = re.compile(r"weartak-development-p([1-9][0-9]*)-([0-9a-f]{64})\.apk")
+MANAGED_START = "<!-- weartak-release-managed:start -->"
+MANAGED_END = "<!-- weartak-release-managed:end -->"
+ASSET_PATTERN = re.compile(r"WearTAK-[0-9A-Za-z._-]*-p([1-9][0-9]*)\.apk")
+LEGACY_ASSET_PATTERN = re.compile(r"weartak-development-p([1-9][0-9]*)-([0-9a-f]{64})\.apk")
 LABEL_PREFIX = "weartak-rolling-v1:"
+# Handled by .github/workflows/release-testing.yml on the GitHub default branch.
+DISPATCH_EVENT = "weartak-release-published"
 OUTPUT = Path("app/build/outputs/apk/release")
 
 
@@ -189,18 +195,85 @@ def state_from(release, project_id):
     return state
 
 
+def display_version(version, pipeline_iid):
+    """User-facing build id, e.g. 5.8.0.3-p105 (drops +sha build metadata)."""
+    short = version.split("+", 1)[0]
+    suffix = f"-p{pipeline_iid}"
+    return short if short.endswith(suffix) else short + suffix
+
+
+def asset_pipeline(asset):
+    """Pipeline IID of an asset this publisher owns, or None for anything else."""
+    name = asset.get("name", "")
+    match = ASSET_PATTERN.fullmatch(name)
+    if match and asset.get("label") == name:
+        return int(match[1])
+    legacy = LEGACY_ASSET_PATTERN.fullmatch(name)
+    if legacy and asset.get("label") == f"{LABEL_PREFIX}{legacy[2]}":
+        return int(legacy[1])
+    return None
+
+
 def managed_asset(asset):
-    match = ASSET_PATTERN.fullmatch(asset.get("name", ""))
-    return (match is not None
-            and asset.get("label") == f"{LABEL_PREFIX}{match[2]}")
+    return asset_pipeline(asset) is not None
+
+
+def generated_body(state, version, code):
+    return (
+        "Automatically published stable WearOS develop-channel build.\n\n"
+        f"- APK version: **{version}** (versionCode **{code}**)\n"
+        f"- Build: GitLab pipeline **{state['pipeline_id']}** "
+        f"(project pipeline **{state['pipeline_iid']}**)\n"
+        f"- Pipeline: {state['pipeline_url']}\n"
+        f"- Source commit: `{state['source_sha']}` on TAK.gov `develop`\n"
+        f"- SHA256: `{state['sha256']}`\n\n"
+        "Install the APK above. GitHub's \"Source code\" archives come from the fixed release "
+        "anchor tag, not from this build; the source commit above is authoritative and may "
+        "not yet be mirrored to GitHub.\n\n"
+        f"<!-- {MARKER} {json.dumps(state, sort_keys=True)} -->"
+    )
+
+
+def update_body(previous_body, previous_state, generated):
+    managed = f"{MANAGED_START}\n{generated}\n{MANAGED_END}"
+    if previous_body is None:
+        return managed
+    marker = re.search(rf"<!-- {MARKER} .*? -->", previous_body)
+    if MANAGED_START in previous_body or MANAGED_END in previous_body:
+        if (previous_body.count(MANAGED_START) != 1 or previous_body.count(MANAGED_END) != 1
+                or marker is None):
+            raise PublishError("Ambiguous managed release boundaries; previous notes retained.")
+        start = previous_body.index(MANAGED_START)
+        end = previous_body.index(MANAGED_END)
+        if not start + len(MANAGED_START) <= marker.start() < marker.end() <= end:
+            raise PublishError("Invalid managed release boundaries; previous notes retained.")
+        return previous_body[:start] + managed + previous_body[end + len(MANAGED_END):]
+
+    # Migrate only an exact historical generated block. Unrecognized prose is never owned
+    # merely because it is next to the provenance marker: retain it and replace only the marker.
+    if marker is None:
+        raise PublishError("Missing release provenance; previous notes retained.")
+    for match in re.finditer(
+        r"- APK version: \*\*([0-9A-Za-z.+_-]+)\*\* \(versionCode \*\*([1-9][0-9]*)\*\*\)",
+        previous_body
+    ):
+        if "sha256" not in previous_state:
+            continue
+        legacy = generated_body(previous_state, match[1], int(match[2]))
+        legacy = re.sub(rf"<!-- {MARKER} .*? -->", lambda _: marker[0], legacy)
+        if previous_body.count(legacy) == 1:
+            return previous_body.replace(legacy, managed, 1)
+    return previous_body[:marker.start()] + managed + previous_body[marker.end():]
 
 
 def publish(api, state, apk, digest, version, code):
     repository = api.request("GET", "")
-    if repository.get("private") is not True or repository.get("archived") is not False:
+    if (repository.get("full_name") != REPO or
+            repository.get("archived") is not False or
+            repository.get("disabled") is not False):
         raise PublishError(
-            "Destination must be a private, active repository. Public distribution has "
-            "not been approved; obtain separate approval before changing this policy."
+            "Destination must be the explicitly approved, active repository "
+            f"{REPO}; archived, disabled or different repositories are not allowed."
         )
     # Require an administrator-provisioned fixed tag. Never create/move a ref.
     if not api.request("GET", f"git/ref/tags/{TAG}", missing_ok=True):
@@ -220,27 +293,23 @@ def publish(api, state, apk, digest, version, code):
             raise PublishError("Same pipeline has different source/artifact; refusing replacement.")
 
     state = dict(state, sha256=digest)
-    body = (
-        "Automatically published stable WearOS develop-channel build.\n\n"
-        f"- APK version: **{version}** (versionCode **{code}**)\n"
-        f"- Build: GitLab pipeline **{state['pipeline_id']}** "
-        f"(project pipeline **{state['pipeline_iid']}**)\n"
-        f"- Pipeline: {state['pipeline_url']}\n"
-        f"- Source commit: `{state['source_sha']}` on TAK.gov `develop`\n"
-        f"- SHA256: `{digest}`\n\n"
-        "The fixed GitHub tag is a release anchor, not the APK's source revision. "
-        "The source SHA above is authoritative and may not yet be mirrored to GitHub.\n\n"
-        f"<!-- {MARKER} {json.dumps(state, sort_keys=True)} -->"
+    short = display_version(version, state["pipeline_iid"])
+    title = f"{TITLE} ({short})"
+    body = update_body(
+        release.get("body") if release else None,
+        previous if release else None,
+        generated_body(state, version, code),
     )
     if not release:
         release = api.request("POST", "releases", {
-            "tag_name": TAG, "name": TITLE, "body": body,
+            "tag_name": TAG, "name": title, "body": body,
             "draft": True, "prerelease": False, "make_latest": "false",
         })
     release_id = release["id"]
     assets = api.assets(release_id)
-    name = f"weartak-development-p{state['pipeline_iid']}-{digest}.apk"
-    label = f"{LABEL_PREFIX}{digest}"
+    name = f"WearTAK-{short}.apk"
+    # GitHub shows the label instead of the file name, so keep it human-readable.
+    label = name
     existing = [item for item in assets if item["name"] == name]
     if existing:
         uploaded = existing[0]
@@ -259,21 +328,34 @@ def publish(api, state, apk, digest, version, code):
             "inspect only this pipeline's new asset before retrying."
         )
     api.request("PATCH", f"releases/{release_id}", {
-        "name": TITLE, "body": body, "draft": False,
+        "name": title, "body": body, "draft": False,
         "prerelease": False, "make_latest": "false",
     })
     confirmed = api.request("GET", f"releases/{release_id}")
     confirmed_state = state_from(confirmed, state["project_id"])
-    if (confirmed.get("draft") or confirmed.get("name") != TITLE or confirmed_state != state
+    if (confirmed.get("draft") or confirmed.get("name") != title or confirmed.get("body") != body
+            or confirmed_state != state
             or not any(a["id"] == uploaded["id"] and a.get("state") == "uploaded"
                        and a.get("size") == size for a in api.assets(release_id))):
         raise PublishError("Release update could not be verified; previous assets retained.")
     # Delete only older assets explicitly owned by this publisher, after verification.
     for old in assets:
-        match = ASSET_PATTERN.fullmatch(old["name"])
-        if managed_asset(old) and int(match[1]) < state["pipeline_iid"]:
+        owner = asset_pipeline(old)
+        if owner is not None and owner < state["pipeline_iid"]:
             api.request("DELETE", f"releases/assets/{old['id']}")
-    print(f"Published {TITLE}: version {version} ({code}), SHA256 {digest}")
+    print(f"Published {title}: version {version} ({code}), SHA256 {digest}")
+    # Only a verified build reaches testers. The workflow re-reads the release itself and
+    # deduplicates per pipeline, so retrying a failed notification is safe.
+    try:
+        api.request("POST", "dispatches", {
+            "event_type": DISPATCH_EVENT,
+            "client_payload": {"pipeline_id": state["pipeline_id"], "release_id": release_id},
+        })
+    except PublishError:
+        raise PublishError(
+            "The release is published, but the release-testing notification failed. "
+            "Retry this job; the release and tester checklist are not duplicated."
+        ) from None
 
 
 def main():
