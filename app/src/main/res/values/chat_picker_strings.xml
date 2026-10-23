@@ -9,4 +9,6 @@
     <string name="chat_invalid_contact">This person is no longer available for chat.</string>
     <string name="chat_service_unavailable">Chat is unavailable. Enable Chat and try again.</string>
     <string name="chat_conversation_unavailable">Chat conversation is no longer available.</string>
+    <string name="chat_select_map">Select User From Map</string>
+    <string name="chat_no_users">No connected users</string>
 </resources>

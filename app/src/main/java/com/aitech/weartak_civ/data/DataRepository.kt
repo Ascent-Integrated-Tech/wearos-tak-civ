@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.data
 
 import android.content.Context
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -60,6 +61,8 @@ import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_COMMANDS
+import com.aitech.weartak_civ.command.ChatCommandAuthorizer
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CRM_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
@@ -197,6 +200,7 @@ import com.aitech.weartak_civ.events.PliRefreshReason
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
 private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private const val NON_TAK_COT_SOURCE_ID = "non-tak"
+internal const val COMPANION_USER_SOURCE_ID = "companion-phone-users"
 
 // Identifies which PDL the user selected
 enum class DittoPdlSource {
@@ -229,8 +233,11 @@ class DataRepository(private val context: Context) {
     private val DITTO_PDL_SOURCE =
         stringPreferencesKey("ditto_pdl_source")
 
+    @androidx.annotation.VisibleForTesting
+    internal var takServerSecretsOverride: TakServerSecretsRepository? = null
+
     private val takServerSecretsRepository: TakServerSecretsRepository
-        get() = (context.applicationContext as WearTakApplication).takServerRepo
+        get() = takServerSecretsOverride ?: (context.applicationContext as WearTakApplication).takServerRepo
 
     val passiveDataEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PASSIVE_DATA_ENABLED] ?: false
@@ -323,6 +330,10 @@ class DataRepository(private val context: Context) {
             "Route stored uid=${route.uid} name=${route.name} " +
                     "serverId=${route.serverId} points=${route.points.size}"
         )
+    }
+
+    fun removeTakRoute(serverId: String, routeUid: String) {
+        _takRoutes.update { it - (serverId to routeUid) }
     }
 
     // Remove routes that belong to a specific mission on a specific server
@@ -1752,8 +1763,8 @@ class DataRepository(private val context: Context) {
         val battery  = latestBatteryPercentage.value
         val prefs = context.dataStore.data.first()
         val callsign = prefs[CALLSIGN] ?: ""
-        val teamNames = (prefs[TEAM_NAMES] ?: "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown").split(",")
-        val teamColors = (prefs[TEAM_COLORS] ?: "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown").split(",")
+        val teamNames = (prefs[TEAM_NAMES] ?: DEFAULT_TEAM_LIST).split(",")
+        val teamColors = (prefs[TEAM_COLORS] ?: DEFAULT_TEAM_LIST).split(",")
         val teamIndex = teamNames.indexOf(prefs[TEAM] ?: "Orange")
         val team = teamColors.getOrNull(teamIndex) ?: teamColors.firstOrNull() ?: "Orange"
         val deviceId = MainActivity.device_uid
@@ -2107,6 +2118,38 @@ class DataRepository(private val context: Context) {
     )
     val receivedUserList: StateFlow<List<ReceivedUser>> = receivedUserStore.visibleItems
 
+    fun receiveCompanionUserEvent(event: CotUserPositionEvent, receivedAt: Long): Boolean {
+        pruneCompanionUsers(receivedAt)
+        val key = SourceCotKey(COMPANION_USER_SOURCE_ID, event.uid)
+        if (event.stale <= receivedAt) {
+            receivedUserStore.item(key)?.takeIf { it.timeReceived <= event.time }?.let {
+                receivedUserStore.remove(key)
+            }
+            return false
+        }
+        val copies = receivedUserStore.allItems.value.filterKeys { it.sourceId == COMPANION_USER_SOURCE_ID }
+        if (key !in copies && copies.size >= 512) {
+            copies.minByOrNull { it.value.receivedAt }?.key?.let(receivedUserStore::remove)
+        }
+        return applyReceivedUserEventNow(event, "Companion ATAK", COMPANION_USER_SOURCE_ID, receivedAt)
+    }
+
+    fun removeCompanionUser(uid: String) {
+        receivedUserStore.remove(SourceCotKey(COMPANION_USER_SOURCE_ID, uid))
+    }
+
+    fun clearCompanionUsers() {
+        receivedUserStore.removeSource(COMPANION_USER_SOURCE_ID)
+    }
+
+    fun pruneCompanionUsers(now: Long = System.currentTimeMillis()) {
+        receivedUserStore.allItems.value.forEach { (key, user) ->
+            if (key.sourceId == COMPANION_USER_SOURCE_ID && user.staleTime <= now) {
+                receivedUserStore.remove(key)
+            }
+        }
+    }
+
     suspend fun upsertReceivedUser(item: ReceivedUser): SourceCotUpsertResult =
         receivedUserStore.upsertWithResult(item)
 
@@ -2123,14 +2166,23 @@ class DataRepository(private val context: Context) {
         source: String,
         sourceServerId: String? = null,
         receivedAt: Long = System.currentTimeMillis()
+    ): Boolean = applyReceivedUserEventNow(event, source, sourceServerId, receivedAt)
+
+    private fun applyReceivedUserEventNow(
+        event: CotUserPositionEvent,
+        source: String,
+        sourceServerId: String? = null,
+        receivedAt: Long = System.currentTimeMillis()
     ): Boolean {
         val sourceKey = sourceServerId ?: NON_TAK_COT_SOURCE_ID
         if (event.stale <= System.currentTimeMillis()) {
-            val removed = receivedUserStore.removeIfNotOlder(
-                key = SourceCotKey(sourceKey, event.uid),
-                eventTime = event.time,
-                receivedAt = receivedAt
-            )
+            val key = SourceCotKey(sourceKey, event.uid)
+            val removed = if (sourceKey == COMPANION_USER_SOURCE_ID) {
+                receivedUserStore.item(key)?.takeIf { it.timeReceived <= event.time }
+                    ?.let { receivedUserStore.remove(key) }
+            } else {
+                receivedUserStore.removeIfNotOlder(key, event.time, receivedAt)
+            }
             Log.d(
                 TAG,
                 "Map state user stale uid=${event.uid} sourceServerId=$sourceServerId eventTime=${event.time} " +
@@ -2163,7 +2215,7 @@ class DataRepository(private val context: Context) {
             sourceServerId = sourceServerId,
             receivedAt = receivedAt
         )
-        val result = upsertReceivedUser(item)
+        val result = receivedUserStore.upsertWithResult(item)
         Log.d(
             TAG,
             "Map state user upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
@@ -2275,6 +2327,15 @@ class DataRepository(private val context: Context) {
     val pointDeletionRequests: SharedFlow<PointDeletionRequest> = _pointDeletionRequests
     private val _remotePointDeletions = MutableSharedFlow<String>(extraBufferCapacity = 64)
     val remotePointDeletions: SharedFlow<String> = _remotePointDeletions
+    val pointDeletionAcks = PointDeletionAcks()
+    private val _pointDeletionResults = MutableSharedFlow<PointDeletionAcks.Result>(extraBufferCapacity = 64)
+    /** Whether the paired phone acknowledged and applied a deletion this watch sent. */
+    val pointDeletionResults: SharedFlow<PointDeletionAcks.Result> = _pointDeletionResults
+
+    fun reportPointDeletionResult(result: PointDeletionAcks.Result) {
+        Log.i(TAG, "Point deletion uid=${result.uid} outcome=${result.outcome}")
+        _pointDeletionResults.tryEmit(result)
+    }
 
     fun notifyLocalPointDeletion(uid: String) {
         // The receiver of this request checks readiness and its connection generation.
@@ -2291,7 +2352,10 @@ class DataRepository(private val context: Context) {
 
     @Volatile var companionPointGeneration = -1L
 
-    suspend fun deleteReceivedPointLocally(uid: String, bloodhounds: BloodhoundRepository) =
+    suspend fun deleteReceivedPointLocally(
+        uid: String,
+        bloodhounds: BloodhoundRepository,
+    ): List<ReceivedMarker> =
         markerIngressMutex.withLock {
             if (receivedMarkerStore.visibleKey(uid)?.sourceId == "companion-phone") {
                 companionPointRevisions.current(uid, companionPointGeneration)?.let {
@@ -2850,58 +2914,201 @@ class DataRepository(private val context: Context) {
         prefs[PHONE_MANAGED_SETTINGS_ENABLED] ?: false
     }
 
+    private val phoneManagementSessionActive = MutableStateFlow(false)
+    val phoneManagedSettingsLocked: Flow<Boolean> = kotlinx.coroutines.flow.combine(
+        phoneManagedSettingsEnabled, phoneManagementSessionActive
+    ) { enabled, active -> enabled && active }
+
+    internal fun setPhoneManagementSessionActive(active: Boolean) {
+        phoneManagementSessionActive.value = active
+    }
+
     val phoneManagedCompanionAddress: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[PHONE_MANAGED_COMPANION_ADDRESS]
     }
 
-    suspend fun enablePhoneManagedSettings(companionAddress: String) {
+    suspend fun enablePhoneManagedSettings(
+        companionAddress: String,
+        mayEnable: () -> Boolean = { true }
+    ) {
         require(companionAddress.isNotBlank()) { "Companion address cannot be blank" }
         context.dataStore.edit { prefs ->
-            if (prefs[PHONE_MANAGED_SETTINGS_ENABLED] != true) {
-                prefs[PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING] =
-                    prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
-                prefs[PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL] =
-                    prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
-            }
+            check(mayEnable()) { "Companion connection changed before management activation" }
             prefs[PHONE_MANAGED_COMPANION_ADDRESS] = companionAddress
             prefs[PHONE_MANAGED_SETTINGS_ENABLED] = true
         }
     }
 
+    /** Effective values of every setting the phone bond writes, after a snapshot restore. */
+    data class PhoneManagedSettingsValues(
+        val enableDynamicReporting: Boolean,
+        val constantReportingInterval: Int,
+        val callsign: String,
+        val team: String,
+        val teamValue: String,
+        val role: String,
+        val roleCategory: String
+    ) {
+        val reporting: Pair<Boolean, Int> get() = enableDynamicReporting to constantReportingInterval
+
+        fun applyToRuntimeConstants() {
+            MainActivity.Constants.enableDynamicReportingStrategy = enableDynamicReporting
+            MainActivity.Constants.constantReportingInterval = constantReportingInterval
+            MainActivity.Constants.callsign = callsign
+            MainActivity.Constants.team = team
+            MainActivity.Constants.teamValue = teamValue
+            MainActivity.Constants.role = role
+            MainActivity.Constants.category = roleCategory
+        }
+    }
+
+    // Snapshots written before WEARTAK-168 only contain the two reporting keys.
+    private fun Preferences.phoneManagedSnapshotSaved(): Boolean =
+        this[PHONE_MANAGED_SNAPSHOT_SAVED] == true || contains(PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING)
+
+    private fun MutablePreferences.savePhoneManagedSnapshot() {
+        this[PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING] =
+            this[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
+        this[PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL] =
+            this[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
+        this[CALLSIGN]?.takeIf { it.isNotBlank() }?.let { this[PHONE_MANAGED_PREVIOUS_CALLSIGN] = it }
+        this[PHONE_MANAGED_PREVIOUS_TEAM] = this[TEAM] ?: DEFAULT_TEAM
+        this[PHONE_MANAGED_PREVIOUS_ROLE] = this[SELECTED_ROLE] ?: DEFAULT_ROLE
+        this[PHONE_MANAGED_PREVIOUS_ROLE_CATEGORY] = this[SELECTED_CATEGORY] ?: DEFAULT_ROLE_CATEGORY
+        this[PHONE_MANAGED_SNAPSHOT_SAVED] = true
+    }
+
+    private fun MutablePreferences.restoreSnapshotValues() {
+        this[PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING]?.let { this[ENABLE_DYNAMIC_REPORTING_STRATEGY] = it }
+        this[PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL]?.let { this[CONSTANT_REPORTING_INTERVAL] = it }
+        this[PHONE_MANAGED_PREVIOUS_CALLSIGN]?.let { this[CALLSIGN] = it }
+        this[PHONE_MANAGED_PREVIOUS_TEAM]?.let { this[TEAM] = it }
+        this[PHONE_MANAGED_PREVIOUS_ROLE]?.let { this[SELECTED_ROLE] = it }
+        this[PHONE_MANAGED_PREVIOUS_ROLE_CATEGORY]?.let { this[SELECTED_CATEGORY] = it }
+        PHONE_MANAGED_SNAPSHOT_KEYS.forEach { remove(it) }
+    }
+
+    private fun Preferences.phoneManagedSettingsValues(): PhoneManagedSettingsValues {
+        val team = this[TEAM] ?: DEFAULT_TEAM
+        val names = (this[TEAM_NAMES] ?: DEFAULT_TEAM_LIST).split(',')
+        val colors = (this[TEAM_COLORS] ?: DEFAULT_TEAM_LIST).split(',')
+        return PhoneManagedSettingsValues(
+            enableDynamicReporting = this[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING,
+            constantReportingInterval = this[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL,
+            callsign = this[CALLSIGN] ?: "",
+            team = team,
+            teamValue = colors.getOrNull(names.indexOf(team)) ?: team,
+            role = this[SELECTED_ROLE] ?: DEFAULT_ROLE,
+            roleCategory = this[SELECTED_CATEGORY] ?: DEFAULT_ROLE_CATEGORY
+        )
+    }
+
+    /**
+     * A watch-side edit made while no live phone session holds the lock becomes the
+     * watch's own value, so a later snapshot restore keeps it instead of reverting it.
+     */
+    private fun <T> MutablePreferences.recordWatchOwnedValue(
+        previousKey: Preferences.Key<T>,
+        value: T,
+        identity: Boolean
+    ) {
+        if (phoneManagementSessionActive.value) return
+        val saved = if (identity) this[PHONE_MANAGED_SNAPSHOT_SAVED] == true else phoneManagedSnapshotSaved()
+        if (saved) this[previousKey] = value
+    }
+
+    private suspend fun publishPhoneManagedChanges(
+        before: PhoneManagedSettingsValues,
+        after: PhoneManagedSettingsValues
+    ) {
+        _enableDynamicReportingStrategy.emit(after.enableDynamicReporting)
+        _constantReportingInterval.emit(after.constantReportingInterval)
+        if (before.callsign != after.callsign) requestInteractionPliRefresh(PliRefreshReason.CALLSIGN_CHANGED)
+        if (before.team != after.team) requestInteractionPliRefresh(PliRefreshReason.TEAM_CHANGED)
+        if (before.role != after.role) requestInteractionPliRefresh(PliRefreshReason.ROLE_CHANGED)
+    }
+
+    /**
+     * Writes the phone's identity and reporting values. The watch's own values are
+     * snapshotted first unless a snapshot already exists for this management period,
+     * so repeated phone pushes never overwrite the saved originals.
+     */
+    suspend fun applyPhoneManagedSettings(
+        callsign: String,
+        team: String,
+        role: String,
+        constantReportingInterval: Int,
+        mayApply: () -> Boolean = { true }
+    ): PhoneManagedSettingsValues {
+        require(callsign.isNotBlank() && team.isNotBlank() && role.isNotBlank()) {
+            "Phone-managed settings require callsign, team, and role"
+        }
+        require(constantReportingInterval > 0) { "Reporting interval must be positive" }
+        lateinit var before: PhoneManagedSettingsValues
+        lateinit var after: PhoneManagedSettingsValues
+        context.dataStore.edit { prefs ->
+            check(mayApply()) { "Companion connection changed before phone-managed settings were applied" }
+            check(prefs[PHONE_MANAGED_SETTINGS_ENABLED] == true) { "Phone management is not enabled" }
+            before = prefs.phoneManagedSettingsValues()
+            if (!prefs.phoneManagedSnapshotSaved()) prefs.savePhoneManagedSnapshot()
+            prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] = false
+            prefs[CONSTANT_REPORTING_INTERVAL] = constantReportingInterval
+            prefs[CALLSIGN] = callsign
+            prefs[TEAM] = team
+            prefs[SELECTED_ROLE] = role
+            after = prefs.phoneManagedSettingsValues()
+        }
+        publishPhoneManagedChanges(before, after)
+        return after
+    }
+
+    /**
+     * Restores the watch's own values after the live phone session ends, keeping the
+     * management opt-in so a fresh managed handshake can take over again.
+     */
+    suspend fun restorePhoneManagedSnapshot(
+        mayRestore: () -> Boolean = { true }
+    ): PhoneManagedSettingsValues? {
+        val prefs = context.dataStore.data.first()
+        if (!prefs.phoneManagedSnapshotSaved() && prefs[PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED] != true) return null
+        var before: PhoneManagedSettingsValues? = null
+        var after: PhoneManagedSettingsValues? = null
+        context.dataStore.edit { mutable ->
+            if (!mayRestore() || !mutable.phoneManagedSnapshotSaved()) return@edit
+            before = mutable.phoneManagedSettingsValues()
+            mutable.restoreSnapshotValues()
+            after = mutable.phoneManagedSettingsValues()
+        }
+        if (mayRestore()) restorePhoneManagedTakServers()
+        val restored = after ?: return null
+        publishPhoneManagedChanges(requireNotNull(before), restored)
+        return restored
+    }
+
     suspend fun clearPhoneManagedSettingsForPeer(
         companionAddress: String,
-        restorePreviousReporting: Boolean = true
-    ): Pair<Boolean, Int>? {
-        var restoredReporting: Pair<Boolean, Int>? = null
+        mayClear: () -> Boolean = { true }
+    ): PhoneManagedSettingsValues? {
+        var before: PhoneManagedSettingsValues? = null
+        var after: PhoneManagedSettingsValues? = null
         context.dataStore.edit { prefs ->
+            check(mayClear()) { "Companion connection changed before management release" }
             val managedAddress = prefs[PHONE_MANAGED_COMPANION_ADDRESS]
             if (prefs[PHONE_MANAGED_SETTINGS_ENABLED] == true &&
                 managedAddress.equals(companionAddress, ignoreCase = true)
             ) {
-                val dynamicReporting = if (restorePreviousReporting) {
-                    prefs[PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
-                } else {
-                    prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
-                }
-                val constantInterval = if (restorePreviousReporting) {
-                    prefs[PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
-                } else {
-                    prefs[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
-                }
-                prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] = dynamicReporting
-                prefs[CONSTANT_REPORTING_INTERVAL] = constantInterval
+                before = prefs.phoneManagedSettingsValues()
+                prefs.restoreSnapshotValues()
                 prefs[PHONE_MANAGED_SETTINGS_ENABLED] = false
                 prefs.remove(PHONE_MANAGED_COMPANION_ADDRESS)
-                prefs.remove(PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING)
-                prefs.remove(PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL)
-                restoredReporting = dynamicReporting to constantInterval
+                after = prefs.phoneManagedSettingsValues()
             }
         }
-        restoredReporting?.let { (dynamicReporting, constantInterval) ->
-            _enableDynamicReportingStrategy.emit(dynamicReporting)
-            _constantReportingInterval.emit(constantInterval)
-        }
-        return restoredReporting
+        val restored = after ?: return null
+        setPhoneManagementSessionActive(false)
+        restorePhoneManagedTakServers()
+        publishPhoneManagedChanges(requireNotNull(before), restored)
+        return restored
     }
 
     suspend fun storeCallsign(callsign: String) {
@@ -2909,6 +3116,7 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             changed = (prefs[CALLSIGN] ?: "") != callsign
             prefs[CALLSIGN] = callsign
+            prefs.recordWatchOwnedValue(PHONE_MANAGED_PREVIOUS_CALLSIGN, callsign, identity = true)
         }
         if (changed) requestInteractionPliRefresh(PliRefreshReason.CALLSIGN_CHANGED)
     }
@@ -2957,11 +3165,12 @@ class DataRepository(private val context: Context) {
     suspend fun storeRoleCategory(category: String) =
         context.dataStore.edit { prefs ->
             prefs[SELECTED_CATEGORY] = category
+            prefs.recordWatchOwnedValue(PHONE_MANAGED_PREVIOUS_ROLE_CATEGORY, category, identity = true)
         }
 
     val getRoleCategory: Flow<String> =
         context.dataStore.data.map {prefs ->
-            prefs[SELECTED_CATEGORY] ?: "MIL"
+            prefs[SELECTED_CATEGORY] ?: DEFAULT_ROLE_CATEGORY
         }
 
     fun getRolesForCategory(cat: String): Flow<List<String>> =
@@ -2980,27 +3189,29 @@ class DataRepository(private val context: Context) {
 //    }
 
     val getTeam: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[TEAM] ?: "Orange"
+        prefs[TEAM] ?: DEFAULT_TEAM
     }
 
     suspend fun storeTeam(team: String) {
         var changed = false
         context.dataStore.edit { prefs ->
-            changed = (prefs[TEAM] ?: "Orange") != team
+            changed = (prefs[TEAM] ?: DEFAULT_TEAM) != team
             prefs[TEAM] = team
+            prefs.recordWatchOwnedValue(PHONE_MANAGED_PREVIOUS_TEAM, team, identity = true)
         }
         if (changed) requestInteractionPliRefresh(PliRefreshReason.TEAM_CHANGED)
     }
 
     val getRole: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[SELECTED_ROLE] ?: "Team Member"
+        prefs[SELECTED_ROLE] ?: DEFAULT_ROLE
     }
 
     suspend fun storeRole(role: String) {
         var changed = false
         context.dataStore.edit { prefs ->
-            changed = (prefs[SELECTED_ROLE] ?: "Team Member") != role
+            changed = (prefs[SELECTED_ROLE] ?: DEFAULT_ROLE) != role
             prefs[SELECTED_ROLE] = role
+            prefs.recordWatchOwnedValue(PHONE_MANAGED_PREVIOUS_ROLE, role, identity = true)
         }
         if (changed) requestInteractionPliRefresh(PliRefreshReason.ROLE_CHANGED)
     }
@@ -3054,6 +3265,12 @@ class DataRepository(private val context: Context) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_LOCATION_SERVICE] = enableLocationService
         }
+    }
+
+    suspend fun initializeLocationServiceSetting(managedSetting: Boolean?): Boolean {
+        val enabled = managedSetting ?: DEFAULT_ENABLE_LOCATION_SERVICE
+        storeEnableLocationService(enabled)
+        return enabled
     }
 
     val getEnablePhysiologicalServices: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -3835,10 +4052,14 @@ class DataRepository(private val context: Context) {
     }
 
     private suspend fun awaitTakServerMigration() {
-        (context.applicationContext as WearTakApplication).awaitTakServerMigration()
+        (context.applicationContext as? WearTakApplication)?.awaitTakServerMigration()
     }
 
     suspend fun storeTakServerList(newList: List<TakServerItem>) {
+        storeTakServerList(newList, watchOwned = true)
+    }
+
+    private suspend fun storeTakServerList(newList: List<TakServerItem>, watchOwned: Boolean) {
         awaitTakServerMigration()
         TakServerEndpointIdentity.mutationMutex.withLock {
             val currentList = readTakServerList()
@@ -3856,6 +4077,7 @@ class DataRepository(private val context: Context) {
             val jsonString = gson.toJson(uniqueList)
             Log.i(TAG, "storeTakServerList: writing list size=${uniqueList.size}, len=${jsonString.length}")
             takServerSecretsRepository.setTakServerListJson(jsonString)
+            if (watchOwned) recordWatchOwnedTakServers(jsonString)
         }
 
 //        context.dataStore.edit { preferences ->
@@ -3869,10 +4091,65 @@ class DataRepository(private val context: Context) {
     suspend fun storeProvisionedTakServerList(
         newList: List<TakServerItem>
     ): TakServerConfigurationRefresh {
-        storeTakServerList(newList)
-        return TakServerConfigurationRefresh().also { refresh ->
+        storeTakServerList(newList, watchOwned = false)
+        return requestTakServerConfigurationRefresh()
+    }
+
+    private suspend fun requestTakServerConfigurationRefresh(): TakServerConfigurationRefresh =
+        TakServerConfigurationRefresh().also { refresh ->
             takServerConfigurationRefreshChannel.send(refresh)
         }
+
+    /**
+     * Saves the watch's own TAK server list, including certificates, in encrypted storage
+     * before a phone bond first replaces it. Existing snapshots are never overwritten, and
+     * management periods that began before server snapshots existed keep their servers.
+     */
+    suspend fun snapshotTakServersForPhoneManagement() {
+        awaitTakServerMigration()
+        TakServerEndpointIdentity.mutationMutex.withLock {
+            val prefs = context.dataStore.data.first()
+            if (prefs[PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED] == true || prefs.phoneManagedSnapshotSaved()) {
+                return@withLock
+            }
+            val ownServers = gson.toJson(readTakServerList())
+            takServerSecretsRepository.setPhoneManagedSnapshotJson(ownServers)
+            context.dataStore.edit { it[PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED] = true }
+            Log.i(TAG, "Saved watch TAK servers before phone management")
+        }
+    }
+
+    /**
+     * Restores the TAK server list saved before phone management and asks the TAK
+     * service to reconnect. Returns null when no server snapshot exists.
+     */
+    private suspend fun restorePhoneManagedTakServers(): TakServerConfigurationRefresh? {
+        if (context.dataStore.data.first()[PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED] != true) return null
+        awaitTakServerMigration()
+        val restored = TakServerEndpointIdentity.mutationMutex.withLock {
+            if (context.dataStore.data.first()[PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED] != true) {
+                return@withLock false
+            }
+            val snapshot = when (val read = takServerSecretsRepository.phoneManagedSnapshotRead.first()) {
+                null -> null
+                is DecryptResult.Success -> read.plaintext
+                is DecryptResult.Failure -> {
+                    Log.e(TAG, "Saved watch TAK servers are unreadable; keeping current servers", read.error)
+                    null
+                }
+            }
+            if (snapshot != null) {
+                takServerSecretsRepository.setTakServerListJson(snapshot)
+                MainActivity.Constants.takServerList =
+                    parseTakServerRead(DecryptResult.Success(0, snapshot))
+            }
+            takServerSecretsRepository.setPhoneManagedSnapshotJson(null)
+            context.dataStore.edit { it.remove(PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED) }
+            snapshot != null
+        }
+        if (!restored) return null
+        Log.i(TAG, "Restored watch TAK servers after phone management")
+        return requestTakServerConfigurationRefresh()
     }
 
     suspend fun addTakServerItem(item: TakServerItem): TakServerAddResult {
@@ -3975,6 +4252,14 @@ class DataRepository(private val context: Context) {
         val json = gson.toJson(normalizeTakServerList(list))
         Log.i(TAG, "$operation: writing list size=${list.size}, len=${json.length}")
         takServerSecretsRepository.setTakServerListJson(json)
+        recordWatchOwnedTakServers(json)
+    }
+
+    /** Watch-side server edits made while no live phone session holds the lock survive a restore. */
+    private suspend fun recordWatchOwnedTakServers(json: String) {
+        if (phoneManagementSessionActive.value) return
+        if (context.dataStore.data.first()[PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED] != true) return
+        takServerSecretsRepository.setPhoneManagedSnapshotJson(json)
     }
 
     private suspend fun readTakServerList(): MutableList<TakServerItem> =
@@ -4087,10 +4372,45 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    val getEnableChatCommands: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_CHAT_COMMANDS] ?: DEFAULT_ENABLE_CHAT_COMMANDS
+    }
+
+    val getEnableSensorManager: Flow<Boolean> = context.dataStore.data.map { prefs ->
+        prefs[ENABLE_SENSOR_MANAGER] ?: false
+    }
+
+    suspend fun storeEnableSensorManager(enable: Boolean) {
+        context.dataStore.edit { prefs -> prefs[ENABLE_SENSOR_MANAGER] = enable }
+    }
+
+    suspend fun storeEnableChatCommands(enable: Boolean) {
+        context.dataStore.edit { prefs -> prefs[ENABLE_CHAT_COMMANDS] = enable }
+    }
+
+    val getChatCommandCallsigns: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        ChatCommandAuthorizer.parseAllowList(prefs[CHAT_COMMAND_CALLSIGNS].orEmpty())
+    }
+
+    suspend fun storeChatCommandCallsigns(callsigns: List<String>) {
+        context.dataStore.edit { prefs -> prefs[CHAT_COMMAND_CALLSIGNS] = callsigns.joinToString(",") }
+    }
+
     val getEnableWearTakDevMode: Flow<Boolean> =
         context.dataStore.data
             .map { prefs -> prefs[ENABLE_WEARTAK_DEV_MODE] ?: false }
             .distinctUntilChanged()
+
+    val getBondedLocationDiagnosticsEnabled: Flow<Boolean> =
+        context.dataStore.data
+            .map { prefs -> prefs[BONDED_LOCATION_DIAGNOSTICS_ENABLED] ?: false }
+            .distinctUntilChanged()
+
+    suspend fun storeBondedLocationDiagnosticsEnabled(enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            prefs[BONDED_LOCATION_DIAGNOSTICS_ENABLED] = enabled
+        }
+    }
 
     // NOTE: Store as false on every app boot!
     suspend fun storeEnableWearTakDevMode(enable: Boolean) {
@@ -4148,6 +4468,7 @@ class DataRepository(private val context: Context) {
     suspend fun storeEnableDynamicReportingStrategy(enableDynamicRS: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_DYNAMIC_REPORTING_STRATEGY] = enableDynamicRS
+            prefs.recordWatchOwnedValue(PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING, enableDynamicRS, identity = false)
         }
         _enableDynamicReportingStrategy.emit(enableDynamicRS)
     }
@@ -4164,6 +4485,9 @@ class DataRepository(private val context: Context) {
     suspend fun storeConstantReportingInterval(constantReportingInterval: Int) {
         context.dataStore.edit { prefs ->
             prefs[CONSTANT_REPORTING_INTERVAL] = constantReportingInterval
+            prefs.recordWatchOwnedValue(
+                PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL, constantReportingInterval, identity = false
+            )
         }
         _constantReportingInterval.emit(constantReportingInterval)
     }
@@ -5030,6 +5354,28 @@ class DataRepository(private val context: Context) {
         private val PHONE_MANAGED_COMPANION_ADDRESS = stringPreferencesKey("phone_managed_companion_address")
         private val PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING = booleanPreferencesKey("phone_managed_previous_dynamic_reporting")
         private val PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL = intPreferencesKey("phone_managed_previous_constant_interval")
+        private val PHONE_MANAGED_SNAPSHOT_SAVED = booleanPreferencesKey("phone_managed_snapshot_saved")
+        // Marker only; the server list itself is stored in the encrypted TAK server store.
+        private val PHONE_MANAGED_TAK_SERVER_SNAPSHOT_SAVED =
+            booleanPreferencesKey("phone_managed_tak_server_snapshot_saved")
+        private val PHONE_MANAGED_PREVIOUS_CALLSIGN = stringPreferencesKey("phone_managed_previous_callsign")
+        private val PHONE_MANAGED_PREVIOUS_TEAM = stringPreferencesKey("phone_managed_previous_team")
+        private val PHONE_MANAGED_PREVIOUS_ROLE = stringPreferencesKey("phone_managed_previous_role")
+        private val PHONE_MANAGED_PREVIOUS_ROLE_CATEGORY = stringPreferencesKey("phone_managed_previous_role_category")
+        private val PHONE_MANAGED_SNAPSHOT_KEYS = listOf(
+            PHONE_MANAGED_SNAPSHOT_SAVED,
+            PHONE_MANAGED_PREVIOUS_DYNAMIC_REPORTING,
+            PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL,
+            PHONE_MANAGED_PREVIOUS_CALLSIGN,
+            PHONE_MANAGED_PREVIOUS_TEAM,
+            PHONE_MANAGED_PREVIOUS_ROLE,
+            PHONE_MANAGED_PREVIOUS_ROLE_CATEGORY
+        )
+        private const val DEFAULT_TEAM = "Orange"
+        private const val DEFAULT_ROLE = "Team Member"
+        private const val DEFAULT_ROLE_CATEGORY = "MIL"
+        private const val DEFAULT_TEAM_LIST =
+            "White,Yellow,Orange,Magenta,Red,Maroon,Purple,Dark Blue,Blue,Cyan,Teal,Green,Dark Green,Brown"
         private val DYNAMIC_REPORTING_INTERVAL = intPreferencesKey("dynamic_reporting_interval")
         private val STATIONARY_REPORTING_INTERVAL = intPreferencesKey("stationary_reporting_interval")
         private val ON_FOOT_REPORTING_INTERVAL = intPreferencesKey("on_foot_reporting_interval")
@@ -5041,7 +5387,12 @@ class DataRepository(private val context: Context) {
         private val SELECTED_PHYSIO_METRIC = stringPreferencesKey("selected_physio_metric")
         private val ENABLE_PHYSIOLOGICAL_ALERTS = booleanPreferencesKey("enable_physiological_alerts")
         private val ENABLE_COMPANION_APP_SERVICE = booleanPreferencesKey("enable_companion_app_service")
+        private val ENABLE_CHAT_COMMANDS = booleanPreferencesKey("enable_chat_commands")
+        private val ENABLE_SENSOR_MANAGER = booleanPreferencesKey("enable_sensor_manager")
+        private val CHAT_COMMAND_CALLSIGNS = stringPreferencesKey("chat_command_callsigns")
         private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
+        private val BONDED_LOCATION_DIAGNOSTICS_ENABLED =
+            booleanPreferencesKey("bonded_location_diagnostics_enabled")
         private val NETWORK_PREFERENCES_LOCKED = booleanPreferencesKey("network_preferences_locked")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val RESTING_HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_high_alert_bpm_threshold")

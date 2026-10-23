@@ -19,6 +19,64 @@ import java.util.Date
 import javax.net.ssl.SSLHandshakeException
 
 class TakEnrollmentTest {
+    @Test fun openTakServerAuthorityIsParsedInstalledAndTrusted() {
+        val leaf = chain[1]
+        val ca = chain[0]
+        val pem = "-----BEGIN CERTIFICATE-----\n${b64(ca)}\n-----END CERTIFICATE-----"
+        listOf(
+            """{"signedCert":"${b64(leaf)}","ca":"${b64(ca)}"}""",
+            """{"signedCert":"${b64(leaf)}","ca":"${pem.replace("\n", "\\n")}"}""",
+            "<?xml version=\"1.0\" encoding=\"UTF-8\"?><enrollment>" +
+                "<signedCert>${b64(leaf)}</signedCert><ca>$pem</ca></enrollment>",
+            "<r:enrollment xmlns:r=\"urn:tak\"><r:signedCert>${b64(leaf)}</r:signedCert>" +
+                "<r:ca>$pem</r:ca></r:enrollment>"
+        ).forEach {
+            val parsed = TakEnrollment.parseSignResponse(it)
+            assertEquals(leaf, parsed.signedCert)
+            assertEquals(listOf("ca" to ca), parsed.authorities)
+            val ks = KeyStore.getInstance("PKCS12")
+            parsed.install(ks, keys[1].private, "client", password)
+            assertTrue(ks.isCertificateEntry("ca"))
+            assertEquals(listOf(leaf, ca), ks.getCertificateChain("client").toList())
+            assertEquals(listOf(ca), TakEnrollment.selectTrustAnchors(ks))
+        }
+    }
+
+    @Test fun unnumberedAuthoritySortsBeforeNumberedAuthorities() {
+        val entries = linkedMapOf("ca10" to b64(chain[0]), "ca2" to b64(chain[1]),
+            "ca0" to b64(chain[2]), "ca" to b64(chain[0]))
+        val json = """{"signedCert":"${b64(chain[3])}",${entries.entries.joinToString { "\"${it.key}\":\"${it.value}\"" }}}"""
+        val xml = "<enrollment><signedCert>${b64(chain[3])}</signedCert>" +
+            entries.entries.joinToString("") { "<${it.key}>${it.value}</${it.key}>" } + "</enrollment>"
+        listOf(json, xml).forEach {
+            assertEquals(listOf("ca", "ca0", "ca2", "ca10"),
+                TakEnrollment.parseSignResponse(it).authorities.map { ca -> ca.first })
+        }
+    }
+
+    @Test fun blankOptionalOpenTakServerAuthorityIsAccepted() {
+        listOf(
+            """{"signedCert":"${b64(chain[1])}","ca":null,"ca0":"${b64(chain[0])}"}""",
+            "<enrollment><signedCert>${b64(chain[1])}</signedCert><ca> </ca>" +
+                "<ca0>${b64(chain[0])}</ca0></enrollment>"
+        ).forEach {
+            assertEquals(listOf("ca0"), TakEnrollment.parseSignResponse(it).authorities.map { ca -> ca.first })
+        }
+    }
+
+    @Test fun malformedOpenTakServerAuthorityIsRejected() {
+        listOf(
+            """{"signedCert":"${b64(chain[1])}","ca":"bad!"}""",
+            """{"signedCert":"${b64(chain[1])}","ca":123}""",
+            """{"signedCert":"${b64(chain[1])}","ca":{}}""",
+            "<enrollment><signedCert>${b64(chain[1])}</signedCert><ca>bad!</ca></enrollment>",
+            "<enrollment><signedCert>${b64(chain[1])}</signedCert>" +
+                "<ca>${b64(chain[0])}</ca><ca>${b64(chain[0])}</ca></enrollment>"
+        ).forEach {
+            assertThrows(Exception::class.java) { TakEnrollment.parseSignResponse(it) }
+        }
+    }
+
     @Test fun jsonAndXmlAcceptLeafWithoutAuthorities() {
         val leaf = chain.last()
         listOf("""{"signedCert":"${b64(leaf)}","extra":"ignored"}""",

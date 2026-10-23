@@ -25,6 +25,9 @@ object TakServerSecretsKeys {
     // encrypted TAK server list JSON
     val TAK_SERVER_LIST_JSON = stringPreferencesKey("tak_server_list_json")
 
+    // encrypted copy of the watch's own TAK server list saved before a phone bond replaced it
+    val PHONE_MANAGED_TAK_SERVER_SNAPSHOT_JSON = stringPreferencesKey("phone_managed_tak_server_snapshot_json")
+
     // crypto metadata
     val CRYPTO_VERSION = intPreferencesKey("takserver.crypto_version")
 }

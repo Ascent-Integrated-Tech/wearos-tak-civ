@@ -35,14 +35,28 @@ android {
         applicationId "com.aitech.weartak_civ"
         minSdk 34
         targetSdk 34
-        versionCode 583
-        versionName "5.8.0.3"
+        def baseVersionCode = 583
+        def baseVersionName = "5.8.0.3"
 
         def buildGitUrl = gitUrl() ?: "unknown"
         def buildGitBranch = gitBranch() ?: "unknown"
         def buildGitCommit = gitCommit() ?: "unknown"
 
         def buildGitCommitShort = buildGitCommit.length() >= 8 ? buildGitCommit.substring(0, 8) : buildGitCommit
+
+        // CI builds get a unique, increasing versionCode per GitLab pipeline so MDMs such as
+        // Knox Manage accept each upload, and a versionName that identifies the pipeline/commit.
+        def ciPipelineIid = System.getenv("CI_PIPELINE_IID")?.isInteger() ? System.getenv("CI_PIPELINE_IID").toInteger() : null
+        if (ciPipelineIid != null) {
+            if (ciPipelineIid >= 10000) {
+                throw new GradleException("CI_PIPELINE_IID ${ciPipelineIid} exceeds the versionCode pipeline range (0-9999).")
+            }
+            versionCode baseVersionCode * 10000 + ciPipelineIid
+            versionName "${baseVersionName}-p${ciPipelineIid}+${(System.getenv('CI_COMMIT_SHORT_SHA') ?: buildGitCommitShort)}"
+        } else {
+            versionCode baseVersionCode
+            versionName baseVersionName
+        }
         def safeGitBranch = buildGitBranch.replaceAll("[^A-Za-z0-9._-]", "-")
 
         def buildTimestampUtc = System.getenv("WEARTAK_BUILD_TIMESTAMP_UTC") ?: Instant.now().toString()
@@ -52,7 +66,7 @@ android {
             useSupportLibrary true
         }
 
-        setProperty("archivesBaseName", "${rootProject.name}-${versionName}-${versionCode}-" + "${safeGitBranch}-${buildGitCommitShort}")
+        setProperty("archivesBaseName", "${rootProject.name}-${baseVersionName}-${versionCode}-" + "${safeGitBranch}-${buildGitCommitShort}")
 
         buildConfigField "String", "GIT_REPOSITORY", "\"${buildGitUrl}\""
         buildConfigField "String", "GIT_BRANCH", "\"${buildGitBranch}\""
@@ -144,6 +158,7 @@ android {
 
     buildTypes {
         debug {
+            applicationIdSuffix ".dev"
             minifyEnabled false
             shrinkResources false
             signingConfig signingConfigs.debug
@@ -334,6 +349,11 @@ dependencies {
 
     androidTestImplementation platform(libs.compose.bom)
     androidTestImplementation libs.ui.test.junit4
+    testImplementation platform(libs.compose.bom)
+    testImplementation libs.ui.test.junit4
+    testImplementation 'androidx.test:core:1.6.1'
+    testImplementation 'androidx.test.ext:junit:1.2.1'
+    testImplementation 'androidx.test:runner:1.6.2'
     androidTestImplementation 'androidx.test:core:1.6.1'
     androidTestImplementation 'androidx.test.ext:junit:1.2.1'
     androidTestImplementation 'androidx.test:runner:1.6.2'

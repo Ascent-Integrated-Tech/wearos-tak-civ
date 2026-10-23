@@ -899,6 +899,9 @@ fun markerIconFromString(markerType: String): Painter {
         MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral)
         MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral)
         "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
+        "a-f-A-M-F-Q" -> painterResource(R.drawable.drone_icon_friendly)
+        "a-u-A-M-F-Q" -> painterResource(R.drawable.drone_icon)
+        "a-h-A-M-F-Q" -> painterResource(R.drawable.drone_icon_hostile)
         else ->  //TODO: Change to error icon
             painterResource(R.drawable.unknown)
     }
@@ -912,6 +915,9 @@ fun markerTextFromString(markerType: String): String {
         MarkerType.FRIENDLY.type -> "Friendly"
         MarkerType.HOSTILE.type -> "Hostile"
         MarkerType.NEUTRAL.type -> "Neutral"
+        "a-f-A-M-F-Q" -> "Friendly UAV"
+        "a-u-A-M-F-Q" -> "Unknown UAV"
+        "a-h-A-M-F-Q" -> "Hostile UAV"
         else -> "ERROR"
     }
     return markerString
@@ -1984,59 +1990,26 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                                 lon = loc.lon,
                                 orientation = markerVectorUi?.orientation ?: 0F
                             )
-                            if (activeBloodhound?.uid == marker.uid) {
-                                Button(
-                                    onClick = {
-                                        bhRepo.requestInPosition(marker.uid)
-                                        requestBloodhoundComplicationUpdate(context)
-                                    },
-                                    modifier = Modifier.padding(top = 10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = colors.primary,
-                                        contentColor = Color.Black
-                                    ),
-                                ) {
-                                    androidx.wear.compose.material.Text(
-                                        text = stringResource(R.string.npos),
-                                        fontSize = 15.sp,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = Color.Black,
-                                        fontWeight = FontWeight.SemiBold,
+                            PointBloodhoundAction(
+                                isActive = activeBloodhound?.uid == marker.uid,
+                                onBloodhound = {
+                                    bhRepo.addMarkerTarget(
+                                        uid = marker.uid,
+                                        title = marker.title.ifBlank { "Marker" },
+                                        markerType = marker.markerType,
+                                        lat = loc.lat,
+                                        lon = loc.lon,
+                                        time = marker.timeReceived
                                     )
+                                    bhRepo.requestActivateBloodhound(marker.uid)
+                                    requestBloodhoundComplicationUpdate(context)
+                                    Log.i(BloodhoundActivity.Constants.TAG, "Requesting Ack and Activation of bloodhound")
+                                },
+                                onInPosition = {
+                                    bhRepo.requestInPosition(marker.uid)
+                                    requestBloodhoundComplicationUpdate(context)
                                 }
-                            } else {
-                                Button(
-                                    onClick = {
-                                        bhRepo.addMarkerTarget(
-                                            uid = marker.uid,
-                                            title = marker.title.ifBlank { "Marker" },
-                                            markerType = marker.markerType,
-                                            lat = loc!!.lat,
-                                            lon = loc.lon,
-                                            time = marker.timeReceived
-                                        )
-
-                                        bhRepo.requestActivateBloodhound(marker.uid)
-                                        requestBloodhoundComplicationUpdate(context)
-
-                                        Log.i(BloodhoundActivity.Constants.TAG, "Requesting Ack and Activation of bloodhound")
-                                    },
-                                    modifier = Modifier.padding(bottom = 10.dp),
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = colors.primary,
-                                        contentColor = Color.Black
-                                    ),
-
-                                    ) {
-                                    androidx.wear.compose.material.Text(
-                                        text = "Bloodhound to Marker",
-                                        fontSize = 15.sp,
-                                        overflow = TextOverflow.Ellipsis,
-                                        color = Color.Black,
-                                        fontWeight = FontWeight.SemiBold,
-                                    )
-                                }
-                            }
+                            )
                         }
                         Button(
                             onClick = {

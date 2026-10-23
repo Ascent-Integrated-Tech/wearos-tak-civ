@@ -61,8 +61,9 @@ class ChatPickerFlowTest {
         assertEquals(ActivityInfo.LAUNCH_MULTIPLE, info(ChatContactPickerActivity::class.java).launchMode)
         assertFalse(info(ChatContactPickerActivity::class.java).exported)
         assertEquals(ActivityInfo.LAUNCH_SINGLE_TASK, info(ChatActivity::class.java).launchMode)
-        assertEquals("com.aitech.weartak_civ.chat", info(ChatActivity::class.java).taskAffinity)
-        assertEquals(ActivityInfo.LAUNCH_SINGLE_INSTANCE, info(MapActivity::class.java).launchMode)
+        assertEquals("com.aitech.weartak_civ", info(ChatActivity::class.java).taskAffinity)
+        assertEquals(ActivityInfo.LAUNCH_SINGLE_TASK, info(MapActivity::class.java).launchMode)
+        assertEquals(info(MapActivity::class.java).taskAffinity, info(ChatActivity::class.java).taskAffinity)
     }
 
     @Test fun invalidSelfBroadcastAndMalformedSelectionDoNotNavigateOrSend() {

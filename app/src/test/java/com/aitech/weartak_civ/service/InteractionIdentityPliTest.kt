@@ -7,6 +7,7 @@ import com.aitech.weartak_civ.cot.CotCompanionPayload
 import com.aitech.weartak_civ.cot.CotEndpointDispatcher
 import com.aitech.weartak_civ.cot.CotOutboundMessage
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.InteractionPliRefresh
@@ -30,6 +31,10 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.io.StringReader
+import javax.xml.parsers.DocumentBuilderFactory
+import org.w3c.dom.Element
+import org.xml.sax.InputSource
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
@@ -67,6 +72,7 @@ class InteractionIdentityPliTest {
             realRepo.snapshotInteractionPli(firstArg())
         }
         val companion = mockk<CompanionAppRepository>()
+        every { companion.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
         every { companion.companionAppReady } returns MutableStateFlow(false)
         val sent = LinkedBlockingQueue<CotOutboundMessage>()
         val dispatcher = mockk<CotEndpointDispatcher>()
@@ -98,7 +104,30 @@ class InteractionIdentityPliTest {
         assertEquals("Blue", snapshot.systemData.team)
         assertEquals(fix.time, snapshot.time.time)
         assertTrue(message.xml.contains("callsign='Latest'"))
+        val event = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+            .parse(InputSource(StringReader(message.xml))).documentElement
+        assertEquals("test-watch", event.getAttribute("uid"))
+        val group = event.getElementsByTagName("__group").item(0) as Element
+        assertEquals("Medic", group.getAttribute("role"))
+        assertEquals("Blue", group.getAttribute("name"))
+        val takv = event.getElementsByTagName("takv").item(0) as Element
+        assertEquals("WearTAK", takv.getAttribute("platform"))
+        assertEquals(BuildConfig.VERSION_NAME, takv.getAttribute("version"))
         assertNull(sent.poll(250, TimeUnit.MILLISECONDS))
+        coEvery { repo.snapshotPli() } returns snapshot
+        val gateway = companion.gateway
+        gateway.negotiate(org.json.JSONObject().put("version", 1).put("session", "metadata-service-test"))
+        gateway.confirm("metadata-service-test")
+        every { repo.getEnableCompanionAppService } returns flowOf(true)
+        every { companion.companionAppReady } returns MutableStateFlow(true)
+        val gatewaySent = mutableListOf<String>()
+        every { companion.offerGatewayCot(any()) } answers { gatewaySent += firstArg<String>(); true }
+        service.buildAndSendPhysioLocationCotMsg()
+        assertEquals(listOf(message.xml), gatewaySent)
+        assertNull(sent.poll(150, TimeUnit.MILLISECONDS))
+        gateway.reset()
+        every { repo.getEnableCompanionAppService } returns flowOf(false)
+        every { companion.companionAppReady } returns MutableStateFlow(false)
         currentLocation.value = Location(fix).apply {
             elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos() - 4_000_000_000L
         }

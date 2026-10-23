@@ -63,6 +63,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.collectAsState
@@ -70,13 +71,18 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.livedata.observeAsState
 import androidx.compose.runtime.mutableStateListOf
+import android.content.Intent
 import androidx.compose.runtime.mutableStateOf
+import com.aitech.weartak_civ.command.ChatCommandAuthorizer
+import com.aitech.weartak_civ.command.PendingServerEnrollment
+import com.aitech.weartak_civ.command.ServerEnrollment
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
@@ -86,6 +92,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
@@ -154,6 +162,7 @@ import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_ESCALATED
 import com.aitech.weartak_civ.BLOODHOUND_PROXIMITY_INTENSITY_PERSISTENT
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.setAirplaneMode
+import com.aitech.weartak_civ.data.takserver.SideloadedClientCert
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.DataRepository.SitxGroupStatus
 import com.aitech.weartak_civ.events.MessageEvent
@@ -161,6 +170,7 @@ import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_REMOVED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.SERVER_TOGGLED
 import com.aitech.weartak_civ.integration.plugin.PluginCompatibilityStatus
+import com.aitech.weartak_civ.integration.plugin.PluginActivityLauncher
 import com.aitech.weartak_civ.integration.plugin.PluginLoadingStatus
 import com.aitech.weartak_civ.integration.plugin.PluginUI
 import com.aitech.weartak_civ.integration.plugin.PluginViewModel
@@ -213,6 +223,7 @@ import kotlin.String
 class WearTAKSettingsActivity : ComponentActivity() {
     companion object Constants {
         const val EXTRA_OPEN_NETWORK_PREFERENCES = "extra_open_network_preferences"
+        const val EXTRA_ENROLLMENT_TOKEN = "extra_enrollment_token"
         val TAG = "WearTAK-" + WearTAKSettingsActivity::class.java.simpleName
         val callsignState = MutableLiveData<String>("")
         val licenseState = MutableLiveData<String>("")
@@ -265,9 +276,18 @@ class WearTAKSettingsActivity : ComponentActivity() {
             (R.string.udp))
 
     }
+    private var enrollmentToken by mutableStateOf<String?>(null)
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        enrollmentToken = intent.getStringExtra(EXTRA_ENROLLMENT_TOKEN)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "WearTAKSettingsActivity onCreate()")
+        enrollmentToken = intent.getStringExtra(EXTRA_ENROLLMENT_TOKEN)
 //        WearTAKSettingsActivity.Constants.settingsActivity = this
         enableEdgeToEdge()
         setContent {
@@ -284,6 +304,8 @@ class WearTAKSettingsActivity : ComponentActivity() {
                             EXTRA_OPEN_NETWORK_PREFERENCES,
                             false
                         ),
+                        enrollmentToken = enrollmentToken,
+                        onEnrollmentHandled = { enrollmentToken = null },
                         onExit = { finish() }
                     )
                 }
@@ -298,6 +320,8 @@ fun WearTAKSettingsNav(
     sitxVm: SitxViewModel,
     pluginVm: PluginViewModel,
     openNetworkPreferences: Boolean = false,
+    enrollmentToken: String? = null,
+    onEnrollmentHandled: () -> Unit = {},
     onExit: () -> Unit
 ) {
     val navController = rememberSwipeDismissableNavController()
@@ -343,8 +367,6 @@ fun WearTAKSettingsNav(
 
     val enablePhysiologicalServices by settingsVm.savedEnablePhysiologicalServices.collectAsState()
     val enableBatdokCot by settingsVm.savedEnableBatdokCot.collectAsState()
-    val enableLocationService by settingsVm.savedEnableLocationService.collectAsState()
-
     val takServerList by settingsVm.savedTakServerList.collectAsState()
 
     val enableMulticast by settingsVm.savedEnableMulticast.collectAsState()
@@ -360,10 +382,24 @@ fun WearTAKSettingsNav(
     val sitxEvent by settingsVm.lastSitxEvent.collectAsState()
 
     val enableCompanionAppService by settingsVm.savedEnableCompanionAppService.collectAsState()
+    val enableChatCommands by settingsVm.savedEnableChatCommands.collectAsState()
+    val enableSensorManager by settingsVm.savedEnableSensorManager.collectAsState()
+    val chatCommandCallsigns by settingsVm.savedChatCommandCallsigns.collectAsState()
+    var enrollPrefill by remember { mutableStateOf<ServerEnrollment?>(null) }
+    LaunchedEffect(enrollmentToken) {
+        if (enrollmentToken != null) {
+            PendingServerEnrollment.take(enrollmentToken)?.let {
+                enrollPrefill = it
+                navController.navigate("new_server_screen") { launchSingleTop = true }
+            }
+            onEnrollmentHandled()
+        }
+    }
     val enableSmsAlerts by settingsVm.savedEnableSmsForAlerts.collectAsState()
     val smsNumberList by settingsVm.savedSmsNumbersList.collectAsState()
     val enableDittoService by settingsVm.savedEnableDittoService.collectAsState()
     val dittoPdlSource by dataRepository.getDittoPdlSource.collectAsState(initial = DittoPdlSource.COMMUNITY)
+    val dittoCustomPdl by dataRepository.getDittoCustomPdl.collectAsState(initial = "")
     val enableTabletCommandEndpoint by settingsVm.savedEnableTabletCommandEndpoint.collectAsState()
     val tabletCommandEndpoint by settingsVm.savedTabletCommandEndpoint.collectAsState()
     val tabletCommandAPIKey by settingsVm.savedTabletCommandApikey.collectAsState()
@@ -385,10 +421,12 @@ fun WearTAKSettingsNav(
 
     val isDevMode by settingsVm.savedEnableWearTakDevMode.collectAsState()
     val networkPreferencesLocked by settingsVm.savedNetworkPreferencesLocked.collectAsState()
+    val phoneManagedNotice = stringResource(R.string.phone_managed_by_paired_phone)
+    val networkLockedNotice = stringResource(R.string.network_settings_locked)
     val showPhoneManagedNotice = {
         Toast.makeText(
             context,
-            context.getString(R.string.phone_managed_by_paired_phone),
+            phoneManagedNotice,
             Toast.LENGTH_SHORT
         ).show()
     }
@@ -405,12 +443,11 @@ fun WearTAKSettingsNav(
     val pluginList by pluginVm.plugins.collectAsState()
 
     val enableGunshotDetection by settingsVm.savedEnableOnnxGunshotService.collectAsState()
-    settingsVm.storeEnableOnnxGunshotService(false)
     val gunshotTriggerThreshold by settingsVm.savedOnnxGunshotTriggerThresholdPercent.collectAsState()
     val enableUasDetection by settingsVm.savedEnableOnnxUasService.collectAsState()
-    settingsVm.storeEnableOnnxGunshotService(false)
     val uasTriggerThreshold by settingsVm.savedOnnxUasTriggerThresholdPercent.collectAsState()
     val crmThresholdValues by settingsVm.savedCrmThresholdRanges.collectAsState()
+    val enableCrm by settingsVm.savedEnableCrmService.collectAsState()
     val wearTakInfo by settingsVm.wearTakInfo.collectAsState()
 
     LaunchedEffect(phoneManagedSettings, networkPreferencesLocked) {
@@ -485,7 +522,7 @@ fun WearTAKSettingsNav(
                                         onClick = {
                                             Toast.makeText(
                                                 context,
-                                                context.getString(R.string.network_settings_locked),
+                                                networkLockedNotice,
                                                 Toast.LENGTH_SHORT
                                             ).apply {
                                                 setGravity(Gravity.TOP or Gravity.CENTER_HORIZONTAL, 0, 50)
@@ -514,40 +551,27 @@ fun WearTAKSettingsNav(
                                     navController = navController
                                 )
                             }
-                            if (isDevMode) {
-                                item {
-                                    WearTAKTitleChip(
-                                        title = "Beta Features",
-                                        route = "beta_features",
-                                        navController = navController
-                                    )
-                                }
-                                item {
-                                    WearTAKTitleChipWithState(
-                                        title = "Dev Debug Tools",
-                                        route = "debug_tools",
-                                        state = "View network and build information",
-                                        navController = navController
-                                    )
-                                }
+                            item {
+                                WearTAKTitleChip(
+                                    title = stringResource(R.string.admin_preferences),
+                                    route = "admin_preferences",
+                                    enabled = isDevMode,
+                                    navController = navController
+                                )
+                            }
+                            item {
+                                WearTAKTitleChip(
+                                    title = stringResource(R.string.developer_preferences),
+                                    route = "debug_tools",
+                                    enabled = isDevMode,
+                                    navController = navController
+                                )
                             }
                             item {
                                 WearTAKDebugVersionText(
                                     wearTakInfo = wearTakInfo,
                                     devModeEnabled = isDevMode,
-                                    onDebugToggled = { enabled ->
-                                        // Optional: if you want to immediately test something when debug is enabled
-                                        if (enabled) {
-                                            // e.g., trigger a manual battery-alert test hook
-                                            // triggerTestBatteryAlert()
-                                        } else {
-                                            if (enableGunshotDetection){
-                                                settingsVm.storeEnableOnnxGunshotService(false)
-                                            }
-                                            if (enableUasDetection){
-                                                settingsVm.storeEnableOnnxUasService(false)
-                                            }
-                                        }
+                                    onDebugToggled = {
                                         setAirplaneMode("0")
                                     },
                                     settingsVm = settingsVm
@@ -681,14 +705,6 @@ fun WearTAKSettingsNav(
                                 )
                             },
                             title = stringResource(R.string.batdok),
-                            description = stringResource(R.string.on_off)
-                        )
-                    }
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableLocationService,
-                            onCheckedChange = { settingsVm.storeEnableLocationService(it) },
-                            title = "Location Service",
                             description = stringResource(R.string.on_off)
                         )
                     }
@@ -1474,25 +1490,6 @@ fun WearTAKSettingsNav(
                         )
                     }
                     item {
-                        WearTAKToggleChip(
-                            checkedLive = enableDittoService,
-                            onCheckedChange = { settingsVm.storeEnableDittoService(it) },
-                            title = stringResource(R.string.ditto),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
-                    item {
-                        WearTAKTitleChipWithState(
-                            route = "ditto_pdl",
-                            title = stringResource(R.string.ditto_identity),
-                            state = when (dittoPdlSource) {
-                                DittoPdlSource.COMMUNITY -> stringResource(R.string.community_pdl)
-                                DittoPdlSource.CUSTOM -> stringResource(R.string.custom_pdl)
-                            },
-                            navController = navController
-                        )
-                    }
-                    item {
                         WearTAKTitleChipWithState(
                             route = "tablet_command",
                             title = stringResource(R.string.tablet_command),
@@ -1530,7 +1527,7 @@ fun WearTAKSettingsNav(
             val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
             val disconnectedStatus = remember { androidx.lifecycle.MutableLiveData(TAK_SERVER_DISCONNECTED_STRING) }
             WearTAKPageWithBackArrow(
-                stringResource(R.string.tak_server_connections),
+                stringResource(R.string.tak_servers_title),
                 {
                     itemsIndexed(
                         takServerList.alphabetizedServerEntries { it.name },
@@ -1609,29 +1606,33 @@ fun WearTAKSettingsNav(
                     item {
                         Spacer(modifier = Modifier.height(10.dp))
                     }
-                    item {
-                        WearTAKTitleChip(
-                            icon = { Icon(Icons.Filled.Add, contentDescription = "Add") },
-                            title = stringResource(R.string.add_network),
-                            route = "new_server_screen",
-                            navController = navController
-                        )
-                    }
                 },
                 navController,
+                titleAction = {
+                    WearTAKTitleAddButton(
+                        contentDescription = stringResource(R.string.add_tak_server),
+                        onClick = {
+                            navController.navigate("new_server_screen") { launchSingleTop = true }
+                        }
+                    )
+                },
             )
         }
 
         composable("new_server_screen"){
             val isNetworkConnected = remember { mutableStateOf(false) }
-            var name by remember { mutableStateOf("") }
-            var address by remember { mutableStateOf("") }
-            var port by remember { mutableStateOf("8089") }
+            val prefill = remember { enrollPrefill }
+            DisposableEffect(Unit) { onDispose { enrollPrefill = null } }
+            var name by remember { mutableStateOf(prefill?.name.orEmpty()) }
+            var address by remember { mutableStateOf(prefill?.address.orEmpty()) }
+            var port by remember { mutableStateOf(prefill?.port?.toString() ?: "8089") }
             var username by remember { mutableStateOf("") }
             var password by remember { mutableStateOf("") }
             var isP12Cert = false
             val serverSettingsChanged = remember { mutableStateOf(false) }
             val scope = rememberCoroutineScope()
+            val certStatus = rememberSideloadedCertStatus(address)
+            val credentialsOptional = certStatus is SideloadedClientCert.Status.Found
 
             WearTAKPageWithConfirmCancel(
                 title = stringResource(R.string.new_server),
@@ -1657,17 +1658,24 @@ fun WearTAKSettingsNav(
                             keyboardType = KeyboardType.Number,
                         ).text
                     }
+                    if (certStatus != SideloadedClientCert.Status.None) {
+                        item { SideloadedCertNotice(certStatus) }
+                    }
                     item {
                         username = WearTAKOutlinedTextField(
                             string = username,
-                            label = stringResource(R.string.username),
+                            label = stringResource(
+                                if (credentialsOptional) R.string.username_optional else R.string.username
+                            ),
                             keyboardType = KeyboardType.Text
                         ).text
                     }
                     item {
                         password = WearTAKOutlinedTextField(
                             string = password,
-                            label = stringResource(R.string.password),
+                            label = stringResource(
+                                if (credentialsOptional) R.string.password_optional else R.string.password
+                            ),
                             keyboardType = KeyboardType.Text
                         ).text
                     }
@@ -1678,9 +1686,9 @@ fun WearTAKSettingsNav(
                 navController = navController,
                 onClickCancel = {},
                 onClickConfirm = {
-                    if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() && username.isNotBlank() &&
-                        password.isNotBlank()) {
-                        val takServerItem = DataRepository.TakServerItem(true, name, address, port.toInt(),
+                    if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() &&
+                        (credentialsOptional || (username.isNotBlank() && password.isNotBlank()))) {
+                        val takServerItem = DataRepository.TakServerItem(true, name, address.trim(), port.toInt(),
                             isP12Cert, username, password, "", "")
                         settingsVm.saveAndRegisterTakServer(takServerItem)
                         serverSettingsChanged.value = true
@@ -1712,6 +1720,8 @@ fun WearTAKSettingsNav(
             var password by remember { mutableStateOf(takServerList.getOrNull(index)?.password.orEmpty()) }
             var isP12Cert by remember { mutableStateOf(takServerList.get(index)?.isP12Cert ?: false) }
             val serverConnSettingsChanged = remember { mutableStateOf(false) }
+            val certStatus = rememberSideloadedCertStatus(address)
+            val credentialsOptional = certStatus is SideloadedClientCert.Status.Found
             Log.d(TAG, "address=$address, serverSettingsChanged=${serverConnSettingsChanged.value}")
 
             WearTAKPageWithConfirmCancel(
@@ -1754,17 +1764,24 @@ fun WearTAKSettingsNav(
                                 keyboardType = KeyboardType.Number
                             ).text
                         }
+                        if (certStatus != SideloadedClientCert.Status.None) {
+                            item { SideloadedCertNotice(certStatus) }
+                        }
                         item {
                             username = WearTAKOutlinedTextField(
                                 string = username,
-                                label = stringResource(R.string.username),
+                                label = stringResource(
+                                    if (credentialsOptional) R.string.username_optional else R.string.username
+                                ),
                                 keyboardType = KeyboardType.Text
                             ).text
                         }
                         item {
                             password = WearTAKOutlinedTextField(
                                 string = password,
-                                label = stringResource(R.string.password),
+                                label = stringResource(
+                                    if (credentialsOptional) R.string.password_optional else R.string.password
+                                ),
                                 keyboardType = KeyboardType.Text
                             ).text
                         }
@@ -1786,8 +1803,8 @@ fun WearTAKSettingsNav(
                    },
                 onClickConfirm = {
                     if (name.isNotBlank() && address.isNotBlank() && port.isNotBlank() &&
-                        (if (isP12Cert) { true } else { username.isNotBlank() } ) &&
-                        (if (isP12Cert) { true } else { password.isNotBlank() } ) ) {
+                        (if (isP12Cert || credentialsOptional) { true } else { username.isNotBlank() } ) &&
+                        (if (isP12Cert || credentialsOptional) { true } else { password.isNotBlank() } ) ) {
                         val takServerDetails = takServerList.get(index)
                         Log.d(TAG, "EditServerPage: onClickConfirm all settings good")
                         Log.d(
@@ -2074,6 +2091,78 @@ fun WearTAKSettingsNav(
             WearTAKSitxStatusAuthorizationScreen(navController, sitxEvent)
         }
 
+        composable("chat_commands") {
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.chat_commands),
+                columnContent = {
+                    item {
+                        WearTAKTitleChip(
+                            route = "chat_command_callsigns",
+                            title = stringResource(R.string.chat_command_callsigns),
+                            navController = navController
+                        )
+                    }
+                    item {
+                        Text(
+                            text = stringResource(R.string.chat_command_examples),
+                            fontSize = 14.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    itemsIndexed(
+                        listOf(
+                            R.string.chat_command_example_team,
+                            R.string.chat_command_example_role,
+                            R.string.chat_command_example_callsign,
+                        )
+                    ) { _, example ->
+                        Text(
+                            text = stringResource(example),
+                            fontSize = 12.sp,
+                            lineHeight = 15.sp,
+                            softWrap = true,
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 4.dp),
+                        )
+                    }
+                },
+                navController,
+            )
+        }
+
+        composable("sensor_manager") {
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.sensor_manager),
+                columnContent = {
+                    item {
+                        Text(stringResource(R.string.unfunded_request), modifier = Modifier.padding(8.dp))
+                    }
+                    item {
+                        Text(stringResource(R.string.sensor_manager_preview), modifier = Modifier.padding(8.dp))
+                    }
+                    item {
+                        Chip(
+                            onClick = {},
+                            label = { Text(stringResource(R.string.scan_sensor)) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ChipDefaults.chipColors(backgroundColor = Color.DarkGray, contentColor = Color.White)
+                        )
+                    }
+                },
+                navController,
+            )
+        }
+
+        composable("chat_command_callsigns") {
+            WearTAKStringEntryPage(
+                navController = navController,
+                item = chatCommandCallsigns.joinToString(","),
+                label = stringResource(R.string.chat_command_callsigns),
+                confirmFunction = {
+                    settingsVm.storeChatCommandCallsigns(ChatCommandAuthorizer.parseAllowList(it))
+                }
+            )
+        }
         composable("sms_number_list"){
             val focusManager = LocalFocusManager.current
             var textfield = ""
@@ -2739,6 +2828,20 @@ fun WearTAKSettingsNav(
 
         }
         composable("plugins") {
+            val menuEntries = (
+                listOf(
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, stringResource(R.string.chat_commands)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.CRM, "CRM"),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.DART, stringResource(R.string.gunshot_detection)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.DATA_SYNC, "Data Sync"),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.DITTO, stringResource(R.string.ditto)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.EVERYWHERE_COMMS, stringResource(R.string.everywhere_comms)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.FALCON, stringResource(R.string.uas_detection)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.GOTENNA, stringResource(R.string.gotenna)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.SENSOR_MANAGER, stringResource(R.string.sensor_manager)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.SOMEWEAR_LABS, stringResource(R.string.somewear_labs)),
+                ) + pluginList.map { PluginMenuEntry.Installed(it) }
+            ).alphabetizedPluginEntries()
             val lifecycleOwner = LocalLifecycleOwner.current
             DisposableEffect(lifecycleOwner) {
                 val observer = LifecycleEventObserver { _, event ->
@@ -2768,57 +2871,144 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.plugins),
                 columnContent = {
-                    item {
-                        WearTAKTitleChip(
-                            route = "data_sync",
-                            title = "Data Sync",
-                            navController = navController
-                        )
-                    }
-
-                    itemsIndexed(
-                        items = pluginList,
-                        key = { _, item -> item.pluginId })
-                    { index, item ->
-                        run {
-                            WearTAKSwipeToRevealChip(
-                                onPrimaryActionClick = {
-                                    pluginitem.value = item
-                                    shouldShowDialog.value = true
-                                },
-                                onSecondaryActionClick = {
-                                    pluginitem.value = item
-                                    showPopup.value = true
-                                 },
-                                chipType = {
+                    itemsIndexed(items = menuEntries, key = { _, entry -> entry.key }) { _, entry ->
+                        when (entry) {
+                            is PluginMenuEntry.BuiltIn -> when (entry.kind) {
+                                BuiltInPlugin.DATA_SYNC -> {
+                                    WearTAKTitleChipWithState(
+                                        route = "data_sync",
+                                        title = entry.title,
+                                        state = stringResource(R.string.unfunded_request),
+                                        navController = navController
+                                    )
+                                }
+                                BuiltInPlugin.COMMANDS -> {
                                     WearTAKSplitToggleChip(
                                         appIcon = {
-                                            item.icon.let {
-                                                AndroidView(
-                                                    modifier = Modifier
-                                                        .size(25.dp)
-                                                        .padding(end = 3.dp),
-                                                    factory = { context ->
-                                                        ImageView(context).apply {
-                                                            setImageDrawable(it)
-                                                        }
-                                                    }
-                                                )
-                                            }
-                                          },
-                                        title = item.title,
-                                        label = item.loadingStatus.toString(),
-                                        checked = item.isLoaded,
-                                        onCheckedChange = {
-                                            when (it) {
-                                                true -> pluginVm.loadPlugin(item.pluginId)
-                                                false -> pluginVm.unloadPlugin(item.pluginId)
+                                            Icon(
+                                                painter = painterResource(R.drawable.ic_commands_megaphone),
+                                                contentDescription = null,
+                                                modifier = Modifier.padding(end = 4.dp).size(24.dp),
+                                            )
+                                        },
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableChatCommands,
+                                        onCheckedChange = { settingsVm.storeEnableChatCommands(it) },
+                                        onClick = { navController.navigate("chat_commands") }
+                                    )
+                                }
+                                BuiltInPlugin.DITTO -> {
+                                    WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                        title = entry.title,
+                                        label = when (dittoPdlSource) {
+                                            DittoPdlSource.COMMUNITY -> stringResource(R.string.ditto_community_subtitle)
+                                            DittoPdlSource.CUSTOM -> dittoCustomPdl.ifBlank {
+                                                stringResource(R.string.no_custom_pdl_saved)
                                             }
                                         },
-                                        onClick = { it.first.launch { it.second.animateTo(targetValue = RevealValue.RightRevealing) } },
+                                        checked = enableDittoService,
+                                        onCheckedChange = { settingsVm.storeEnableDittoService(it) },
+                                        onClick = { navController.navigate("ditto_pdl") }
                                     )
-                                },
-                            )
+                                }
+                                BuiltInPlugin.SENSOR_MANAGER -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableSensorManager,
+                                        onCheckedChange = { settingsVm.storeEnableSensorManager(it) },
+                                        onClick = { navController.navigate("sensor_manager") }
+                                    )
+                                }
+                                BuiltInPlugin.DART -> {
+                                    WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableGunshotDetection,
+                                        onCheckedChange = { settingsVm.storeEnableOnnxGunshotService(it) },
+                                        onClick = { navController.navigate("gunshot_detection") }
+                                    )
+                                }
+                                BuiltInPlugin.FALCON -> {
+                                    WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableUasDetection,
+                                        onCheckedChange = { settingsVm.storeEnableOnnxUasService(it) },
+                                        onClick = { navController.navigate("uav_detection") }
+                                    )
+                                }
+                                BuiltInPlugin.CRM -> {
+                                    WearTAKSplitToggleChip(
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = enableCrm,
+                                        onCheckedChange = { settingsVm.storeEnableCrmService(it) },
+                                        onClick = { navController.navigate("crm_thresholds") }
+                                    )
+                                }
+                                BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.GOTENNA, BuiltInPlugin.SOMEWEAR_LABS -> {
+                                    WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                        title = entry.title,
+                                        label = stringResource(R.string.unfunded_request),
+                                        checked = false,
+                                        onCheckedChange = {},
+                                        onClick = {},
+                                    )
+                                }
+                            }
+                            is PluginMenuEntry.Installed -> {
+                                val item = entry.plugin
+                                WearTAKSwipeToRevealChip(
+                                    onPrimaryActionClick = {
+                                        pluginitem.value = item
+                                        shouldShowDialog.value = true
+                                    },
+                                    onSecondaryActionClick = {
+                                        pluginitem.value = item
+                                        showPopup.value = true
+                                    },
+                                    chipType = {
+                                        WearTAKSplitToggleChip(
+                                            appIcon = {
+                                                item.icon.let {
+                                                    AndroidView(
+                                                        modifier = Modifier
+                                                            .size(25.dp)
+                                                            .padding(end = 3.dp),
+                                                        factory = { context ->
+                                                            ImageView(context).apply {
+                                                                setImageDrawable(it)
+                                                            }
+                                                        }
+                                                    )
+                                                }
+                                            },
+                                            title = item.title,
+                                            label = item.menuLabel,
+                                            checked = item.isLoaded,
+                                            onCheckedChange = {
+                                                when (it) {
+                                                    true -> pluginVm.loadPlugin(item.pluginId)
+                                                    false -> pluginVm.unloadPlugin(item.pluginId)
+                                                }
+                                            },
+                                            onClick = {
+                                                if (!PluginActivityLauncher.launch(context, item.packageName)) {
+                                                    it.first.launch {
+                                                        it.second.animateTo(targetValue = RevealValue.RightRevealing)
+                                                    }
+                                                }
+                                            },
+                                        )
+                                    },
+                                )
+                            }
                         }
                     }
                 },
@@ -2971,58 +3161,27 @@ fun WearTAKSettingsNav(
         }
         //Tool Settings ^^^
 
-        //Beta Features vvv
-            composable("beta_features") {
-                if (isDevMode) {
-                    WearTAKPageWithBackArrow(
-                        "Beta Features",
-                        columnContent = {
-                            item {
-                                WearTAKToggleChip(
-                                    checkedLive = networkPreferencesLocked,
-                                    onCheckedChange = { settingsVm.storeNetworkPreferencesLocked(it) },
-                                    title = stringResource(R.string.network_settings_lock),
-                                    description = stringResource(R.string.network_settings_lock_description)
-                                )
-                            }
-                            item {
-                                WearTAKTitleChip(
-                                    route = "gunshot_detection",
-                                    title = stringResource(R.string.gunshot_detection),
-                                    navController = navController
-                                )
-                            }
-                            item {
-                                WearTAKTitleChip(
-                                    route = "uav_detection",
-                                    title = stringResource(R.string.uas_detection),
-                                    navController = navController
-                                )
-                            }
-                            item {
-                                WearTAKTitleChip(
-                                    route = "crm_thresholds",
-                                    title = "CRM Thresholds",
-                                    navController = navController
-                                )
-                            }
-                        },
-                        navController,
-                    )
-                }
-            }
+        //Admin Preferences vvv
+        composable("admin_preferences") {
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.admin_preferences),
+                columnContent = {
+                    item {
+                        WearTAKToggleChip(
+                            checkedLive = networkPreferencesLocked,
+                            onCheckedChange = { settingsVm.storeNetworkPreferencesLocked(it) },
+                            title = stringResource(R.string.network_settings_lock),
+                        )
+                    }
+                },
+                navController,
+            )
+        }
+        //Admin Preferences ^^^
         composable("gunshot_detection") {
             WearTAKPageWithBackArrow(
                 stringResource(R.string.gunshot_detection),
                 columnContent = {
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableGunshotDetection,
-                            onCheckedChange = { settingsVm.storeEnableOnnxGunshotService(it) },
-                            title = stringResource(R.string.gunshot_detection),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
                     item {
                         WearTAKTitleChipWithState(
                             route = "gunshot_trigger_threshold",
@@ -3051,14 +3210,6 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.uas_detection),
                 columnContent = {
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableUasDetection,
-                            onCheckedChange = { settingsVm.storeEnableOnnxUasService(it)},
-                            title =stringResource(R.string.uas_detection),
-                            description = stringResource(R.string.service_on_off)
-                        )
-                    }
                     item {
                         WearTAKTitleChipWithState(
                             route = "uav_trigger_threshold",
@@ -3136,7 +3287,6 @@ fun WearTAKSettingsNav(
         composable("debug_tools") {
             DebugScreen(navController)
         }
-        //Beta Features ^^^
     }
 }
 
@@ -3272,14 +3422,15 @@ fun WearTAKTitleChip(
     title: String, // Text on the chip
     route: String, //where chip will direct to in navhost
     onClick: () -> Unit = {}, // Optional additional behavior when clicked
-    navController: NavController //Navcontroller passed from navhost
+    navController: NavController, //Navcontroller passed from navhost
+    enabled: Boolean = true // When false the chip is shown greyed out and cannot be opened
 ){
     Chip(
         onClick = {
             onClick()
             navController.navigate(route)
         },
-        enabled = true,
+        enabled = enabled,
         label = { Text(text = title) },
         colors = ChipDefaults.chipColors(
             backgroundColor = Color.DarkGray,
@@ -3360,6 +3511,17 @@ fun <T> WearTAKTitleChipWithState(
     )
 }
 
+@Composable
+private fun BuiltInPluginBrandIcon(plugin: BuiltInPlugin) {
+    plugin.brandIconRes?.let { resource ->
+        Image(
+            painter = painterResource(resource),
+            contentDescription = null,
+            modifier = Modifier.padding(end = 4.dp).size(24.dp),
+        )
+    }
+}
+
 //Used for services and settings with a boolean state of ON/OFF
 @Composable
 fun WearTAKToggleChip(
@@ -3367,16 +3529,16 @@ fun WearTAKToggleChip(
     onCheckedChange: (Boolean) -> Unit, //What function/behavior should be called when toggle changes
     appIcon: @Composable () -> Unit = {}, //Optional icon
     title: String, //Upper text of chip
-    description: String, //Lower text of chip
+    description: String = "", //Lower text of chip; omitted when empty
 ) {
     ToggleChip(
         modifier = Modifier
             .fillMaxWidth(),
 //            .padding(bottom = 7.dp),
         label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
-        secondaryLabel = {
-            Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        },
+        secondaryLabel = if (description.isNotEmpty()) {
+            { Text(description, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+        } else null,
         appIcon = {appIcon()},
         checked = checkedLive == true,
         colors =
@@ -3428,7 +3590,7 @@ fun <T> WearTAKSelectableChip(
                 } else MaterialTheme.shapes.large
     )
 }
-//Used for when an item needs both enable/disable functionality, and additional behavior when selected. Currently only used for tak servers
+// Used for items that combine an enable toggle with a separate configuration action.
 @Composable
 fun WearTAKSplitToggleChip(
     appIcon: @Composable () -> Unit = {}, //Optional icon
@@ -3657,6 +3819,7 @@ fun DittoPdlSelectionPage(
 ) {
     val scope = rememberCoroutineScope()
     val showPdlHelp = remember { mutableStateOf(false) }
+    val savedCustomPdl by dataRepository.getDittoCustomPdl.collectAsState(initial = "")
     val communityTitle = stringResource(R.string.community_pdl)
     val customTitle = stringResource(R.string.custom_pdl)
     val pdlOptions = listOf(communityTitle, customTitle)
@@ -3675,7 +3838,7 @@ fun DittoPdlSelectionPage(
                         }
                     },
                     title = communityTitle,
-                    secondaryTitle = stringResource(R.string.use_default_community_identity),
+                    secondaryTitle = stringResource(R.string.community_pdl),
                     combined = true,
                     list = pdlOptions
                 )
@@ -3688,7 +3851,9 @@ fun DittoPdlSelectionPage(
                         navController.navigate("ditto_custom_pdl")
                     },
                     title = customTitle,
-                    secondaryTitle = stringResource(R.string.enter_your_own_identity),
+                    secondaryTitle = savedCustomPdl.ifBlank {
+                        stringResource(R.string.no_custom_pdl_saved)
+                    },
                     combined = true,
                     list = pdlOptions
                 )
@@ -4115,6 +4280,7 @@ fun WearTakScreenDimensions(
     columnContent: ScalingLazyListScope.(ScalingLazyListState) -> Unit,
     rowContent: @Composable () -> Unit,
     text: String,
+    titleAction: (@Composable () -> Unit)? = null,
 ) {
     WearTAKCIVTheme {
         val listState = rememberScalingLazyListState()
@@ -4142,15 +4308,38 @@ fun WearTakScreenDimensions(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     item {
-                        Text(
-                            text = text,
-                            fontSize = if (text.length!! < 20) 17.sp else 15.sp,
-                            textAlign = TextAlign.Center,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier
-                                .padding(horizontal = 10.dp)
-                                .padding(bottom = 8.dp)
-                        )
+                        if (titleAction == null) {
+                            Text(
+                                text = text,
+                                fontSize = if (text.length!! < 20) 17.sp else 15.sp,
+                                textAlign = TextAlign.Center,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .padding(horizontal = 10.dp)
+                                    .padding(bottom = 8.dp)
+                            )
+                        } else {
+                            // Title and action share one line; the title ellipsizes rather than wrapping.
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center,
+                                modifier = Modifier
+                                    .padding(horizontal = 10.dp)
+                                    .padding(bottom = 8.dp)
+                            ) {
+                                Text(
+                                    text = text,
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    softWrap = false,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f, fill = false)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                titleAction()
+                            }
+                        }
                     }
                    columnContent(listState)
                 }
@@ -4164,6 +4353,38 @@ fun WearTakScreenDimensions(
     }
 }
 
+// Watches certs/<address>.p12 (as side-loaded over adb) while the user types the address.
+@Composable
+fun rememberSideloadedCertStatus(address: String): SideloadedClientCert.Status {
+    val context = LocalContext.current
+    val status by produceState<SideloadedClientCert.Status>(SideloadedClientCert.Status.None, address) {
+        value = withContext(Dispatchers.IO) {
+            SideloadedClientCert.detect(
+                context.getExternalFilesDir(null)?.let { java.io.File(it, "certs") },
+                address
+            )
+        }
+    }
+    return status
+}
+
+@Composable
+fun SideloadedCertNotice(status: SideloadedClientCert.Status) {
+    val text = when (status) {
+        is SideloadedClientCert.Status.Found ->
+            stringResource(R.string.cert_on_watch, status.commonName)
+        SideloadedClientCert.Status.Unreadable -> stringResource(R.string.cert_on_watch_unreadable)
+        SideloadedClientCert.Status.None -> return
+    }
+    Text(
+        text = text,
+        textAlign = TextAlign.Center,
+        fontSize = 12.sp,
+        color = if (status is SideloadedClientCert.Status.Unreadable) colors.error else colors.onSurface,
+        modifier = Modifier.padding(5.dp)
+    )
+}
+
 //Used for any page that needs a title and back button, used for most screens
 @Composable
 fun WearTAKPageWithBackArrow(
@@ -4171,7 +4392,8 @@ fun WearTAKPageWithBackArrow(
     columnContent: ScalingLazyListScope.(ScalingLazyListState) -> Unit, //Screen contents
     navController: NavController, //Navcontroller passed from navhost,
     exitActivity: Boolean = false,
-    exitFunction: () -> Unit = {}
+    exitFunction: () -> Unit = {},
+    titleAction: (@Composable () -> Unit)? = null,
 ) {
     WearTakScreenDimensions(
         columnContent = { columnContent(it) },
@@ -4186,8 +4408,30 @@ fun WearTAKPageWithBackArrow(
                 },
             )
         },
-        title
+        title,
+        titleAction
     )
+}
+
+// Compact circular "+" used beside a page title, e.g. to add a TAK server.
+@Composable
+fun WearTAKTitleAddButton(contentDescription: String, onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(colors.primary)
+            .clickable(onClickLabel = contentDescription, role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription }
+    ) {
+        Icon(
+            Icons.Filled.Add,
+            contentDescription = null,
+            tint = colors.onPrimary,
+            modifier = Modifier.size(20.dp)
+        )
+    }
 }
 
 //Used for any page that needs a title and back button, used for most screens

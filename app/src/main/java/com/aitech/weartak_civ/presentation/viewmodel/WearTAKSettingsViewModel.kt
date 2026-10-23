@@ -13,12 +13,14 @@ import com.aitech.weartak_civ.DEFAULT_BLOODHOUND_PROXIMITY_RADIUS_METERS
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CRM_MODERATE_MAX_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_CRM_POOR_MAX_THRESHOLD
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CRM_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ALL_WIFI_BATTERY_OPTIMIZATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATDOK_COT
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BATTERY_ALERTS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_COMPASS_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_BLOODHOUND_PROXIMITY_VIBRATION
 import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_SERVICE
+import com.aitech.weartak_civ.DEFAULT_ENABLE_CHAT_COMMANDS
 import com.aitech.weartak_civ.DEFAULT_ENABLE_COMPANION_APP_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_DITTO_SERVICE
 import com.aitech.weartak_civ.DEFAULT_ENABLE_ESRI_ENDPOINT
@@ -92,7 +94,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableDynamicR
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableEsriEndpoint
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableHighAtmPressureAlert
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableImmersionAlerts
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLocationService
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableLowAtmPressureAlert
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableOnnxGunshotService
@@ -158,6 +159,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -206,7 +208,7 @@ class WearTAKSettingsViewModel : ViewModel() {
         )
 
     val savedPhoneManagedSettings: StateFlow<Boolean> =
-        dataRepository.phoneManagedSettingsEnabled.stateIn(
+        dataRepository.phoneManagedSettingsLocked.stateIn(
             scope = viewModelScope,
             started = SharingStarted.Eagerly,
             initialValue = false
@@ -622,12 +624,6 @@ class WearTAKSettingsViewModel : ViewModel() {
             initialValue = DEFAULT_ENABLE_LOCATION_SERVICE
         )
 
-    fun storeEnableLocationService(enable: Boolean) {
-        viewModelScope.launch {
-            dataRepository.storeEnableLocationService(enable)
-            enableLocationService =         enable
-        }
-    }
     ///Callsign and Device Preferences ^^^
 
     //Network Preferences vvv
@@ -906,8 +902,46 @@ fun displaySitxGroupDialog(
             initialValue = DEFAULT_ENABLE_COMPANION_APP_SERVICE
         )
 
+    val savedEnableChatCommands: StateFlow<Boolean> =
+        dataRepository.getEnableChatCommands.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = DEFAULT_ENABLE_CHAT_COMMANDS
+        )
+
+    fun storeEnableChatCommands(enable: Boolean) {
+        viewModelScope.launch { dataRepository.storeEnableChatCommands(enable) }
+    }
+
+    val savedEnableSensorManager: StateFlow<Boolean> =
+        dataRepository.getEnableSensorManager.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
+    fun storeEnableSensorManager(enable: Boolean) {
+        viewModelScope.launch { dataRepository.storeEnableSensorManager(enable) }
+    }
+
+    val savedChatCommandCallsigns: StateFlow<List<String>> =
+        dataRepository.getChatCommandCallsigns.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
+
+    fun storeChatCommandCallsigns(callsigns: List<String>) {
+        viewModelScope.launch { dataRepository.storeChatCommandCallsigns(callsigns) }
+    }
+
     fun storeEnableCompanionAppService(enable: Boolean) {
         viewModelScope.launch {
+            if (!enable) {
+                dataRepository.phoneManagedCompanionAddress.first()?.let { peer ->
+                    dataRepository.clearPhoneManagedSettingsForPeer(peer)?.applyToRuntimeConstants()
+                }
+            }
             dataRepository.storeEnableCompanionAppService(enable)
             enableCompanionAppService = enable
         }
@@ -1406,6 +1440,20 @@ fun displaySitxGroupDialog(
         viewModelScope.launch {
             dataRepository.storeOnnxUasTriggerThresholdPercent(thresholdPercent)
             onnxUasTriggerThresholdPercent = thresholdPercent
+        }
+    }
+
+    val savedEnableCrmService: StateFlow<Boolean> =
+        dataRepository.getEnableCrmService.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = DEFAULT_ENABLE_CRM_SERVICE
+        )
+
+    fun storeEnableCrmService(enable: Boolean) {
+        viewModelScope.launch {
+            dataRepository.storeEnableCrmService(enable)
+            MainActivity.enableCrmService = enable
         }
     }
 

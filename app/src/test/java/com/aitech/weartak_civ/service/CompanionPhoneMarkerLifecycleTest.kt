@@ -62,6 +62,7 @@ class CompanionPhoneMarkerLifecycleTest {
     private val bloodhounds = spyk(BloodhoundRepository(app, dataStore))
     private val service = CompanionAppService()
     private val now = System.currentTimeMillis()
+    private val gateway = com.aitech.weartak_civ.cot.CompanionGatewaySession()
 
     init {
         MainActivity.device_uid = "test-watch"
@@ -71,6 +72,9 @@ class CompanionPhoneMarkerLifecycleTest {
         inject("serviceScope", CoroutineScope(job + StandardTestDispatcher(scheduler)))
         inject("repo\$delegate", lazyOf(repository))
         inject("bhRepo\$delegate", lazyOf(bloodhounds))
+        val cap = mockk<CompanionAppRepository>(relaxed = true)
+        every { cap.gateway } returns gateway
+        inject("capRepo\$delegate", lazyOf(cap))
     }
 
     @After fun cleanup() {
@@ -191,6 +195,7 @@ class CompanionPhoneMarkerLifecycleTest {
         every { device.address } returns "AA:BB"
         every { device.bondState } returns if (bonded) BluetoothDevice.BOND_BONDED else BluetoothDevice.BOND_NONE
         val cap = mockk<CompanionAppRepository>(relaxed = true)
+        every { cap.gateway } returns gateway
         every { cap.companionAppReady } returns MutableStateFlow(true)
         inject("connectedDevice", device)
         inject("notificationsEnabled", true)
@@ -371,7 +376,9 @@ class CompanionPhoneMarkerLifecycleTest {
         val device = mockk<BluetoothDevice>()
         every { device.address } returns "AA:BB"
         every { device.bondState } returns BluetoothDevice.BOND_BONDED
-        inject("capRepo\$delegate", lazyOf(mockk<CompanionAppRepository>(relaxed = true)))
+        val cap = mockk<CompanionAppRepository>(relaxed = true)
+        every { cap.gateway } returns gateway
+        inject("capRepo\$delegate", lazyOf(cap))
         inject("activeAddr", "AA:BB")
         inject("connectedDevice", device)
         inject("notificationsEnabled", true)
@@ -431,6 +438,44 @@ class CompanionPhoneMarkerLifecycleTest {
     private fun tak(xml: String, receivedAt: Long = System.currentTimeMillis()) = runBlocking {
         repository.receiveMarkerEvent(CotMessageParser.parseMarkerOrNull(xml)!!, bloodhounds,
             "TAK", sourceServerId = "tak-test", receivedAt = receivedAt)
+    }
+
+    @Test fun gatewayImportsOnlyReceivedMapStateWithoutLocalMarkerOrProfileChangesOrEcho() = runBlocking {
+        val before = repository.snapshotSystem()
+        gateway.negotiate(JSONObject().put("version", 1).put("session", "gateway-session"))
+        gateway.confirm("gateway-session")
+        service.receiveGatewayMap(cot("gateway-marker", now), "gateway-session", 0)
+        assertEquals("companion-gateway", repository.receivedMarkerList.value.single().sourceServerId)
+        assertTrue(repository.droppedMarkerList.value.isEmpty())
+        val after = repository.snapshotSystem()
+        assertEquals(before.deviceId, after.deviceId)
+        assertEquals(before.callsign, after.callsign)
+        assertEquals(before.team, after.team)
+        assertEquals(before.role, after.role)
+        assertEquals(before.reportIntSecs, after.reportIntSecs)
+        service.receiveGatewayMap(cot("ended", now), "old-session", 0)
+        service.receiveGatewayMap(cot("ended-generation", now), "gateway-session", 1)
+        assertEquals(1, repository.receivedMarkerList.value.size)
+        gateway.reset()
+        service.receiveGatewayMap(cot("after-disconnect", now), "gateway-session", 0)
+        assertEquals(1, repository.receivedMarkerList.value.size)
+    }
+
+    @Test fun gatewayPositionsRetainRemoteIdentityAndNeverReplaceOwnPosition() = runBlocking {
+        gateway.negotiate(JSONObject().put("version", 1).put("session", "gateway-session"))
+        gateway.confirm("gateway-session")
+        val position = cot("remote-unit", now).replace("a-h-G", "a-f-G-U-C")
+            .replace("<contact callsign='Target'/>",
+                "<contact callsign='REMOTE'/><__group name='Orange' role='Medic'/>")
+        service.receiveGatewayMap(position, "gateway-session", 0)
+        val remote = repository.receivedUserList.value.single()
+        assertEquals("remote-unit", remote.uid)
+        assertEquals("REMOTE", remote.title)
+        assertEquals("Orange", remote.team)
+        assertEquals("Medic", remote.role)
+        service.receiveGatewayMap(position.replace("remote-unit", "test-watch"), "gateway-session", 0)
+        assertEquals(1, repository.receivedUserList.value.size)
+        assertEquals("test-watch", repository.snapshotSystem().deviceId)
     }
 
     private fun assertPoint(uid: String, time: Long, lat: Double, source: String) {

@@ -88,6 +88,8 @@ import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
 import androidx.wear.watchface.complications.datasource.ComplicationDataSourceUpdateRequester
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.complication.BloodhoundComplicationService
+import com.aitech.weartak_civ.data.model.TakRoute
+import com.aitech.weartak_civ.data.model.TakRoutePoint
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
@@ -209,6 +211,14 @@ fun BloodhoundCivApp(
 
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
+    val routes by dataRepository.takRoutes.collectAsState()
+    val location by dataRepository.latestLocation.collectAsState()
+    val routeSession by bhRepo.routeFollow.collectAsState()
+    val activeTarget by bhRepo.activeBhItemUi.collectAsState()
+    val routeLocation = location?.let { TakRoutePoint(it.latitude, it.longitude) }
+
+    fun routeDestination(route: TakRoute) =
+        "bloodhound_route/${Uri.encode(route.serverId)}/${Uri.encode(route.uid)}"
 
     LaunchedEffect(Unit) {
         dataRepository.bloodhoundUiCommands.collectLatest { command ->
@@ -285,7 +295,59 @@ fun BloodhoundCivApp(
         startDestination = if (isLicenseValid()) "bloodhound_screen" else "invalid_license_screen"
     ) {
         composable("bloodhound_screen" ) {
-            BloodhoundScreen(bloodhounds = uiList, navController, exitActivity, context)
+            BloodhoundScreen(bloodhounds = uiList, navController, exitActivity, context,
+                routes, routeLocation, { navController.navigate(routeDestination(it)) }, routeSession,
+                onMapTarget = { uid ->
+                    bhRepo.bloodhoundMap.value[uid]?.target?.point?.let { point ->
+                        context.startActivity(Intent(context, MapActivity::class.java)
+                            .putExtra(MapActivity.EXTRA_FOCUS_LAT, point.lat)
+                            .putExtra(MapActivity.EXTRA_FOCUS_LON, point.lon))
+                    }
+                },
+                onMapRoute = { route ->
+                    context.startActivity(Intent(context, MapActivity::class.java)
+                        .putExtra(MapActivity.EXTRA_FOCUS_ROUTE_SERVER, route.serverId)
+                        .putExtra(MapActivity.EXTRA_FOCUS_ROUTE_UID, route.uid))
+                },
+                onStartTarget = { bhRepo.requestActivateBloodhound(it) },
+                onChooseRoute = { navController.navigate(
+                    "bloodhound_route_start/${Uri.encode(it.serverId)}/${Uri.encode(it.uid)}") },
+                onStopTarget = {
+                    bhRepo.stopTracking(it)
+                    requestBloodhoundComplicationUpdate(context)
+                },
+                onStopRoute = {
+                    bhRepo.stopRoute()
+                    requestBloodhoundComplicationUpdate(context)
+                })
+        }
+
+        listOf("bloodhound_route", "bloodhound_route_start").forEach { destination ->
+        composable(
+            "$destination/{serverId}/{routeUid}",
+            arguments = listOf(navArgument("serverId") { type = NavType.StringType },
+                navArgument("routeUid") { type = NavType.StringType })
+        ) { entry ->
+            val route = routes.firstOrNull { it.serverId == entry.arguments?.getString("serverId") &&
+                it.uid == entry.arguments?.getString("routeUid") }
+            if (route == null) {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            } else {
+                RouteBloodhoundDetails(route, routeSession, routeLocation, activeTarget,
+                    onStart = { mode ->
+                        if (bhRepo.startRoute(route, mode, routeLocation) && destination == "bloodhound_route_start") {
+                            navController.popBackStack()
+                        }
+                        requestBloodhoundComplicationUpdate(context)
+                    },
+                    onStop = {
+                        bhRepo.stopRoute()
+                        requestBloodhoundComplicationUpdate(context)
+                    },
+                    onBack = { navController.popBackStack() },
+                    choosingStart = destination == "bloodhound_route_start")
+            }
+        }
         }
 
         composable(
@@ -293,7 +355,16 @@ fun BloodhoundCivApp(
             arguments = listOf(navArgument("uid") { type = NavType.StringType })
         ) { backStackEntry ->
             val uid = backStackEntry.arguments?.getString("uid").orEmpty()
-            BloodhoundScreenDetailed(navController, uid, context,{ exitActivity() })
+            val session = routeSession?.takeIf { it.uid == uid }
+            if (session != null) {
+                LaunchedEffect(uid) {
+                    navController.navigate(routeDestination(session.route)) {
+                        popUpTo("bloodhound_screen")
+                    }
+                }
+            } else {
+                BloodhoundScreenDetailed(navController, uid, context,{ exitActivity() })
+            }
         }
 
         composable(
@@ -313,11 +384,26 @@ fun BloodhoundScreen(
     bloodhounds: List<Utils.BloodhoundItem>,
     navController: NavController,
     exitActivity: () -> Unit,
-    context: Context
+    context: Context,
+    routes: List<TakRoute> = emptyList(),
+    routeLocation: TakRoutePoint? = null,
+    onRoute: (TakRoute) -> Unit = {},
+    session: com.aitech.weartak_civ.data.RouteFollowSession? = null,
+    onMapTarget: (String) -> Unit = {},
+    onMapRoute: (TakRoute) -> Unit = {},
+    onStartTarget: (String) -> Unit = {},
+    onChooseRoute: (TakRoute) -> Unit = {},
+    onStopTarget: (String) -> Unit = {},
+    onStopRoute: () -> Unit = {}
 ) {
     val actionScope = rememberCoroutineScope()
     var removingAll by remember { mutableStateOf(false) }
     val showRemoveAllConfirmation = remember { mutableStateOf(false) }
+    val canRemove = (bloodhounds.isNotEmpty() || session?.navigation?.completed == false) && !removingAll
+    val goBack = {
+        exitActivity()
+        context.startActivity(Intent(context, MainActivity::class.java))
+    }
     WearTAKCIVTheme {
         if (showRemoveAllConfirmation.value) {
             BloodhoundRemoveAllDialog(
@@ -327,83 +413,45 @@ fun BloodhoundScreen(
                     removingAll = true
                     actionScope.launch {
                         try {
-                            val app = context.applicationContext as WearTakApplication
-                            app.bhRepo.removeAllFromMenu()
+                            (context.applicationContext as WearTakApplication).bhRepo.removeAllFromMenu()
                         } finally {
                             removingAll = false
                         }
                     }
                 },
                 onCancel = { showRemoveAllConfirmation.value = false },
-                enabled = bloodhounds.isNotEmpty() && !removingAll
+                enabled = canRemove
             )
         }
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(colors.background)
-                .padding(bottom = 16.dp, top = 15.dp)
-                .padding(horizontal = 16.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            OrientationAware()
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .fillMaxHeight(0.9f)
-                    .align(Alignment.TopCenter)
-                    .padding(bottom = 30.dp)
-                    .verticalScroll(rememberScrollState()),
-
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = stringResource(R.string.bloodhound),
-                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier
-                        .padding(vertical = 10.dp, horizontal = 20.dp)
-                        .align(Alignment.CenterHorizontally)
-                )
-                Button(
-                    onClick = {
-                        showRemoveAllConfirmation.value = true
-                    },
-                    enabled = bloodhounds.isNotEmpty() && !removingAll,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(stringResource(R.string.bloodhound_remove_all))
-                }
-                LazyColumn(modifier = Modifier
-                    .height(200.dp).padding(top = 10.dp)){
-                    itemsIndexed(bloodhounds){ index, bloodhoundItem ->
-                        BloodhoundChip(
-                            bloodhoundItem.target,
-                            bloodhoundItem.distance,
-                            bloodhoundItem.bloodhounding,
-                            bloodhoundItem.orientation,
-                            bloodhoundItem.alertCategory,
-                            bloodhoundItem.isStale,
-                            {
-                                if (bloodhoundItem.uid.isNotBlank()) {
-                                    navController.navigate("bloodhound_screen_detailed/${Uri.encode(bloodhoundItem.uid)}")
-                                } else {
-                                    Log.i(TAG, "Blank bloodhoundItem")
-                                }
-                            }
-                        )
+        BloodhoundPickerList(
+            bloodhounds, routes, routeLocation,
+            onTarget = { uid ->
+                if (uid.isNotBlank()) navController.navigate("bloodhound_screen_detailed/${Uri.encode(uid)}")
+            },
+            onRoute = onRoute,
+            modifier = Modifier.fillMaxSize().background(colors.background),
+            session = session, onMapTarget = onMapTarget, onMapRoute = onMapRoute,
+            onStartTarget = onStartTarget, onChooseRoute = onChooseRoute,
+            onStopTarget = onStopTarget, onStopRoute = onStopRoute,
+            header = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.bloodhound), color = colors.primary,
+                        modifier = Modifier.padding(bottom = 8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        Button(onClick = { showRemoveAllConfirmation.value = true }, enabled = canRemove) {
+                            Text(stringResource(R.string.bloodhound_remove_all))
+                        }
+                        WearTAKBackButton(onClick = goBack)
                     }
                 }
+            },
+            footer = {
+                Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    WearTAKBackButton(onClick = goBack)
+                }
             }
-            Row(modifier = Modifier.align(Alignment.BottomCenter)) {
-                WearTAKBackButton(
-                    onClick = {
-                        exitActivity()
-                        context.startActivity(Intent(context, MainActivity::class.java))
-                    })
-            }
-        }
+        )
     }
 }
 
@@ -646,7 +694,7 @@ fun BloodhoundScreenDetailed(
                         Text(
                             text = stringResource(
                                 if (item.isRemoteAlert) R.string.remote_emergency_bloodhound_to_alert
-                                else R.string.rgr
+                                else R.string.bloodhound_start
                             ),
                             fontSize = 15.sp,
                             overflow = TextOverflow.Ellipsis,

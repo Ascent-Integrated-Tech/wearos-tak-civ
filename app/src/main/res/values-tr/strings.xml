@@ -13,7 +13,7 @@
     <string name="location_service">Konum Hizmeti</string>
     <string name="service_on_off">Hizmet AÇIK/KAPALI</string>
     <string name="biometrics">Biyometrik</string>
-    <string name="ditto">Kopya</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">Sürüm %1$s</string>
     <string name="tak_servers">TAK Sunucuları</string>
     <string name="edit_server">Sunucuyu Düzenle</string>
@@ -57,6 +57,12 @@
     <string name="connected_to_toast">Şuna bağlanıldı %1$s</string>
     <string name="connection_failed">Bağlantı Başarısız</string>
     <string name="tak_server_connections">TAK Sunucusu Bağlantıları</string>
+    <string name="tak_servers_title">TAK Sunucuları</string>
+    <string name="add_tak_server">TAK sunucusu ekle</string>
+    <string name="cert_on_watch">Saatteki sertifika: %1$s</string>
+    <string name="cert_on_watch_unreadable">Saatteki sertifika açılamıyor. .pwd dosyasını kontrol edin.</string>
+    <string name="username_optional">Kullanıcı adı (isteğe bağlı)</string>
+    <string name="password_optional">Parola (isteğe bağlı)</string>
     <string name="new_server">Yeni Sunucu</string>
     <string name="reporting_interval_empty_enter_again">Raporlama Aralığı Boş, Tekrar Girin</string>
     <string name="reporting_interval_0_enter_again">Raporlama Aralığı 0, Tekrar Girin</string>
@@ -229,7 +235,7 @@
     <string name="exertion_warning_threshold">Exertion Warning Threshold</string>
     <string name="seconds">seconds</string>
     <string name="exertion_alert_threshold">Exertion Alert Threshold</string>
-    <string name="bloodhound_compass">Bloodhound/Compass</string>
+    <string name="bloodhound_compass">Bloodhound Proximity</string>
     <string name="plugins">Plugins</string>
     <string name="n_a">N/A</string>
     <string name="male">Male</string>

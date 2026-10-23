@@ -89,6 +89,32 @@ class PluginSettingsCoordinator(
         }
     }
 
+    /** Deliver a best-effort host action to one currently connected plugin. */
+    fun invokeActionOnPlugin(pluginId: String, actionId: String, args: Bundle) {
+        val plugin = pluginRefs[pluginId] ?: return
+        scope.launch {
+            runCatching { plugin.invokeMainUiAction(actionId, args) }
+                .onFailure { Log.w(TAG, "action $actionId failed for $pluginId: ${it.message}") }
+        }
+    }
+
+    /** Notify the plugin that originated a received marker when the wearer removes it locally. */
+    fun notifyLocalMarkerRemoved(marker: DataRepository.ReceivedMarker, removedAt: Long) {
+        val sourceId = marker.sourceServerId ?: return
+        if (!sourceId.startsWith(PLUGIN_SOURCE_PREFIX)) return
+        val pluginId = sourceId.removePrefix(PLUGIN_SOURCE_PREFIX).takeIf(String::isNotBlank) ?: return
+        invokeActionOnPlugin(
+            pluginId = pluginId,
+            actionId = ACTION_LOCAL_MARKER_REMOVED,
+            args = Bundle().apply {
+                putString(KEY_MARKER_UID, marker.uid)
+                putLong(KEY_EVENT_TIME, marker.timeReceived)
+                putLong(KEY_RECEIVED_AT, marker.receivedAt)
+                putLong(KEY_REMOVED_AT, removedAt)
+            },
+        )
+    }
+
     /**
      * Deliver a host-originated value to every connected plugin that declares [fieldId] in its
      * settings schema, and return the ids that accepted it.
@@ -414,6 +440,13 @@ class PluginSettingsCoordinator(
     )
 
     companion object {
+        const val ACTION_LOCAL_MARKER_REMOVED = "marker.local_removed"
+        const val KEY_MARKER_UID = "markerUid"
+        const val KEY_EVENT_TIME = "eventTime"
+        const val KEY_RECEIVED_AT = "receivedAt"
+        const val KEY_REMOVED_AT = "removedAt"
+
+        private const val PLUGIN_SOURCE_PREFIX = "plugin:"
         private const val TAG = "CEP-PluginSettings"
     }
 }

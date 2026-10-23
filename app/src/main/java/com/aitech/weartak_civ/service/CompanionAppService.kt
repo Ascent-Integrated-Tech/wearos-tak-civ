@@ -111,13 +111,74 @@ class CompanionAppService : Service() {
     private val bhRepo by lazy { (applicationContext as WearTakApplication).bhRepo }
     private val bloodhoundSyncMutex = Mutex()
     private val bloodhoundConnectionGeneration = java.util.concurrent.atomic.AtomicLong()
+    private val companionUserLock = Any()
+    private fun advanceCompanionGeneration() = synchronized(companionUserLock) {
+        bloodhoundConnectionGeneration.incrementAndGet()
+        repo.clearCompanionUsers()
+    }
+    internal fun beginCompanionSubscription() {
+        // Samsung can reopen a GATT client without disconnecting the shared physical link.
+        advanceCompanionGeneration()
+        rxBuf.clear()
+        capRepo.gateway.reset()
+        helloSentForConnection = false
+        Log.i(TAG, "New companion subscription generation=${bloodhoundConnectionGeneration.get()}")
+    }
+    private val phoneManagementSettingsMutex = Mutex()
+    private val phoneManagementLease = PhoneManagementLease()
+    private val phoneManagementReleaseGeneration = java.util.concurrent.atomic.AtomicLong(-1L)
+    // A restarted service waits one heartbeat window for the phone to re-handshake.
+    @Volatile private var phoneManagedRestoreNotBefore = 0L
+    @SuppressLint("MissingPermission")
+    private fun currentPeer(address: String, generation: Long): Boolean =
+        bloodhoundConnectionGeneration.get() == generation &&
+            connectedDevice?.address.equals(address, ignoreCase = true) && bloodhoundLinkReady()
+
+    internal suspend fun releasePhoneManagement(address: String, generation: Long): Boolean {
+        check(currentPeer(address, generation)) { "Companion connection is not ready" }
+        repo.clearPhoneManagedSettingsForPeer(address) {
+            currentPeer(address, generation)
+        }?.let(::applyRestoredPhoneManagedSettings)
+        val unmanaged = !repo.phoneManagedSettingsEnabled.first()
+        if (unmanaged) synchronized(phoneManagementLease) {
+            phoneManagementLease.stop()
+            repo.setPhoneManagementSessionActive(false)
+        }
+        check(currentPeer(address, generation)) { "Companion connection changed during management release" }
+        return unmanaged
+    }
+
     private var observedBloodhoundGeneration = 0L
-    private data class BloodhoundFrame(val bytes: ByteArray, val address: String, val generation: Long, val chunkSize: Int)
+    private data class BloodhoundFrame(
+        val bytes: ByteArray,
+        val address: String,
+        val generation: Long,
+        val chunkSize: Int,
+        val diagnostic: Boolean = false
+    )
     private val bloodhoundFrames = kotlinx.coroutines.channels.Channel<BloodhoundFrame>(64)
+    private val locationDiagnosticFrames =
+        kotlinx.coroutines.channels.Channel<BloodhoundFrame>(kotlinx.coroutines.channels.Channel.CONFLATED)
+    private data class GatewayIncoming(val token: String, val generation: Long, val xml: String)
+    private val gatewayIncoming = kotlinx.coroutines.channels.Channel<GatewayIncoming>(64)
+    @Volatile private var locationDiagnosticsEnabled = false
+    @Volatile private var locationDiagnosticsSession: String? = null
+    @Volatile private var locationDiagnosticsGeneration: Long = -1L
+    @Volatile private var locationDiagnosticsReportJob: kotlinx.coroutines.Job? = null
+    private val locationDiagnostics by lazy {
+        (applicationContext as WearTakApplication).locationDiagnostics
+    }
+    private fun gatewayError(token: String?, message: String) {
+        Log.w(TAG, message)
+        if (token == null || token != capRepo.gateway.session) return
+        val json = org.json.JSONObject().put("msgType", "gateway_error")
+            .put("session", token).put("error", message).toString()
+        if (!sendBloodhoundControl(json)) Log.w(TAG, "Gateway error notification queue full")
+    }
     private val bloodhoundSync by lazy {
         CompanionBloodhoundSync(
             activeTarget = {
-                bhRepo.activeTrackingItem()?.let {
+                bhRepo.activeTrackingItem()?.takeUnless { it.bhEvent.isRouteFollow }?.let {
                     CompanionBloodhoundSync.Target(
                         it.uid, it.target.name ?: it.uid, it.target.point.lat,
                         it.target.point.lon, it.target.point.hae
@@ -153,13 +214,17 @@ class CompanionAppService : Service() {
         bleSendReady() && connectedDevice?.bondState == BluetoothDevice.BOND_BONDED
 
     @SuppressLint("MissingPermission")
+    private fun isCurrentSingleWatch(address: String, generation: Long): Boolean =
+        currentPeer(address, generation) && capRepo.gateway.session == null
+
+    @SuppressLint("MissingPermission")
     private fun refreshBloodhoundConnection() {
         val generation = bloodhoundConnectionGeneration.get()
         if (observedBloodhoundGeneration != generation) {
             bloodhoundSync.connectionChanged(false)
             observedBloodhoundGeneration = generation
         }
-        bloodhoundSync.connectionChanged(bloodhoundLinkReady())
+        bloodhoundSync.connectionChanged(bloodhoundLinkReady() && capRepo.gateway.session == null)
     }
 
     @SuppressLint("MissingPermission")
@@ -167,6 +232,7 @@ class CompanionAppService : Service() {
         serviceScope.launch {
             capRepo.bleConnectionState.collect {
                 repo.companionPointGeneration = bloodhoundConnectionGeneration.get()
+                refreshLocationDiagnosticsSession()
             }
         }
         serviceScope.launch {
@@ -174,19 +240,56 @@ class CompanionAppService : Service() {
                 if (request.revision.generation == bloodhoundConnectionGeneration.get()) {
                     val json = com.aitech.weartak_civ.data.CompanionPointRevisions
                         .deletion(request.uid, request.revision.token).toString()
-                    if (!sendBloodhoundControl(json)) Log.w(TAG, "Point deletion write rejected")
+                    if (!sendBloodhoundControl(json)) {
+                        Log.w(TAG, "Point deletion write rejected")
+                        repo.pointDeletionAcks.timedOut(request.uid, request.revision.token, request.revision.generation)
+                            ?.let { repo.reportPointDeletionResult(it) }
+                    } else {
+                        trackPointDeletion(request.uid, request.revision.token, request.revision.generation)
+                    }
                 } else Log.w(TAG, "Point deletion belongs to ended connection")
             }
+        }
+    }
+
+    private fun trackPointDeletion(uid: String, token: String, generation: Long) {
+        repo.pointDeletionAcks.sent(uid, token, generation)
+        serviceScope.launch {
+            delay(POINT_DELETION_ACK_TIMEOUT_MS)
+            repo.pointDeletionAcks.timedOut(uid, token, generation)?.let { repo.reportPointDeletionResult(it) }
         }
     }
 
     @SuppressLint("MissingPermission")
     private fun startBloodhoundSync() {
         serviceScope.launch {
-            for (frame in bloodhoundFrames) {
+            while (true) {
+                val frame = bloodhoundFrames.tryReceive().getOrNull()
+                    ?: kotlinx.coroutines.selects.select {
+                        bloodhoundFrames.onReceiveCatching { it.getOrNull() }
+                        locationDiagnosticFrames.onReceiveCatching { it.getOrNull() }
+                    }
+                    ?: continue
+                if (capRepo.gateway.session != null) {
+                    val message = org.json.JSONObject(frame.bytes.toString(Charsets.UTF_8))
+                    val type = message.optString("msgType")
+                    if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) continue
+                    if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) continue
+                }
+                if (frame.diagnostic) {
+                    val message = org.json.JSONObject(frame.bytes.toString(Charsets.UTF_8))
+                    val type = message.optString("msgType")
+                    val stopAfterDisable = type ==
+                        com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.STOP &&
+                        !locationDiagnosticsEnabled && locationDiagnosticsSession == null
+                    if (!isCurrentSingleWatch(frame.address, frame.generation) ||
+                        (!stopAfterDisable &&
+                            locationDiagnosticsSession != message.optString("session"))
+                    ) continue
+                }
                 sendChunkedNotify(
                     frame.bytes, frame.chunkSize, expectedAddress = frame.address,
-                    expectedGeneration = frame.generation
+                    expectedGeneration = frame.generation, diagnostics = frame.diagnostic
                 )
             }
         }
@@ -201,6 +304,7 @@ class CompanionAppService : Service() {
             bhRepo.activeUid.collect {
                 bloodhoundSyncMutex.withLock {
                     refreshBloodhoundConnection()
+                    if (capRepo.gateway.session != null) return@withLock
                     bloodhoundSync.localTargetChanged()
                 }
             }
@@ -209,6 +313,7 @@ class CompanionAppService : Service() {
             bhRepo.activeBhItemMap.collect {
                 bloodhoundSyncMutex.withLock {
                     refreshBloodhoundConnection()
+                    if (capRepo.gateway.session != null) return@withLock
                     bloodhoundSync.localTargetChanged()
                 }
             }
@@ -218,14 +323,172 @@ class CompanionAppService : Service() {
                 delay(1_000L)
                 bloodhoundSyncMutex.withLock {
                     refreshBloodhoundConnection()
+                    if (capRepo.gateway.session != null) return@withLock
                     bloodhoundSync.checkTimeouts()
                 }
             }
         }
     }
 
+    private fun startLocationDiagnostics() {
+        serviceScope.launch {
+            repo.getBondedLocationDiagnosticsEnabled.collect { enabled ->
+                locationDiagnosticsEnabled = enabled
+                if (!enabled) stopLocationDiagnosticsSession("disabled")
+                else refreshLocationDiagnosticsSession()
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    @Synchronized
+    private fun refreshLocationDiagnosticsSession() {
+        if (!locationDiagnosticsEnabled || !bloodhoundLinkReady() ||
+            capRepo.gateway.session != null
+        ) {
+            stopLocationDiagnosticsSession("connection not eligible")
+            return
+        }
+        val generation = bloodhoundConnectionGeneration.get()
+        if (locationDiagnosticsSession != null && locationDiagnosticsGeneration == generation) return
+
+        val session = com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.newSession()
+        locationDiagnosticsSession = session
+        locationDiagnosticsGeneration = generation
+        val address = connectedDevice?.address ?: return
+        val frame = BloodhoundFrame(
+            "${com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.hello(session)}\n"
+                .toByteArray(Charsets.UTF_8),
+            address,
+            generation,
+            maxNotifyPayloadBytes(),
+            diagnostic = true
+        )
+        if (!locationDiagnosticFrames.trySend(frame).isSuccess) {
+            Log.w(TAG, "Location diagnostics capability queue unavailable")
+            stopLocationDiagnosticsSession("capability queue unavailable")
+        }
+    }
+
+    @Synchronized
+    private fun stopLocationDiagnosticsSession(reason: String) {
+        val session = locationDiagnosticsSession
+        val generation = locationDiagnosticsGeneration
+        val address = connectedDevice?.address
+        val wasActive = session != null
+        locationDiagnosticsReportJob?.cancel()
+        locationDiagnosticsReportJob = null
+        locationDiagnosticsSession = null
+        locationDiagnosticsGeneration = -1L
+        locationDiagnostics.stop()
+        // Repeated inactive-session cleanup must not drain a stop awaiting the sender.
+        if (wasActive) {
+            while (locationDiagnosticFrames.tryReceive().isSuccess) Unit
+        }
+        if (reason == "disabled" && session != null && address != null &&
+            generation == bloodhoundConnectionGeneration.get() &&
+            bloodhoundLinkReady() && capRepo.gateway.session == null
+        ) {
+            val stop = com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.stop(session)
+            val bytes = "$stop\n".toByteArray(Charsets.UTF_8)
+            val frame = BloodhoundFrame(
+                bytes, address, generation, maxNotifyPayloadBytes(), diagnostic = true
+            )
+            if (!locationDiagnosticFrames.trySend(frame).isSuccess) {
+                Log.w(TAG, "Location diagnostics stop notification could not be queued")
+            }
+        }
+        if (wasActive) Log.i(TAG, "Bonded location diagnostics stopped: $reason")
+    }
+
+    @SuppressLint("MissingPermission")
+    @Synchronized
+    private fun sendLocationDiagnosticSnapshot() {
+        val session = locationDiagnosticsSession ?: return
+        val address = connectedDevice?.address ?: return
+        val generation = bloodhoundConnectionGeneration.get()
+        if (!locationDiagnosticsEnabled || !isCurrentSingleWatch(address, generation) ||
+            generation != locationDiagnosticsGeneration
+        ) return
+        val json = try {
+            locationDiagnostics.watchSnapshot(session)
+        } catch (error: IllegalStateException) {
+            Log.i(TAG, "Skipping diagnostics snapshot after session end", error)
+            return
+        }
+        val bytes = "$json\n".toByteArray(Charsets.UTF_8)
+        if (bytes.size > com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.MAX_MESSAGE_BYTES) {
+            Log.w(TAG, "Location diagnostics snapshot exceeded protocol size limit")
+            return
+        }
+        val frame = BloodhoundFrame(bytes, address, generation, maxNotifyPayloadBytes(), diagnostic = true)
+        if (!locationDiagnosticFrames.trySend(frame).isSuccess) {
+            Log.w(TAG, "Location diagnostics snapshot dropped because its bounded queue is full")
+        }
+    }
+
+    private fun handleLocationDiagnosticsMessage(json: String, type: String): Boolean {
+        if (type !in setOf(
+                com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.CAPABILITY,
+                com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.SNAPSHOT,
+                com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.STOP
+            )
+        ) return false
+        val address = connectedDevice?.address ?: return true
+        val generation = bloodhoundConnectionGeneration.get()
+        val expected = locationDiagnosticsSession ?: return true
+        if (!locationDiagnosticsEnabled || !isCurrentSingleWatch(address, generation) ||
+            generation != locationDiagnosticsGeneration
+        ) return true
+        val valid = try {
+            com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.parse(
+                org.json.JSONObject(json), type, expected
+            )
+        } catch (error: org.json.JSONException) {
+            Log.w(TAG, "Ignoring malformed bonded location diagnostics message", error)
+            return true
+        } ?: run {
+            Log.w(TAG, "Ignoring invalid bonded location diagnostics message")
+            return true
+        }
+        if (type == com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.STOP) {
+            stopLocationDiagnosticsSession("peer disabled diagnostics")
+        } else if (type == com.aitech.weartak_civ.service.LocationDiagnosticsProtocol.CAPABILITY) {
+            if (!valid.optBoolean("supported", false)) {
+                stopLocationDiagnosticsSession("peer does not support diagnostics")
+                return true
+            }
+            if (!locationDiagnosticsFramesReady(address, generation)) return true
+            locationDiagnostics.start(expected)
+            locationDiagnosticsReportJob?.cancel()
+            locationDiagnosticsReportJob = serviceScope.launch {
+                while (locationDiagnosticsSession == expected &&
+                    locationDiagnosticsGeneration == generation &&
+                    locationDiagnosticsEnabled
+                ) {
+                    sendLocationDiagnosticSnapshot()
+                    delay(LOCATION_DIAGNOSTICS_REPORT_INTERVAL_MS)
+                }
+            }
+        } else if (!locationDiagnostics.acceptPhoneSnapshot(valid, expected)) {
+            Log.w(TAG, "Ignoring malformed or stale phone diagnostics snapshot")
+        }
+        return true
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun locationDiagnosticsFramesReady(address: String, generation: Long): Boolean =
+        locationDiagnosticsEnabled && generation == bloodhoundConnectionGeneration.get() &&
+            isCurrentSingleWatch(address, generation) && capRepo.gateway.session == null
+
     @SuppressLint("MissingPermission")
     private fun sendBloodhoundControl(json: String): Boolean {
+        if (capRepo.gateway.session != null) {
+            val message = org.json.JSONObject(json)
+            val type = message.optString("msgType")
+            if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return false
+            if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) return false
+        }
         if (!bloodhoundLinkReady()) return false
         val address = connectedDevice?.address ?: return false
         val generation = bloodhoundConnectionGeneration.get()
@@ -275,6 +538,75 @@ class CompanionAppService : Service() {
         }
     }
 
+    @SuppressLint("MissingPermission")
+    private fun startPhoneManagementWatchdog() {
+        serviceScope.launch {
+            while (true) {
+                delay(1_000L)
+                phoneManagementSettingsMutex.withLock {
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    synchronized(phoneManagementLease) {
+                        val ownsTransport = phoneManagementLease.ownsSession(
+                            connectedDevice?.address, bloodhoundConnectionGeneration.get()
+                        )
+                        if (expirePhoneManagement(now)) {
+                            if (ownsTransport) forceBleReset("phone_management_timeout")
+                        } else {
+                            val address = connectedDevice?.address
+                            val generation = bloodhoundConnectionGeneration.get()
+                            if (address != null && isCurrentSingleWatch(address, generation)) {
+                                phoneManagementLease.probe(address, generation, now)?.let { token ->
+                                    val message = org.json.JSONObject()
+                                        .put("msgType", "phone_management_ping")
+                                        .put("version", 1).put("token", token)
+                                    if (!sendBloodhoundControl(message.toString())) {
+                                        Log.w(TAG, "Phone management heartbeat queue full")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    try {
+                        restorePhoneManagedSettingsIfUnleased(now)
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Log.w(TAG, "Failed to restore phone-managed settings", error)
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Restores the watch's own phone-locked values once no live managed session holds
+     * the lease. Transient drops inside the heartbeat grace keep the lease and do not
+     * restore; a fresh managed handshake snapshots and re-applies the phone's values.
+     */
+    internal suspend fun restorePhoneManagedSettingsIfUnleased(now: Long): Boolean {
+        val unleased = synchronized(phoneManagementLease) {
+            !phoneManagementLease.isActive() && now >= phoneManagedRestoreNotBefore
+        }
+        if (!unleased) return false
+        val restored = repo.restorePhoneManagedSnapshot {
+            synchronized(phoneManagementLease) { !phoneManagementLease.isActive() }
+        } ?: return false
+        applyRestoredPhoneManagedSettings(restored)
+        Log.i(TAG, "Phone-managed session ended; restored the watch's own locked settings")
+        return true
+    }
+
+    private fun applyRestoredPhoneManagedSettings(values: DataRepository.PhoneManagedSettingsValues) {
+        values.applyToRuntimeConstants()
+    }
+
+    internal fun expirePhoneManagement(now: Long): Boolean = synchronized(phoneManagementLease) {
+        if (!phoneManagementLease.expire(now)) return@synchronized false
+        repo.setPhoneManagementSessionActive(false)
+        Log.w(TAG, "Phone management heartbeat timed out; local settings unlocked")
+        true
+    }
+
     private var bluetoothManager: BluetoothManager? = null
     private var bluetoothAdapter: BluetoothAdapter? = null
     private var advertiser: BluetoothLeAdvertiser? = null
@@ -309,8 +641,8 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
     private fun forceBleReset(why: String) {
         Log.w(TAG, "forceBleReset: $why")
-        bloodhoundConnectionGeneration.incrementAndGet()
-        rxBuf.setLength(0)
+        advanceCompanionGeneration()
+        rxBuf.clear()
 
         // Drop state
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
@@ -478,6 +810,9 @@ class CompanionAppService : Service() {
         collectBleState()
         registerBondReceiver()
 
+        phoneManagedRestoreNotBefore =
+            android.os.SystemClock.elapsedRealtime() + PhoneManagementLease.TIMEOUT_MS
+
         // 4) Initialize BLE server + GATT service
         initBle()
         serviceScope.launch {
@@ -493,14 +828,20 @@ class CompanionAppService : Service() {
         // 5) Start outbound BLE collector & changed settings state
         startBleOutboundCollector()
         startSettingsChangedCollector()
+        startPhoneManagementWatchdog()
         startPointDeletionRelay()
+        startLocationDiagnostics()
+        repo.clearCompanionUsers()
+        serviceScope.launch {
+            while (true) {
+                delay(1_000)
+                synchronized(companionUserLock) { repo.pruneCompanionUsers() }
+            }
+        }
         startBloodhoundSync()
 
         // 6) Finish setup async
         serviceScope.launch {
-            val sys = repo.snapshotSystem()
-            updateBluetoothNameFromSnapshot(sys)
-
             // IMPORTANT:
             // Only advertise if we are NOT already connected.
             // If we ARE already connected, the handshake watchdog
@@ -514,38 +855,41 @@ class CompanionAppService : Service() {
         }
     }
 
-    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private fun updateBluetoothNameFromSnapshot(sys: DataRepository.SystemSnapshot) {
-        val adapter = bluetoothAdapter ?: return
-        val desiredName = "WT-${sys.callsign}"          // or just sys.callsign
-
-        if (adapter.name != desiredName) {
-            try {
-                adapter.name = desiredName
-                Log.d(TAG, "Set BT adapter name to $desiredName")
-            } catch (t: Throwable) {
-                Log.w(TAG, "Failed to set BT adapter name", t)
-            }
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun updateBluetoothNameFromCallsign(callsign: String) {
-        val desiredName = "WT-$callsign" // or just callsign
-        val adapter = bluetoothAdapter ?: return
-
-        try {
-            if (adapter.name != desiredName) {
-                adapter.name = desiredName
-                Log.d(TAG, "Set BT adapter name to $desiredName")
-            }
-        } catch (t: Throwable) {
-            Log.w(TAG, "Failed to set BT adapter name", t)
-        }
-    }
-
     @SuppressLint("MissingPermission")
     private fun startBleOutboundCollector() {
+        serviceScope.launch {
+            for (frame in gatewayIncoming) {
+                if (frame.token != capRepo.gateway.session ||
+                    frame.generation != bloodhoundConnectionGeneration.get()) continue
+                try {
+                    receiveGatewayMap(frame.xml, frame.token, frame.generation)
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    gatewayError(frame.token, "Gateway import failed: ${error.message}")
+                }
+            }
+        }
+        serviceScope.launch {
+            for ((token, xml) in capRepo.gatewayCotEvents) {
+                if (token != capRepo.gateway.session) continue
+                val deadline = System.currentTimeMillis() + 10_000L
+                while (token == capRepo.gateway.session && !capRepo.gateway.ready &&
+                    bloodhoundLinkReady() && System.currentTimeMillis() < deadline) {
+                    delay(100L)
+                }
+                if (token != capRepo.gateway.session || !capRepo.gateway.ready || !bloodhoundLinkReady()) {
+                    Log.w(TAG, "Gateway CoT not sent because session negotiation did not complete")
+                    continue
+                }
+                try {
+                    if (!sendBloodhoundControl(capRepo.gateway.envelope(xml))) {
+                        Log.w(TAG, "Gateway notification queue full; CoT dropped")
+                    }
+                } catch (error: RuntimeException) {
+                    Log.w(TAG, "Unsupported gateway outbound CoT", error)
+                }
+            }
+        }
         serviceScope.launch {
             capRepo.outboundBleCotEvents.collect { event ->
                 if (!capRepo.companionAppReady.value) {
@@ -604,6 +948,61 @@ class CompanionAppService : Service() {
         }
     }
 
+    internal suspend fun receiveGatewayMap(xml: String, token: String, generation: Long) {
+        if (!capRepo.gateway.ready || token != capRepo.gateway.session ||
+            generation != bloodhoundConnectionGeneration.get()) return
+        require(com.aitech.weartak_civ.cot.CompanionGatewaySession.supported(xml)) { "Unsupported gateway CoT" }
+        val identity = repo.snapshotSystem()
+        if (token != capRepo.gateway.session || generation != bloodhoundConnectionGeneration.get()) return
+        val position = CotMessageParser.parseUserPositionOrNull(xml)
+        if (position != null) {
+            if (position.uid != identity.deviceId &&
+                capRepo.gateway.acceptEvent(position.uid, position.time))
+                repo.applyReceivedUserEvent(position, "Gateway ATAK", "companion-gateway")
+            return
+        }
+        if (CotMessageParser.isChatMessage(xml)) {
+            val rooms = CotMessageParser.parseChatRooms(
+                xml, identity.deviceId, identity.callsign, "companion-gateway"
+            )
+            if (rooms.isNotEmpty()) {
+                val uid = CotMessageParser.eventUidOrNull(xml)
+                    ?: throw IllegalArgumentException("Gateway chat UID missing")
+                val time = CotMessageParser.eventTimeOrNull(xml)
+                    ?: throw IllegalArgumentException("Gateway chat time invalid")
+                if (capRepo.gateway.acceptEvent(uid, time)) {
+                    org.greenrobot.eventbus.EventBus.getDefault().post(
+                        com.aitech.weartak_civ.events.TakChatEvent(
+                            rawXml = xml,
+                            sourceServerId = "companion-gateway",
+                            receivedAt = System.currentTimeMillis(),
+                            parsedRooms = rooms
+                        )
+                    )
+                }
+            }
+            return
+        }
+        val emergency = CotMessageParser.parseEmergencyOrNull(xml)
+        if (emergency != null) {
+            if (!emergency.isFrom(identity.deviceId) &&
+                capRepo.gateway.acceptEvent(emergency.uid, emergency.time)) {
+                bhRepo.applyEmergencyEvent(
+                    event = emergency,
+                    server = "Gateway ATAK",
+                    sourceServerId = "companion-gateway",
+                    receivedAt = System.currentTimeMillis(),
+                    deviceUid = identity.deviceId
+                )
+            }
+            return
+        }
+        val marker = CotMessageParser.parseMarkerOrNull(xml)
+            ?: throw IllegalArgumentException("Unsupported gateway map CoT")
+        if (capRepo.gateway.acceptEvent(marker.uid, marker.time))
+            repo.receiveMarkerEvent(marker, bhRepo, "Gateway ATAK", "companion-gateway")
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "CompanionAppService onStartCommand()")
         // TODO: handle explicit ACTION_* if you use start/stop intents
@@ -613,7 +1012,11 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
         Log.d(TAG, "CompanionAppService onDestroy()")
-        bloodhoundConnectionGeneration.incrementAndGet()
+        synchronized(phoneManagementLease) {
+            advanceCompanionGeneration()
+            phoneManagementLease.stop()
+            repo.setPhoneManagementSessionActive(false)
+        }
 
         // 1) Update app-level state FIRST (avoid stale SERVICES_READY in repo)
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
@@ -623,6 +1026,9 @@ class CompanionAppService : Service() {
 
         // 2) Stop outbound work
         bloodhoundFrames.close()
+        locationDiagnosticFrames.close()
+        stopLocationDiagnosticsSession("service stopped")
+        gatewayIncoming.close()
         serviceJob.cancel()
 
         // 3) Stop bond monitoring, advertising + close the server + force disconnect
@@ -802,8 +1208,8 @@ class CompanionAppService : Service() {
                     return
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
-                bloodhoundConnectionGeneration.incrementAndGet()
-                rxBuf.setLength(0)
+                advanceCompanionGeneration()
+                rxBuf.clear()
                 activeAddr = null
                 connectedDevice = null
                 resetNegotiatedMtu()
@@ -827,8 +1233,8 @@ class CompanionAppService : Service() {
 
                     activeAddr = device.address
                     connectedDevice = device
-                    bloodhoundConnectionGeneration.incrementAndGet()
-                    rxBuf.setLength(0)
+                    advanceCompanionGeneration()
+                    rxBuf.clear()
 
                     // reset per-session flags
                     negotiatedMtu = DEFAULT_ATT_MTU
@@ -848,8 +1254,8 @@ class CompanionAppService : Service() {
 
 
                     Log.d(TAG, "Active device disconnected: ${device.address}")
-                    bloodhoundConnectionGeneration.incrementAndGet()
-                    rxBuf.setLength(0)
+                    advanceCompanionGeneration()
+                    rxBuf.clear()
                     activeAddr = null
                     connectedDevice = null
 
@@ -919,22 +1325,12 @@ class CompanionAppService : Service() {
                 return
             }
 
-            val chunk = value.toString(Charsets.UTF_8)
             Log.d(TAG, "RX from companion chunk bytes=${value.size}")
-
-            rxBuf.append(chunk)
-
-            // 1) Process newline-delimited frames
-            while (true) {
-                val idx = rxBuf.indexOf("\n")
-                if (idx < 0) break
-
-                val line = rxBuf.substring(0, idx).trim()
-                rxBuf.delete(0, idx + 1)
-
-                if (line.isNotEmpty()) {
-                    handleCompanionLine(line)
-                }
+            try {
+                for (line in rxBuf.accept(value)) handleCompanionLine(line)
+            } catch (error: IllegalStateException) {
+                gatewayError(capRepo.gateway.session, error.message ?: "Invalid BLE frame")
+                forceBleReset("oversized BLE JSON frame")
             }
 
         }
@@ -991,6 +1387,7 @@ class CompanionAppService : Service() {
             Log.d(TAG, "CCCD write from ${device.address}, enable=$enableNoti disable=$disableNoti")
 
             if (enableNoti) {
+                beginCompanionSubscription()
                 notificationsEnabled = true
                 disarmHandshakeWatchdog()
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.SERVICES_READY)
@@ -1070,6 +1467,19 @@ class CompanionAppService : Service() {
      */
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     fun sendJsonToCompanion(json: String) {
+        sendJsonForPeer(json, connectedDevice?.address, bloodhoundConnectionGeneration.get())
+    }
+
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun sendJsonForPeer(json: String, address: String?, generation: Long) {
+        if (address == null || !currentPeer(address, generation)) {
+            Log.w(TAG, "Dropping companion JSON for ended/unready connection")
+            return
+        }
+        if (capRepo.gateway.session != null) {
+            Log.i(TAG, "Suppressed legacy companion output during Gateway session")
+            return
+        }
         if (!capRepo.companionAppReady.value) {
             Log.d(TAG, "Companion not ready (state=${capRepo.bleConnectionState.value}); dropping JSON")
             return
@@ -1119,9 +1529,8 @@ class CompanionAppService : Service() {
         val framed = if (outgoing.endsWith("\n")) outgoing else (outgoing + "\n")
         val bytes = framed.toByteArray(Charsets.UTF_8)
         val maxPayload = maxNotifyPayloadBytes()
-
         notifyScope.launch {
-            sendChunkedNotify(bytes, maxPayload)
+            sendChunkedNotify(bytes, maxPayload, address, generation)
         }
 
         /*
@@ -1149,8 +1558,15 @@ class CompanionAppService : Service() {
         bytes: ByteArray,
         maxPayload: Int,
         expectedAddress: String? = null,
-        expectedGeneration: Long? = null
+        expectedGeneration: Long? = null,
+        diagnostics: Boolean = false
     ) {
+        if (capRepo.gateway.session != null) {
+            val message = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
+            val type = message.optString("msgType")
+            if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return
+            if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) return
+        }
         val device = connectedDevice ?: run {
             Log.d(TAG, "sendChunkedNotify: no connectedDevice")
             return
@@ -1164,10 +1580,24 @@ class CompanionAppService : Service() {
             return
         }
 
-        // Prevent interleaving chunks from multiple messages
-        notifyMutex.withLock {
+        // Diagnostics are best-effort and never wait behind operational output.
+        val acquired = if (diagnostics) notifyMutex.tryLock() else {
+            notifyMutex.lock()
+            true
+        }
+        if (!acquired) {
+            Log.d(TAG, "Dropping diagnostics notification while operational traffic is active")
+            return
+        }
+        try {
+            val message = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
+            val type = message.optString("msgType")
+            val gatewayToken = if (type.startsWith("gateway_")) message.optString("session") else null
+            if (capRepo.gateway.session != null &&
+                type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return
             var offset = 0
             while (offset < bytes.size) {
+                if (gatewayToken != null && gatewayToken != capRepo.gateway.session) return
                 if (expectedAddress != null &&
                     (device.address != expectedAddress || connectedDevice != device || !bloodhoundLinkReady() ||
                         bloodhoundConnectionGeneration.get() != expectedGeneration)
@@ -1199,18 +1629,37 @@ class CompanionAppService : Service() {
                 // Small pacing delay avoids buffer overruns on some stacks
                 if (offset < bytes.size) delay(NOTIFY_CHUNK_DELAY_MS)
             }
+        } finally {
+            notifyMutex.unlock()
         }
 
         Log.d(TAG, "sendChunkedNotify: sent ${bytes.size} bytes in chunks (maxPayload=$maxPayload)")
     }
-    private val rxBuf = StringBuilder(4096)
+    private val rxBuf = com.aitech.weartak_civ.cot.CompanionJsonFramer()
 
-    suspend fun applySettingsFromCompanion(payload: CompanionAppRepository.SetSettingsPayload) {
+    suspend fun applySettingsFromCompanion(
+        payload: CompanionAppRepository.SetSettingsPayload,
+        expectedGeneration: Long = bloodhoundConnectionGeneration.get()
+    ) {
+        check(capRepo.gateway.session == null) { "Profile writes forbidden in gateway session" }
+        check(!payload.phoneManagedSettings || phoneManagementReleaseGeneration.get() != expectedGeneration) {
+            "Phone management was released for this companion session"
+        }
         TakServerP12Validator.validate(payload.takServerList)
         require(payload.reportIntSecs == null || payload.reportIntSecs > 0) {
             "Reporting interval must be positive"
         }
         val sendingPeerAddress = connectedDevice?.address
+
+        if (!payload.phoneManagedSettings) {
+            // Configure mode: restore any bond snapshot first so the uploaded settings stick.
+            sendingPeerAddress?.let { peerAddress ->
+                repo.clearPhoneManagedSettingsForPeer(peerAddress)?.let { restored ->
+                    synchronized(phoneManagementLease) { phoneManagementLease.stop() }
+                    applyRestoredPhoneManagedSettings(restored)
+                }
+            }
+        }
 
         val managedPeerAddress = if (payload.phoneManagedSettings) {
             require((payload.reportIntSecs ?: 0) > 0) {
@@ -1223,7 +1672,8 @@ class CompanionAppService : Service() {
                 ?: throw IllegalStateException("Cannot apply phone-managed settings without an active companion")
         } else null
 
-        // 1) Store servers
+        // 1) Store servers, first saving the watch's own servers when a bond takes over.
+        if (managedPeerAddress != null) repo.snapshotTakServersForPhoneManagement()
         Log.d(TAG, "applySettingsFromCompanion: storeTakServerList size=${payload.takServerList.size}")
         val refresh = repo.storeProvisionedTakServerList(payload.takServerList)
         if (TAKConnectService.isRunning.get()) {
@@ -1240,28 +1690,50 @@ class CompanionAppService : Service() {
 //        takServerListState.postValue(takServerList)
 
         managedPeerAddress?.let { peerAddress ->
+            check(phoneManagementReleaseGeneration.get() != expectedGeneration) {
+                "Phone management was released for this companion session"
+            }
             check(connectedDevice?.address.equals(peerAddress, ignoreCase = true)) {
                 "The companion disconnected before phone-managed settings could be applied"
             }
-            repo.enablePhoneManagedSettings(peerAddress)
-        }
-        if (!payload.phoneManagedSettings) {
-            sendingPeerAddress?.let { peerAddress ->
-                repo.clearPhoneManagedSettingsForPeer(peerAddress, restorePreviousReporting = false)
-                    ?.let { (dynamicReporting, constantInterval) ->
-                        MainActivity.Constants.enableDynamicReportingStrategy = dynamicReporting
-                        MainActivity.Constants.constantReportingInterval = constantInterval
-                    }
+            repo.enablePhoneManagedSettings(peerAddress) {
+                bloodhoundConnectionGeneration.get() == expectedGeneration &&
+                    phoneManagementReleaseGeneration.get() != expectedGeneration &&
+                    connectedDevice?.address.equals(peerAddress, ignoreCase = true)
             }
         }
+        if (managedPeerAddress != null) {
+            // 2) Snapshot the watch's own locked values once, then apply the phone's.
+            val applied = repo.applyPhoneManagedSettings(
+                callsign = requireNotNull(payload.callsign),
+                team = requireNotNull(payload.team),
+                role = requireNotNull(payload.role),
+                constantReportingInterval = requireNotNull(payload.reportIntSecs)
+            ) {
+                bloodhoundConnectionGeneration.get() == expectedGeneration &&
+                    phoneManagementReleaseGeneration.get() != expectedGeneration &&
+                    connectedDevice?.address.equals(managedPeerAddress, ignoreCase = true)
+            }
+            applied.applyToRuntimeConstants()
+        } else {
+            applyProvisionedSettings(payload)
+        }
+        synchronized(phoneManagementLease) {
+            if (managedPeerAddress != null && currentPeer(managedPeerAddress, expectedGeneration) &&
+                phoneManagementReleaseGeneration.get() != expectedGeneration
+            ) {
+                phoneManagementLease.start(
+                    managedPeerAddress, expectedGeneration, android.os.SystemClock.elapsedRealtime()
+                )
+                repo.setPhoneManagementSessionActive(true)
+            }
+        }
+    }
 
+    private suspend fun applyProvisionedSettings(payload: CompanionAppRepository.SetSettingsPayload) {
         // 2) Store reporting interval
         val int = payload.reportIntSecs
         if (int != null && int != 0) {
-            if (payload.phoneManagedSettings) {
-                repo.storeEnableDynamicReportingStrategy(false)
-                MainActivity.Constants.enableDynamicReportingStrategy = false
-            }
             repo.storeConstantReportingInterval(payload.reportIntSecs)
             MainActivity.Constants.constantReportingInterval = payload.reportIntSecs
         }
@@ -1269,11 +1741,6 @@ class CompanionAppService : Service() {
         payload.callsign?.let { phoneCallsign ->
             repo.storeCallsign(phoneCallsign)
             callsign = phoneCallsign
-            if (connectedDevice == null) {
-                updateBluetoothNameFromCallsign(phoneCallsign)
-            } else {
-                Log.d(TAG, "Callsign applied while connected; will update BT name next advertise")
-            }
         }
 
         payload.team?.let { phoneTeam ->
@@ -1293,9 +1760,9 @@ class CompanionAppService : Service() {
 
     private fun clearPhoneManagedSettings(address: String) {
         serviceScope.launch {
-            val restoredReporting = repo.clearPhoneManagedSettingsForPeer(address) ?: return@launch
-            MainActivity.Constants.enableDynamicReportingStrategy = restoredReporting.first
-            MainActivity.Constants.constantReportingInterval = restoredReporting.second
+            val restored = repo.clearPhoneManagedSettingsForPeer(address) ?: return@launch
+            synchronized(phoneManagementLease) { phoneManagementLease.stop() }
+            applyRestoredPhoneManagedSettings(restored)
             Log.i(TAG, "Phone-managed watch settings released after companion bond removal")
         }
     }
@@ -1306,8 +1773,130 @@ class CompanionAppService : Service() {
 
         try {
             val base = gson.fromJson(json, CompanionAppRepository.EnvelopeBase::class.java)
+            if (base.type == "gateway_hello") {
+                require(bloodhoundLinkReady()) { "Gateway requires bonded ready transport" }
+                val ack = capRepo.gateway.negotiate(org.json.JSONObject(json))
+                serviceScope.launch {
+                    bloodhoundSyncMutex.withLock { refreshBloodhoundConnection() }
+                    val sys = repo.snapshotSystem()
+                    if (capRepo.gateway.session != ack.getString("session") || !bloodhoundLinkReady()) return@launch
+                    ack.put("uid", sys.deviceId).put("callsign", sys.callsign)
+                        .put("team", sys.team).put("role", sys.role)
+                    if (!sendBloodhoundControl(ack.toString())) {
+                        capRepo.gateway.reset()
+                        bloodhoundSyncMutex.withLock { refreshBloodhoundConnection() }
+                        Log.w(TAG, "Gateway negotiation acknowledgement queue full")
+                    } else if (!capRepo.gateway.confirm(ack.getString("session"))) {
+                        Log.w(TAG, "Discarding acknowledgement for ended gateway session")
+                    }
+                }
+                return
+            }
+            if (base.type == "gateway_cot") {
+                val token = capRepo.gateway.session
+                val xml = capRepo.gateway.accepts(org.json.JSONObject(json))
+                val generation = bloodhoundConnectionGeneration.get()
+                if (token == null || !gatewayIncoming.trySend(GatewayIncoming(token, generation, xml)).isSuccess)
+                    gatewayError(token, "Gateway import queue full (64)")
+                return
+            }
+            if (capRepo.gateway.session != null) {
+                Log.w(TAG, "Gateway rejected non-map/profile command: ${base.type}")
+                return
+            }
+            if (handleLocationDiagnosticsMessage(json, base.type)) return
 
             when (base.type) {
+                "phone_management_pong" -> {
+                    val message = org.json.JSONObject(json)
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    require(message.optInt("version") == 1) { "Unsupported management heartbeat version" }
+                    val token = message.getString("token")
+                    if (!currentPeer(address, generation) ||
+                        !phoneManagementLease.acknowledge(
+                            address, generation, token, android.os.SystemClock.elapsedRealtime()
+                        )
+                    ) Log.w(TAG, "Ignoring stale phone management heartbeat")
+                }
+
+                "phone_user_cot", "phone_user_remove" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    if (!isCurrentSingleWatch(address, generation)) return
+                    val payload = org.json.JSONObject(json).getJSONObject("payload")
+                    val phoneUid = payload.opt("phoneUid") as? String
+                    require(!phoneUid.isNullOrBlank() && phoneUid.length <= 512 &&
+                        !phoneUid.any(Char::isISOControl)
+                    ) { "Invalid phone UID" }
+                    if (base.type == "phone_user_remove") {
+                        val uid = payload.opt("targetUid") as? String
+                        require(!uid.isNullOrBlank() && uid.length <= 512 && !uid.any(Char::isISOControl) &&
+                            uid != device_uid && uid != phoneUid
+                        ) { "Invalid user removal UID" }
+                        synchronized(companionUserLock) {
+                            if (isCurrentSingleWatch(address, generation)) repo.removeCompanionUser(uid)
+                        }
+                    } else {
+                        val xml = payload.get("cot") as? String
+                            ?: throw IllegalArgumentException("User CoT must be XML text")
+                        require(xml.length <= 131_072) { "User CoT too large" }
+                        val event = CotMessageParser.parseCompanionUserOrNull(xml, device_uid, phoneUid)
+                        if (event == null) {
+                            Log.w(TAG, "Ignoring invalid/self companion user PLI")
+                            return
+                        }
+                        synchronized(companionUserLock) {
+                            if (isCurrentSingleWatch(address, generation)) {
+                                repo.receiveCompanionUserEvent(event, System.currentTimeMillis())
+                            }
+                        }
+                    }
+                }
+
+                "release_phone_management" -> {
+                    val payload = org.json.JSONObject(json).getJSONObject("payload")
+                    val requestId = payload.opt("requestId") as? String
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    if (!currentPeer(address, generation)) return
+                    serviceScope.launch {
+                        var error: String? = null
+                        val validId = requestId != null &&
+                            requestId.matches(Regex("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"))
+                        if (validId) phoneManagementReleaseGeneration.set(generation)
+                        val ok = if (!validId) {
+                            error = "Invalid requestId UUID"
+                            false
+                        } else try {
+                            phoneManagementSettingsMutex.withLock {
+                                releasePhoneManagement(address, generation).also {
+                                    if (!it) error = "Settings are managed by a different companion"
+                                }
+                            }
+                        } catch (failure: IllegalStateException) {
+                            if (failure is kotlinx.coroutines.CancellationException) throw failure
+                            error = failure.message
+                            false
+                        } catch (failure: java.io.IOException) {
+                            error = failure.message ?: "Unable to persist management release"
+                            false
+                        }
+                        if (!currentPeer(address, generation)) return@launch
+                        val ackPayload = org.json.JSONObject()
+                            .put("requestId", requestId ?: org.json.JSONObject.NULL).put("ok", ok)
+                        error?.let { ackPayload.put("error", it) }
+                        val ack = org.json.JSONObject().put("msgType", "phone_management_release_ack")
+                            .put("payload", ackPayload)
+                        val frame = BloodhoundFrame(
+                            "$ack\n".toByteArray(Charsets.UTF_8), address, generation, maxNotifyPayloadBytes()
+                        )
+                        if (!bloodhoundFrames.trySend(frame).isSuccess) {
+                            Log.w(TAG, "Management release acknowledgement queue full")
+                        }
+                    }
+                }
+
                 "bloodhound_control", "bloodhound_control_result" -> {
                     val payload = org.json.JSONObject(json).getJSONObject("payload")
                     val generation = bloodhoundConnectionGeneration.get()
@@ -1333,26 +1922,37 @@ class CompanionAppService : Service() {
                 }
 
                 "request_settings" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
                     serviceScope.launch {
+                        if (!currentPeer(address, generation)) {
+                            Log.w(TAG, "Ignoring settings request from ended/unready connection")
+                            return@launch
+                        }
                         val env = capRepo.buildWatchSettingsEnvelope()
-                        sendJsonToCompanion(capRepo.envelopeToJson(env))
+                        if (!currentPeer(address, generation)) {
+                            Log.w(TAG, "Discarding settings snapshot for ended connection")
+                            return@launch
+                        }
+                        Log.i(TAG, "Sending settings snapshot generation=$generation")
+                        sendJsonForPeer(capRepo.envelopeToJson(env), address, generation)
                     }
                 }
 
                 "set_settings" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
                     serviceScope.launch {
                         try {
-                            val msg = gson.fromJson(
-                                json,
-                                CompanionAppRepository.SetSettingsMessage::class.java
-                            )
-
-                            // store the settings
-                            applySettingsFromCompanion(msg.payload)
+                            val msg = gson.fromJson(json, CompanionAppRepository.SetSettingsMessage::class.java)
+                            phoneManagementSettingsMutex.withLock {
+                                check(currentPeer(address, generation)) { "Settings belong to an ended companion connection" }
+                                applySettingsFromCompanion(msg.payload, generation)
+                            }
 
                             // ACK with the current settings (msgType)
                             val ackEnv = capRepo.buildSettingsAck(ok = true)
-                            sendJsonToCompanion(capRepo.envelopeToJson(ackEnv))                 // ACKNOWLEDGEMENT
+                            sendJsonForPeer(capRepo.envelopeToJson(ackEnv), address, generation)
 
                         } catch (t: Throwable) {
                             Log.w(TAG, "set_settings: failed to parse/apply", t)
@@ -1361,12 +1961,12 @@ class CompanionAppService : Service() {
                                 ok = false,
                                 error = t.message ?: "parse/apply error"
                             )
-                            sendJsonToCompanion(capRepo.envelopeToJson(ackEnv))
+                            sendJsonForPeer(capRepo.envelopeToJson(ackEnv), address, generation)
                         }
                         // whenever we are commanded to write setting values, we always send back over the actual settings to the plugin to ensure true sync.
                         try {
                             val currSettingsEnv = capRepo.buildWatchSettingsEnvelope()
-                            sendJsonToCompanion(capRepo.envelopeToJson(currSettingsEnv))
+                            sendJsonForPeer(capRepo.envelopeToJson(currSettingsEnv), address, generation)
                         } catch (t: Throwable) {
                             Log.w(TAG, "set_settings: failed to send current settings", t)
                         }
@@ -1390,8 +1990,24 @@ class CompanionAppService : Service() {
                             }
                             val applied = repo.receivePointDeletion(deletion.first, deletion.second, generation, bhRepo)
                             Log.d(TAG, "Point deletion applied=$applied")
+                            if (generation == bloodhoundConnectionGeneration.get()) {
+                                val ack = com.aitech.weartak_civ.data.CompanionPointRevisions
+                                    .deletionAck(deletion.first, deletion.second, applied).toString()
+                                if (!sendBloodhoundControl(ack)) Log.w(TAG, "Point deletion ack write rejected")
+                            }
                         }
                     }
+                }
+
+                "marker_delete_ack" -> {
+                    val ack = com.aitech.weartak_civ.data.CompanionPointRevisions.parseDeletionAck(
+                        org.json.JSONObject(json).optJSONObject("payload"))
+                    val result = ack?.let {
+                        repo.pointDeletionAcks.acknowledged(it.first, it.second,
+                            bloodhoundConnectionGeneration.get(), it.third)
+                    }
+                    if (result == null) Log.w(TAG, "Ignoring unknown point deletion ack")
+                    else repo.reportPointDeletionResult(result)
                 }
 
                 "phone_marker_cot" -> {
@@ -1477,11 +2093,14 @@ class CompanionAppService : Service() {
 
         } catch (t: Throwable) {
             Log.w(TAG, "Failed to parse RX JSON bytes=${json.toByteArray().size}", t)
+            gatewayError(capRepo.gateway.session, "Gateway receive error: ${t.message}")
         }
     }
 
     companion object {
         private val TAG = "WearTAK-" + CompanionAppService::class.java.simpleName
+        private const val LOCATION_DIAGNOSTICS_REPORT_INTERVAL_MS = 30_000L
+        private const val POINT_DELETION_ACK_TIMEOUT_MS = 10_000L
         private const val ACTION_KEY_MISSING = "android.bluetooth.device.action.KEY_MISSING"
         private const val NOTIFICATION_ID = 999  // change per service
         val isRunning: AtomicBoolean = AtomicBoolean(false)

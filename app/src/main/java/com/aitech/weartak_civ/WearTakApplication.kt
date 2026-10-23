@@ -39,12 +39,14 @@ import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.integration.plugin.PluginRepository
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
+import com.aitech.weartak_civ.service.BondedLocationDiagnostics
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -57,6 +59,7 @@ class WearTakApplication : Application() {
     lateinit var repo: DataRepository; private set
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
+    lateinit var locationDiagnostics: BondedLocationDiagnostics; private set
     lateinit var sitxRepo: SitxSecretsRepository; private set
     lateinit var takServerRepo: TakServerSecretsRepository; private set
     lateinit var audioRepo: AudioCaptureRepository; private set
@@ -83,7 +86,11 @@ class WearTakApplication : Application() {
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            repo.takRoutes.collect { routes -> bhRepo.reconcileRoutes(routes) }
+        }
         capRepo = CompanionAppRepository(applicationContext)
+        locationDiagnostics = BondedLocationDiagnostics(applicationContext)
         audioRepo = AudioCaptureRepository(applicationContext)
         crmRepo = CrmDataRepository(repo)
         gunshotOnnxRepo = GunshotOnnxRepository(applicationContext)

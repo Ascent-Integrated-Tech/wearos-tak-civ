@@ -4,6 +4,50 @@ WearTAK-CIV is a standalone Wear OS application that connects a watch to the Tea
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
+Configure Ditto Edge Sync under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
+tap the Ditto Edge Sync row to select Community or configure a custom PDL in Ditto Edge Sync Identity. The row subtitle shows
+Community or the saved custom PDL, truncated to fit. Ditto is off by default on fresh installs, and saved
+enablement settings are preserved. PDL Help provides scrollable instructions for copying and pasting a custom identity.
+Plugins are listed alphabetically, including installed plugins. Everywhere, GoTenna and Somewear Labs are
+unfunded placeholders: each displays **Unfunded Request**, and their switches remain off without activating any integration.
+Installed plugins use split chips: tap the row to open the plugin's launcher activity, or use the switch
+to load/unload it. Swipe the row to access remove and info. Plugins without a launchable activity
+(or whose activity cannot be opened) reveal those actions on tap instead. Opening an activity does not load the plugin.
+Plugin authors can override the menu subtitle by placing this metadata **inside the plugin's
+`<service>` element** (the service advertising `com.weartak.plugin.action.PLUGIN_SERVICE`):
+
+```xml
+<meta-data
+    android:name="com.weartak.plugin.MENU_SUBTITLE"
+    android:value="Unfunded Request" />
+```
+
+The host reads service metadata without requiring the plugin to be loaded. Application metadata
+is not used for this override. Missing, empty, or whitespace-only values retain the loading-status
+subtitle. This changes only the menu subtitle: the info popup still shows the actual loading status,
+and the toggle, tap-to-open, and swipe remove/info actions are unchanged.
+
+Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
+Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
+Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.
+The six integration rows use the artwork below, fitted proportionally into 24 dp without theme tint.
+The user confirmed permission to use these identified assets on 2026-10-21; this is user-confirmed
+permission, not a claim of a public redistribution license. Only Ditto is the exact ATAK plugin icon;
+the other marks are approved official-company backups, not claimed as ATAK plugin artwork.
+
+| Integration | Artwork and provenance | Preparation |
+| --- | --- | --- |
+| Somewear Labs | [Official 192 px symbol](https://somewearlabs.com/wp-content/uploads/2026/07/cropped-somewear-favicon-rounded-corners-192x192.png) | Unchanged PNG, `ic_integration_somewear.png`. |
+| GoTenna | [Official original favicon](https://gotenna.com/cdn/shop/files/favicon.webp?v=1680207627) | Native 100 x 100 WebP, requested with `Accept: image/webp`; no enlargement. `ic_integration_gotenna.webp`. |
+| Everywhere | [Official white logo](https://everywherecomms.com/cdn/shop/files/everywhere_logo_white.png?v=1727986047) | Left 232 x 232 globe crop from the 1517 x 232 logo, proportionally reduced to 192 px; no redrawing. `ic_integration_everywhere.png`. |
+| DART and FALCON | [Official Certus Innovations symbol](https://images.squarespace-cdn.com/content/v1/687cf63b5a78985697612a02/8c2c76c6-79ac-4cf4-8dca-a3e9f8f0293c/CI-Icon-Arrow_white%2Bteal.png) | 1920 px artwork proportionally reduced to 192 px, retaining white/teal and transparency. Both use `ic_integration_certus.png`; labels distinguish the products. Product identity: [DART](https://www.certusinnovations.com/products/dart), [FALCON](https://www.certusinnovations.com/products/falcon). |
+| Ditto Edge Sync | Installed `com.dittofederal.atak.plugin.ditto` APK, `drawable/ic_ditto_menu` (`0x7f07006b`), compiled `res/AC.xml` | `ic_integration_ditto.xml` preserves all four original paths and `#F6F6F6` fills. Transparent margins trimmed from the 376 x 416 viewport to the artwork bounds (284 x 324), with proportional intrinsic size. |
+
+Sensor Manager displays **Unfunded Request** and has a saved enable/disable preference (off by default). Tap its row to open the preview
+configuration showing **Unfunded Request**, **Button is Placeholder**, and a single inert **Scan** button.
+The future workflow will list discovered sensors with per-sensor Pair controls and change the main action
+to Unpair once paired. Enabling Sensor Manager does not start scanning or connect hardware yet.
+
 ## What it does
 
 - Connects to TAK endpoints and sends and receives CoT traffic.
@@ -17,7 +61,57 @@ The app can connect directly to a TAK server and can optionally use SITX, Ditto 
 
 Some capabilities depend on hardware, permissions, credentials, configuration, and separately provisioned services or SDKs. In particular, mesh, companion, SITX, plugin, audio-detection, and managed-configuration features are optional.
 
+### PLI metadata compatibility
+
+Watch-built PLI XML and Ditto track details include `takv`, `status`, and `__group`
+as immediate children of `detail`. `takv` identifies WearTAK using the installed
+app's build version, Android SDK level, and actual watch manufacturer/model, not
+phone or ATAK metadata. Callsign, UID, team, role, and device strings are XML-escaped.
+Structured `status battery` is emitted only for an available percentage in 0..100;
+existing remarks and biometrics are retained.
+
+Direct XML routes and the negotiated raw-XML companion gateway preserve those
+fields. The legacy companion PLI JSON envelope is unchanged: it includes battery
+and callsign but not team, role, or `takv`. Separate legacy settings snapshots carry
+team/role, but `settings_changed` deltas do not; phone-side conversion must be
+verified separately. Passing local tests does not establish server/ATAK receipt.
+
+### WEARTAK-121: Bloodhound to a map user
+
+Tap a user on the map, then **Start Bloodhound** immediately below **Open Chat** to
+start the existing Bloodhound action and return to the map. The action uses the
+selected user's UID and location; subsequent PLI from that same source refreshes
+the target while preserving tracking state. Users without a valid position cannot
+be selected for Bloodhound. If the user disappears, the last known target remains
+until stopped or removed through the existing Bloodhound controls. This action is
+also available on the map opened from Chat: it starts Bloodhound and returns to
+that map without selecting a chat contact or sending a message. **Open Chat**
+retains the chat picker's existing contact-selection behavior.
+The user menu uses the standard Wear scrolling list and position indicator so both
+actions remain reachable on round screens. The ordinary Bloodhound detail action
+also reads **Start Bloodhound** instead of **RGR**; acknowledgement and stop behavior
+are unchanged.
+
+## GitHub pipeline release
+
+Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
+**TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
+as stable builds, not prereleases. See [CI release setup and retention](ci/README.md)
+for required administrator configuration, provenance, and verified replacement behavior.
+Other numbered releases and unrelated assets are preserved.
+
 ## Platform and requirements
+
+### WEARTAK-169: Bluetooth name is no longer changed
+
+WearTAK no longer changes the watch's system Bluetooth name at startup, when applying
+a callsign from the phone, or when restoring the watch's own settings. Companion BLE
+discovery still uses the A11A service UUID, and advertising still includes the current
+system device name; no `WT-` prefix is required. Bluetooth connection permissions remain
+necessary for GATT and bond handling.
+
+An existing name such as `WT-ODIN-ATAK` is not automatically restored because the original
+name is unknown. Rename the watch manually in watch Settings if desired.
 
 ### Companion bond retention
 
@@ -44,6 +138,17 @@ with `*Companion*`, `*PhoneManagedSettings*`, `*CompanionChat*`, and
 `*CompanionPoint*` selectors passed **75 tests**, including **6 new bond-retention
 tests**, with no failures. Offline `:app:assembleDebug` passed. The APK was not
 installed; paired hardware acceptance is pending.
+
+### WEARTAK-160: Single-watch phone-user map relay
+
+The single-watch companion link relays remote user PLI in
+`phone_user_cot` payloads `{cot: XML, phoneUid: nonblank}`. A
+`phone_user_remove` payload `{targetUid, phoneUid}` removes only the matching
+companion-owned map copy. WearOS stores this copy separately
+from network CoT with the same UID, expires stale positions, clears the
+companion snapshot when its BLE generation ends, and caps it at 512 users.
+Only live `a-*` PLI with a TAK user identity is accepted; dropped points,
+emergencies, and the watch or phone's own identity are rejected.
 
 This is a single-module Wear OS app (`:app`) with package ID `com.aitech.weartak_civ`.
 
@@ -80,7 +185,101 @@ The project includes local binary dependencies for the Samsung Health Sensor API
 
 The app requests permissions at runtime. On a physical device, grant only the permissions required for the services you intend to enable (for example, location, body sensors, activity recognition, notifications, Bluetooth, and microphone access).
 
+### Bonded Location Diagnostics (WEARTAK-165)
+
+The **Bonded Location Diagnostics** switch is in Developer Preferences and is persisted independently of Developer Mode. Diagnostics run only after a versioned capability exchange over the authenticated, bonded, ready single-watch Companion BLE session; setup and gateway routes do not enable observation. Disabling the switch sends a session-scoped stop so both devices unregister diagnostics-only callbacks. An unsupported Companion peer receives no repeated capability probes, and a new connection negotiates a new session.
+
+The watch observes fixes already delivered to WearTAK and registers GNSS status/raw-measurement callbacks only for an accepted diagnostics session. It does not request an additional location stream, change the authoritative PLI, or publish diagnostic data as CoT. The phone observes passive platform fixes plus GNSS callbacks; it does not take over ATAK location authority. Permission failures, disabled providers, inactive receivers, and unsupported callback data remain visible as Unavailable or Unknown rather than being treated as good. Quality states are conservative and are not a determination of jamming or spoofing.
+
+The Developer Preferences diagnostics page shows watch and phone quality separately and provides diagnostic-only Entry/Exit markers, JSON export, and Clear. Local daily summaries retain no exact coordinates, device identifiers, or raw satellite identifiers; logs are bounded to 256 KiB per day and seven days of retention. Diagnostic messages are versioned, session-fenced, size-limited, rate-limited, and best-effort behind operational BLE traffic.
+
 ## Configuration and operation
+
+The legacy `SettingsActivity` component redirects to `WearTAKSettingsActivity`.
+Debug tools are a screen within settings, not a separately launchable activity.
+ATOS CoT IPC authorizes the caller on every Binder transaction, before processing
+the payload; service binding itself does not establish a trusted caller identity.
+
+### Route point selection
+
+TAK-server Data Package offers (`b-f-t-r`) can import routes from version 2
+Mission Package ZIPs. WearTAK downloads the content hash from the **source server's
+configured HTTPS host on port 8443**, using that server's client certificate and
+certificate/hostname verification. Advertised hosts and redirects are never followed.
+Non-route package content is not supported.
+Offers are bound to the receiving TLS socket's current connection attempt, not
+its asynchronously updated display status. Replaced/disabled/disconnected
+sessions cannot borrow a new connection's credentials. A reconnect or busy importer
+is reported as an operational import failure, not malformed sender XML.
+Only manifest-listed, non-ignored `b-m-r` CoT entries are imported, through the
+existing route parser; package commands and import/delete instructions are not executed.
+Downloads are limited to 8 MiB, expanded archives to 16 MiB, individual entries to
+4 MiB (manifest: 256 KiB), 256 entries, and 10,000 total route points.
+SHA-256 and advertised size must match before import. Unsafe paths, DTDs/entities,
+missing content and invalid routes reject the package without importing partial routes.
+One package is processed at a time without blocking incoming CoT; failed imports
+are logged and show a watch toast. Resend after an import failure.
+When requested, transfer success/failure acknowledgements are routed back to the
+sender through the source TAK server; success is sent only after route import.
+Imported routes use the existing in-memory route store; restart recovery requires
+a resend or a subscribed Data Sync mission.
+
+Ordinary route geometry CoT (`b-m-r`) received on the configured Wi-Fi multicast
+subscriptions uses the same route store, complete geometry and point actions as
+server/Data Sync routes. A Mission Package ZIP is not raw route CoT over UDP:
+its local `b-f-t-r` offer uses a separate source-bound peer download. Only a private
+IPv4 UDP sender on the receiving Wi-Fi link, HTTPS port 8443 and `/getfile` with
+exactly one numeric `file` ID and one `sender` parameter are accepted (CommonCommo
+`MissionPackageManager::getLocalUrl`). The offered host must exactly match the UDP
+sender. Downloads are bound to that Wi-Fi network/session with no proxy or redirects;
+server credentials/client certificates are never used. ATAK serves `/getfile` with a
+self-signed certificate that does not name the phone's IP, so the peer download accepts
+the phone's certificate (HTTPS only, hostname must equal the UDP sender IP, no HTTP
+fallback). Integrity comes from the offer's mandatory SHA-256 and size, which must match
+the downloaded bytes before any route is imported. TAK server connections keep full
+platform/enrolled-CA trust and hostname validation.
+Peer imports share the same ZIP/hash/size bounds and route UI; identities are
+scoped to the multicast source and peer IP. Peer ACK routing is not yet supported,
+so a sender may report a timeout even after a verified watch import.
+Live peer ZIP interoperability is not yet accepted; an observed local offer alone
+does not establish successful HTTPS download or route import.
+Debug multicast diagnostics record only the peer IP, offer URL scheme/port/path
+host/source equality, query key names/count, and hash/size presence, not the full
+offer, credentials, query values or hash values.
+
+Tap a route line to view the whole route and select any of its points (including
+unnamed vertices) for the existing point details and Bloodhound action. **Remove
+from watch** requires confirmation and removes only that source server/route UID
+from local map state, never the server copy or another server's matching UID.
+A later resend or Data Sync update can restore a locally removed route. Existing
+single-point Bloodhound targets remain until stopped or removed using Bloodhound controls.
+
+The Bloodhound picker also lists each received **whole route** once, with its total
+point count and distance to the nearest vertex when a location fix is available.
+Open a route and choose **Start nearest** (requires a location fix) or **Start from
+beginning**. Navigation follows every vertex in its received order, including
+unnamed points, advancing past consecutive targets within **20 m**. The route
+screen shows **Point X of N**, remaining distance along the route, the existing
+Bloodhound compass, and **Stop route**. Reaching the final point shows **Route
+complete** and clears the active target. Starting another Bloodhound stops route
+following; removing the route from the watch also stops it. A received geometry
+change stops following so an old point index cannot target a different path.
+Following is local only (no CoT, chat or acknowledgement to the sender), and both
+routes and follow progress are in memory, not restored after app restart.
+
+Route lines and named point markers remain visible on the map. Selecting a point
+uses the standard marker range/bearing display, Bloodhound/In Position action,
+and Back control. **Whole route** returns from point details to route removal
+and the named point list. The list excludes blank names but keeps original point
+indices; its count distinguishes named entries from all geometry points. Routes
+without named points show an empty-state explanation; unnamed points remain
+selectable on the map. Route taps have a 12 dp tolerance; individual vertex
+selection is available above zoom 10, including unnamed vertices. Only nonblank
+waypoint names produce map dots/labels, avoiding thousands of empty track markers
+without dropping any line geometry. Hit testing runs on taps, not on each frame.
+Selection and sender lookup use both the source server ID and route UID,
+so matching route UIDs received from different servers cannot select each other's
+points. Route parsing does not log raw CoT XML.
 
 ### Companion provisioning and optional phone management (WEARTAK-90)
 
@@ -92,10 +291,82 @@ One-time uploads do not lock watch settings or copy the phone's team and role.
 
 **Manage watch settings from this phone** is opt-in. It copies phone identity and
 resynchronizes on reconnect, with watch identity, reporting, and server edits locked.
-A temporary BLE disconnect does not release this management mode. To return to
+The editing lock requires a live, successfully managed Companion session. Application-level
+heartbeats run every 10 seconds; after 30 seconds without a matching response, the watch
+unlocks local edits and resets the Companion transport, even if Samsung retains the shared
+Bluetooth connection after ATAK exits or crashes. This detects loss of responsiveness,
+not the cause of the outage. The saved management opt-in is retained, while the watch's
+own identity, reporting, servers, and certificates are restored (WEARTAK-168).
+A fresh successful managed-settings handshake re-applies the phone's values and restores
+the lock; merely reconnecting or receiving an old heartbeat does not. Watch process/service
+restart also requires a fresh handshake; if none arrives within 30 seconds, the watch
+restores its own values. Older Companion builds without heartbeat support
+cannot maintain the lock and must be updated alongside the watch. To return to
 one-time provisioning, uncheck the option and send settings again; this releases
-the lock without deleting certificates or reverting the current reporting settings.
-Unpairing instead releases the lock and restores the pre-management reporting settings.
+the lock, restores the watch's own values, and then applies the one-time upload, whose
+servers and certificates stay. Unpairing also releases the lock and restores the watch's
+own values.
+
+### WEARTAK-161: Explicitly releasing phone management
+
+Turning off **Companion App** in watch settings first clears the phone-managed
+settings lock for its recorded companion peer, then disables the companion service.
+Since WEARTAK-168, this stop action restores the watch's own callsign, team, role,
+reporting settings, TAK servers, and certificates. A transient BLE
+disconnect retains the editing lock only for the heartbeat grace period; service restart
+requires a new handshake. Android unpairing also releases management and restores
+the values saved before management began.
+The release transaction serializes settings writes and fences managed updates for
+that BLE generation, so a delayed settings push cannot relock the watch before its
+release acknowledgement; management can be enabled again after reconnecting.
+Settings snapshots, acknowledgements, and queued notifications retain their original
+peer and connection generation. Work from an ended connection is discarded rather
+than delivered to a replacement session. Management activation rechecks its session
+and release fence inside the DataStore transaction, including after server refresh.
+An accepted notification subscription starts a new logical companion generation:
+Samsung may keep the shared physical Bluetooth link alive while ATAK closes and
+reopens its GATT client. Reconnect therefore does not depend on a physical
+disconnect callback to clear the previous session's management-release fence.
+
+### WEARTAK-168: Restoring watch settings after phone management
+
+This applies to the Companion's **Bond Single Watch** mode (managed settings). Before the
+phone first overwrites the watch, the watch saves its own values for every setting the phone
+writes: callsign, team (and team color), role, role category, the dynamic reporting strategy,
+the constant reporting interval, and the TAK server list including `.p12` certificates and
+passwords. Identity and reporting values are saved in DataStore. The server list is saved in
+the same encrypted TAK server store as the live list; only a non-secret "snapshot saved" marker
+is kept in DataStore. The snapshot survives a process restart, and repeated phone pushes during
+management never overwrite it. Stationary, on-foot, vehicle, and alerting intervals are locked
+but never written by the phone, so they are not changed.
+
+**Configure Single Watch** (one-time upload) does not lock or snapshot anything; its servers,
+certificates, and other settings stay on the watch. If a one-time upload arrives from the
+bonded phone, the watch first restores its saved values and ends the bond, then applies the
+upload, so the configured settings stick.
+
+The saved values are restored, the Bluetooth name is recomputed from the restored callsign,
+the TAK service is asked to reconnect with the restored servers, and a PLI refresh is
+requested when any of these happen:
+- the phone releases management or sends a one-time (unmanaged) upload;
+- **Companion App** is turned off on the watch;
+- the managing phone is unpaired;
+- the 30-second heartbeat lease expires, or no managed handshake arrives within
+  30 seconds of a service restart.
+
+A disconnect shorter than the lease grace keeps the phone's values, so the identity does
+not switch back and forth. Releasing management, turning off Companion App, and unpairing
+also clear the management opt-in. Lease expiry keeps the opt-in, so a later managed handshake
+saves the watch values again and re-applies the phone's values.
+
+Watch edits are blocked while the lock is active. If the user changes one of these settings
+while management is enabled but unlocked (for example, during the restart grace), the edit
+also updates the saved value, so it is not lost on restore. The same applies to TAK server
+edits. Locked settings are labeled **Bonded** (previously "Phone managed").
+
+If a managed handshake saves the servers but then fails, the saved servers are restored once
+the watch is no longer locked. Installs whose bond began before identity or server snapshots
+existed restore only what they saved: reporting and the current identity and servers stay.
 
 ### WEARTAK-66: Interaction-triggered PLI refresh and identity updates
 
@@ -218,14 +489,21 @@ This fallback does not change the CoT stream or enrollment connection. A Data Sy
 Username/password enrollment uses HTTPS port **8446** (`tls/config`, then
 `tls/signClient/v2`) with normal platform certificate and hostname validation.
 Configuration failures stop enrollment before CSR generation/signing. Signing
-responses may be JSON or XML with a required `signedCert` and optional numbered
-`caN` certificates; chains are leaf-first, then CAs in numeric order.
+responses may be JSON or XML with a required `signedCert`, OpenTAKServer's optional
+unnumbered `ca`, and optional numbered `caN` certificates (Base64 DER or PEM).
+Authorities are retained as trusted entries; chains are leaf-first, then `ca`,
+then numbered CAs in numeric order. Malformed nonblank CA values are rejected.
 Registration errors identify the failed stage and distinguish HTTP 401
 authentication rejection, other HTTP statuses (including 403), TLS, connectivity,
 and invalid certificate data. Retry clears the previous error for that server.
 Add/edit registration waits for the saved configuration before starting an attempt.
 The dialog follows a stable server-ID request across runtime configuration refreshes;
 failures replace the spinner, and retry starts an attempt even when settings are unchanged.
+Offline, disabled, companion-managed, cancelled, or stopped-service attempts also
+terminate registration rather than leaving it loading; a completed TLS handshake
+publishes success. Restarting the TAK foreground service creates a fresh connection
+scope and retires the prior service's work. Late teardown of an old instance cannot
+cancel the replacement's connections.
 This does **not** repair rejected credentials: HTTP 401 still requires valid
 credentials/server-side authorization. Response bodies and certificate material
 are not logged by enrollment.
@@ -267,9 +545,18 @@ has been discovered. The Wi-Fi access point must permit multicast between client
 Multicast tracks local Wi-Fi independently of Android's default internet connection,
 so cellular routing changes do not stop receivers on a connected radio Wi-Fi network.
 While multicast is enabled, WearTAK requests local Wi-Fi so Wear OS does not shut it down
-for lack of network demand. The request does not require internet and is released when
-multicast is disabled or the TAK connection service stops. Keeping Wi-Fi connected can
-increase battery use; this does not keep the screen awake or guarantee screen-off delivery.
+for lack of network demand, and holds a high-performance Wi-Fi lock to reduce radio
+power-saving interruptions where supported by the OS. The request does not require
+internet. Both the request and lock are released when multicast is disabled or the TAK
+connection service stops. This uses the existing multicast toggle, increases battery use,
+and does not keep the screen or CPU awake. It does not pin an SSID/BSSID, prevent roaming,
+override OS power restrictions, or guarantee screen-off delivery. Multicast sockets remain
+bound to the Wi-Fi network and are recreated when that network changes.
+On Android 14 and newer, the OS maps high-performance locks to low-latency mode,
+which only takes effect with the screen on and the app in the foreground. The active
+local Wi-Fi request still remains in place with the screen off; this is not an OS
+power-policy bypass. Connection loss, validation/suspension capability changes and
+interface changes are logged without including SSIDs, credentials or IP addresses.
 Reception supports both XML CoT and binary TAK Protocol v1 datagrams, including GeoChat
 and ATAK contacts using friendly equipment/vehicle position types.
 Multicast position broadcasts advertise the GeoChat UDP endpoint so ATAK can send direct
@@ -352,6 +639,45 @@ watch process lifetime, including BLE reconnects. Disconnecting does not clear
 received points. There is no offline replay queue or new automatic expiry policy.
 Asynchronous repository failures are logged; cancellation is not treated as an error.
 
+### WEARTAK-130: chat commands
+
+Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. Only direct messages from callsigns in **Allowed Callsigns** (comma separated, case-insensitive) are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
+
+Format: `#weartakcommand<name> key=value key2="value with spaces"`
+
+| Command | Arguments | Effect |
+| --- | --- | --- |
+| `setcallsign` | `callsign` (1-32 letters, digits, space, `.`, `_`, `-`) | Sets the callsign. Refused when settings are managed by the phone. |
+| `enrollserver` | `name`, `url` (host name or IP), `port` (default 8089) | Posts a notification on the watch. Tapping it opens the New Server screen pre-filled; the user enters the username and password there and they are stored like any other TAK server. Credentials are never accepted in chat. Refused when network settings are locked or phone-managed. |
+
+Profile commands take the same values as the settings screens (case-insensitive) and validate everything before changing anything, so one bad value changes nothing:
+
+| Command | Argument |
+| --- | --- |
+| `setteam` | `team=<name from the team list>` |
+| `setrole` | `role=<role name>` (the role category is set automatically) |
+| `setheight` | `height=5'8"` (feet 1-8, inches 0-11; `5'8` and `5-8` also work) |
+| `setweight` | `weight=<1-1000>` |
+| `setbirthyear` | `birthyear=<1900-current year>` |
+| `setsex` | `sex=<Male, Female, N/A>` |
+| `setusertype` | `usertype="Coalition Civilian"` |
+| `setpants`, `setwaist` | `pants=<20-50>`, `waist=<20-60>` |
+| `setprofile` | any combination of the fields above plus `callsign` |
+
+The callsign, team and role fields (including in `setprofile`) are refused when settings are managed by the phone.
+
+`#weartakcommandloadprofile name=odin-weartak` applies a preset saved on the watch as `Android/data/<package>/files/presets/<name>.json`. Presets are provisioned with adb and are never part of this repository, because they can hold server credentials:
+
+```json
+{
+  "profile": { "callsign": "ODIN-WEARTAK", "team": "Dark Green", "role": "K9", "height": "5'8\"", "weight": "150" },
+  "servers": [ { "name": "NCTAK", "url": "takserver.nctak.gov", "port": 8089, "username": "user", "password": "secret" } ]
+}
+```
+
+The profile is validated and applied, then each server is added through the normal add-server path (servers already present are skipped). Names are lowercase letters, digits and `-`. The reply says only how many servers were added. Refused when network settings are locked.
+
+The watch replies in chat with the outcome. Callsigns are not authenticated, so anyone on the same server can pick an allowed callsign; this is why server enrollment always needs the user at the watch. Command arguments are never logged.
 ### WEARTAK-112: explicit shared-point deletion
 
 **Local paired-device mirrors only.** A watch deletion removes the selected local
@@ -372,7 +698,15 @@ still receive points but cannot authorize explicit deletion.
 Deletion means **remove the exact shared revision**, not delete every copy of a UID.
 Only the current bonded, services-ready BLE connection can send/apply this envelope.
 There is no timestamp fabrication, CoT `t-x-d-d` importer invocation, network delete
-broadcast, ACK, offline queue, startup snapshot, or reconnect replay.
+broadcast, offline queue, startup snapshot, or reconnect replay.
+The receiver answers each well-formed deletion with a `marker_delete_ack` envelope
+(`targetUid`, `revision`, `result` of `applied` or `rejected`) on the same connection.
+The sender matches it to the pending deletion for that exact uid, revision and
+connection generation, and records the outcome (`PointDeletionAcks`). A deletion with
+no matching ack within 10 seconds is recorded as timed out, and an unknown, duplicate or
+previous-connection ack is ignored. An ack confirms only that the peer applied or
+rejected the deletion, not delivery to any TAK server. Peers that predate this ack
+never answer, so their deletions report a timeout.
 The revision must match a supported marker exchanged in this connection. New
 shared updates replace it; unknown, duplicate, superseded, malformed, and
 previous-connection deletions are inert and logged without payload contents.
@@ -478,6 +812,15 @@ use the phone uplink only; the phone handles onward TAK, SITX, and multicast del
 The watch resumes its directly configured routes when the companion session disconnects.
 The connection complication reports **Phone uplink active** while that route is in use.
 
+The phone's Multiwatch Gateway uses a transient, session-qualified BLE negotiation; it
+does not add a watch mode selector or settings UI. During that session the watch keeps
+its own UID, callsign, team, role, report interval, and server/P12 configuration and does
+not accept phone profile writes. Gateway CoT is limited to supported map points, user
+positions, emergency/cancellation events, and GeoChat. Incoming chats are checked against
+the watch's own UID/callsign and explicit recipients; unsupported CoT and profile/control
+messages are rejected. The Gateway session and duplicate-event ledger clear when BLE is
+no longer services-ready, after which the existing directly configured routes resume.
+
 `WearTakApplication` initializes shared repositories and the CEP/plugin infrastructure. `DataRepository` is the main persistent state and settings hub, based on DataStore and Kotlin Flows. Newer components use Flow/StateFlow for reactive updates; some existing components communicate through EventBus.
 
 The important runtime path is:
@@ -543,3 +886,20 @@ Unlimited Rights granted to TPC
 Keep changes focused and validate them with the narrowest relevant Gradle task or test. When adding or changing a service, account for its manifest declaration, permission requirements, persisted enablement, and registration with the service orchestration layer.
 
 ### Point of Contact: Alex Gorsuch on chat.tak.gov or Signal
+
+
+#### Bloodhound picker controls and artwork
+
+Each picker row has a type/name/subtitle, a grey crosshair (**Show on map**, no
+navigation activation), and a green ATAK hound (**Bloodhound**). Routes open a
+**Start nearest / Start from beginning / Cancel** chooser; other located targets
+start immediately. Active rows turn amber, show route progress and remaining
+distance, and replace the hound with a red **Stop** button. The row body still
+opens details. Route crosshairs fit the whole geometry within the round watch;
+point/contact/marker crosshairs center the map at the target.
+
+The bundled `atak_nav_bloodhound.png` and `atak_ic_crosshair.png` artwork comes
+from [deptofdefense/AndroidTacticalAssaultKit-CIV](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV)
+(`atak/ATAK/app/src/main/res/drawable-xxxhdpi/nav_bloodhound.png` and
+`drawable-hdpi/ic_crosshair.png`), licensed GPLv3. Distribution/licensing review
+of this artwork is pending with the project owner.

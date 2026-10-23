@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.integration.plugin
 
 import android.content.pm.PackageManager
+import android.content.ComponentName
 import android.os.Build
 import android.util.Log
 import com.aitech.weartak_civ.WearTakApplication
@@ -46,7 +47,8 @@ class HostPluginRepository(
 
     override fun refresh() {
         val diagnostics = PluginDiagnostics.snapshot()
-        val discoveredPackageNames = manager.discoverPluginComponents().map { it.packageName }.distinct()
+        val discoveredComponents = manager.discoverPluginComponents().associateBy { it.packageName }
+        val discoveredPackageNames = discoveredComponents.keys
         synchronized(stateLock) {
             discoveredPackageNames.forEach { packageName ->
                 val connection = manager.connectionFor(packageName)
@@ -60,7 +62,7 @@ class HostPluginRepository(
 
             val visiblePackages = identityStore.visiblePackageNames(discoveredPackageNames)
             val records = visiblePackages.map { packageName ->
-                buildPluginUi(packageName, diagnostics)
+                buildPluginUi(packageName, diagnostics, discoveredComponents[packageName])
             }.sortedWith(compareBy<PluginUI> { it.title.lowercase() }.thenBy { it.packageName })
 
             selectedPackageName = selectedPackageName?.takeIf { it in visiblePackages }
@@ -186,6 +188,7 @@ class HostPluginRepository(
     private fun buildPluginUi(
         packageName: String,
         diagnostics: PluginDiagnostics.Snapshot,
+        component: ComponentName?,
     ): PluginUI {
         val connection = manager.connectionFor(packageName)
         val info = connection?.pluginInfoSnapshot()
@@ -220,6 +223,7 @@ class HostPluginRepository(
             packageName = packageName,
             compatibility = compatibility,
             isLoaded = PluginStatusMapper.isLoaded(status),
+            menuSubtitle = component?.let { PluginServiceQuery.menuSubtitle(app.packageManager, it) },
         )
     }
 

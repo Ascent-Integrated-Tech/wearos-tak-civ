@@ -39,6 +39,7 @@ class CompanionBondRetentionTest {
     init {
         set("repo\$delegate", lazyOf(repo))
         set("capRepo\$delegate", lazyOf(mockk<CompanionAppRepository>(relaxed = true)))
+        every { repo.clearCompanionUsers() } returns Unit
         coEvery { repo.clearPhoneManagedSettingsForPeer(any(), any()) } returns null
         connect()
     }
@@ -135,13 +136,13 @@ class CompanionBondRetentionTest {
         callback.onCharacteristicWriteRequest(peer, 1, characteristic, false, true, 0,
             "{\"msg_type\":\"set_settings\"}\n".toByteArray())
         verify { server.sendResponse(peer, 1, BluetoothGatt.GATT_FAILURE, 0, null) }
-        assertEquals("", get("rxBuf").toString())
+        assertTrue((get("rxBuf") as com.aitech.weartak_civ.cot.CompanionJsonFramer).isEmpty())
         connect()
         shadowOf(peer).setBondState(BluetoothDevice.BOND_NONE)
         callback.onCharacteristicWriteRequest(peer, 2, characteristic, false, true, 0,
             "{\"msg_type\":\"set_settings\"}\n".toByteArray())
         verify { server.sendResponse(peer, 2, BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION, 0, null) }
-        assertEquals("", get("rxBuf").toString())
+        assertTrue((get("rxBuf") as com.aitech.weartak_civ.cot.CompanionJsonFramer).isEmpty())
         coVerify(exactly = 0) { repo.enablePhoneManagedSettings(any()) }
     }
 }

@@ -141,6 +141,7 @@ class CotDispatchServiceAlertReadinessTest {
         )
 
         init {
+            every { companion.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
             MainActivity.mainActivity = mockk {
                 every { applicationContext } returns RuntimeEnvironment.getApplication()
             }

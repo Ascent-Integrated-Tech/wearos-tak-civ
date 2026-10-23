@@ -13,7 +13,7 @@
     <string name="location_service">위치 서비스</string>
     <string name="service_on_off">서비스 켜기/끄기</string>
     <string name="biometrics">생체 인식</string>
-    <string name="ditto">Ditto</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">버전 %1$s</string>
     <string name="tak_servers">TAK 서버</string>
     <string name="edit_server">서버 편집</string>
@@ -57,6 +57,12 @@
     <string name="connected_to_toast">연결됨: %1$s</string>
     <string name="connection_failed">연결 실패</string>
     <string name="tak_server_connections">TAK 서버 연결</string>
+    <string name="tak_servers_title">TAK 서버</string>
+    <string name="add_tak_server">TAK 서버 추가</string>
+    <string name="cert_on_watch">시계의 인증서: %1$s</string>
+    <string name="cert_on_watch_unreadable">시계의 인증서를 열 수 없습니다. .pwd 파일을 확인하세요.</string>
+    <string name="username_optional">사용자 이름(선택 사항)</string>
+    <string name="password_optional">비밀번호(선택 사항)</string>
     <string name="new_server">새 서버</string>
     <string name="reporting_interval_empty_enter_again">보고 간격이 비어 있습니다. 다시 입력하십시오</string>
     <string name="reporting_interval_0_enter_again">보고 간격이 0입니다. 다시 입력하십시오</string>
@@ -228,7 +234,7 @@
     <string name="exertion_warning_threshold">Exertion Warning Threshold</string>
     <string name="seconds">seconds</string>
     <string name="exertion_alert_threshold">Exertion Alert Threshold</string>
-    <string name="bloodhound_compass">Bloodhound/Compass</string>
+    <string name="bloodhound_compass">Bloodhound Proximity</string>
     <string name="plugins">Plugins</string>
     <string name="group">Group</string>
     <string name="n_a">N/A</string>

@@ -13,7 +13,7 @@
     <string name="location_service">ロケーションサービス</string>
     <string name="service_on_off">サービスのオン/オフ</string>
     <string name="biometrics">バイオメトリクス</string>
-    <string name="ditto">同上</string>
+    <string name="ditto">Ditto Edge Sync</string>
     <string name="version">バージョン %1$s</string>
     <string name="tak_servers">TAKサーバー</string>
     <string name="edit_server">サーバー編集</string>
@@ -57,6 +57,12 @@
     <string name="connected_to_toast">%1$sに接続</string>
     <string name="connection_failed">接続失敗</string>
     <string name="tak_server_connections">TAKサーバー接続</string>
+    <string name="tak_servers_title">TAKサーバー</string>
+    <string name="add_tak_server">TAKサーバーを追加</string>
+    <string name="cert_on_watch">ウォッチの証明書: %1$s</string>
+    <string name="cert_on_watch_unreadable">ウォッチの証明書を開けません。.pwd ファイルを確認してください。</string>
+    <string name="username_optional">ユーザー名（任意）</string>
+    <string name="password_optional">パスワード（任意）</string>
     <string name="new_server">新サーバー</string>
     <string name="reporting_interval_empty_enter_again">レポート間隔 の入力欄が空です。再度入力してください</string>
     <string name="reporting_interval_0_enter_again">報告間隔が0です。再入力してください</string>
@@ -229,7 +235,7 @@
     <string name="exertion_warning_threshold">Exertion Warning Threshold</string>
     <string name="seconds">seconds</string>
     <string name="exertion_alert_threshold">Exertion Alert Threshold</string>
-    <string name="bloodhound_compass">Bloodhound/Compass</string>
+    <string name="bloodhound_compass">Bloodhound Proximity</string>
     <string name="plugins">Plugins</string>
     <string name="n_a">N/A</string>
     <string name="male">Male</string>

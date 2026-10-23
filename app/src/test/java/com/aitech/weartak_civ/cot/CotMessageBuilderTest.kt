@@ -8,15 +8,81 @@ import org.junit.Test
 import org.w3c.dom.Element
 import org.w3c.dom.Node
 import java.io.StringReader
+import java.time.Instant
 import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 
 class CotMessageBuilderTest {
     @Test
-    fun pliMatchesLegacyStructure() {
+    fun pliMatchesLegacyStructureWithStatus() {
         val actual = CotMessageBuilder.pli(pliSnapshot(), CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", false, "<hail/>"))
-        val legacy = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='watch-1' type='a-f-G-U-C' time='$START' start='$START' stale='$STALE' how='m-g'><point lat='41.000000' lon='-87.000000' hae='100.0' ce='4' le='5'/><detail><remarks>Exert:0.25%;HR:72;SkinTemp:98.6</remarks><contact endpoint='*:-1:stcp' callsign='EAGLE'/><__group role='Team Member' name='Cyan'/><track course='45' speed='3'/><hail/></detail></event>"
-        assertEquals(project(legacy), project(actual))
+        val legacy = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='watch-1' type='a-f-G-U-C' time='$START' start='$START' stale='$STALE' how='m-g'><point lat='41.000000' lon='-87.000000' hae='100.0' ce='4' le='5'/><detail><status readiness='true' battery='80'/><remarks>Exert:0.25%;HR:72;SkinTemp:98.6</remarks><contact endpoint='*:-1:stcp' callsign='EAGLE'/><__group role='Team Member' name='Cyan'/><track course='45' speed='3'/><hail/></detail></event>"
+        assertEquals(project(legacy.replace("<detail>", "<detail>${CotDetailBuilder.takv()}")), project(actual))
+    }
+
+    @Test
+    fun batdokHeartRateOnlyUsesIncidentTimeNotExpiration() {
+        assertBatdokVitalTimes(72, -1f)
+    }
+
+    @Test
+    fun batdokHeartRateAndTemperatureUseIncidentTimeNotExpiration() {
+        assertBatdokVitalTimes(72, 98.6f)
+    }
+
+    @Test
+    fun batdokTemperatureOnlyKeepsIncidentTime() {
+        assertBatdokVitalTimes(-1, 98.6f)
+    }
+
+    private fun assertBatdokVitalTimes(heartRateBpm: Int, skinTempF: Float) {
+        val epoch = Instant.parse("2026-10-15T12:34:56.789Z").toEpochMilli()
+        val staleOffsets = listOf(60, 300).flatMap { reportingIntervalSeconds ->
+            // Exercise both the reported historical offsets and the current PLI policy.
+            listOf(3 * reportingIntervalSeconds, 2 * reportingIntervalSeconds + 15)
+        }
+        for (staleOffsetSeconds in staleOffsets) {
+            val eventTime = CotEventTimeFactory.at(
+                nowMillis = epoch,
+                staleOffset = CotTimeOffset(seconds = staleOffsetSeconds),
+            )
+            val physio = physio().copy(data = physio().data.copy(
+                heartRateBpm = heartRateBpm,
+                skinTempF = skinTempF,
+            ))
+            val xml = CotMessageBuilder.pli(
+                pliSnapshot().copy(time = eventTime, physioData = physio),
+                CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", true, ""),
+            )
+            val event = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(InputSource(StringReader(xml))).documentElement
+            assertEquals(eventTime.startCot, event.getAttribute("time"))
+            assertEquals(eventTime.startCot, event.getAttribute("start"))
+            assertEquals(eventTime.staleCot, event.getAttribute("stale"))
+            assertEquals(
+                epoch + staleOffsetSeconds * 1_000L,
+                Instant.parse(event.getAttribute("stale")).toEpochMilli(),
+            )
+
+            val atmistNodes = event.getElementsByTagName("_atmist_")
+            assertEquals(1, atmistNodes.length)
+            val atmist = atmistNodes.item(0) as Element
+            assertEquals("30", atmist.getAttribute("age"))
+            assertEquals(eventTime.startCot, atmist.getAttribute("timeOfIncident"))
+            val expectedTuples = buildList {
+                if (heartRateBpm != -1) add("(HR,72,$epoch)")
+                if (skinTempF != -1f) add("(Temp,98.6 (F) 37 (C),$epoch)")
+            }
+            val vitals = atmist.getElementsByTagName("vitalSign")
+            assertEquals(expectedTuples.size, vitals.length)
+            expectedTuples.forEachIndexed { index, tuple ->
+                val vital = vitals.item(index) as Element
+                assertEquals(index.toString(), vital.getAttribute("index"))
+                assertEquals(tuple, vital.textContent)
+                assertEquals(atmist.getAttribute("timeOfIncident"), vital.getAttribute("timestamp"))
+                assertEquals(epoch, Instant.parse(vital.getAttribute("timestamp")).toEpochMilli())
+            }
+        }
     }
 
     @Test
@@ -113,10 +179,17 @@ class CotMessageBuilderTest {
     @Test
     fun chatMatchesLegacyStructure() {
         val actual = CotMessageBuilder.chat(chatSnapshot(), "EAGLE", "watch-1", "message-1", 0)
-        val legacy = "<event version='2.0' uid='GeoChat.watch-1.room-1.message-1' type='b-t-f' time='1970-01-01T00:00:00.000Z' start='1970-01-01T00:00:00.000Z' stale='1970-01-01T00:00:00.000Z' how='h-g-i-g-o' access='Undefined'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><__chat parent='RootContactGroup' groupOwner='false' messageId='message-1' chatroom='Room' id='room-1' senderCallsign='EAGLE'><chatgrp uid0='watch-1' uid1='room-1' id='room-1'/></__chat><link uid='watch-1' type='a-f-G-U-C' relation='p-p'/><remarks source='watch-1' to='room-1' time='1970-01-01T00:00:00.000Z'>Hello</remarks><marti><dest callsign='Room'/></marti></detail></event>"
+        val legacy = "<event version='2.0' uid='GeoChat.watch-1.room-1.message-1' type='b-t-f' time='1970-01-01T00:00:00.000Z' start='1970-01-01T00:00:00.000Z' stale='1970-01-02T00:00:00.000Z' how='h-g-i-g-o' access='Undefined'><point lat='41.0' lon='-87.0' hae='100.0' ce='4.0' le='5.0'/><detail><__chat parent='RootContactGroup' groupOwner='false' messageId='message-1' chatroom='Room' id='room-1' senderCallsign='EAGLE'><chatgrp uid0='watch-1' uid1='room-1' id='room-1'/></__chat><link uid='watch-1' type='a-f-G-U-C' relation='p-p'/><remarks source='watch-1' to='room-1' time='1970-01-01T00:00:00.000Z'>Hello</remarks><marti><dest callsign='Room'/></marti></detail></event>"
         assertEquals(project(legacy), project(actual))
     }
 
+            @Test
+            fun chatStaysLiveForOneDaySoStaleFilteringServersRelayIt() {
+                val now = Instant.parse("2026-10-21T14:18:18.469Z").toEpochMilli()
+                val xml = CotMessageBuilder.chat(chatSnapshot(), "EAGLE", "watch-1", "message-1", now)
+                assertEquals("2026-10-21T14:18:18.469Z", rootAttribute(xml, "time"))
+                assertEquals("2026-10-22T14:18:18.469Z", rootAttribute(xml, "stale"))
+            }
     private fun pliSnapshot() = DataRepository.PliSnapshot(location(), time(), physio(), system())
     private fun markerSnapshot(time: CotEventTime) = DataRepository.MarkerSnapshot(DataRepository.MarkerCotType.DROP, "marker-1", DataRepository.MarkerType.FRIENDLY, "Title", "Remark", DataRepository.MarkerType.FRIENDLY.icon, false, false, location(), time, physio(), system())
     private fun emergencySnapshot(state: DataRepository.AlertState) = DataRepository.EmergencyEventSnapshot("alert-1", state, "Alert", "Help", 1, false, time(), location(), physio(), system())

@@ -3,7 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <permission
-        android:name="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST"
+        android:name="${applicationId}.permission.PLUGIN_BROADCAST"
         android:protectionLevel="signature" />
 
     <uses-feature android:name="android.hardware.type.watch" />
@@ -484,7 +484,7 @@
             android:name=".integration.plugin.PluginOverlayReceiver"
             android:enabled="true"
             android:exported="true"
-            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            android:permission="${applicationId}.permission.PLUGIN_BROADCAST">
             <intent-filter>
                 <action android:name="com.aitech.weartak_civ.PLUGIN_OVERLAY" />
                 <action android:name="com.aitech.weartak_civ.PLUGIN_UNREGISTER" />
@@ -498,7 +498,7 @@
             android:name=".integration.plugin.PluginIngestReceiver"
             android:enabled="true"
             android:exported="true"
-            android:permission="com.aitech.weartak_civ.permission.PLUGIN_BROADCAST">
+            android:permission="${applicationId}.permission.PLUGIN_BROADCAST">
             <intent-filter>
                 <action android:name="com.aitech.weartak_civ.PLUGIN_SAMPLE" />
                 <action android:name="com.aitech.weartak_civ.PLUGIN_INGEST" />
@@ -531,7 +531,7 @@
         <activity
             android:name=".presentation.MainActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:persistableMode="persistNever"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
@@ -542,15 +542,10 @@
             </intent-filter>
         </activity>
         <activity
-            android:name=".presentation.DevDebugActivity"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:theme="@style/MainActivityTheme.Starting" />
-        <activity
             android:name=".presentation.SosActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -562,7 +557,7 @@
             android:name=".presentation.MarkerActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -575,7 +570,7 @@
             android:exported="true"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:taskAffinity="com.aitech.weartak_civ.chat"
+            android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -586,7 +581,7 @@
             android:name=".presentation.CrmReserveActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -598,7 +593,7 @@
             android:name=".presentation.PhysioAlertsActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -610,19 +605,7 @@
             android:name=".presentation.BloodhoundActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
-            android:taskAffinity="com.aitech.weartak_civ"
-            android:theme="@style/MainActivityTheme.Starting">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.DEFAULT" />
-            </intent-filter>
-        </activity>
-        <activity
-            android:name=".presentation.SettingsActivity"
-            android:exported="true"
-            android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -634,7 +617,7 @@
             android:name=".presentation.WearTAKSettingsActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>
@@ -642,6 +625,15 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
+        <activity-alias
+            android:name=".presentation.SettingsActivity"
+            android:targetActivity=".presentation.WearTAKSettingsActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
         <activity
             android:name=".presentation.ChatContactPickerActivity"
             android:exported="false"
@@ -652,7 +644,7 @@
             android:name=".presentation.MapActivity"
             android:exported="true"
             android:excludeFromRecents="true"
-            android:launchMode="singleInstance"
+            android:launchMode="singleTask"
             android:taskAffinity="com.aitech.weartak_civ"
             android:theme="@style/MainActivityTheme.Starting">
             <intent-filter>

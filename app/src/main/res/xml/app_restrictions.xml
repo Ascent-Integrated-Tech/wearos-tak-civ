@@ -449,6 +449,13 @@
         android:defaultValue="@string/stationary_reporting_interval_default"/>
 
     <restriction
+        android:key="tak_server_keepalive_seconds"
+        android:restrictionType="integer"
+        android:title="@string/tak_server_keepalive_seconds_title"
+        android:description="@string/tak_server_keepalive_seconds_description"
+        android:defaultValue="@string/tak_server_keepalive_seconds_default"/>
+
+    <restriction
         android:key="select_data_endpoints"
         android:restrictionType="multi-select"
         android:title="@string/select_data_endpoints_title"

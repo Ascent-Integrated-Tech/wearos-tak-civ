@@ -1,4 +1,3 @@
-
 /*
  * Copyright (C) 2026, Ascent Integrated Tech. All rights reserved.
  *
@@ -11,60 +10,32 @@
 package com.aitech.weartak_civ.cot
 
 import android.util.Log
+import com.aitech.weartak_civ.command.ChatCommandParser
+import com.aitech.weartak_civ.command.ChatCommandRequest
 import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.data.parsers.GeofenceCotParser
 import com.aitech.weartak_civ.events.TakChatEvent
 import kotlinx.coroutines.CancellationException
 import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.data.parsers.TakRouteCotParser
+import com.aitech.weartak_civ.data.takserver.TakDataPackageRequest
 
-// Holds information about a CoT message received from a TAK Server
-// Keeps the original message along with the server it came from
-// This helps keep incoming data from different TAK Servers separate
 data class TakServerCotEnvelope(
-
-    // ID of the TAK Server that sent the message
     val sourceServerId: String,
-
-    // Address of the TAK Server that sent the message
     val sourceServerAddress: String,
-
-    // Time when the message was received
     val receivedAt: Long,
-
-    // Original CoT message in XML format
-    val rawXml: String
+    val rawXml: String,
+    val sourceSessionId: String? = null,
+    val sourcePeerAddress: String? = null
 )
 
-
-// Defines how different types of incoming CoT messages get passed to the app
-// Each function handles a specific type of TAK information
-// The ingestor calls the matching function after identifying the message type
 interface TakServerCotSink {
-
-    // Pass a received chat message to the chat handler
     suspend fun onChat(event: TakChatEvent)
-
-    // Pass a received geofence to the geofence handler
     suspend fun onGeofence(geofence: GeofenceCot)
-
-    // Pass a user location update along with its source server
     suspend fun onUser(event: CotUserPositionEvent, envelope: TakServerCotEnvelope)
-
-    // Pass a map marker along with its source server
     suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope)
-
-    // Pass an emergency event to the emergency handler
-    // Does nothing by default unless a handler overrides it
     suspend fun onEmergency(event: CotEmergencyEvent, envelope: TakServerCotEnvelope) = Unit
-
-    // Notify the app when a channel change message is received
-    // Does nothing by default unless a handler overrides it
     suspend fun onChannelChanged(envelope: TakServerCotEnvelope) = Unit
-
-    // Give another handler a chance to process the incoming CoT first
-    // Returning true means the message was already handled
-    // Returning false allows normal message processing to continue
     suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean = false
 
     // Pass a parsed route to the route handler
@@ -72,11 +43,6 @@ interface TakServerCotSink {
     suspend fun onRoute(route: TakRoute, envelope: TakServerCotEnvelope)
 }
 
-
-// Lists the possible results after processing an incoming CoT message
-// Each result identifies the type of message that was handled
-// MALFORMED means the message could not be processed correctly
-// UNSUPPORTED means the message type is not currently handled
 enum class TakServerCotIngestResult {
     CHAT,
     GEOFENCE,
@@ -84,95 +50,81 @@ enum class TakServerCotIngestResult {
     MARKER,
     EMERGENCY,
     ROUTE,
+    DATA_PACKAGE,
     CHANNEL_CHANGED,
     CONFIGURATION,
     UNSUPPORTED,
-    MALFORMED
+    MALFORMED,
+    COMMAND
 }
 
-
-// Receives incoming CoT messages and figures out what type of data they contain
-// CoT stands for Cursor on Target and uses XML to share TAK information
-// Handles chats, geofences, user locations, markers, emergencies, and routes
-// Sends parsed information to the correct handler through TakServerCotSink
 class TakServerCotIngestor(
-
-    // Handler that receives the parsed CoT information
     private val sink: TakServerCotSink,
-
-    // Checks whether chat processing is enabled
     private val isChatEnabled: suspend () -> Boolean,
-
-    // Checks whether geofence processing is enabled
     private val isGeofenceEnabled: () -> Boolean,
-
-    // Gets the UID of the current watch
     private val deviceUid: () -> String,
-
-    // Gets the callsign of the current watch
     private val deviceCallsign: () -> String,
+    private val chatCommandHandler: (suspend (ChatCommandRequest) -> Boolean)? = null,
+    private val dataPackageHandler: (suspend (TakDataPackageRequest, TakServerCotEnvelope) -> Unit)? = null,
 
     // Logs problems found while processing incoming CoT messages
     private val logger: (String, Throwable?) -> Unit = { message, error ->
         if (error == null) Log.w(TAG, message) else Log.w(TAG, message, error)
     }
 ) {
-
-    // Main entry point for processing an incoming CoT message
-    // Checks that the message has a valid source server ID
-    // Passes the message to the parser and returns the result
-    // Handles invalid messages without crashing the processing flow
     suspend fun ingest(envelope: TakServerCotEnvelope): TakServerCotIngestResult {
         return try {
-
-            // Make sure the message came from a server with a valid ID
-            // This is needed to keep data associated with the correct server
-            require(envelope.sourceServerId.isNotBlank()) {
-                "TAK server ID cannot be blank"
-            }
-
-            // Process the message and determine its CoT type
+            require(envelope.sourceServerId.isNotBlank()) { "TAK server ID cannot be blank" }
             ingestMessage(envelope)
-
         } catch (error: CancellationException) {
-
-            // Allow coroutine cancellation to continue normally
-            // Cancellation should not be treated as a malformed message
             throw error
-
         } catch (error: Exception) {
-
-            // Log the error and skip the message if processing fails
-            // Return MALFORMED instead of stopping other incoming messages
             logger(
                 "Skipping malformed CoT from serverId=${envelope.sourceServerId}",
                 error
             )
-
             TakServerCotIngestResult.MALFORMED
         }
     }
 
-
-    // Checks the incoming CoT message and determines how to handle it
-    // Each message type has its own parsing and validation steps
-    // Once a message is handled, the matching result is returned
     private suspend fun ingestMessage(envelope: TakServerCotEnvelope): TakServerCotIngestResult {
-
-        // Remove extra whitespace from the beginning and end of the XML
         val rawXml = envelope.rawXml.trim()
-
-        // Check that the message contains basic CoT event tags
-        // Skip messages that do not look like a complete CoT event
         if (!rawXml.contains("<event") || !rawXml.contains("</event>")) {
             logger("Skipping malformed CoT from serverId=${envelope.sourceServerId}", null)
             return TakServerCotIngestResult.MALFORMED
         }
 
-        // Let the inbound handler check the message before normal processing
-        // Return CONFIGURATION if another handler already processed the message
         if (sink.onInboundCot(envelope)) return TakServerCotIngestResult.CONFIGURATION
 
+        if (dataPackageHandler != null && CotMessageParser.eventTypeOrNull(rawXml) == "b-f-t-r") {
+            dataPackageHandler.invoke(
+                TakDataPackageRequest.parse(rawXml, envelope.sourcePeerAddress),
+                envelope
+            )
+            return TakServerCotIngestResult.DATA_PACKAGE
+        }
+
+        if (chatCommandHandler != null && CotMessageParser.isChatMessage(rawXml)) {
+            val direct = CotMessageParser.parseChatRooms(rawXml, deviceUid(), deviceCallsign(), envelope.sourceServerId, envelope.receivedAt)
+                .filter { !it.isGroup }
+                .flatMap { it.messageList }
+                .firstOrNull { it.message.startsWith(ChatCommandParser.PREFIX, ignoreCase = true) }
+            if (direct != null) {
+                val request = ChatCommandRequest(
+                    senderUid = direct.uid,
+                    senderCallsign = direct.callsign,
+                    text = direct.message,
+                    messageId = direct.messageId,
+                    sentAtMs = CotMessageParser.eventTimeOrNull(rawXml) ?: 0L,
+                    receivedAtMs = envelope.receivedAt,
+                    sourceServerId = envelope.sourceServerId
+                )
+                if (chatCommandHandler(request)) return TakServerCotIngestResult.COMMAND
+            }
+        }
+
+        // Check whether the incoming message is a chat
+        // Only process chats when chat is enabled and the message is for this device
 
         // Check whether the incoming message is a chat
         // Only process chats when chat is enabled and the message is for this device
@@ -195,8 +147,6 @@ class TakServerCotIngestor(
                 logger("Skipping malformed TAK chat from serverId=${envelope.sourceServerId}", null)
                 return TakServerCotIngestResult.MALFORMED
             }
-
-            // Send the parsed chat information to the chat handler
             sink.onChat(
                 TakChatEvent(
                     rawXml = rawXml,

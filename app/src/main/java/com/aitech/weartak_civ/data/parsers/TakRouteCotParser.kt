@@ -1,4 +1,3 @@
-
 package com.aitech.weartak_civ.data.parsers
 
 import com.aitech.weartak_civ.data.model.TakRoute
@@ -18,7 +17,6 @@ object TakRouteCotParser {
     // Goes through the XML to find route information and coordinates
     // Builds a TakRoute object if the route has a valid UID and points
     fun parse(rawXml: String, serverId: String): TakRoute? {
-        Log.d("RouteCoT", "Incoming XML: $rawXml")
         return try {
 
             // Create an XML parser to read the CoT message
@@ -201,9 +199,7 @@ object TakRouteCotParser {
             )
 
         } catch (e: Exception) {
-
-            // Return null if the XML cannot be parsed or another error occurs
-            // Prevent invalid route data from being passed to the rest of the app
+            Log.w("RouteCoT", "Unable to parse route CoT")
             null
         }
     }

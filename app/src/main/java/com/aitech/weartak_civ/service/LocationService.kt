@@ -79,6 +79,11 @@ class LocationService : Service() {
         cancelInteractionRefresh()
     }
 
+    private fun recordExistingLocationForDiagnostics(location: android.location.Location) {
+        (application as? com.aitech.weartak_civ.WearTakApplication)
+            ?.locationDiagnostics?.observeExistingFix(location)
+    }
+
     private fun cancelInteractionRefresh() {
         interactionHandler.removeCallbacks(interactionTimeout)
         interactionCallback?.let { fusedLocationProviderClient?.removeLocationUpdates(it) }
@@ -114,6 +119,7 @@ class LocationService : Service() {
                 ) ?: return
                 cancelInteractionRefresh()
                 interactionScope.launch {
+                    recordExistingLocationForDiagnostics(location)
                     dataRepository.storeLatestLocation(location)
                     Log.i(TAG, "Interaction PLI fresh fix received: $reasons")
                     EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
@@ -150,6 +156,7 @@ class LocationService : Service() {
             val location = result.lastLocation ?: return
 
             CoroutineScope(Dispatchers.IO).launch {
+                recordExistingLocationForDiagnostics(location)
                 //val currTime = System.currentTimeMillis()
                 dataRepository.storeLatestLocation(location)
                 //Log.i(TAG, "oneShotLocationCallback: onLocationResult $location")
@@ -350,6 +357,7 @@ class LocationService : Service() {
         override fun onLocationResult(locationResult: LocationResult) {
             val location = locationResult.lastLocation ?: return
             CoroutineScope(Dispatchers.IO).launch {
+                recordExistingLocationForDiagnostics(location)
                 dataRepository.storeLatestLocation(location)
                 //Log.i(TAG, "Received location update: $location")
                 //writeToLogFileLocation(logFile, "Received location update: $location")
@@ -361,6 +369,7 @@ class LocationService : Service() {
 
                 EventBus.getDefault().post(LocationRcvd())
             }
+
         }
     }
 

@@ -3,6 +3,7 @@ package com.aitech.weartak_civ.integration.plugin
 import android.os.Process
 import android.os.Bundle
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.cep.di.CepProvider
 import com.aitech.weartak_civ.service.TAKConnectService
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -62,11 +63,68 @@ class HostControlImplTest {
             control.requestCotDispatch(request)
             coVerify(exactly = 2) { TAKConnectService.handleInboundCot(xml, "plugin:com.plugin.pkg") }
             verify(exactly = 1) { TAKConnectService.sendDataTAKServers(xml, true) }
+
+            every { request.payload } returns Bundle().apply {
+                putString("xml", xml)
+                putBoolean(HostControlImpl.KEY_INGEST_LOCAL, false)
+                putBoolean(HostControlImpl.KEY_RELAY_TO_NETWORK, true)
+            }
+            control.requestCotDispatch(request)
+            coVerify(exactly = 2) { TAKConnectService.handleInboundCot(xml, "plugin:com.plugin.pkg") }
+            verify(exactly = 2) { TAKConnectService.sendDataTAKServers(xml, true) }
+
+            every { request.payload } returns Bundle().apply {
+                putString("xml", xml)
+                putBoolean(HostControlImpl.KEY_INGEST_LOCAL, true)
+                putBoolean(HostControlImpl.KEY_RELAY_TO_NETWORK, false)
+            }
+            control.requestCotDispatch(request)
+            coVerify(exactly = 3) { TAKConnectService.handleInboundCot(xml, "plugin:com.plugin.pkg") }
+            verify(exactly = 2) { TAKConnectService.sendDataTAKServers(xml, true) }
         } finally {
             unmockkObject(TAKConnectService.Companion)
         }
     }
 
+
+    @Test
+    fun chatPayloadIsSentThroughWearTakChat() {
+        mockkObject(TAKConnectService.Companion)
+        try {
+            coEvery { TAKConnectService.handleInboundCot(any(), any()) } returns Unit
+            every { TAKConnectService.sendDataTAKServers(any(), any()) } returns Unit
+            val repo = mockk<DataRepository>(relaxed = true)
+            val app = mockk<WearTakApplication>(relaxed = true)
+            every { app.repo } returns repo
+            val control = HostControlImpl(app, mockk(relaxed = true), "com.plugin.pkg", Process.myUid())
+            val request = mockk<CotRequestParcel>()
+            every { request.payloadFormat } returns "chat"
+
+            every { request.payload } returns Bundle().apply { putString("message", "  ALPHA-1 LACE: L:GREEN  ") }
+            control.requestCotDispatch(request)
+            coVerify(exactly = 1) {
+                repo.requestAutomatedChatSend("All Chat Rooms", "All Chat Rooms", "ALPHA-1 LACE: L:GREEN", any())
+            }
+
+            every { request.payload } returns Bundle().apply {
+                putString("message", "direct")
+                putString("roomUid", "ANDROID-peer")
+                putString("roomTitle", "PEER")
+            }
+            control.requestCotDispatch(request)
+            coVerify(exactly = 1) { repo.requestAutomatedChatSend("ANDROID-peer", "PEER", "direct", any()) }
+
+            every { request.payload } returns Bundle().apply { putString("message", "   ") }
+            control.requestCotDispatch(request)
+            every { request.payload } returns Bundle().apply { putString("message", "x".repeat(4001)) }
+            control.requestCotDispatch(request)
+            coVerify(exactly = 2) { repo.requestAutomatedChatSend(any(), any(), any(), any()) }
+            coVerify(exactly = 0) { TAKConnectService.handleInboundCot(any(), any()) }
+            verify(exactly = 0) { TAKConnectService.sendDataTAKServers(any(), any()) }
+        } finally {
+            unmockkObject(TAKConnectService.Companion)
+        }
+    }
 
     @Test
     fun getHostCapabilities_reportsToastAndCepStreaming() {

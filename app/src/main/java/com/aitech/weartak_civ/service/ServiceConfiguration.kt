@@ -94,7 +94,7 @@ class ServiceConfiguration(
         }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
         ServiceType.ONNX_UAS -> dataRepository.getEnableOnnxUasService.distinctUntilChanged()
-        ServiceType.CRM_INFERENCE -> flowOf(true).distinctUntilChanged()
+        ServiceType.CRM_INFERENCE -> dataRepository.getEnableCrmService.distinctUntilChanged()
 
         // Always-desired core services. Runtime gating still happens in isServiceAvailable().
         ServiceType.TAK_CONNECT,

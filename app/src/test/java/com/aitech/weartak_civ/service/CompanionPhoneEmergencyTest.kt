@@ -31,6 +31,12 @@ import java.time.Instant
 class CompanionPhoneEmergencyTest {
     private val repository = mockk<BloodhoundRepository>()
     private val service = CompanionAppService().also {
+        val cap = mockk<com.aitech.weartak_civ.data.CompanionAppRepository>(relaxed = true)
+        io.mockk.every { cap.gateway } returns com.aitech.weartak_civ.cot.CompanionGatewaySession()
+        CompanionAppService::class.java.getDeclaredField("capRepo\$delegate").apply {
+            isAccessible = true
+            set(it, lazyOf(cap))
+        }
         CompanionAppService::class.java.getDeclaredField("bhRepo\$delegate").apply {
             isAccessible = true
             set(it, lazy { repository })
