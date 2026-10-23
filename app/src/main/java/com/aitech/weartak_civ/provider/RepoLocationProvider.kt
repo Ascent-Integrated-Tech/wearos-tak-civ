@@ -27,24 +27,39 @@ class RepoLocationProvider(
 
     override val location: StateFlow<Location?> =
         repoFlow
-            .map { fix ->
-                fix?.let {
-                    Location(
-                        // MapLibre Compose Position is (lng, lat) in your usage
-                        position = Position(it.longitude, it.latitude),
-                        accuracy = it.accuracy.toDouble(),
-                        bearing = null,
-                        speed = if (it.hasSpeed()) it.speed.toDouble() else null,
-                        bearingAccuracy =
-                            if (fix.hasBearingAccuracy())
-                                fix.bearingAccuracyDegrees.toDouble()
-                            else null,
-                        speedAccuracy = if (fix.hasSpeedAccuracy())
-                            fix.speedAccuracyMetersPerSecond.toDouble()
-                        else null,
-                        timestamp = TimeSource.Monotonic.markNow()
-                    )
-                }
-            }
+            .map { it?.toMapLibreLocationOrNull() }
             .stateIn(scope, SharingStarted.Eagerly, null)
+}
+
+internal fun AndroidLocation.toMapLibreLocationOrNull(): Location? {
+    val latitude = latitude
+    val longitude = longitude
+    if (!latitude.isFinite() || latitude !in -90.0..90.0 ||
+        !longitude.isFinite() || longitude !in -180.0..180.0
+    ) {
+        return null
+    }
+
+    if (!hasAccuracy()) return null
+    val accuracy = accuracy.toDouble()
+    if (!accuracy.isFinite() || accuracy <= 0.0) return null
+
+    val speed = speed.takeIf { hasSpeed() && it.isFinite() && it >= 0f }?.toDouble()
+    val bearing = bearing.takeIf { hasBearing() && it.isFinite() }?.toDouble()
+    val bearingAccuracy = bearingAccuracyDegrees
+        .takeIf { hasBearingAccuracy() && it.isFinite() && it >= 0f }
+        ?.toDouble()
+    val speedAccuracy = speedAccuracyMetersPerSecond
+        .takeIf { hasSpeedAccuracy() && it.isFinite() && it >= 0f }
+        ?.toDouble()
+
+    return Location(
+        position = Position(longitude, latitude),
+        accuracy = accuracy,
+        bearing = bearing,
+        speed = speed,
+        bearingAccuracy = bearingAccuracy,
+        speedAccuracy = speedAccuracy,
+        timestamp = TimeSource.Monotonic.markNow()
+    )
 }

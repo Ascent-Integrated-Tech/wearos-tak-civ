@@ -43,6 +43,11 @@ class ServiceConfiguration(
 ) {
     private val TAG = "WearTAK-ServiceConfig"
 
+    private companion object {
+        val permissionWarningLock = Any()
+        val lastReportedMissingPermissions = mutableMapOf<ServiceType, List<String>>()
+    }
+
     fun getServiceEnabledFlow(type: ServiceType): Flow<Boolean> = when (type) {
         ServiceType.WEATHER -> flowOf(true).distinctUntilChanged()
         ServiceType.LOCATION ->
@@ -220,8 +225,19 @@ class ServiceConfiguration(
     fun permissionsGranted(type: ServiceType): Boolean {
         val missing = missingPerms(type)
         if (missing.isNotEmpty()) {
-            Log.w(TAG, "Missing permissions for $type: $missing")
+            val shouldLog = synchronized(permissionWarningLock) {
+                if (lastReportedMissingPermissions[type] == missing) {
+                    false
+                } else {
+                    lastReportedMissingPermissions[type] = missing
+                    true
+                }
+            }
+            if (shouldLog) Log.w(TAG, "Missing permissions for $type: $missing")
             return false
+        }
+        synchronized(permissionWarningLock) {
+            lastReportedMissingPermissions.remove(type)
         }
         return true
     }

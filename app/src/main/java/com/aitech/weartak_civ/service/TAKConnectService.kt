@@ -821,15 +821,23 @@ class TAKConnectService: Service() {
             Log.w(TAG, "TAK Connect Supressed, Companion App is Active")
             return
         }
-        isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
-        isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(isAnyTakConnecting)
-        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
-
-        requestStatusIconsComplicationUpdate(context)
-
         refreshDuplicateEndpointSuppression()
+        val hasActiveConnection = takServerDetails.any { detail ->
+            detail.isEnabled && !detail.duplicateEndpointSuppressed &&
+                isConnectionActiveStatus(detail.connectionStatus.get())
+        }
+        if (!hasActiveConnection) {
+            isAnyTakConnected = false
+            isAnyTakConnectedLiveData.postValue(false)
+            isAnyTakConnecting = false
+            isAnyTakConnectingLiveData.postValue(false)
+            dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
+            requestStatusIconsComplicationUpdate(context)
+        }
         for (takServer in takServerDetails) {
-            if (takServer.isEnabled && !takServer.duplicateEndpointSuppressed) {
+            if (takServer.isEnabled && !takServer.duplicateEndpointSuppressed &&
+                !isConnectionActiveStatus(takServer.connectionStatus.get())
+            ) {
                 getClientCertificateAndConnect(takServer)
             }
         }
@@ -1337,11 +1345,13 @@ class TAKConnectService: Service() {
         // Each server has its own mission list so the server ID is used to find the right connection
         // The refreshed list is saved in the repository for the rest of the app to access
         private suspend fun refreshAvailableMissions(
-            serverId: String
+            serverId: String,
+            attempt: ConnectionAttempt
         ) {
             // Find the connection details for the requested server
             // Stop if the server is no longer available
             val detail = getTakServerDetail(serverId) ?: return
+            if (!missionConnectionReady(detail, attempt)) return
 
             try {
                 // Create the mission API client and request the latest mission list
@@ -1366,6 +1376,7 @@ class TAKConnectService: Service() {
                 // Let coroutine cancellation stop the operation normally
                 throw error
             } catch (error: Exception) {
+                if (!missionConnectionReady(detail, attempt)) return
                 // Log API or connection failures without stopping other server operations
                 Log.e(TAG, "Mission refresh failed for $serverId", error)
             }
@@ -1375,8 +1386,11 @@ class TAKConnectService: Service() {
         // Restore previous mission subscriptions after the list is downloaded
         // Start syncing subscribed missions so their content stays updated
         private suspend fun loadTakMissions(
-            detail: TakServerDetail
+            detail: TakServerDetail,
+            attempt: ConnectionAttempt
         ) {
+            if (!missionConnectionReady(detail, attempt)) return
+
             // Tell the repository that this server's missions are loading
             // This allows the app to track the loading state
             dataRepository.updateTakMissionLoading(
@@ -1422,7 +1436,7 @@ class TAKConnectService: Service() {
                 )
 
                 // Start checking subscribed missions for new changes and CoT content
-                syncSubscribedMissions(detail.serverId)
+                syncSubscribedMissions(detail.serverId, attempt)
 
                 Log.i(
                     TAG,
@@ -1434,6 +1448,7 @@ class TAKConnectService: Service() {
                 // Preserve normal cancellation behavior
                 throw error
             } catch (error: Exception) {
+                if (!missionConnectionReady(detail, attempt)) return
                 // Store the failure so the mission state can show what went wrong
                 dataRepository.updateTakMissionError(
                     serverId = detail.serverId,
@@ -1602,15 +1617,17 @@ class TAKConnectService: Service() {
         // Check for newly available missions and updates to existing missions
         // Each server is handled separately to prevent mixing mission content
         private suspend fun syncSubscribedMissions(
-            serverId: String
+            serverId: String,
+            attempt: ConnectionAttempt
         ) {
+            val detail = getTakServerDetail(serverId) ?: return
             // Continue syncing until the coroutine is cancelled
-            // Stopping the connection coroutine also stops this polling loop
-            while (currentCoroutineContext().isActive) {
+            // Replacing this connection attempt also stops this polling loop.
+            while (currentCoroutineContext().isActive && missionConnectionReady(detail, attempt)) {
 
                 // Refresh the available mission list from this TAK Server
                 // This allows newly created missions to appear in the repository
-                refreshAvailableMissions(serverId)
+                refreshAvailableMissions(serverId, attempt)
 
                 // Find missions currently marked as subscribed on this server
                 // Unsubscribed missions do not need their content downloaded
@@ -1622,7 +1639,8 @@ class TAKConnectService: Service() {
                 subscribedMissions.forEach { state ->
                     syncTakMission(
                         serverId = serverId,
-                        missionName = state.mission.name
+                        missionName = state.mission.name,
+                        attempt = attempt
                     )
                 }
 
@@ -1639,7 +1657,8 @@ class TAKConnectService: Service() {
         // Send downloaded events through the existing CoT processing system
         private suspend fun syncTakMission(
             serverId: String,
-            missionName: String
+            missionName: String,
+            attempt: ConnectionAttempt? = null
         ) {
             // Find the server connection used for this mission
             // Stop if the server details are unavailable
@@ -1647,6 +1666,7 @@ class TAKConnectService: Service() {
                 Log.e(TAG, "TAK Server not found for serverId=$serverId")
                 return
             }
+            if (!missionConnectionReady(detail, attempt)) return
 
             // Find the mission in the repository under the correct server
             // Mission names alone are not enough because different servers may use the same name
@@ -1856,6 +1876,7 @@ class TAKConnectService: Service() {
                 throw error
 
             } catch (error: Exception) {
+                if (!missionConnectionReady(detail, attempt)) return
                 // Record the failure so the repository knows this sync did not complete
                 // Keep the error associated with the correct server and mission
                 dataRepository.setMissionSyncError(
@@ -2066,16 +2087,26 @@ class TAKConnectService: Service() {
             )
         }
 
+        internal fun missionConnectionReady(
+            detail: TakServerDetail,
+            attempt: ConnectionAttempt? = null
+        ): Boolean =
+            detail.isEnabled &&
+                !dataRepository.isCompanionConnected.value &&
+                detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT &&
+                (attempt == null || isCurrent(detail, attempt))
+
 
         // Start loading Data Sync missions after a TAK Server connects
         // Launch the loading process in the background without blocking connection setup
         // The loading function also restores subscriptions and begins mission syncing
         private fun loadTakMissionsAfterConnect(
-            detail: TakServerDetail
+            detail: TakServerDetail,
+            attempt: ConnectionAttempt
         ) {
             // Run the mission loading process in the connection coroutine scope
             connectionScope.launch {
-                loadTakMissions(detail)
+                loadTakMissions(detail, attempt)
             }
         }
 
@@ -2400,6 +2431,9 @@ class TAKConnectService: Service() {
                     detail.duplicateEndpointSuppressed) {
                     return null
                 }
+                if (isConnectionActiveStatus(detail.connectionStatus.get())) {
+                    return null
+                }
                 detail.runtime.connectJob?.cancel()
                 detail.runtime.readerJob?.cancel()
                 detail.runtime.connectingSocket?.let { oldSockets.add(it) }
@@ -2411,12 +2445,18 @@ class TAKConnectService: Service() {
                 detail.runtime.currentAttempt = attempt
                 detail.runtime.connectJob = null
                 detail.runtime.readerJob = null
-                detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
-                detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
+                detail.connectionStatus.set(TAK_SERVER_OBTAINING_CLIENT_CERT)
+                detail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
             }
             oldSockets.distinct().forEach { runCatching { it.close() } }
             return attempt
         }
+
+        private fun isConnectionActiveStatus(status: Int): Boolean =
+            status == TAK_SERVER_OBTAINING_CLIENT_CERT ||
+                status == TAK_SERVER_OBTAINED_CLIENT_CERT ||
+                status == TAK_SERVER_CONNECTING_COT_PORT ||
+                status == TAK_SERVER_CONNECTED_COT_PORT
 
         private fun invalidateConnection(detail: TakServerDetail, terminate: Boolean = false) {
             val sockets: MutableList<SSLSocket> = mutableListOf()
@@ -2930,6 +2970,18 @@ class TAKConnectService: Service() {
                 }
                 val attempt = beginConnectionAttempt(takServerDetail)
                 if (attempt == null) {
+                    val status = takServerDetail.connectionStatus.get()
+                    if (isConnectionActiveStatus(status)) {
+                        Log.d(TAG, "Skipping duplicate TAK connection attempt for ${takServerDetail.serverId}")
+                        if (status == TAK_SERVER_CONNECTED_COT_PORT) {
+                            serverRegistration.publish(
+                                takServerDetail.serverId,
+                                takServerDetail,
+                                TakServerRegistration.Status.CONNECTED,
+                            )
+                        }
+                        return
+                    }
                     serverRegistration.publish(
                         takServerDetail.serverId, takServerDetail, TakServerRegistration.Status.FAILED,
                         serverRegistration.unavailable()
@@ -3292,7 +3344,7 @@ class TAKConnectService: Service() {
                         newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
                     }
                     loadTakChannelsAfterConnect(takServerDetail)
-                    loadTakMissionsAfterConnect(takServerDetail)
+                    loadTakMissionsAfterConnect(takServerDetail, attempt)
                     startCotReader(takServerDetail, socket, attempt)
                 } catch (e: Exception) {
                     runCatching { attempt.socket?.close() }
