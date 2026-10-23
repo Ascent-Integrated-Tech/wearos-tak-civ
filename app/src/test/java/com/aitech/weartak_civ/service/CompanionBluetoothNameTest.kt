@@ -145,13 +145,14 @@ class CompanionBluetoothNameTest {
         }
     }
 
-    @Test fun advertisingKeepsSystemNameAndDiscoveryUuidWithoutCallsignPrefix() {
+    @Test fun advertisingUsesCallsignServiceDataAndDiscoveryUuidWithoutSystemName() {
         val uuid = UUID.fromString("0000A11A-0000-1000-8000-00805F9B34FB")
         val cap = mockk<CompanionAppRepository>(relaxed = true)
         every { cap.COMPANION_SERVICE_UUID } returns uuid
         inject("capRepo\$delegate", lazyOf(cap))
         val advertiser = mockk<BluetoothLeAdvertiser>(relaxed = true)
         inject("advertiser", advertiser)
+        service.updateAdvertisingCallsign("WATCH")
 
         CompanionAppService::class.java.getDeclaredMethod("startAdvertising").apply {
             isAccessible = true
@@ -160,12 +161,17 @@ class CompanionBluetoothNameTest {
 
         val settings = slot<AdvertiseSettings>()
         val data = slot<AdvertiseData>()
+        val scanResponse = slot<AdvertiseData>()
         verify(exactly = 1) {
-            advertiser.startAdvertising(capture(settings), capture(data), any<AdvertiseCallback>())
+            advertiser.startAdvertising(capture(settings), capture(data), capture(scanResponse), any<AdvertiseCallback>())
         }
         assertTrue(settings.captured.isConnectable)
-        assertTrue(data.captured.includeDeviceName)
+        assertFalse(data.captured.includeDeviceName)
         assertEquals(listOf(ParcelUuid(uuid)), data.captured.serviceUuids)
+        assertFalse(scanResponse.captured.includeDeviceName)
+        assertArrayEquals(byteArrayOf(1) + "WATCH".toByteArray(Charsets.UTF_8),
+            scanResponse.captured.serviceData[ParcelUuid(uuid)])
+        verify(exactly = 0) { adapter.name }
     }
 
     private fun inject(field: String, value: Any?) {
