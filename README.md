@@ -75,6 +75,30 @@ features, permission failures, and unknown failures stop without retrying.
 Success resets the retry budget. After a terminal failure, resolve the cause and
 restart Companion; BLE-state notifications cannot bypass the retry/terminal gate.
 
+### Continuous Companion advertising (WEARTAK-270)
+
+Confirmed idle advertising stays in one continuous, connectable **BALANCED**
+registration. There is no 30-second refresh or two-minute mode-switch restart.
+Stopping and recreating a legacy advertisement can give it a new private address,
+making a phone's recently scanned entry stale during selection or bonding.
+The former timer was a workaround for apparently silent advertising termination;
+it is not a reliable health check and must not restart healthy advertising.
+
+A 30-second watchdog applies only while awaiting the start callback. An unanswered
+start is cancelled and uses the same five-retry backoff budget as an internal
+failure. Success or `ALREADY_STARTED` cancels the watchdog. Explicit connection
+errors/disconnects still recover through the existing GATT lifecycle; changing the
+encoded callsign still refreshes the scan response. No device settings or bonds
+are changed.
+
+Android controls BLE private-address rotation; this does not pin an address or
+promise a permanent hardware identity. Phone scan lists should expire stale
+last-seen entries for natural privacy rotation or actual service restarts, rather
+than merge watches by callsign (which may be shared or truncated). Legacy
+advertising has no reliable callback for a silently terminated confirmed set;
+this change deliberately removes speculative periodic recovery in favor of
+observed start failures and connection lifecycle events.
+
 Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
 Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
 Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.
