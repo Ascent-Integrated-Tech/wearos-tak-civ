@@ -48,13 +48,13 @@ class CotDispatchPolicyTest {
     }
 
     @Test
-    fun readyCompanionPreservesPluginDeliveryWithoutDirectWatchRoutes() {
+    fun readyCompanionSuppressesPluginAndAllDirectWatchRoutes() {
         val availability = CotEndpointAvailability(
             tak = true, sitx = true, ditto = true, multicast = true,
             companion = true, plugin = true
         )
         CotMessageKind.entries.filter { it != CotMessageKind.MARKER_CLEAR }.forEach { kind ->
-            assertEquals(listOf(CotRoute.PLUGIN, CotRoute.COMPANION),
+            assertEquals(listOf(CotRoute.COMPANION),
                 CotDispatchPolicy.routesFor(kind, availability))
         }
     }

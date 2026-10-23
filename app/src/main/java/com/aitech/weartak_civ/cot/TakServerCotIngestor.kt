@@ -93,6 +93,7 @@ enum class TakServerCotIngestResult {
     DATA_PACKAGE,
     CHANNEL_CHANGED,
     CONFIGURATION,
+    SUPPRESSED,
     UNSUPPORTED,
     MALFORMED
 }
@@ -121,6 +122,7 @@ class TakServerCotIngestor(
     private val chatCommandHandler: (suspend (ChatCommandRequest) -> Boolean)? = null,
     private val dataPackageHandler: (suspend (TakDataPackageRequest, TakServerCotEnvelope) -> Unit)? = null,
 
+    private val isInboundAllowed: () -> Boolean = { true },
     // Logs problems found while processing incoming CoT messages
     private val logger: (String, Throwable?) -> Unit = { message, error ->
         if (error == null) Log.w(TAG, message) else Log.w(TAG, message, error)
@@ -132,6 +134,10 @@ class TakServerCotIngestor(
     // Passes the message to the parser and returns the result
     // Handles invalid messages without crashing the processing flow
     suspend fun ingest(envelope: TakServerCotEnvelope): TakServerCotIngestResult {
+        if (!isInboundAllowed()) {
+            logger("Suppressing direct CoT while bonded companion is connected source=${envelope.sourceServerId}", null)
+            return TakServerCotIngestResult.SUPPRESSED
+        }
         return try {
 
             // Make sure the message came from a server with a valid ID

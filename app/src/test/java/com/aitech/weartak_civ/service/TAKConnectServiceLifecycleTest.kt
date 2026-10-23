@@ -54,6 +54,7 @@ class TAKConnectServiceLifecycleTest {
     private val serverId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     private var previousStopping = false
     private var previousRunning = false
+    private val companionConnected = MutableStateFlow(false)
 
     @Before
     fun setUp() {
@@ -75,7 +76,7 @@ class TAKConnectServiceLifecycleTest {
         every { repository.multicastEnabled } returns MutableStateFlow(false)
         every { repository.multicastAddress } returns MutableStateFlow(null)
         every { repository.multicastPort } returns MutableStateFlow(null)
-        every { repository.isCompanionConnected } returns MutableStateFlow(false)
+        every { repository.isCompanionConnected } returns companionConnected
         every { repository.takChannels } returns MutableStateFlow(emptyList())
         every { repository.networkSettingsLocked } returns flowOf(false)
         val networkManager = mockk<NetworkManager>(relaxed = true)
@@ -85,7 +86,6 @@ class TAKConnectServiceLifecycleTest {
         previousStopping = TAKConnectService.serviceStopping
         previousRunning = TAKConnectService.isRunning.get()
         TAKConnectService.isNetworkConnected = false
-        TAKConnectService.isCompanionAppConnected = false
         TAKConnectService.takServerDetails = mutableListOf()
     }
 
@@ -100,6 +100,31 @@ class TAKConnectServiceLifecycleTest {
         TAKConnectService.serviceStopping = previousStopping
         TAKConnectService.isRunning.set(previousRunning)
         unmockkAll()
+    }
+
+    @Test
+    fun companionConnectionClosesDirectTakSocketAndDisconnectRestoresConnectionAttempts() = runBlocking {
+        createService()
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        val socket = mockk<SSLSocket>(relaxed = true)
+        detail.secureSocket = socket
+        companionConnected.value = true
+        TAKConnectService.sendData(detail, "<event/>", true, 0)
+        verify(exactly = 0) { socket.getOutputStream() }
+        verify(timeout = 5_000) { socket.close() }
+
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.fetchAndParseCertificateConfig(any()) } throws
+            TakEnrollmentException(
+                TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401)
+            )
+        TAKConnectService.isNetworkConnected = true
+        companionConnected.value = false
+        verify(timeout = 5_000) { TAKConnectService.fetchAndParseCertificateConfig(detail) }
+        companionConnected.value = true
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail) }
     }
 
     @Test

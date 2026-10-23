@@ -127,6 +127,7 @@ class CompanionPhoneEmergencyLifecycleTest {
         return CompanionAppService().also {
             val users = mockk<com.aitech.weartak_civ.data.DataRepository>()
             every { users.clearCompanionUsers() } returns Unit
+            every { users.setCompanionAppDisconnected() } returns Unit
             inject(it, "repo\$delegate", lazyOf(users))
             val job = SupervisorJob()
             jobs.add(job)

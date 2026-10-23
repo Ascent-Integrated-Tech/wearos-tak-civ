@@ -61,7 +61,6 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -499,18 +498,6 @@ class CompanionAppService : Service() {
     @SuppressLint("MissingPermission")
     private fun collectBleState() {
         serviceScope.launch {
-            capRepo.bleConnectionState
-                .map { it == CompanionAppRepository.BleConnectionState.SERVICES_READY }
-                .collect { ready ->
-                    Log.i(TAG, "bleReady: $ready (state=${capRepo.bleConnectionState.value})")
-
-                    if (ready) repo.setCompanionAppConnected()
-                    else repo.setCompanionAppDisconnected()
-                }
-        }
-
-        // keep your advertising logic separate so it doesn't also spam endpoint updates
-        serviceScope.launch {
             capRepo.bleConnectionState.collect { state ->
                 if (state in listOf(DISCONNECTED, ERROR, CONNECTION_FAILED, NOT_CONNECTED)) {
                     if (connectedDevice == null) startAdvertising()
@@ -648,6 +635,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
     private fun forceBleReset(why: String) {
         Log.w(TAG, "forceBleReset: $why")
+        repo.setCompanionAppDisconnected()
         advanceCompanionGeneration()
         rxBuf.clear()
 
@@ -797,6 +785,7 @@ class CompanionAppService : Service() {
         Log.w(TAG, "Repo identity = ${System.identityHashCode(repo)}")
         Log.d(TAG, "CompanionAppService onCreate()")
         isRunning.set(true)
+        repo.setCompanionAppDisconnected()
 
         // 1) HARD RESET — this instance must never inherit BLE state
         connectedDevice = null
@@ -1324,6 +1313,7 @@ class CompanionAppService : Service() {
                     return
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
+                repo.setCompanionAppDisconnected()
                 advanceCompanionGeneration()
                 rxBuf.clear()
                 activeAddr = null
@@ -1348,6 +1338,7 @@ class CompanionAppService : Service() {
                     }
 
                     activeAddr = device.address
+                    repo.setCompanionAppDisconnected()
                     connectedDevice = device
                     advanceCompanionGeneration()
                     rxBuf.clear()
@@ -1370,6 +1361,7 @@ class CompanionAppService : Service() {
 
 
                     Log.d(TAG, "Active device disconnected: ${device.address}")
+                    repo.setCompanionAppDisconnected()
                     advanceCompanionGeneration()
                     rxBuf.clear()
                     activeAddr = null
@@ -1505,6 +1497,7 @@ class CompanionAppService : Service() {
             if (enableNoti) {
                 beginCompanionSubscription()
                 notificationsEnabled = true
+                repo.setCompanionAppConnected()
                 disarmHandshakeWatchdog()
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.SERVICES_READY)
 
@@ -1524,6 +1517,7 @@ class CompanionAppService : Service() {
 
             if (disableNoti) {
                 notificationsEnabled = false
+                repo.setCompanionAppDisconnected()
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.CONNECTED)
                 respond(BluetoothGatt.GATT_SUCCESS)
                 return

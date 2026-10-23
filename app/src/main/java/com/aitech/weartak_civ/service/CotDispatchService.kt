@@ -231,7 +231,7 @@ class CotDispatchService : Service() {
                 dataRepository.endpointConnected,
                 dataRepository.multicastPublisherRunning,
                 dataRepository.sitxStatus,
-                capRepo.companionAppReady,
+                dataRepository.isCompanionConnected,
                 combine(
                     dataRepository.getEnableSitxService,
                     dataRepository.getEnableCompanionAppService,
@@ -1055,8 +1055,7 @@ class CotDispatchService : Service() {
 
     private suspend fun companionAppAvailable(): Boolean {
         val enabled = dataRepository.getEnableCompanionAppService.first()
-        val ready = capRepo.companionAppReady.first()
-        return enabled && ready
+        return enabled && dataRepository.isCompanionConnected.value
     }
 
     private suspend fun endpointAvailability(): CotEndpointAvailability =

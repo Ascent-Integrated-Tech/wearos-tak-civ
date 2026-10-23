@@ -356,6 +356,7 @@ class DittoService : Service() {
     }
 
     internal fun retryPointPublications() {
+        if (dataRepository.isCompanionConnected.value) return
         dataRepository.dittoPointLedger.retry(
             write = ::writeOwnedPointDocument,
             onError = { Log.e(TAG, "Ditto point publication pending; retrying later", it) }
@@ -363,6 +364,10 @@ class DittoService : Service() {
     }
 
     internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {
+        if (dataRepository.isCompanionConnected.value) {
+            Log.d(TAG, "Suppressing direct Ditto publication while bonded companion is connected")
+            return false
+        }
         if (collection == "mapitem" && CotMessageParser.isMarkerType(document["w"] as? String ?: "")) {
             val published = dataRepository.dittoPointLedger.publish(document, ::writeOwnedPointDocument)
             if (!published) {
@@ -471,6 +476,7 @@ class DittoService : Service() {
             )
 
             try {
+                if (dataRepository.isCompanionConnected.value) return@launch
                 ditto.store.write { tx ->
                     tx.scoped("track").upsert(trackDocument)
                     changeCounterTrackDocument++

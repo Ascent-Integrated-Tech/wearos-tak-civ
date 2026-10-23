@@ -3798,18 +3798,17 @@ class DataRepository(private val context: Context) {
     }
 
     fun setCompanionAppConnected() {
-        setEndpointConnected(Endpoint.COMPANION_APP)
         _companionAppConnected.value = true
+        setEndpointConnected(Endpoint.COMPANION_APP)
     }
 
     fun setCompanionAppDisconnected() {
-        setEndpointDisconnected(Endpoint.COMPANION_APP)
         _companionAppConnected.value = false
+        setEndpointDisconnected(Endpoint.COMPANION_APP)
     }
 
     private val _companionAppConnected = MutableStateFlow<Boolean>(false)
-    val isCompanionConnected: StateFlow<Boolean> = _companionAppConnected
-        .stateIn(repoScope, SharingStarted.Eagerly, false)
+    val isCompanionConnected: StateFlow<Boolean> = _companionAppConnected.asStateFlow()
 
     enum class SitxServerStatus {
         CONNECTED,

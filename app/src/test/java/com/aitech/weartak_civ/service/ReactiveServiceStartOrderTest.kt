@@ -110,6 +110,25 @@ class ReactiveServiceStartOrderTest {
             assertEquals(value, config.getServiceEnabledFlow(ServiceType.COMPANION_APP).first())
             assertEquals(true, config.getServiceEnabledFlow(ServiceType.BLE_BEACON).first())
         }
+
+        @Test fun bondedReadyConnectionSuspendsDirectMeshAndSitxWithoutChangingSavedPreferences() = runBlocking {
+            val connected = MutableStateFlow(false)
+            val enabled = MutableStateFlow(true)
+            val repo = mockk<DataRepository>(relaxed = true)
+            every { repo.isCompanionConnected } returns connected
+            every { repo.getEnableDittoService } returns enabled
+            every { repo.getEnableSitxService } returns enabled
+            val config = ServiceConfiguration(app, repo, mockk(relaxed = true))
+            for (value in listOf(false, true, false, true, false)) {
+                connected.value = value
+                assertEquals(!value, config.getServiceEnabledFlow(ServiceType.DITTO).first())
+                assertEquals(!value, config.getServiceEnabledFlow(ServiceType.SITX_SERVICE).first())
+                assertEquals(true, enabled.value)
+            }
+            enabled.value = false
+            assertEquals(false, config.getServiceEnabledFlow(ServiceType.DITTO).first())
+            assertEquals(false, config.getServiceEnabledFlow(ServiceType.SITX_SERVICE).first())
+        }
     }
 
     private fun desire(vararg types: ServiceType) {

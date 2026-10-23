@@ -148,6 +148,7 @@ object NetworkUtils {
          */
         @Synchronized
         fun send(cotXml: String) {
+            if (MainActivity.dataRepository.isCompanionConnected.value) return
             //Log.i(TAG, "Checking socket")
             val ms = socket ?: return
             //Log.i(TAG, "Checking group")
