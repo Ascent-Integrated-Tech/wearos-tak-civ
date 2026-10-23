@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">No se pudo sincronizar el seguimiento de Bloodhound con el teléfono. Comprueba la conexión de la aplicación complementaria.</string>
     <string name="debug_stay_awake">Mantener la pantalla activa</string>
     <string name="debug_stay_awake_warning">Aumenta el consumo de batería. El reloj puede calentarse.</string>
-    <string name="debug_stay_awake_active">Activo hasta que se detenga o finalice el proceso. Solo se reanuda tras las actualizaciones si se ha habilitado.</string>
-    <string name="debug_stay_awake_resume_update">Reanudar después de actualizar</string>
+    <string name="debug_stay_awake_active">Activado hasta que lo desactives. Se reanuda tras actualizaciones y reinicios si Android lo permite.</string>
     <string name="debug_stay_awake_channel">Depuración: mantener pantalla activa</string>
     <string name="debug_stay_awake_stop">Detener</string>
-    <string name="debug_stay_awake_failed">No se pudo iniciar «Mantener la pantalla activa». Consulta los registros de depuración de WearTAK.</string>
+    <string name="debug_stay_awake_failed">Activado, pero no se pudo iniciar. Abre WearTAK para reintentar. Consulta los registros de depuración.</string>
     <string name="remote_emergency_alert">Emergencia remota</string>
     <string name="remote_emergency_no_location">Ubicación no disponible. Navegación desactivada.</string>
     <string name="remote_emergency_description">Emergencia: %1$s</string>

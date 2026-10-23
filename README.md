@@ -709,21 +709,29 @@ are not logged by enrollment.
 
 ### Dev Mode Stay Awake
 
-Debug and release APKs include an opt-in **Stay awake** switch under **Dev Debug Tools** (tap the
+Debug and release APKs include one opt-in **Stay awake** split-toggle chip at the top of
+**Developer Preferences** (tap the
 version eight times in Preferences to reveal these tools). This standalone demo/development
 session control does not require Wireless debugging or read its system setting. The switch
 holds screen, CPU and Wi-Fi locks and keeps a Wi-Fi network actively requested, including
 while viewing system settings. The request does not require Internet access, so local-only
 hotspots can satisfy it. It shows an ongoing notification with a Stop action. It remains
-enabled until you turn off the switch,
-tap notification Stop, or the app process ends. Leaving the UI or swiping the recent task
-does not stop the foreground service. The adjacent **Resume after update** checkbox is
-off by default. When checked, an enabled session is remembered and restored after an
-in-place app update on the same watch boot. Updates briefly release the locks while replacing
-the process. Turning off Stay awake or tapping notification Stop clears this remembered
-session. The service uses `START_NOT_STICKY`: ordinary process restarts and watch reboots
-do not start it automatically. A remembered session can still resume on a later update
-in the same boot unless explicitly stopped or update resumption is unchecked.
+enabled until you turn off the switch or tap notification Stop. Tap the chip body for
+read-only behavior details. The switch reflects saved intent; **Running** and
+**Enabled, not running** distinguish that intent from actual service activity.
+Leaving the UI or swiping the recent task does not stop the foreground service.
+There is no separate update-persistence option: enabled users retain their choice
+regardless of the old checkbox. Explicitly disabled users stay disabled.
+The service requests `START_STICKY` recovery after ordinary process death; the
+package-update and post-unlock boot receiver restore only this service when enabled.
+Opening WearTAK retries a previously blocked restore. Startup failure releases partial
+locks and reports an error without turning the saved choice off. These hooks never
+launch the main activity or enable the full WearTAK/Companion BLE service stack.
+Updates and restarts temporarily release locks. Android can defer or deny service
+recovery (including force-stop, system task-manager stop, battery policy or permission
+restrictions), so recovery is best-effort, not uninterrupted operation. Boot restoration
+is not direct-boot/lock-screen bypass. Saved intent survives reboot/power cycle, not
+uninstall, app-data clearing or factory reset; no screen can stay awake while powered off.
 There is no timed expiry. The warning **Extra battery use. May heat watch.** appears only while
 enabled. The Wi-Fi request is released on stop, service destruction, or startup failure.
 It does not force Wi-Fi on or guarantee connectivity against RF conditions, hotspot

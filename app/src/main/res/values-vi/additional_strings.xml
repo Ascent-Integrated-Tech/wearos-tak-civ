@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">Không thể đồng bộ theo dõi Bloodhound với điện thoại. Hãy kiểm tra kết nối ứng dụng đồng hành.</string>
     <string name="debug_stay_awake">Giữ màn hình luôn bật</string>
     <string name="debug_stay_awake_warning">Tốn thêm pin. Đồng hồ có thể nóng lên.</string>
-    <string name="debug_stay_awake_active">Hoạt động cho đến khi dừng hoặc tiến trình kết thúc. Chỉ tiếp tục sau khi cập nhật nếu đã chọn.</string>
-    <string name="debug_stay_awake_resume_update">Tiếp tục sau khi cập nhật</string>
+    <string name="debug_stay_awake_active">Giữ cài đặt cho đến khi bạn tắt. Khôi phục sau cập nhật và khởi động lại khi Android cho phép.</string>
     <string name="debug_stay_awake_channel">Gỡ lỗi: giữ màn hình luôn bật</string>
     <string name="debug_stay_awake_stop">Dừng</string>
-    <string name="debug_stay_awake_failed">Không thể bật chế độ giữ màn hình. Xem nhật ký gỡ lỗi WearTAK.</string>
+    <string name="debug_stay_awake_failed">Đã bật nhưng không thể khởi chạy. Mở WearTAK để thử lại. Xem nhật ký gỡ lỗi.</string>
     <string name="remote_emergency_alert">Tình huống khẩn cấp từ xa</string>
     <string name="remote_emergency_no_location">Không có vị trí. Tính năng chỉ đường đã bị tắt.</string>
     <string name="remote_emergency_description">Khẩn cấp: %1$s</string>

@@ -612,6 +612,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        com.aitech.weartak_civ.service.DebugStayAwakeService.restoreIfEnabled(this)
         try { registerReceiver(restrictionReceiver, IntentFilter(Intent.ACTION_APPLICATION_RESTRICTIONS_CHANGED)) } catch (_: Exception) {}
         Log.i(TAG, "MainActivity onStart()")
     }

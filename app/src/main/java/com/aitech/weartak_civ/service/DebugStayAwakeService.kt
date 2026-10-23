@@ -16,6 +16,7 @@ import android.os.PowerManager
 import android.util.Log
 import android.widget.Toast
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.WearTAKSettingsActivity
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,17 +27,24 @@ class DebugStayAwakeService : Service() {
     private var cpuLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var wifiRequestCallback: ConnectivityManager.NetworkCallback? = null
+    private var running = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent == null || intent.action == ACTION_STOP) {
+        val preferences = DebugStayAwakePreferences(this)
+        if (intent?.action == ACTION_STOP) {
+            preferences.recordSession(false)
             finishSession()
             return START_NOT_STICKY
         }
-        if (mutableActive.value) {
-            showNotification()
+        if (!preferences.enabled) {
+            finishSession()
             return START_NOT_STICKY
+        }
+        if (running) {
+            showNotification()
+            return START_STICKY
         }
 
         try {
@@ -48,11 +56,16 @@ class DebugStayAwakeService : Service() {
             Toast.makeText(this, R.string.debug_stay_awake_failed, Toast.LENGTH_LONG).show()
             finishSession()
             return START_NOT_STICKY
+        } catch (error: IllegalStateException) {
+            Log.e(TAG, "Android prevented debug stay awake", error)
+            Toast.makeText(this, R.string.debug_stay_awake_failed, Toast.LENGTH_LONG).show()
+            finishSession()
+            return START_NOT_STICKY
         }
+        running = true
         mutableActive.value = true
-        DebugStayAwakePreferences(this).recordSession(true)
-        Log.i(TAG, "Debug stay awake enabled until manually stopped or the app process ends")
-        return START_NOT_STICKY
+        Log.i(TAG, "Debug stay awake running; enabled intent persists until explicitly stopped")
+        return START_STICKY
     }
 
     private fun requestWifi() {
@@ -128,11 +141,11 @@ class DebugStayAwakeService : Service() {
         wifiLock = null
         cpuLock = null
         screenLock = null
+        running = false
         mutableActive.value = false
     }
 
     private fun finishSession() {
-        DebugStayAwakePreferences(this).recordSession(false)
         releaseLocks()
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -147,10 +160,34 @@ class DebugStayAwakeService : Service() {
     companion object {
         private const val TAG = "WearTAK-DebugStayAwake"
         internal const val ACTION_STOP = "com.aitech.weartak_civ.DEBUG_STAY_AWAKE_STOP"
+        internal const val ACTION_RESTORE = "com.aitech.weartak_civ.DEBUG_STAY_AWAKE_RESTORE"
         private const val CHANNEL_ID = "debug_stay_awake"
         private const val NOTIFICATION_ID = 64_001
         private val mutableActive = MutableStateFlow(false)
         val active = mutableActive.asStateFlow()
+
+        fun setEnabled(context: Context, enabled: Boolean) {
+            DebugStayAwakePreferences(context).recordSession(enabled)
+            if (enabled) restoreIfEnabled(context) else stop(context)
+        }
+
+        fun restoreIfEnabled(context: Context) {
+            if (!DebugStayAwakePreferences(context).enabled || active.value) return
+            try {
+                ContextCompat.startForegroundService(
+                    context, Intent(context, DebugStayAwakeService::class.java).setAction(ACTION_RESTORE)
+                )
+            } catch (error: SecurityException) {
+                reportRestoreFailure(context, error)
+            } catch (error: IllegalStateException) {
+                reportRestoreFailure(context, error)
+            }
+        }
+
+        private fun reportRestoreFailure(context: Context, error: RuntimeException) {
+            Log.e(TAG, "Cannot restore Stay awake; saved intent remains enabled", error)
+            Toast.makeText(context, R.string.debug_stay_awake_failed, Toast.LENGTH_LONG).show()
+        }
 
         fun stop(context: Context) {
             DebugStayAwakePreferences(context).recordSession(false)

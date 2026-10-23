@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">تعذرت مزامنة تتبع Bloodhound مع الهاتف. تحقق من اتصال التطبيق المصاحب.</string>
     <string name="debug_stay_awake">إبقاء الشاشة قيد التشغيل</string>
     <string name="debug_stay_awake_warning">استهلاك إضافي للبطارية. قد ترتفع حرارة الساعة.</string>
-    <string name="debug_stay_awake_active">نشط حتى إيقافه أو انتهاء العملية. يُستأنف بعد التحديثات فقط عند اختيار ذلك.</string>
-    <string name="debug_stay_awake_resume_update">الاستئناف بعد التحديث</string>
+    <string name="debug_stay_awake_active">يبقى الإعداد مفعلاً حتى توقفه. يُستأنف بعد التحديث وإعادة التشغيل عندما يسمح Android.</string>
     <string name="debug_stay_awake_channel">إبقاء الشاشة قيد التشغيل للتصحيح</string>
     <string name="debug_stay_awake_stop">إيقاف</string>
-    <string name="debug_stay_awake_failed">تعذر بدء إبقاء الشاشة قيد التشغيل. راجع سجلات تصحيح WearTAK.</string>
+    <string name="debug_stay_awake_failed">الإعداد مفعّل ولكن تعذر البدء. افتح WearTAK للمحاولة مجدداً وراجع سجلات التصحيح.</string>
     <string name="remote_emergency_alert">حالة طوارئ عن بُعد</string>
     <string name="remote_emergency_no_location">الموقع غير متاح. تم تعطيل التنقل.</string>
     <string name="remote_emergency_description">حالة طوارئ: %1$s</string>

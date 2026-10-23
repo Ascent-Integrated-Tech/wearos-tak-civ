@@ -69,7 +69,7 @@ import java.io.IOException
 
 private const val DEBUG_SERVER_PORT = 8000
 
-private data class DebugDisplayInfo(
+internal data class DebugDisplayInfo(
     val versionName: String,
     val versionCode: Int,
     val buildType: String,
@@ -219,7 +219,7 @@ private fun DebugScreen(
 }
 
 @Composable
-private fun DebugInformationPage(
+internal fun DebugInformationPage(
     debugInfo: DebugDisplayInfo,
     onBack: () -> Unit,
     onShowQrCode: () -> Unit,
@@ -281,6 +281,8 @@ private fun DebugInformationPage(
             )
         }
 
+        item { DebugStayAwakeSetting() }
+
         items(rows) { row ->
             DebugInformationRow(row)
         }
@@ -292,10 +294,6 @@ private fun DebugInformationPage(
             ) {
                 Text("Location Diagnostics", textAlign = TextAlign.Center, fontSize = 11.sp)
             }
-        }
-
-        item {
-            DebugStayAwakeSetting()
         }
 
         item {
