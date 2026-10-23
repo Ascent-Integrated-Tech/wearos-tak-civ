@@ -60,25 +60,37 @@ class CompanionAdvertisingRecoveryTest {
         verifyStarts(1)
     }
 
-    @Test fun advertisingThatEndsSilentlyIsRefreshedWhileDisconnected() {
+    @Test fun healthyIdleAdvertisingKeepsOneRegistrationAcrossThirtySecondAndTwoMinuteBoundaries() {
         startAdvertising()
         callback().onStartSuccess(null)
 
-        idle(31)
+        repeat(20) {
+            idle(31)
+            startAdvertising()
+        }
 
-        verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
-        verifyStarts(2)
+        verify(exactly = 0) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+        verifyStarts(1)
+        assertEquals(listOf(AdvertiseSettings.ADVERTISE_MODE_BALANCED), startedModes())
     }
 
-    @Test fun lostStartCallbackDoesNotLatchAdvertisingForever() {
+    @Test fun lostStartCallbackUsesWatchdogAndBoundedRetryRatherThanPeriodicRefresh() {
         startAdvertising()
 
-        idle(31)
+        idleMillis(29_999)
+        verifyStarts(1)
+        verify(exactly = 0) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+        idleMillis(1)
+        verifyStarts(1)
+        verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+        idleMillis(999)
+        verifyStarts(1)
+        idleMillis(1)
 
         verifyStarts(2)
     }
 
-    @Test fun refreshDoesNotRestartWhileCentralIsConnected() {
+    @Test fun successfulAdvertisingDoesNotRestartWhileCentralIsConnected() {
         startAdvertising()
         callback().onStartSuccess(null)
         inject("connectedDevice", mockk<BluetoothDevice>(relaxed = true))
@@ -88,12 +100,11 @@ class CompanionAdvertisingRecoveryTest {
         verifyStarts(1)
     }
 
-    @Test fun explicitStopCancelsRefresh() {
+    @Test fun explicitStopCancelsStartWatchdog() {
         startAdvertising()
-        callback().onStartSuccess(null)
         invoke("stopAdvertising")
 
-        idle(31)
+        idle(600)
 
         verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
         verifyStarts(1)
@@ -109,7 +120,7 @@ class CompanionAdvertisingRecoveryTest {
         verifyStarts(2)
     }
 
-    @Test fun destroyedServiceRejectsQueuedStartAndRefresh() {
+    @Test fun destroyedServiceRejectsQueuedStartAndWatchdog() {
         startAdvertising()
         service.onDestroy()
 
@@ -144,27 +155,23 @@ class CompanionAdvertisingRecoveryTest {
         verifyStarts(1)
     }
 
-    @Test fun lowLatencyWindowFallsBackToBalancedAfterTwoMinutes() {
-        invoke("openLowLatencyAdvertisingWindow")
+    @Test fun lostCallbacksExhaustTheSameFiveRetryBudget() {
         startAdvertising()
-        callback().onStartSuccess(null)
-
-        idle(119)
-        assertEquals(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY, startedModes().last())
-        callback().onStartSuccess(null)
-
-        idle(2)
-        assertEquals(AdvertiseSettings.ADVERTISE_MODE_BALANCED, startedModes().last())
-        assertTrue(startedModes().dropLast(1).all { it == AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY })
+        idle(600)
+        verifyStarts(6)
+        verify(exactly = 6) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+        startAdvertising()
+        idle(600)
+        verifyStarts(6)
     }
 
-    @Test fun advertisingOutsideWindowUsesBalanced() {
+    @Test fun advertisingUsesBalancedWithoutTimedModeSwitch() {
         startAdvertising()
 
         assertEquals(listOf(AdvertiseSettings.ADVERTISE_MODE_BALANCED), startedModes())
     }
 
-    @Test fun refreshSkipsWhileBluetoothIsOff() {
+    @Test fun confirmedAdvertisingHasNoTimerEvenWhenBluetoothIsOff() {
         startAdvertising()
         callback().onStartSuccess(null)
         every { adapter.isEnabled } returns false
@@ -237,12 +244,66 @@ class CompanionAdvertisingRecoveryTest {
         verifyStarts(4)
     }
 
-    @Test fun alreadyStartedKeepsAdvertisingAndRefreshesRatherThanRetries() {
+    @Test fun alreadyStartedKeepsAdvertisingWithoutRefreshOrRetry() {
         startAdvertising()
         callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED)
-        idle(16)
+        idle(600)
         verifyStarts(1)
-        idle(15)
+        verify(exactly = 0) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+    }
+
+    @Test fun successJustBeforeWatchdogDeadlineCancelsAllTimeoutRecovery() {
+        startAdvertising()
+        idleMillis(29_999)
+        callback().onStartSuccess(null)
+        idle(600)
+        verifyStarts(1)
+        verify(exactly = 0) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+    }
+
+    @Test fun pendingStartWatchdogDoesNotInterruptAnInboundConnection() {
+        startAdvertising()
+        inject("connectedDevice", mockk<BluetoothDevice>(relaxed = true))
+        idle(600)
+        verifyStarts(1)
+        verify(exactly = 0) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+    }
+
+    @Test fun realGattConnectionAndDisconnectStillResumeAdvertising() {
+        startAdvertising()
+        callback().onStartSuccess(null)
+        val peer = mockk<BluetoothDevice>(relaxed = true)
+        every { peer.address } returns "AA:BB"
+        val gattCallback = CompanionAppService::class.java.getDeclaredField("gattServerCallback").run {
+            isAccessible = true
+            get(service) as BluetoothGattServerCallback
+        }
+        gattCallback.onConnectionStateChange(peer, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+        idle(2)
+        gattCallback.onConnectionStateChange(peer, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_DISCONNECTED)
+        callback().onStartSuccess(null)
+        idle(600)
+        verifyStarts(2)
+        verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+    }
+
+    @Test fun timeoutCancellationPermissionFailureDoesNotScheduleRetries() {
+        every { advertiser.stopAdvertising(any<AdvertiseCallback>()) } throws SecurityException("revoked")
+        startAdvertising()
+        idle(600)
+        startAdvertising()
+        verifyStarts(1)
+        verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
+    }
+
+    @Test fun lateCallbackFromTimedOutStartCannotFailReplacement() {
+        startAdvertising()
+        val stale = callback()
+        idle(31)
+        verifyStarts(2)
+        stale.onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE)
+        callback().onStartSuccess(null)
+        idle(600)
         verifyStarts(2)
     }
 

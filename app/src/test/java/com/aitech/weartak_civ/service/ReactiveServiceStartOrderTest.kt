@@ -45,7 +45,7 @@ class ReactiveServiceStartOrderTest {
         val repo = mockk<DataRepository>(relaxed = true)
         set("repo\$delegate", lazyOf(repo))
         set("registry", registry)
-        set("config", ServiceConfiguration(app, repo))
+        set("config", ServiceConfiguration(app, repo, mockk(relaxed = true)))
         set("runnableServicesList", registry.getAllServiceTypes())
     }
 
@@ -103,7 +103,7 @@ class ReactiveServiceStartOrderTest {
         val repo = mockk<DataRepository>(relaxed = true)
         every { repo.getEnableCompanionAppService } returns enabled
         every { repo.getEnableBleBeaconService } returns MutableStateFlow(true)
-        val config = ServiceConfiguration(app, repo)
+        val config = ServiceConfiguration(app, repo, mockk(relaxed = true))
 
         for (value in listOf(false, true, false)) {
             enabled.value = value
