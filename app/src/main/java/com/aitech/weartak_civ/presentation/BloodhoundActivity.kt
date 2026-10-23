@@ -216,6 +216,9 @@ fun BloodhoundCivApp(
     val routeSession by bhRepo.routeFollow.collectAsState()
     val activeTarget by bhRepo.activeBhItemUi.collectAsState()
     val routeLocation = location?.let { TakRoutePoint(it.latitude, it.longitude) }
+    LaunchedEffect(Unit) {
+        dataRepository.requestInteractionPliRefresh(com.aitech.weartak_civ.events.PliRefreshReason.POSITION_VIEWED)
+    }
 
     fun routeDestination(route: TakRoute) =
         "bloodhound_route/${Uri.encode(route.serverId)}/${Uri.encode(route.uid)}"

@@ -75,7 +75,7 @@ class InteractionLocationRefreshTest {
             service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
             service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.CHAT_SENT))
             verify(exactly = 1) { client.requestLocationUpdates(any<LocationRequest>(), any<LocationCallback>(), any<Looper>()) }
-            assertEquals(15_000L, request.captured.durationMillis)
+            assertEquals(5_000L, request.captured.durationMillis)
             assertEquals(0L, request.captured.maxUpdateAgeMillis)
             val invalid = Location("gps")
             callback.captured.onLocationResult(LocationResult.create(listOf(invalid)))

@@ -39,6 +39,7 @@ class CotDispatchServiceAlertReadinessTest {
     @Test
     fun pluginOnlyAvailabilityDrainsQueuedEmergencyWithoutEnablingNetworkRoutes() = runTest {
         val fixture = Fixture(this)
+        fixture.snapshotLocation = fixture.location(System.currentTimeMillis())
         fixture.startRecoveryCollector()
         runCurrent()
         val alert = fixture.alert("plugin-only")
@@ -57,11 +58,11 @@ class CotDispatchServiceAlertReadinessTest {
     }
 
     @Test
-    fun usableRouteSendsManualAndAutomaticAlertsAndCancellationsWithoutFreshGps() = runTest {
+    fun usableRouteSendsManualAndAutomaticAlertsAndCancellationsWithAnOldValidFix() = runTest {
         for (automatic in listOf(false, true)) {
             val fixture = Fixture(this)
             fixture.multicast.value = true
-            for (location in listOf(null, fixture.location(System.currentTimeMillis() - 60_000))) {
+            for (location in listOf(fixture.location(System.currentTimeMillis() - 60_000), fixture.location(System.currentTimeMillis()))) {
                 fixture.snapshotLocation = location
                 val alert = fixture.alert("alert-${fixture.sent.size}")
                 fixture.activeAlerts(automatic)[alert.uuid] = alert
@@ -70,8 +71,9 @@ class CotDispatchServiceAlertReadinessTest {
             }
             assertEquals(4, fixture.sent.size)
             fixture.sent.forEach {
-                assertTrue(it.contains("ce='9999999.0'"))
-                assertFalse(it.contains("lat='41.0'"))
+                assertFalse(it.contains("ce='9999999.0'"))
+                assertTrue(it.contains("lat='41.0'"))
+                assertTrue(it.contains("<weartak_location"))
             }
             assertEquals(2, fixture.sent.count { it.contains("type='b-a-o-can'") })
         }
@@ -89,7 +91,7 @@ class CotDispatchServiceAlertReadinessTest {
             fixture.send(automatic, alert)
             fixture.clear(automatic, alert.uuid)
             assertEquals(0, fixture.sent.size)
-            assertEquals(2, fixture.queue(automatic).size)
+            assertEquals(1, fixture.queue(automatic).size)
 
             // The endpoint set already contains another endpoint; recovery is not a
             // false-to-true transition of anyEndpointConnected.
@@ -102,9 +104,8 @@ class CotDispatchServiceAlertReadinessTest {
             delay(10)
             runCurrent()
 
-            assertEquals(2, fixture.sent.size)
-            assertFalse(fixture.sent[0].contains("type='b-a-o-can'"))
-            assertTrue(fixture.sent[1].contains("type='b-a-o-can'"))
+            assertEquals(1, fixture.sent.size)
+            assertTrue(fixture.sent[0].contains("type='b-a-o-can'"))
             assertTrue(fixture.queue(automatic).isEmpty())
             assertTrue(fixture.activeAlerts(automatic).isEmpty())
             fixture.stopRecoveryCollector()
@@ -121,7 +122,64 @@ class CotDispatchServiceAlertReadinessTest {
         assertEquals(41.0, fixture.payloads.single().snapshot.location?.lat)
         fixture.snapshotLocation = fixture.location(System.currentTimeMillis()).copy(lat = Double.NaN)
         fixture.send(false, fixture.alert("invalid"))
-        assertEquals(null, fixture.payloads.last().snapshot.location)
+        assertEquals(1, fixture.payloads.size)
+        assertTrue(fixture.chats.single().snapshot.message.contains("location unavailable, acquiring GPS"))
+    }
+
+    @Test fun noFixSendsChatImmediatelyThenFirstRealFixSendsPositionalAlertAndUpdates() = runTest {
+        val fixture = Fixture(this)
+        fixture.multicast.value = true
+        val alert = fixture.alert("no-fix")
+        fixture.activeAlerts(false)[alert.uuid] = alert
+        fixture.send(false, alert)
+        assertEquals(1, fixture.sent.size)
+        assertTrue(fixture.sent.single().contains("type='b-t-f'"))
+        assertTrue(fixture.sent.single().contains("location unavailable, acquiring GPS"))
+        repeat(18) { fixture.drain(false) }
+        assertEquals(1, fixture.sent.size)
+        assertEquals(1, fixture.queue(false).size)
+        fixture.snapshotLocation = fixture.location(System.currentTimeMillis())
+        fixture.drain(false)
+        assertEquals(2, fixture.sent.size)
+        assertTrue(fixture.sent.last().contains("lat='41.0'"))
+        assertFalse(fixture.sent.last().contains("type='b-t-f'"))
+        repeat(18) { fixture.drain(false) }
+        assertEquals(2, fixture.sent.size)
+        fixture.snapshotLocation = fixture.snapshotLocation!!.copy(timeMillis = System.currentTimeMillis() + 1, lat = 42.0)
+        fixture.drain(false)
+        assertEquals(3, fixture.sent.size)
+        assertTrue(fixture.sent.last().contains("lat='42.0'"))
+        fixture.clear(false, alert.uuid)
+        fixture.snapshotLocation = fixture.snapshotLocation!!.copy(lat = 43.0)
+        fixture.drain(false)
+        assertEquals(4, fixture.sent.size)
+        assertTrue(fixture.sent.last().contains("type='b-a-o-can'"))
+    }
+
+    @Test fun clearingBeforeFirstFixNeverReplaysTheCancelledPositionalAlert() = runTest {
+        val fixture = Fixture(this)
+        fixture.multicast.value = true
+        val alert = fixture.alert("cancel-before-fix")
+        fixture.activeAlerts(false)[alert.uuid] = alert
+        fixture.send(false, alert)
+        fixture.clear(false, alert.uuid)
+        fixture.snapshotLocation = fixture.location(System.currentTimeMillis())
+        fixture.drain(false)
+        assertEquals(2, fixture.sent.size)
+        assertTrue(fixture.sent.all { it.contains("type='b-t-f'") })
+        assertTrue(fixture.queue(false).isEmpty())
+    }
+
+    @Test fun queuedNoFixAlertDoesNotBlockAnotherImmediateEmergencyNotification() = runTest {
+        val fixture = Fixture(this)
+        fixture.multicast.value = true
+        fixture.send(false, fixture.alert("first"))
+        fixture.send(false, fixture.alert("second"))
+        assertEquals(2, fixture.sent.size)
+        assertTrue(fixture.sent.all { it.contains("type='b-t-f'") })
+        assertEquals(2, fixture.queue(false).size)
+        fixture.drain(false)
+        assertEquals(2, fixture.sent.size)
     }
 
     private class Fixture(scope: TestScope) {
@@ -132,6 +190,7 @@ class CotDispatchServiceAlertReadinessTest {
         val pluginAvailable = MutableStateFlow(false)
         val sent = mutableListOf<String>()
         val payloads = mutableListOf<CotCompanionPayload.Emergency>()
+        val chats = mutableListOf<CotCompanionPayload.Chat>()
         var snapshotLocation: DataRepository.LocationSnapshot? = null
         private val repo = mockk<DataRepository>(relaxed = true)
         private val companion = mockk<CompanionAppRepository>(relaxed = true)
@@ -182,7 +241,13 @@ class CotDispatchServiceAlertReadinessTest {
                 sendDitto = { _, _ -> error("Unexpected Ditto route") },
                 sendMulticast = { sent += it },
                 sendPliMulticast = { error("Unexpected PLI route") },
-                sendCompanion = { payloads += it as CotCompanionPayload.Emergency },
+                sendCompanion = {
+                    when (it) {
+                        is CotCompanionPayload.Emergency -> payloads += it
+                        is CotCompanionPayload.Chat -> chats += it
+                        else -> error("Unexpected payload")
+                    }
+                },
                 sendPlugin = { sent += it },
             )
             field("endpointDispatcher\$delegate").set(service, lazyOf(dispatcher))

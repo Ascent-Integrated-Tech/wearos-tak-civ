@@ -94,6 +94,7 @@ class CotMessageBuilderTest {
         assertTrue(alertXml.contains("<biometrics"))
         assertTrue(alertXml.contains("uid='alert-1'"))
         assertTrue(alertXml.contains("alertUid='alert-1'"))
+        assertTrue(alertXml.contains("<weartak_location timeMillis='0'/>"))
         assertTrue(alertXml.contains("alertState='ALERT'"))
         assertTrue(alertXml.contains("alertCategory='Alert'"))
         assertTrue(alertXml.contains("alertPriority='1'"))
@@ -107,23 +108,11 @@ class CotMessageBuilderTest {
         assertTrue(cancelXml.contains("type='b-a-o-can'"))
     }
 
-    @Test
-    fun emergencyWithoutLocationUsesTheUnknownPositionErrorSentinel() {
-        val xml = CotMessageBuilder.emergency(
+    @Test(expected = IllegalArgumentException::class)
+    fun emergencyWithoutLocationCannotCreateAPhantomPosition() {
+        CotMessageBuilder.emergency(
             emergencySnapshot(DataRepository.AlertState.ALERT).copy(location = null),
         )
-        val point = DocumentBuilderFactory.newInstance()
-            .newDocumentBuilder()
-            .parse(InputSource(StringReader(xml)))
-            .documentElement
-            .getElementsByTagName("point")
-            .item(0) as Element
-
-        assertEquals("0.0", point.getAttribute("lat"))
-        assertEquals("0.0", point.getAttribute("lon"))
-        assertEquals("0.0", point.getAttribute("hae"))
-        assertEquals("9999999.0", point.getAttribute("ce"))
-        assertEquals("9999999.0", point.getAttribute("le"))
     }
 
     @Test
@@ -134,9 +123,9 @@ class CotMessageBuilderTest {
             location().copy(lat = 91.0),
             location().copy(lon = -181.0),
         )) {
-            val xml = CotMessageBuilder.emergency(emergencySnapshot(DataRepository.AlertState.ALERT).copy(location = invalid))
-            assertTrue(xml.contains("lat='0.0'"))
-            assertTrue(xml.contains("ce='9999999.0'"))
+            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+                CotMessageBuilder.emergency(emergencySnapshot(DataRepository.AlertState.ALERT).copy(location = invalid))
+            }
         }
         val xml = CotMessageBuilder.emergency(
             emergencySnapshot(DataRepository.AlertState.CANCEL).copy(

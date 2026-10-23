@@ -66,6 +66,7 @@ class InteractionIdentityPliTest {
         every { repo.getEnableCompanionAppService } returns flowOf(false)
         val companionConnected = MutableStateFlow(false)
         every { repo.isCompanionConnected } returns companionConnected
+        every { repo.bestKnownLocation() } answers { currentLocation.value }
         every { repo.getEnableSitxService } returns flowOf(false)
         every { repo.sitxStatus } returns MutableStateFlow(DataRepository.SitxServerStatus.DISCONNECTED)
         every { repo.multicastPublisherRunning } returns MutableStateFlow(false)
@@ -81,6 +82,9 @@ class InteractionIdentityPliTest {
         coEvery { dispatcher.dispatch(any(), any()) } coAnswers {
             sent.add(firstArg())
             true
+        }
+        coEvery { dispatcher.dispatchGateway(any(), any()) } coAnswers {
+            secondArg<suspend () -> Boolean>().invoke()
         }
         val hostApp = mockk<WearTakApplication>(relaxed = true)
         every { hostApp.pluginManager.settingsCoordinator.anyPluginHasSettingEnabled(any()) } returns false
@@ -134,9 +138,16 @@ class InteractionIdentityPliTest {
         every { companion.companionAppReady } returns MutableStateFlow(false)
         currentLocation.value = Location(fix).apply {
             elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos() - 4_000_000_000L
+            time = fix.time - 60_000L
         }
         service.onIdentityPliRefresh(InteractionPliRefresh(PliRefreshReason.TEAM_CHANGED))
-        assertNull(sent.poll(350, TimeUnit.MILLISECONDS))
+        val fallback = sent.poll(350, TimeUnit.MILLISECONDS)
+        assertNotNull(fallback)
+        val fallbackSnapshot = (fallback!!.companionPayload as CotCompanionPayload.Pli).snapshot
+        assertEquals(fix.time - 60_000L, fallbackSnapshot.loc!!.timeMillis)
+        assertTrue(fallbackSnapshot.time.time > fallbackSnapshot.loc.timeMillis)
+        assertTrue(fallbackSnapshot.loc.ce!! > fix.accuracy)
+        assertTrue(fallback.xml.contains("<weartak_location timeMillis='${fix.time - 60_000L}'/>"))
         currentLocation.value = null
         service.onIdentityPliRefresh(InteractionPliRefresh(PliRefreshReason.CALLSIGN_CHANGED))
         assertNull(sent.poll(350, TimeUnit.MILLISECONDS))

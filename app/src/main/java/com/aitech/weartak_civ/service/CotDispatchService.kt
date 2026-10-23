@@ -96,6 +96,7 @@ class CotDispatchService : Service() {
     private var cotDispatchThread: HandlerThread? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val alertDispatchMutex = Mutex()
+    private val markerDispatchMutex = Mutex()
     private var identityPliJob: kotlinx.coroutines.Job? = null
 
     private lateinit var dataRepository: DataRepository
@@ -107,6 +108,7 @@ class CotDispatchService : Service() {
     )
 
     private val manualAlertMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.CustomEmergencyAlert>()
+    private val selfMarkerRefreshes = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val pendingManualAlertQueue = ArrayDeque<CustomEmergencyAlertWithAddedState>()
 
     private val physioAndAutoGenAlertMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.CustomEmergencyAlert>()
@@ -427,11 +429,12 @@ class CotDispatchService : Service() {
     private suspend fun sendPendingManualAlerts(): Boolean {
         var sentAll = true
         Log.i(TAG, "pendingManualAlertQueue.size=${pendingManualAlertQueue.size}")
-        while (pendingManualAlertQueue.isNotEmpty()) {
+        repeat(pendingManualAlertQueue.size) {
             val alertWithAddedState = pendingManualAlertQueue.first()
             Log.i(TAG, "Trying to send pending manual alert: $alertWithAddedState")
-            if (sendEmergencyAlert(alertWithAddedState)) {
-                pendingManualAlertQueue.removeFirst()
+            val sent = sendEmergencyAlert(alertWithAddedState)
+            pendingManualAlertQueue.removeFirst()
+            if (sent) {
                 if (alertWithAddedState.alert.alertState == DataRepository.AlertState.ALERT) {
                     dataRepository.changeManualAlertEnqueueStatusUid(alertWithAddedState.alert.uuid, false)
                 } else {
@@ -439,7 +442,7 @@ class CotDispatchService : Service() {
                 }
             } else {
                 sentAll = false
-                break
+                pendingManualAlertQueue.addLast(alertWithAddedState)
             }
         }
         return sentAll
@@ -451,19 +454,18 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun sendAllManualAlertsLocked(manualAlertWithState: CustomEmergencyAlertWithAddedState?) {
-        val sentPendingAlerts = sendPendingManualAlerts()
+        sendPendingManualAlerts()
 
-        if (null == manualAlertWithState) return
+        if (null == manualAlertWithState) {
+            manualAlertMap.values.forEach { sendEmergencyAlert(CustomEmergencyAlertWithAddedState(smsSent = true, alert = it)) }
+            return
+        }
 
-        if (sentPendingAlerts) {
-            if (sendEmergencyAlert(manualAlertWithState)) {
-                if (manualAlertWithState.alert.alertState == DataRepository.AlertState.ALERT) {
-                    dataRepository.appendManualAlert(manualAlertWithState.alert)
-                } else {
-                    dataRepository.removeManualAlertByUid(manualAlertWithState.alert.uuid)
-                }
+        if (sendEmergencyAlert(manualAlertWithState)) {
+            if (manualAlertWithState.alert.alertState == DataRepository.AlertState.ALERT) {
+                dataRepository.appendManualAlert(manualAlertWithState.alert)
             } else {
-                enqueueManualAlertAndUpdateUI(manualAlertWithState)
+                dataRepository.removeManualAlertByUid(manualAlertWithState.alert.uuid)
             }
         } else {
             enqueueManualAlertAndUpdateUI(manualAlertWithState)
@@ -471,6 +473,9 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun enqueueManualAlertAndUpdateUI(manualAlertWithState: CustomEmergencyAlertWithAddedState) {
+        if (pendingManualAlertQueue.any {
+                it.alert.uuid == manualAlertWithState.alert.uuid && it.alert.alertState == manualAlertWithState.alert.alertState
+            }) return
         val pendingManualAlert = manualAlertWithState.alert.copy(enqueuedToBeSent = true)
         val pendingManualAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = manualAlertWithState.smsSent, alert = pendingManualAlert)
         Log.i(TAG, "===> adding to pendingManualAlertQueue=$pendingManualAlert...")
@@ -516,6 +521,7 @@ class CotDispatchService : Service() {
         if (null == manualAlert) return
 
         val manualAlertClearWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = manualAlert.copy(alertState = DataRepository.AlertState.CANCEL))
+        pendingManualAlertQueue.removeAll { it.alert.uuid == uid && it.alert.alertState == DataRepository.AlertState.ALERT }
         if (readyToSendAlertEvents()) {
             sendAllManualAlertsLocked(manualAlertClearWithState)
         } else {
@@ -571,11 +577,12 @@ class CotDispatchService : Service() {
     private suspend fun sendPendingPhysioAndAutoGenAlerts(): Boolean {
         var sentAll = true
         Log.i(TAG, "pendingPhysioAndAutoGenAlertQueue.size=${pendingPhysioAndAutoGenAlertQueue.size}")
-        while (pendingPhysioAndAutoGenAlertQueue.isNotEmpty()) {
+        repeat(pendingPhysioAndAutoGenAlertQueue.size) {
             val alertWithAddedState = pendingPhysioAndAutoGenAlertQueue.first()
             Log.i(TAG, "Trying to send pending physio and auto gen alert: $alertWithAddedState")
-            if (sendEmergencyAlert(alertWithAddedState)) {
-                pendingPhysioAndAutoGenAlertQueue.removeFirst()
+            val sent = sendEmergencyAlert(alertWithAddedState)
+            pendingPhysioAndAutoGenAlertQueue.removeFirst()
+            if (sent) {
                 if (alertWithAddedState.alert.alertState == DataRepository.AlertState.ALERT) {
                     dataRepository.changePhysioAndAutoGenAlertEnqueueStatusUid(alertWithAddedState.alert.uuid, false)
                 } else {
@@ -583,7 +590,7 @@ class CotDispatchService : Service() {
                 }
             } else {
                 sentAll = false
-                break
+                pendingPhysioAndAutoGenAlertQueue.addLast(alertWithAddedState)
             }
         }
         return sentAll
@@ -595,19 +602,18 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun sendAllPhysioAndAutoGenAlertsLocked(alertWithState: CustomEmergencyAlertWithAddedState?) {
-        val sentPendingAlerts = sendPendingPhysioAndAutoGenAlerts()
+        sendPendingPhysioAndAutoGenAlerts()
 
-        if (null == alertWithState) return
+        if (null == alertWithState) {
+            physioAndAutoGenAlertMap.values.forEach { sendEmergencyAlert(CustomEmergencyAlertWithAddedState(smsSent = true, alert = it)) }
+            return
+        }
 
-        if (sentPendingAlerts) {
-            if (sendEmergencyAlert(alertWithState)) {
-                if (alertWithState.alert.alertState == DataRepository.AlertState.ALERT) {
-                    dataRepository.appendPhysioAndAutoGenAlert(alertWithState.alert)
-                } else {
-                    dataRepository.removePhysioAndAutoGenAlertByUid(alertWithState.alert.uuid)
-                }
+        if (sendEmergencyAlert(alertWithState)) {
+            if (alertWithState.alert.alertState == DataRepository.AlertState.ALERT) {
+                dataRepository.appendPhysioAndAutoGenAlert(alertWithState.alert)
             } else {
-                enqueuePhysioAndAutoGenAlertAndUpdateUI(alertWithState)
+                dataRepository.removePhysioAndAutoGenAlertByUid(alertWithState.alert.uuid)
             }
         } else {
             enqueuePhysioAndAutoGenAlertAndUpdateUI(alertWithState)
@@ -615,6 +621,9 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun enqueuePhysioAndAutoGenAlertAndUpdateUI(alertWithState: CustomEmergencyAlertWithAddedState) {
+        if (pendingPhysioAndAutoGenAlertQueue.any {
+                it.alert.uuid == alertWithState.alert.uuid && it.alert.alertState == alertWithState.alert.alertState
+            }) return
         val pendingAlert = alertWithState.alert.copy(enqueuedToBeSent = true)
         val pendingAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = alertWithState.smsSent, alert = pendingAlert)
         Log.i(TAG, "===> adding to pendingPhysioAndAutoGenAlertQueue=$pendingAlert...")
@@ -663,6 +672,7 @@ class CotDispatchService : Service() {
         if (null == physioAndAutoGenAlert) return
 
         val physioAndAutoGenAlertClearWithState = CustomEmergencyAlertWithAddedState(smsSent = false, alert = physioAndAutoGenAlert.copy(alertState = DataRepository.AlertState.CANCEL))
+        pendingPhysioAndAutoGenAlertQueue.removeAll { it.alert.uuid == uid && it.alert.alertState == DataRepository.AlertState.ALERT }
         if (readyToSendAlertEvents()) {
             sendAllPhysioAndAutoGenAlertsLocked(physioAndAutoGenAlertClearWithState)
         } else {
@@ -760,10 +770,13 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.markerDropRequests.collect { req ->
                 Log.i(TAG, "Received drop request...")
-                val waitingForUpdatedLocation = if ((null != req.lat) && (null != req.lon)) false else !isLocationFresh() && !phoneSuppliesLocation()
+                val atSelf = req.lat == null || req.lon == null
+                val location = if (atSelf) dataRepository.snapshotLocation(dataRepository.bestKnownLocation())
+                    else dataRepository.snapshotMarkerLocation(req.uid, req.lat, req.lon, req.timeMillis)
+                val waitingForUpdatedLocation = atSelf && location == null && !phoneSuppliesLocation()
                 val droppedMarker = DataRepository.DroppedMarker(cotType = DataRepository.MarkerCotType.DROP, uid = req.uid.ifEmpty{ UUID.randomUUID().toString() }, markerType = req.markerType,
                     title = finalMarkerTitle(req.title), remark = req.remark, timeDropped = req.timeMillis,
-                    location = dataRepository.snapshotMarkerLocation(req.uid, req.lat, req.lon, req.timeMillis), enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
+                    location = location, enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
 
                 try {
                     dataRepository.appendDroppedMarker(droppedMarker)
@@ -773,10 +786,13 @@ class CotDispatchService : Service() {
                 }
                 enqueueMarkerDrop(droppedMarker)
                 markerDropMap[droppedMarker.uid] = droppedMarker
+                if (atSelf) {
+                    selfMarkerRefreshes[droppedMarker.uid] = android.os.SystemClock.elapsedRealtimeNanos()
+                    dataRepository.requestInteractionPliRefresh(PliRefreshReason.SELF_MARKER)
+                }
 
                     if (waitingForUpdatedLocation) {
                     Log.i(TAG, "Drop lat(${req.lat}) and lon(${req.lon}) is null or location is stale. En-queued marker drop...")
-                    EventBus.getDefault().post(LocationUpdateRequired())
                 } else {
                     Log.i(TAG, "Drop lat(${req.lat}) and lon(${req.lon}) NOT null or location is fresh. Trying to send marker drop request now if possible...")
                     if (hasConnectedEndpoint()) {
@@ -797,15 +813,19 @@ class CotDispatchService : Service() {
                 } else if (markerDrop.cotType == DataRepository.MarkerCotType.CLEAR) {
                     Log.w(TAG, "Cannot edit a marker that has already scheduled to be cleared. Ignoring this...")
                 } else {
-                    val waitingForUpdatedLocation = (req.updateLocation || markerDrop.waitingForUpdatedLocation) && !phoneSuppliesLocation()
+                    val bestLocation = if (req.updateLocation) dataRepository.snapshotLocation(dataRepository.bestKnownLocation()) else markerDrop.location
+                    val waitingForUpdatedLocation = bestLocation == null && !phoneSuppliesLocation()
                     val editedMarkerDrop = markerDrop.copy(cotType = DataRepository.MarkerCotType.EDIT, markerType = req.markerType, title = finalMarkerTitle(req.title),
-                        remark = req.remark, timeDropped = req.timeMillis, location = markerDrop.location,
+                        remark = req.remark, timeDropped = req.timeMillis, location = bestLocation,
                         enqueuedToBeSent = true, waitingForUpdatedLocation = waitingForUpdatedLocation)
                     enqueueMarkerEdit(editedMarkerDrop)
                     markerDropMap[req.uid] = editedMarkerDrop
+                    if (req.updateLocation) {
+                        selfMarkerRefreshes[req.uid] = android.os.SystemClock.elapsedRealtimeNanos()
+                        dataRepository.requestInteractionPliRefresh(PliRefreshReason.SELF_MARKER)
+                    }
                     if (waitingForUpdatedLocation) {
                         Log.i(TAG, "Marker Edit updateLocation(=${req.updateLocation}) is true or previously waitingForUpdatedLocation(=${markerDrop.waitingForUpdatedLocation}) is true. En-queued marker edit...")
-                        EventBus.getDefault().post(LocationUpdateRequired())
                     } else {
                         Log.i(TAG, "Marker edit waitingForUpdatedLocation is false. Trying to send edit marker request now if possible...")
                         if (hasConnectedEndpoint()) {
@@ -1084,7 +1104,7 @@ class CotDispatchService : Service() {
                 CotMessageKind.PLI, CotMessageKind.MARKER,
                 CotMessageKind.CHAT, CotMessageKind.EMERGENCY
             )) {
-            val accepted = capRepo.offerGatewayCot(message.xml)
+            val accepted = endpointDispatcher.dispatchGateway(message) { capRepo.offerGatewayCot(message.xml) }
             if (!accepted) Log.w(TAG, "Gateway output queue full; CoT not sent")
             return accepted
         }
@@ -1136,13 +1156,26 @@ class CotDispatchService : Service() {
 
         val snapshot = dataRepository.snapshotEmergencyEvent(alert)
         val snapshotForDispatch = snapshot.copy(
-            location = snapshot.location?.takeIf {
-                val ageMillis = System.currentTimeMillis() - it.timeMillis
-                ageMillis in 0 until FRESH_GPS_INTERVAL_MILLIS &&
-                    it.lat.isFinite() && it.lat in -90.0..90.0 &&
-                    it.lon.isFinite() && it.lon in -180.0..180.0
-            }?.let { it.copy(hae = it.hae?.takeIf { altitude -> altitude.isFinite() }) },
+            location = com.aitech.weartak_civ.cot.EmergencyLocationPolicy.forDispatch(snapshot.location, System.currentTimeMillis()),
         )
+        if (snapshotForDispatch.location == null) {
+            val text = if (alert.alertState == DataRepository.AlertState.CANCEL) {
+                "EMERGENCY from ${snapshot.system.callsign}: cancelled"
+            } else {
+                "EMERGENCY from ${snapshot.system.callsign}: location unavailable, acquiring GPS"
+            }
+            val chat = DataRepository.ChatEventSnapshot(
+                uid = "${alert.uuid}-location-unavailable-${alert.alertState}",
+                roomUid = "All Chat Rooms", roomTitle = "All Chat Rooms", message = text,
+                time = snapshot.time, location = null, physio = snapshot.physio, system = snapshot.system,
+            )
+            val accepted = dispatch(CotOutboundMessage(
+                CotMessageBuilder.chat(chat, snapshot.system.callsign, snapshot.system.deviceId, messageId = chat.uid),
+                CotMessageKind.CHAT, CotCompanionPayload.Chat(chat), emergencyDelivery = snapshotForDispatch,
+            ))
+            Log.w(TAG, "Emergency uid=${alert.uuid} has no valid fix; chat accepted=$accepted, positional alert awaits GPS")
+            return accepted && alert.alertState == DataRepository.AlertState.CANCEL
+        }
         val xml = CotMessageBuilder.emergency(snapshotForDispatch)
 
         val sent = dispatch(
@@ -1206,23 +1239,23 @@ class CotDispatchService : Service() {
                 Log.i(TAG, "Identity PLI refresh denied: ${event.reason}; no location permission")
                 return@launch
             }
-            val location = dataRepository.latestLocation.value?.let { android.location.Location(it) }
-            fun fresh(): Boolean = location != null && location.time > 0L && location.altitude.isFinite() &&
-                InteractionPliRefreshGate.freshForIdentity(
-                    location.elapsedRealtimeNanos, android.os.SystemClock.elapsedRealtimeNanos(),
-                    InteractionPliRefreshGate.usable(location.latitude, location.longitude, location.accuracy, location.hasAccuracy())
-                )
-            if (!fresh()) {
-                Log.i(TAG, "Identity PLI awaits new GPS fix: ${event.reason}; no usable fix within 3 seconds")
+            val location = dataRepository.bestKnownLocation()
+            if (location == null) {
+                Log.i(TAG, "Identity PLI awaits first GPS fix: ${event.reason}")
                 return@launch
             }
-            val snapshot = dataRepository.snapshotInteractionPli(location!!)
+            val base = dataRepository.snapshotInteractionPli(location)
+            val now = System.currentTimeMillis()
+            val snapshot = base.copy(
+                loc = com.aitech.weartak_civ.cot.EmergencyLocationPolicy.forDispatch(base.loc, now),
+                time = if (now - location.time > FRESH_GPS_INTERVAL_MILLIS) {
+                    com.aitech.weartak_civ.cot.CotEventTimeFactory.now(
+                        staleOffset = com.aitech.weartak_civ.cot.CotTimeOffset(seconds = 2 * actualReportingIntervalSecs + 15),
+                    )
+                } else base.time,
+            )
             val xml = buildPliCot(snapshot)
-            if (!fresh()) {
-                Log.i(TAG, "Identity PLI fix expired while building snapshot: ${event.reason}")
-                return@launch
-            }
-            Log.i(TAG, "Dispatching persisted identity PLI with already-fresh fix: ${event.reason}")
+            Log.i(TAG, "Dispatching persisted identity PLI with best available fix while GPS refreshes: ${event.reason}")
             dispatch(CotOutboundMessage(xml, CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot)))
         }
     }
@@ -1232,20 +1265,35 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             val location = event.location
             val ageNanos = android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
-            if (ageNanos < 0 || ageNanos > InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L) {
+            if (ageNanos < 0 || ageNanos > InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L ||
+                !InteractionPliRefreshGate.usable(location.latitude, location.longitude, location.accuracy, location.hasAccuracy())) {
                 Log.i(TAG, "Interaction PLI fix expired before dispatch: ${event.reasons}")
                 return@launch
             }
             // This callback supplies a verified fresh fix; leave periodic reporting timing alone.
-            val alertFix = dataRepository.latestLocation.value
-            val alertFixFresh = alertFix != null && InteractionPliRefreshGate.freshForIdentity(
-                alertFix.elapsedRealtimeNanos, android.os.SystemClock.elapsedRealtimeNanos(),
-                InteractionPliRefreshGate.usable(alertFix.latitude, alertFix.longitude, alertFix.accuracy, alertFix.hasAccuracy())
-            )
-            if (hasConnectedEndpoint() && alertFixFresh) {
-                if (pendingManualAlertQueue.isNotEmpty()) sendAllManualAlerts(null)
-                if (pendingPhysioAndAutoGenAlertQueue.isNotEmpty()) sendAllPhysioAndAutoGenAlerts(null)
+            if (readyToSendAlertEvents()) {
+                sendAllManualAlerts(null)
+                sendAllPhysioAndAutoGenAlerts(null)
             }
+            val nowNanos = android.os.SystemClock.elapsedRealtimeNanos()
+            selfMarkerRefreshes.entries.toList().forEach { (uid, requested) ->
+                if (nowNanos - requested > InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L) {
+                    selfMarkerRefreshes.remove(uid, requested)
+                } else if (location.elapsedRealtimeNanos >= requested && selfMarkerRefreshes.remove(uid, requested)) {
+                    val marker = dataRepository.droppedMarkerList.value.firstOrNull { it.uid == uid }
+                    if (marker != null && !dataRepository.isDeletedLocalPoint(uid)) {
+                        val updated = marker.copy(
+                            cotType = DataRepository.MarkerCotType.EDIT,
+                            location = dataRepository.snapshotLocation(location), waitingForUpdatedLocation = false,
+                            enqueuedToBeSent = true,
+                        )
+                        dataRepository.changeDroppedMarkerLocationByUid(uid, updated.location)
+                        markerDropMap[uid] = updated
+                        enqueueMarkerEdit(updated)
+                    }
+                }
+            }
+            sendPendingMarkerCots()
             // Use this request's fix, not a concurrently replaced repository location.
             val snapshot = dataRepository.snapshotInteractionPli(location)
             val xml = buildPliCot(snapshot)
@@ -1279,17 +1327,18 @@ class CotDispatchService : Service() {
         buildAndSendPhysioLocationCotMsg()
     }
 
-    private fun enqueueMarkerDrop(marker: DataRepository.DroppedMarker) {
+    private suspend fun enqueueMarkerDrop(marker: DataRepository.DroppedMarker) = markerDispatchMutex.withLock {
         Log.i(TAG, "===> Adding to marker cot list: Marker Drop for uid=${marker.uid}")
         pendingMarkerCotList.add(marker.copy(cotType = DataRepository.MarkerCotType.DROP))
     }
 
-    private fun enqueueMarkerEdit(req: DataRepository.DroppedMarker) {
+    private suspend fun enqueueMarkerEdit(req: DataRepository.DroppedMarker) = markerDispatchMutex.withLock {
         Log.i(TAG, "===> Adding to marker cot list: Marker Edit for uid=${req.uid}")
+        pendingMarkerCotList.removeAll { it.uid == req.uid }
         pendingMarkerCotList.add(req)
     }
 
-    private suspend fun sendPendingMarkerCots(): Boolean {
+    private suspend fun sendPendingMarkerCots(): Boolean = markerDispatchMutex.withLock {
         var sentAllReadyToSend = true
         val queueSize = pendingMarkerCotList.size
         Log.i(TAG, "pendingMarkerDropQueue.size=$queueSize")
@@ -1445,7 +1494,7 @@ class CotDispatchService : Service() {
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
-        // Alerts and markers reuse a fix only within this window.
+        // Marker queue freshness; emergencies retain the best known fix with aged uncertainty.
         private const val FRESH_GPS_INTERVAL_MILLIS = 3_000L
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
         var GPS_STALE_TIME_INTERVAL_MS = 10_000L

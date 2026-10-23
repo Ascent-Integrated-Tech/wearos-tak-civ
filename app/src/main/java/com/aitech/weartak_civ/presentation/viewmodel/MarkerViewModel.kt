@@ -112,7 +112,7 @@ class MarkerViewModel(application: Application) : AndroidViewModel(application) 
             { it.lat },
             { it.lon },
             { it.timeReceived }
-        )
+        ).also { dataRepository.requestInteractionPliRefresh(com.aitech.weartak_civ.events.PliRefreshReason.POSITION_VIEWED) }
 
     fun markerVectorUi(index: Int) =
         markerVectorUiInternal(
@@ -122,7 +122,7 @@ class MarkerViewModel(application: Application) : AndroidViewModel(application) 
             { it.lat },
             { it.lon },
             { it.timeDropped }
-        )
+        ).also { dataRepository.requestInteractionPliRefresh(com.aitech.weartak_civ.events.PliRefreshReason.POSITION_VIEWED) }
 
     fun deleteReceivedMarker(uid: String) {
         val removedAt = System.currentTimeMillis()

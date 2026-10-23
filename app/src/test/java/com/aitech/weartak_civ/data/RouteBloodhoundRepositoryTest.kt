@@ -11,9 +11,31 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class RouteBloodhoundRepositoryTest {
+    class RefreshObserver {
+        val reasons = mutableListOf<com.aitech.weartak_civ.events.PliRefreshReason>()
+        @org.greenrobot.eventbus.Subscribe
+        fun receive(event: com.aitech.weartak_civ.events.InteractionPliRefresh) { reasons += event.reason }
+    }
     private val repo = BloodhoundRepository(mockk<Context>(relaxed = true))
     private val route = TakRoute("route", "Test route", listOf(
         TakRoutePoint(0.0, 0.0), TakRoutePoint(0.0, 0.001), TakRoutePoint(0.0, 0.002)), "server")
+
+    @Test fun routeAndOrdinaryTrackingRequestActiveLocationWithoutWaitingForIt() {
+        val observer = RefreshObserver()
+        org.greenrobot.eventbus.EventBus.getDefault().register(observer)
+        try {
+            assertTrue(repo.startRoute(route, RouteFollow.StartMode.BEGINNING, null))
+            assertNotNull(repo.activeUid.value)
+            assertTrue(observer.reasons.contains(com.aitech.weartak_civ.events.PliRefreshReason.NAVIGATION_STARTED))
+            observer.reasons.clear()
+            repo.addMarkerTarget("other", "Other", "b-m-p-s-m", 1.0, 1.0, 1L)
+            repo.activate("other")
+            assertEquals("other", repo.activeUid.value)
+            assertEquals(listOf(com.aitech.weartak_civ.events.PliRefreshReason.NAVIGATION_STARTED), observer.reasons)
+        } finally {
+            org.greenrobot.eventbus.EventBus.getDefault().unregister(observer)
+        }
+    }
 
     @Test fun advancesSameTargetWithIncreasingTimeAndPreservesActivation() {
         assertTrue(repo.startRoute(route, RouteFollow.StartMode.BEGINNING, null))
