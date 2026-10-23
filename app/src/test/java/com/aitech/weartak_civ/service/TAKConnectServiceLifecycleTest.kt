@@ -77,6 +77,7 @@ class TAKConnectServiceLifecycleTest {
         every { repository.multicastPort } returns MutableStateFlow(null)
         every { repository.isCompanionConnected } returns MutableStateFlow(false)
         every { repository.takChannels } returns MutableStateFlow(emptyList())
+        every { repository.networkSettingsLocked } returns flowOf(false)
         val networkManager = mockk<NetworkManager>(relaxed = true)
         every { networkManager.wifiNetwork } returns MutableStateFlow<Network?>(null)
         mockkObject(NetworkManager.Companion)
@@ -117,6 +118,26 @@ class TAKConnectServiceLifecycleTest {
         assertFalse(TAKConnectService.serviceStopping)
         assertTrue(TAKConnectService.isRunning.get())
         assertConnectionAndChannelLaunchesRun()
+    }
+
+    @Test
+    fun queuedChannelActionsRecheckNetworkLockBeforeExecuting() = runBlocking {
+        createService()
+        val locked = MutableStateFlow(false)
+        every { repository.networkSettingsLocked } returns locked
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        detail.channelMutex.lock()
+        val existingJobs = currentConnectionScope().coroutineContext[Job]!!.children.toSet()
+        TAKConnectService.refreshTakChannels(serverId)
+        TAKConnectService.updateTakChannel(serverId, 1, true)
+        val queuedJobs = currentConnectionScope().coroutineContext[Job]!!.children
+            .filter { it !in existingJobs }.toList()
+        assertEquals(2, queuedJobs.size)
+        locked.value = true
+        detail.channelMutex.unlock()
+        withTimeout(5_000) { queuedJobs.forEach { it.join() } }
+        verify(exactly = 0) { repository.updateTakServerChannels(any()) }
+        verify(exactly = 0) { repository.takChannels }
     }
 
     @Test
