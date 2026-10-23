@@ -416,16 +416,21 @@ class CompanionAdvertisingRecoveryTest {
     }
 
     @OptIn(ExperimentalCoroutinesApi::class)
-    @Test fun repositoryCallsignChangesRefreshAdvertising() = runTest {
+    @Test fun standaloneCallsignChangesRefreshAdvertisingButManagedCallsignDoesNot() = runTest {
         val callsigns = MutableStateFlow("INITIAL")
+        val effectiveCallsigns = MutableStateFlow("PHONE")
         val repo = mockk<DataRepository>(relaxed = true)
-        every { repo.getCallsign } returns callsigns
+        every { repo.getCallsign } returns effectiveCallsigns
+        every { repo.getStandaloneCallsign } returns callsigns
         inject("repo\$delegate", lazyOf(repo))
         inject("serviceScope", backgroundScope)
         service.startAdvertisingCallsignCollector()
         runCurrent()
         startAdvertising()
         callback().onStartSuccess(null)
+        effectiveCallsigns.value = "PHONE-UPDATED"
+        runCurrent()
+        verifyStarts(1)
         callsigns.value = "UPDATED"
         runCurrent()
         assertEquals(listOf("INITIAL", "UPDATED"), advertisedCallsigns())

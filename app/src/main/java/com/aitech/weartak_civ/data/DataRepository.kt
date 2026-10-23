@@ -1773,7 +1773,8 @@ class DataRepository(private val context: Context) {
         val reportIntSecs: Int,     // pli reporting rate
         val systemStates: SystemStates,
         val role: String = "Team Member",
-        val team: String = "Orange"
+        val team: String = "Orange",
+        val standaloneCallsign: String = ""
     )
 
     suspend fun snapshotSystem(): SystemSnapshot {
@@ -1799,7 +1800,8 @@ class DataRepository(private val context: Context) {
             reportIntSecs = interval,
             systemStates = snapshotSystemStates(),
             role = prefs[SELECTED_ROLE] ?: "Team Member",
-            team = team
+            team = team,
+            standaloneCallsign = prefs.standaloneCallsign()
         )
     }
 
@@ -2947,6 +2949,14 @@ class DataRepository(private val context: Context) {
         prefs[CALLSIGN] ?: ""
     }
 
+    val getStandaloneCallsign: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs.standaloneCallsign()
+    }
+
+    private fun Preferences.standaloneCallsign(): String =
+        if (this[PHONE_MANAGED_SNAPSHOT_SAVED] == true) this[PHONE_MANAGED_PREVIOUS_CALLSIGN] ?: ""
+        else this[CALLSIGN] ?: ""
+
     val phoneManagedSettingsEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[PHONE_MANAGED_SETTINGS_ENABLED] ?: false
     }
@@ -3008,7 +3018,7 @@ class DataRepository(private val context: Context) {
             this[ENABLE_DYNAMIC_REPORTING_STRATEGY] ?: DEFAULT_ENABLE_DYNAMIC_REPORTING
         this[PHONE_MANAGED_PREVIOUS_CONSTANT_INTERVAL] =
             this[CONSTANT_REPORTING_INTERVAL] ?: DEFAULT_CONSTANT_REPORTING_INTERVAL
-        this[CALLSIGN]?.takeIf { it.isNotBlank() }?.let { this[PHONE_MANAGED_PREVIOUS_CALLSIGN] = it }
+        this[PHONE_MANAGED_PREVIOUS_CALLSIGN] = this[CALLSIGN] ?: ""
         this[PHONE_MANAGED_PREVIOUS_TEAM] = this[TEAM] ?: DEFAULT_TEAM
         this[PHONE_MANAGED_PREVIOUS_ROLE] = this[SELECTED_ROLE] ?: DEFAULT_ROLE
         this[PHONE_MANAGED_PREVIOUS_ROLE_CATEGORY] = this[SELECTED_CATEGORY] ?: DEFAULT_ROLE_CATEGORY

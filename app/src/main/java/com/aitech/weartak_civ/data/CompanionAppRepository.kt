@@ -395,7 +395,8 @@ class CompanionAppRepository(private val context: Context) {
         val wtVrs: String,  // WearTAK Version
         val mac: String?,   // Mac address Bluetooth
         val bat: Int?,
-        val int: Int        // reporting interval
+        val int: Int,       // reporting interval
+        val standaloneCallsign: String
     )
 
     data class ReportingIntPayload(
@@ -427,7 +428,8 @@ class CompanionAppRepository(private val context: Context) {
             wtVrs = sys.wearTakVersion,
             mac     = mac,
             bat = sys.batteryPercent,
-            int  = sys.reportIntSecs
+            int  = sys.reportIntSecs,
+            standaloneCallsign = sys.standaloneCallsign
         )
     }
 
@@ -509,6 +511,7 @@ class CompanionAppRepository(private val context: Context) {
         val team: String,
         val role: String,
         val phoneManagedSettings: Boolean,
+        val standaloneCallsign: String = "",
     )
 
     suspend fun snapshotWearTakSettings(): WearTakSettingsSnapshot {
@@ -520,6 +523,7 @@ class CompanionAppRepository(private val context: Context) {
             team          = repo.getTeam.first(),
             role          = repo.getRole.first(),
             phoneManagedSettings = repo.phoneManagedSettingsEnabled.first(),
+            standaloneCallsign = repo.getStandaloneCallsign.first(),
         )
     }
 
@@ -528,7 +532,8 @@ class CompanionAppRepository(private val context: Context) {
         val reportIntSecs: Int? = null,
         val takServerList: List<TakServerItem>? = null,
         val team: String? = null,
-        val role: String? = null
+        val role: String? = null,
+        val standaloneCallsign: String? = null
     )
 
     suspend fun buildSettingsChangedEnvelope(delta: SettingsChangedPayload): Envelope<SettingsChangedPayload> {
@@ -572,13 +577,15 @@ class CompanionAppRepository(private val context: Context) {
         }
         return combine(
             profileAndConnectionSettings,
-            repo.phoneManagedSettingsEnabled
-        ) { snapshot, managed ->
-            snapshot.copy(phoneManagedSettings = managed)
+            repo.phoneManagedSettingsEnabled,
+            repo.getStandaloneCallsign
+        ) { snapshot, managed, standaloneCallsign ->
+            snapshot.copy(phoneManagedSettings = managed, standaloneCallsign = standaloneCallsign)
         }
             // Strip timeMillis out of distinct comparison
             .distinctUntilChanged { old, new ->
                 old.callsign == new.callsign &&
+                        old.standaloneCallsign == new.standaloneCallsign &&
                         old.reportIntSecs == new.reportIntSecs &&
                         old.takServerList == new.takServerList &&
                         old.team == new.team &&
@@ -614,17 +621,20 @@ class CompanionAppRepository(private val context: Context) {
             // First emission: you can choose to emit a full "delta" or emit nothing.
             // I recommend emitting full once so the plugin UI gets initialized immediately.
             val callsignChanged = (p == null) || (p.callsign != cur.callsign)
+            val standaloneCallsignChanged = (p == null) || (p.standaloneCallsign != cur.standaloneCallsign)
             val intChanged      = (p == null) || (p.reportIntSecs != cur.reportIntSecs)
             val serversChanged  = (p == null) || (p.takServerList != cur.takServerList)
             val teamChanged     = (p == null) || (p.team != cur.team)
             val roleChanged     = (p == null) || (p.role != cur.role)
 
             // If nothing changed (should be rare because wearTakSettingsFlow is distinct, but safe):
-            if (!callsignChanged && !intChanged && !serversChanged && !teamChanged && !roleChanged) return@collect
+            if (!callsignChanged && !standaloneCallsignChanged && !intChanged && !serversChanged &&
+                !teamChanged && !roleChanged) return@collect
 
             emit(
                 SettingsChangedPayload(
                     callsign = if (callsignChanged) cur.callsign else null,
+                    standaloneCallsign = if (standaloneCallsignChanged) cur.standaloneCallsign else null,
                     reportIntSecs = if (intChanged) cur.reportIntSecs else null,
                     takServerList = if (serversChanged) cur.takServerList else null,
                     team = if (teamChanged) cur.team else null,

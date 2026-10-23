@@ -527,7 +527,7 @@ class CompanionAppService : Service() {
     @SuppressLint("MissingPermission")
     internal fun startAdvertisingCallsignCollector() {
         serviceScope.launch {
-            repo.getCallsign.distinctUntilChanged().collect(::updateAdvertisingCallsign)
+            repo.getStandaloneCallsign.distinctUntilChanged().collect(::updateAdvertisingCallsign)
         }
     }
 
