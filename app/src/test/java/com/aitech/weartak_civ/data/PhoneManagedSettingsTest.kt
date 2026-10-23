@@ -27,6 +27,10 @@ class PhoneManagedSettingsTest {
     @Before fun setup() = runBlocking {
         MainActivity.device_uid = "test-watch"
         MainActivity.versionNumber = "test"
+        MainActivity.teamEntriesValuesList = MainActivity.Constants.TeamsJson(listOf("Cyan", "Red"), listOf("Cyan", "Red"))
+        MainActivity.categoryRolesEntryLists = listOf(
+            com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry("MIL", listOf("Team Lead", "Medic"))
+        )
         repo = DataRepository(RuntimeEnvironment.getApplication())
         repo.takServerSecretsOverride = secrets.repository
         repo.legacyDataStore().edit { it.clear() }
@@ -228,6 +232,79 @@ class PhoneManagedSettingsTest {
         repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Lead", 20)
         assertEquals(true to 60, repo.clearPhoneManagedSettingsForPeer("AA:BB")?.reporting)
         assertEquals("PHONE", repo.getCallsign.first())
+    }
+
+    @Test fun sparseManagedIdentityLeavesAllOtherPreferencesAndSecretsUntouched() = runBlocking {
+        storeWatchIdentity()
+        repo.storeTakServerList(listOf(server("own", "T1dO", "own-pass")))
+        bondWithPhoneServers("phone")
+        val secretState = secrets.liveServers()
+        val snapshot = secrets.snapshot.value
+        val callsignKey = androidx.datastore.preferences.core.stringPreferencesKey("callsign")
+        val teamKey = androidx.datastore.preferences.core.stringPreferencesKey("team")
+        val roleKey = androidx.datastore.preferences.core.stringPreferencesKey("role")
+        val categoryKey = androidx.datastore.preferences.core.stringPreferencesKey("selected_category")
+        for ((keys, patch) in listOf(
+            setOf(callsignKey) to suspend { repo.applyPhoneManagedIdentity("aa:bb", "callsign", "LIVE") },
+            setOf(teamKey) to suspend { repo.applyPhoneManagedIdentity("AA:BB", "team", " red ") },
+            setOf(roleKey, categoryKey) to suspend { repo.applyPhoneManagedIdentity("AA:BB", "role", "medic") }
+        )) {
+            val before = repo.legacyDataStore().data.first().asMap()
+            patch()
+            val after = repo.legacyDataStore().data.first().asMap()
+            assertEquals(before.filterKeys { it !in keys }, after.filterKeys { it !in keys })
+        }
+        assertEquals("LIVE", repo.getCallsign.first())
+        assertEquals("Red", repo.getTeam.first())
+        assertEquals("Medic", repo.getRole.first())
+        assertEquals("MIL", repo.getRoleCategory.first())
+        assertEquals("ODIN-WEARTAK", repo.getStandaloneCallsign.first())
+        assertEquals(secretState, secrets.liveServers())
+        assertEquals(snapshot, secrets.snapshot.value)
+        repo.clearPhoneManagedSettingsForPeer("AA:BB")
+        assertWatchValues()
+        assertOwnServerRestored()
+    }
+
+    @Test fun identityRejectsEmptyBlankWrongOwnerAndStaleMutationWithoutWrites() = runBlocking {
+        storeWatchIdentity()
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Lead", 15)
+        val before = repo.legacyDataStore().data.first()
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { repo.applyPhoneManagedIdentity("AA:BB", "unknown", "value") }
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            runBlocking { repo.applyPhoneManagedIdentity("AA:BB", "callsign", " ") }
+        }
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { repo.applyPhoneManagedIdentity("CC:DD", "callsign", "BAD") }
+        }
+        assertThrows(IllegalStateException::class.java) {
+            runBlocking { repo.applyPhoneManagedIdentity("AA:BB", "callsign", "BAD") { false } }
+        }
+        assertEquals(before, repo.legacyDataStore().data.first())
+        Unit
+    }
+
+    @Test fun managedPerFieldCommandsTriggerOnlyTheirIdentityPliRefresh() = runBlocking {
+        storeWatchIdentity()
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Lead", 15)
+        val observer = InteractionPliTriggersTest.Observer()
+        org.greenrobot.eventbus.EventBus.getDefault().register(observer)
+        try {
+            repeat(2) {
+                repo.applyPhoneManagedIdentity("AA:BB", "callsign", "LIVE")
+                repo.applyPhoneManagedIdentity("AA:BB", "team", "Red")
+                repo.applyPhoneManagedIdentity("AA:BB", "role", "Medic")
+            }
+            assertEquals(listOf(
+                com.aitech.weartak_civ.events.PliRefreshReason.CALLSIGN_CHANGED,
+                com.aitech.weartak_civ.events.PliRefreshReason.TEAM_CHANGED,
+                com.aitech.weartak_civ.events.PliRefreshReason.ROLE_CHANGED
+            ), observer.reasons)
+        } finally { org.greenrobot.eventbus.EventBus.getDefault().unregister(observer) }
     }
 
     @Test fun phoneValuesRequireActiveManagement() = runBlocking {

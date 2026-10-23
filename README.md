@@ -88,6 +88,37 @@ features, permission failures, and unknown failures stop without retrying.
 Success resets the retry budget. After a terminal failure, resolve the cause and
 restart Companion; BLE-state notifications cannot bypass the retry/terminal gate.
 
+### Live Companion identity commands (WEARTAK-276)
+
+A phone-managed Companion can update one effective identity field at a time:
+
+```json
+{"vers":1,"msgType":"set_callsign","payload":{"callsign":"ALPHA-1"}}
+{"vers":1,"msgType":"set_team","payload":{"team":"Red"}}
+{"vers":1,"msgType":"set_role","payload":{"role":"Medic"}}
+```
+
+Each payload must contain exactly its one string field. These use the same
+validation and identity apply logic as chat `setprofile`/per-field commands:
+callsigns are trimmed, 1-32 characters (letters, digits, spaces, `.`, `_`, `-`);
+team and role names match the configured lists case-insensitively, and a role
+also selects its category. Blank, invalid, null, wrong-type, or extra fields
+fail without changing anything. Only the current bonded, subscribed peer that
+owns an already active phone-managed profile may send them. Session generations,
+management release, disconnects, and Gateway mode fence queued writes.
+
+The response is the existing version-1 `settings_set_ack` envelope, with
+`payload: {"ok":true}` on success or `payload: {"ok":false,"error":"..."}` on
+failure. Standard `msgUid`, `t`, and `src:"wearos"` metadata remain present;
+ended/unready sessions cannot receive an ack. Normal `settings_changed` deltas
+also report changes. Identity changes refresh runtime display state and request
+PLI through the existing identity-refresh path.
+
+Servers, certificates, reporting interval, other preferences, and the saved
+standalone identity/snapshot remain untouched. Chat identity commands still
+refuse edits while the live phone-management lock is active. `set_identity`
+and `setdittopdl` are not added; older watches ignore these new message types.
+
 ### Continuous Companion advertising (WEARTAK-270)
 
 Confirmed idle advertising stays in one continuous, connectable **BALANCED**

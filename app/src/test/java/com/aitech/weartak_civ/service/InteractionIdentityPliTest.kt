@@ -64,6 +64,8 @@ class InteractionIdentityPliTest {
         every { repo.latestLocation } returns currentLocation
         every { repo.buildHailDetail } returns MutableStateFlow(false)
         every { repo.getEnableCompanionAppService } returns flowOf(false)
+        val companionConnected = MutableStateFlow(false)
+        every { repo.isCompanionConnected } returns companionConnected
         every { repo.getEnableSitxService } returns flowOf(false)
         every { repo.sitxStatus } returns MutableStateFlow(DataRepository.SitxServerStatus.DISCONNECTED)
         every { repo.multicastPublisherRunning } returns MutableStateFlow(false)
@@ -120,12 +122,14 @@ class InteractionIdentityPliTest {
         gateway.confirm("metadata-service-test")
         every { repo.getEnableCompanionAppService } returns flowOf(true)
         every { companion.companionAppReady } returns MutableStateFlow(true)
+        companionConnected.value = true
         val gatewaySent = mutableListOf<String>()
         every { companion.offerGatewayCot(any()) } answers { gatewaySent += firstArg<String>(); true }
         service.buildAndSendPhysioLocationCotMsg()
         assertEquals(listOf(message.xml), gatewaySent)
         assertNull(sent.poll(150, TimeUnit.MILLISECONDS))
         gateway.reset()
+        companionConnected.value = false
         every { repo.getEnableCompanionAppService } returns flowOf(false)
         every { companion.companionAppReady } returns MutableStateFlow(false)
         currentLocation.value = Location(fix).apply {

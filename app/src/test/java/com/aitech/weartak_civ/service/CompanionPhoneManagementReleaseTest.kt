@@ -101,6 +101,115 @@ class CompanionPhoneManagementReleaseTest {
         verify(exactly = 0) { adapter.setName(any()) }
     }
 
+    private suspend fun prepareIdentity() {
+        MainActivity.teamEntriesValuesList = MainActivity.Constants.TeamsJson(listOf("Cyan", "Red"), listOf("Cyan", "Red"))
+        MainActivity.categoryRolesEntryLists = listOf(
+            com.aitech.weartak_civ.Utils.SettingsUtils.CategoryRolesEntry("MIL", listOf("Team Lead", "Medic"))
+        )
+        repo.storeCallsign("ODIN-WEARTAK")
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Lead", 15)
+        val real = CompanionAppRepository(RuntimeEnvironment.getApplication())
+        every { capRepo.buildSettingsAck(any(), any()) } answers {
+            real.buildSettingsAck(firstArg(), secondArg())
+        }
+        every { capRepo.envelopeToJson(any<CompanionAppRepository.Envelope<Any>>()) } answers {
+            com.google.gson.Gson().toJson(firstArg<CompanionAppRepository.Envelope<Any>>()).also {
+                identityAcks.add(JSONObject(it))
+            }
+        }
+    }
+
+    private val identityAcks = java.util.concurrent.ConcurrentLinkedQueue<JSONObject>()
+
+    private fun awaitIdentityAck(): JSONObject {
+        repeat(200) {
+            scheduler.runCurrent()
+            identityAcks.poll()?.let { return it }
+            Thread.sleep(10)
+        }
+        throw AssertionError("Identity acknowledgement was not built")
+    }
+
+    @Test fun sparseIdentityMessageAcknowledgesAndRefreshesRuntimeWithoutChangingReporting() = runBlocking {
+        prepareIdentity()
+        handle("set_callsign", JSONObject().put("callsign", "LIVE"))
+        val ack = awaitIdentityAck()
+        assertEquals("settings_set_ack", ack.getString("msgType"))
+        assertTrue(ack.getJSONObject("payload").getBoolean("ok"))
+        assertEquals("LIVE", repo.getCallsign.first())
+        assertEquals("LIVE", MainActivity.Constants.callsign)
+        assertEquals("Cyan", repo.getTeam.first())
+        assertEquals("Team Lead", repo.getRole.first())
+        assertEquals(15, repo.getConstantReportingInterval.first())
+        assertEquals("ODIN-WEARTAK", repo.getStandaloneCallsign.first())
+        verify { gattServer.notifyCharacteristicChanged(peer, txCharacteristic, false) }
+
+        handle("set_team", JSONObject().put("team", "Red"))
+        assertTrue(awaitIdentityAck().getJSONObject("payload").getBoolean("ok"))
+        assertEquals("Team Lead", repo.getRole.first())
+        handle("set_role", JSONObject().put("role", "Medic"))
+        assertTrue(awaitIdentityAck().getJSONObject("payload").getBoolean("ok"))
+        assertEquals("LIVE", MainActivity.Constants.callsign)
+        assertEquals("Red", MainActivity.Constants.team)
+        assertEquals("Medic", MainActivity.Constants.role)
+        assertEquals("MIL", MainActivity.Constants.category)
+    }
+
+    @Test fun identityRejectsWrongOwnerUnbondedUnreadyReleasedAndMalformedRequests() = runBlocking {
+        prepareIdentity()
+        for (payload in listOf(JSONObject(), JSONObject().put("callsign", JSONObject.NULL),
+            JSONObject().put("team", 123), JSONObject().put("role", " "),
+            JSONObject().put("callsign", "BAD").put("reportIntSecs", 10))) {
+            handle("set_callsign", payload)
+            val ack = awaitIdentityAck().getJSONObject("payload")
+            assertFalse(ack.getBoolean("ok"))
+            assertTrue(ack.has("error"))
+            assertEquals("PHONE", repo.getCallsign.first())
+        }
+        for ((type, payload) in listOf(
+            "set_callsign" to JSONObject().put("callsign", "A".repeat(33)),
+            "set_callsign" to JSONObject().put("callsign", "BAD!"),
+            "set_team" to JSONObject().put("team", "not a team"),
+            "set_role" to JSONObject().put("role", "not a role"),
+            "set_role" to JSONObject().put("role", JSONObject.NULL)
+        )) {
+            handle(type, payload)
+            assertFalse(awaitIdentityAck().getJSONObject("payload").getBoolean("ok"))
+        }
+        repo.enablePhoneManagedSettings("CC:DD")
+        handle("set_callsign", JSONObject().put("callsign", "BAD"))
+        assertFalse(awaitIdentityAck().getJSONObject("payload").getBoolean("ok"))
+        repo.enablePhoneManagedSettings("AA:BB")
+        bonded = false
+        handle("set_callsign", JSONObject().put("callsign", "BAD"))
+        assertFalse(awaitIdentityAck().getJSONObject("payload").getBoolean("ok"))
+        verify { capRepo.buildSettingsAck(false, any()) }
+        bonded = true
+        ready = false
+        handle("set_callsign", JSONObject().put("callsign", "BAD"))
+        assertFalse(awaitIdentityAck().getJSONObject("payload").getBoolean("ok"))
+        ready = true
+        handle(JSONObject().put("requestId", UUID.randomUUID().toString()))
+        assertTrue(awaitAck().getJSONObject("payload").getBoolean("ok"))
+        handle("set_callsign", JSONObject().put("callsign", "BAD"))
+        assertFalse(awaitIdentityAck().getJSONObject("payload").getBoolean("ok"))
+        assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+    }
+
+    @Test fun queuedIdentityCannotCrossSubscriptionGeneration() = runBlocking {
+        prepareIdentity()
+        val mutex = field("phoneManagementSettingsMutex") as kotlinx.coroutines.sync.Mutex
+        mutex.lock()
+        rawHandle("set_callsign", JSONObject().put("callsign", "STALE"))
+        scheduler.runCurrent()
+        service.beginCompanionSubscription()
+        mutex.unlock()
+        scheduler.runCurrent()
+        assertEquals("PHONE", repo.getCallsign.first())
+        verify { capRepo.buildSettingsAck(false, any()) }
+    }
+
     @Test fun releaseAckRestoresWatchLockedValuesAndIsIdempotent() = runBlocking {
         repo.storeEnableDynamicReportingStrategy(true)
         repo.storeConstantReportingInterval(60)

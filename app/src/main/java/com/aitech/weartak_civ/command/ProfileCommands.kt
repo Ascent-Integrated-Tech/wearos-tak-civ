@@ -12,10 +12,13 @@ package com.aitech.weartak_civ.command
 import java.time.Year
 
 /** Where validated profile values are written. Implemented over DataRepository at runtime. */
-interface ProfileStore {
+interface IdentityProfileStore {
     suspend fun setCallsign(value: String)
     suspend fun setTeam(value: String)
     suspend fun setRole(category: String, role: String)
+}
+
+interface ProfileStore : IdentityProfileStore {
     suspend fun setHeight(feet: Int, inches: Int)
     suspend fun setWeight(pounds: Int)
     suspend fun setBirthYear(year: Int)
@@ -23,6 +26,29 @@ interface ProfileStore {
     suspend fun setUserType(value: String)
     suspend fun setPantsLength(value: Int)
     suspend fun setWaistSize(value: Int)
+}
+
+class IdentityProfileChange private constructor(
+    private val applyValue: suspend (IdentityProfileStore) -> Unit
+) {
+    suspend fun apply(store: IdentityProfileStore) = applyValue(store)
+
+    companion object {
+        fun parse(
+            key: String,
+            value: String,
+            teams: List<String>,
+            roles: List<Pair<String, String>>
+        ): IdentityProfileChange? = when (key) {
+            "callsign" -> ChatCommandValidation.callsign(value)
+                ?.let { v -> IdentityProfileChange { it.setCallsign(v) } }
+            "team" -> teams.firstOrNull { it.equals(value.trim(), ignoreCase = true) }
+                ?.let { v -> IdentityProfileChange { it.setTeam(v) } }
+            "role" -> roles.firstOrNull { it.second.equals(value.trim(), ignoreCase = true) }
+                ?.let { r -> IdentityProfileChange { it.setRole(r.first, r.second) } }
+            else -> null
+        }
+    }
 }
 
 /** The values the settings screens offer, so chat commands accept exactly what the UI does. */
@@ -70,10 +96,11 @@ class ProfileHandler(
     }
 
     private fun parse(key: String, value: String): Change? = when (key) {
-        "callsign" -> ChatCommandValidation.callsign(value)?.let { v -> Change(true) { it.setCallsign(v) } }
-        "team" -> match(value, options.teams())?.let { v -> Change(true) { it.setTeam(v) } }
-        "role" -> options.roles().firstOrNull { it.second.equals(value.trim(), ignoreCase = true) }
-            ?.let { r -> Change(true) { it.setRole(r.first, r.second) } }
+        "callsign", "team", "role" -> IdentityProfileChange.parse(
+            key, value, if (key == "team") options.teams() else emptyList(),
+            if (key == "role") options.roles() else emptyList()
+        )
+            ?.let { change -> Change(true) { change.apply(it) } }
         "height" -> ChatCommandValidation.height(value)?.let { h -> Change(false) { it.setHeight(h.first, h.second) } }
         "weight" -> intIn(value, 1, 1000)?.let { v -> Change(false) { it.setWeight(v) } }
         "birthyear" -> intIn(value, 1900, currentYear())?.let { v -> Change(false) { it.setBirthYear(v) } }

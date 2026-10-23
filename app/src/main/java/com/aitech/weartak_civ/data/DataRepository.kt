@@ -3109,6 +3109,42 @@ class DataRepository(private val context: Context) {
         return after
     }
 
+    suspend fun applyPhoneManagedIdentity(
+        companionAddress: String,
+        field: String,
+        value: String,
+        mayApply: () -> Boolean = { true }
+    ): PhoneManagedSettingsValues {
+        val change = requireNotNull(com.aitech.weartak_civ.command.IdentityProfileChange.parse(
+            field, value, if (field == "team") MainActivity.teamEntriesValuesList.ltEntries else emptyList(),
+            if (field == "role") {
+                MainActivity.categoryRolesEntryLists.flatMap { c -> c.roles.map { c.category to it } }
+            } else emptyList()
+        )) { "Invalid $field; nothing changed" }
+        lateinit var before: PhoneManagedSettingsValues
+        lateinit var after: PhoneManagedSettingsValues
+        context.dataStore.edit { prefs ->
+            check(mayApply()) { "Companion connection changed before identity was applied" }
+            check(prefs[PHONE_MANAGED_SETTINGS_ENABLED] == true &&
+                prefs[PHONE_MANAGED_COMPANION_ADDRESS].equals(companionAddress, ignoreCase = true) &&
+                prefs[PHONE_MANAGED_SNAPSHOT_SAVED] == true) {
+                "Identity requires the active phone-managed owner and profile"
+            }
+            before = prefs.phoneManagedSettingsValues()
+            change.apply(object : com.aitech.weartak_civ.command.IdentityProfileStore {
+                override suspend fun setCallsign(value: String) { prefs[CALLSIGN] = value }
+                override suspend fun setTeam(value: String) { prefs[TEAM] = value }
+                override suspend fun setRole(category: String, role: String) {
+                    prefs[SELECTED_CATEGORY] = category
+                    prefs[SELECTED_ROLE] = role
+                }
+            })
+            after = prefs.phoneManagedSettingsValues()
+        }
+        publishPhoneManagedChanges(before, after)
+        return after
+    }
+
     /**
      * Restores the watch's own values after the live phone session ends, keeping the
      * management opt-in so a fresh managed handshake can take over again.
