@@ -60,6 +60,10 @@
     <string name="chat_commands" translatable="false">Commands</string>
     <string name="chat_commands_description" translatable="false">Allow chat commands</string>
     <string name="chat_command_callsigns" translatable="false">Allowed Callsigns</string>
+    <string name="add_callsign" translatable="false">Add</string>
+    <string name="no_chat_command_callsigns" translatable="false">No callsigns allowed</string>
+    <string name="invalid_chat_command_callsign" translatable="false">Enter a valid callsign (1-32 letters, numbers, spaces, ., _ or -)</string>
+    <string name="duplicate_chat_command_callsign" translatable="false">That callsign is already allowed</string>
     <string name="chat_command_examples" translatable="false">Command Examples</string>
     <string name="chat_command_example_team" translatable="false">#weartakcommandsetteam team=\"Dark Green\"</string>
     <string name="chat_command_example_role" translatable="false">#weartakcommandsetrole role=\"Team Member\"</string>

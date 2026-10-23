@@ -8,6 +8,8 @@
  */
 package com.aitech.weartak_civ.command
 
+import java.util.Locale
+
 enum class ChatCommandDecision { ALLOWED, SENDER_NOT_ALLOWED, STALE, DUPLICATE }
 
 /**
@@ -47,5 +49,14 @@ class ChatCommandAuthorizer(
 
         fun parseAllowList(text: String): List<String> =
             text.split(',').map { it.trim() }.filter { it.isNotEmpty() }.distinctBy(::normalize)
+
+        fun sortedAllowList(callsigns: Collection<String>): List<String> =
+            callsigns.map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinctBy(::normalize)
+                .sortedWith(String.CASE_INSENSITIVE_ORDER)
+
+        fun validatedCallsign(value: String): String? =
+            ChatCommandValidation.callsign(value)?.uppercase(Locale.ROOT)
     }
 }
