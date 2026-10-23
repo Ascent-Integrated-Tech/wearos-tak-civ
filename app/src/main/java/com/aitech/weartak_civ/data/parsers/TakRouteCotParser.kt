@@ -1,4 +1,3 @@
-
 package com.aitech.weartak_civ.data.parsers
 
 import com.aitech.weartak_civ.data.model.TakRoute
