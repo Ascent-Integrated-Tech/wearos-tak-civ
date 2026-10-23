@@ -99,7 +99,10 @@ data class CotMarkerDetail(
     val usericon: String?,
     val remarks: String?,
     val contact: String?,
+    val circleRadiusMeters: Double? = null,
 )
+
+data class CotDeletion(val uid: String, val time: Long)
 
 data class CotLink(
     var uid: String?,

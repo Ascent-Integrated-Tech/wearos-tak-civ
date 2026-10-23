@@ -418,7 +418,7 @@ private fun ChatPickerIconButton(onClick: () -> Unit, icon: Int, plusIcon: Int?,
 @Composable
 fun ChatUsersScreen(navController: NavController, onUserSelected: (DirectChatContact) -> Unit) {
     val users by dataRepository.receivedUserList.collectAsState()
-    val people = users.filter { it.uid != device_uid }.sortedBy { it.title.lowercase() }
+    val people = users.filter { it.uid != device_uid && !it.chatEndpoint.isNullOrBlank() }.sortedBy { it.title.lowercase() }
     WearTAKCIVTheme {
         Box(
             modifier = Modifier

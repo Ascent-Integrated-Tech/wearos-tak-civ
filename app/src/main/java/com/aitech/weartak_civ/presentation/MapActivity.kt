@@ -449,7 +449,8 @@ data class MapMarkerItem(
     val lon: Double?,
     val enQueuedToBeSent: Boolean,
     val cotType: DataRepository.MarkerCotType,
-    val sourceServerId: String? = null
+    val sourceServerId: String? = null,
+    val circleRadiusMeters: Double? = null
 )
 
 // Selects the gray icon used for cleared markers
@@ -474,13 +475,16 @@ internal fun MarkersOnMap(
     val fc = rememberMarkerFeatures(markers)
 
     // Group markers by type so each type can share an icon layer
-    val typeGroups = remember(markers) { markers.groupBy { it.markerType } }
+    val typeGroups = remember(markers) { markers.filterNot {
+        com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(it.markerType)
+    }.groupBy { it.markerType } }
 
     val source = rememberGeoJsonSource(
         data = GeoJsonData.Features(fc)
     )
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
+    GenericPointsOnMap(markers, collection, camera, onMarkerClick)
     // Create one symbol layer for each marker type
     typeGroups.keys.forEach { markerType ->
         androidx.compose.runtime.key(collection, markerType) {
@@ -731,9 +735,15 @@ fun UsersOnMap(
 
     // Group users by type so each type can share a symbol layer
     val typeGroups = remember(users) {
-        users.groupBy { it.type }
+        users.filterNot { CotMessageParser.isGenericMapType(it.type) }.groupBy { it.type }
     }
 
+    val genericUsers = remember(users) {
+        users.filter { CotMessageParser.isGenericMapType(it.type) && it.lat != null && it.lon != null }
+            .map { MapMarkerItem(it.uid, it.type, it.title.ifBlank { it.uid }, it.lat, it.lon,
+                false, DataRepository.MarkerCotType.DROP, it.sourceServerId) }
+    }
+    GenericPointsOnMap(genericUsers, MarkerLayerCollection.USERS, camera, onUserClick)
     val source = rememberGeoJsonSource(
         data = GeoJsonData.Features(fc)
     )
@@ -2189,7 +2199,8 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                         false,
                         //TODO: Is this okay to have here?
                         DataRepository.MarkerCotType.DROP,
-                        sourceServerId = marker.sourceServerId
+                        sourceServerId = marker.sourceServerId,
+                        circleRadiusMeters = marker.circleRadiusMeters
 
                     )
                 }
@@ -2640,10 +2651,12 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                     users = receivedMapUsers.filter {
                         if (selectingChatContact) {
                             it.uid.isNotBlank() && it.uid != MainActivity.device_uid &&
-                                it.uid != ChatDestinations.ALL_CHAT_ROOMS && it.title.isNotBlank()
+                                it.uid != ChatDestinations.ALL_CHAT_ROOMS && it.title.isNotBlank() &&
+                                receivedUserListSetting.any { user -> user.uid == it.uid && !user.chatEndpoint.isNullOrBlank() }
                         } else {
-                            it.team in visibleUserTeams &&
+                            CotMessageParser.isGenericMapType(it.type) || (it.team in visibleUserTeams &&
                                 (it.role in visibleUserRoles || it.role in visibleUserRolesLEO)
+                            )
                         }
                     },
                     onUserClick = { id, _ ->
@@ -3119,7 +3132,7 @@ fun SelectedUser(
                                     navController.popBackStack()
                                 }
                             },
-                            enabled = user != null && uid.isNotBlank() && title.isNotBlank() &&
+                            enabled = user != null && !user.chatEndpoint.isNullOrBlank() && uid.isNotBlank() && title.isNotBlank() &&
                                 uid != MainActivity.device_uid && uid != ChatDestinations.ALL_CHAT_ROOMS,
                             label = { Text(stringResource(if (selectingChatContact)
                                 R.string.chat_select_person_confirm else R.string.chat_open)) },

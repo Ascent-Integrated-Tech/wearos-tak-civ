@@ -8,7 +8,8 @@ class CompanionGatewaySession {
         private set
     @Volatile var ready: Boolean = false
         private set
-    private val received = LinkedHashMap<String, Long>()
+    private data class Version(val time: Long, val deleted: Boolean)
+    private val received = LinkedHashMap<String, Version>()
 
     @Synchronized fun reset() { ready = false; session = null; received.clear() }
     @Synchronized fun confirm(token: String): Boolean {
@@ -44,11 +45,11 @@ class CompanionGatewaySession {
             session ?: error("Gateway not negotiated")).put("cot", xml).toString()
     }
 
-    @Synchronized fun acceptEvent(uid: String, time: Long): Boolean {
+    @Synchronized fun acceptEvent(uid: String, time: Long, deleted: Boolean = false): Boolean {
         require(uid.isNotBlank() && time > 0L) { "Invalid Gateway event identity or time" }
         val previous = received[uid]
-        if (previous != null && time <= previous) return false
-        received[uid] = time
+        if (previous != null && (time < previous.time || (time == previous.time && (!deleted || previous.deleted)))) return false
+        received[uid] = Version(time, deleted)
         while (received.size > MAX_RECEIVED_EVENTS)
             received.remove(received.keys.iterator().next())
         return true
@@ -57,6 +58,7 @@ class CompanionGatewaySession {
     companion object {
         fun supported(xml: String): Boolean {
             if (xml.toByteArray(Charsets.UTF_8).size > 32768) return false
+            if (CotMessageParser.parseDeletionOrNull(xml) != null) return true
             val marker = CotMessageParser.parseMarkerOrNull(xml)
             if (marker != null) return true
             val position = CotMessageParser.parseUserPositionOrNull(xml)

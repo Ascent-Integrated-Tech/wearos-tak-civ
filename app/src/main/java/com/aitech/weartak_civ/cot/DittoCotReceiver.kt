@@ -57,6 +57,9 @@ internal class DittoCotReceiver(
                 currentCoroutineContext().ensureActive()
                 repository.upsertTakRoute(route)
             }
+            override suspend fun onDelete(event: CotDeletion, envelope: TakServerCotEnvelope) {
+                repository.receiveCotDeletion(event, envelope.sourceServerId, bloodhounds, envelope.receivedAt)
+            }
             override suspend fun onEmergency(event: CotEmergencyEvent, envelope: TakServerCotEnvelope) {
                 currentCoroutineContext().ensureActive()
                 bloodhounds.applyEmergencyEvent(event, envelope.sourceServerAddress,

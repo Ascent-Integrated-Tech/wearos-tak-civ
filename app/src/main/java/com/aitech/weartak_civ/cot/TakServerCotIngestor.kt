@@ -34,6 +34,7 @@ interface TakServerCotSink {
     suspend fun onGeofence(geofence: GeofenceCot)
     suspend fun onUser(event: CotUserPositionEvent, envelope: TakServerCotEnvelope)
     suspend fun onMarker(event: CotMarkerEvent, envelope: TakServerCotEnvelope)
+    suspend fun onDelete(event: CotDeletion, envelope: TakServerCotEnvelope) = Unit
     suspend fun onEmergency(event: CotEmergencyEvent, envelope: TakServerCotEnvelope) = Unit
     suspend fun onChannelChanged(envelope: TakServerCotEnvelope) = Unit
     suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean = false
@@ -49,6 +50,7 @@ enum class TakServerCotIngestResult {
     GEOFENCE,
     USER,
     MARKER,
+    DELETE,
     EMERGENCY,
     ROUTE,
     DATA_PACKAGE,
@@ -101,6 +103,11 @@ class TakServerCotIngestor(
         }
 
         if (sink.onInboundCot(envelope)) return TakServerCotIngestResult.CONFIGURATION
+        if (CotMessageParser.eventTypeOrNull(rawXml) == "t-x-d-d") {
+            val deletion = CotMessageParser.parseDeletionOrNull(rawXml) ?: return TakServerCotIngestResult.MALFORMED
+            if (deletion.uid != deviceUid()) sink.onDelete(deletion, envelope)
+            return TakServerCotIngestResult.DELETE
+        }
 
         if (dataPackageHandler != null && CotMessageParser.eventTypeOrNull(rawXml) == "b-f-t-r") {
             dataPackageHandler.invoke(

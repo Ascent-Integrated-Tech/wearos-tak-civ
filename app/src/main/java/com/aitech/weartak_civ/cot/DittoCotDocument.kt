@@ -53,7 +53,7 @@ internal data class DittoCotDocument(
             val type = text("w")
             require(CotMessageParser.isUserPositionType(type) ||
                 CotMessageParser.isMarkerType(type) || CotMessageParser.isEmergencyType(type) ||
-                type == "b-t-f" || type == "b-m-r") { "Unsupported Ditto CoT type $type" }
+                type == "b-t-f" || type == "b-m-r" || type == "t-x-d-d") { "Unsupported Ditto CoT type $type" }
             val detail = doc["r"] as? String
                 ?: throw IllegalArgumentException("Missing Ditto detail")
             require(detail.length <= MAX_PAYLOAD_BYTES &&

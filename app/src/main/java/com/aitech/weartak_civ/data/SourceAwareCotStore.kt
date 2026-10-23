@@ -40,7 +40,9 @@ class SourceAwareCotStore<T>(
 
     private val lock = Any()
     private val storedByKey = LinkedHashMap<SourceCotKey, Stored<T>>()
-    private val removedAtByKey = HashMap<SourceCotKey, Long>()
+    private val removedAtByKey = object : LinkedHashMap<SourceCotKey, Long>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<SourceCotKey, Long>?) = size > 2048
+    }
     private val uidOrder = LinkedHashMap<String, Long>()
     private var sequence = 0L
 
@@ -149,6 +151,26 @@ class SourceAwareCotStore<T>(
         storedByKey.keys.removeAll { it.sourceId == sourceId }
         affectedUids.forEach(::removeUnusedUidOrderLocked)
         publishLocked()
+        removed
+    }
+
+    /** Bounds only the selected class of objects; legacy contacts/markers keep their behavior. */
+    fun pruneSelected(
+        selected: (T) -> Boolean,
+        expired: (T) -> Boolean,
+        maxCount: Int
+    ): List<T> = synchronized(lock) {
+        require(maxCount > 0)
+        val candidates = storedByKey.entries.filter { selected(it.value.value) }
+        val expiredKeys = candidates.filter { expired(it.value.value) }.mapTo(mutableSetOf()) { it.key }
+        val excess = candidates.filter { it.key !in expiredKeys }
+            .sortedBy { receivedAtOf(it.value.value) }.dropLast(maxCount)
+        val keys = expiredKeys + excess.map { it.key }
+        val removed = keys.mapNotNull { storedByKey.remove(it)?.value }
+        if (removed.isNotEmpty()) {
+            keys.map { it.cotUid }.forEach(::removeUnusedUidOrderLocked)
+            publishLocked()
+        }
         removed
     }
 

@@ -994,6 +994,13 @@ class CompanionAppService : Service() {
             }
             return
         }
+        val deletion = CotMessageParser.parseDeletionOrNull(xml)
+        if (deletion != null) {
+            if (deletion.uid != identity.deviceId && capRepo.gateway.acceptEvent(deletion.uid, deletion.time, deleted = true)) {
+                repo.receiveCotDeletion(deletion, "companion-gateway", bhRepo)
+            }
+            return
+        }
         val marker = CotMessageParser.parseMarkerOrNull(xml)
             ?: throw IllegalArgumentException("Unsupported gateway map CoT")
         if (capRepo.gateway.acceptEvent(marker.uid, marker.time))
