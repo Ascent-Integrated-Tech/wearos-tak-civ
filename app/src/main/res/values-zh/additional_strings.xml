@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">无法将 Bloodhound 跟踪信息与手机同步。请检查配套应用的连接。</string>
     <string name="debug_stay_awake">保持屏幕常亮</string>
     <string name="debug_stay_awake_warning">会增加电池消耗，手表可能发热。</string>
-    <string name="debug_stay_awake_active">保持启用状态，直到手动停止或进程结束。只有选择启用时，更新后才会恢复。</string>
-    <string name="debug_stay_awake_resume_update">更新后恢复</string>
+    <string name="debug_stay_awake_active">设置保持启用，直到您手动关闭。Android 允许时，更新和重启后会恢复。</string>
     <string name="debug_stay_awake_channel">调试：保持屏幕常亮</string>
     <string name="debug_stay_awake_stop">停止</string>
-    <string name="debug_stay_awake_failed">无法启动保持屏幕常亮。请查看 WearTAK 调试日志。</string>
+    <string name="debug_stay_awake_failed">设置已启用，但无法启动。请打开 WearTAK 重试并查看调试日志。</string>
     <string name="remote_emergency_alert">远程紧急情况</string>
     <string name="remote_emergency_no_location">位置不可用，导航已停用。</string>
     <string name="remote_emergency_description">紧急情况：%1$s</string>

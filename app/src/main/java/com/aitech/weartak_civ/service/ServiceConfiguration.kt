@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
@@ -37,7 +38,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 class ServiceConfiguration(
     private val context: Context,
-    private val dataRepository: DataRepository
+    private val dataRepository: DataRepository,
+    private val audioCaptureRepository: AudioCaptureRepository,
 ) {
     private val TAG = "WearTAK-ServiceConfig"
 
@@ -47,7 +49,9 @@ class ServiceConfiguration(
             dataRepository.getEnableLocationService.distinctUntilChanged()
 
         ServiceType.SITX_SERVICE ->
-            dataRepository.getEnableSitxService.distinctUntilChanged()
+            combine(dataRepository.getEnableSitxService, dataRepository.isCompanionConnected) {
+                enabled, connected -> enabled && !connected
+            }.distinctUntilChanged()
 
         /* PHYSIO Service is virtual group – not used to start a real service.
          * It is like an API for the UI and Knox to gate the HR, Skin, and
@@ -80,7 +84,9 @@ class ServiceConfiguration(
             if (!physioOn) { false } else { actOn }
         }.distinctUntilChanged()
 
-        ServiceType.DITTO -> dataRepository.getEnableDittoService.distinctUntilChanged()
+        ServiceType.DITTO -> combine(dataRepository.getEnableDittoService, dataRepository.isCompanionConnected) {
+            enabled, connected -> enabled && !connected
+        }.distinctUntilChanged()
         ServiceType.HAIL -> dataRepository.getEnableHailService.distinctUntilChanged()
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()
         ServiceType.BLE_BEACON -> dataRepository.getEnableBleBeaconService.distinctUntilChanged()
@@ -88,9 +94,10 @@ class ServiceConfiguration(
         ServiceType.BLOOD_HOUND -> dataRepository.getEnableBloodhoundCompassService.distinctUntilChanged()
         ServiceType.AUDIO_CAP -> combine(
             dataRepository.getEnableOnnxGunshotService.distinctUntilChanged(),
-            dataRepository.getEnableOnnxUasService.distinctUntilChanged()
-        ) { gunshotOn, uasOn ->
-            gunshotOn || uasOn
+            dataRepository.getEnableOnnxUasService.distinctUntilChanged(),
+            audioCaptureRepository.activeConsumers,
+        ) { gunshotOn, uasOn, consumers ->
+            gunshotOn || uasOn || consumers.isNotEmpty()
         }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
         ServiceType.ONNX_UAS -> dataRepository.getEnableOnnxUasService.distinctUntilChanged()

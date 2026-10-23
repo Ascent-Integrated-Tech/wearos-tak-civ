@@ -1760,6 +1760,7 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
     val context = LocalContext.current
 
     val takChannels by mapVm.takChannels.collectAsStateWithLifecycle()
+    val networkSettingsLocked by mapVm.networkSettingsLocked.collectAsStateWithLifecycle()
 
     // Saves Layers menu settings between app sessions
     val mapPreferences = remember {
@@ -1961,6 +1962,10 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
     var showLayerToggle by remember { mutableStateOf(false) }
 
     var showChannelToggle by remember {mutableStateOf(false)}
+
+    LaunchedEffect(networkSettingsLocked) {
+        if (networkSettingsLocked) showChannelToggle = false
+    }
 
     // Hide zoom, snap-to-self, and the scale while keeping Layers and Back
     var hideControls by remember { mutableStateOf(mapPreferences.getBoolean(
@@ -2751,8 +2756,9 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                 showLayerToggle = true
             },
             onOpenChannels = {
-                showChannelToggle = true
+                if (!networkSettingsLocked) showChannelToggle = true
             },
+            channelsEnabled = !networkSettingsLocked,
             // Exits the map screen
             onBack = {
                 exitActivity()
@@ -2935,7 +2941,7 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
             )
         }
 
-        if (showChannelToggle) {
+        if (showChannelToggle && !networkSettingsLocked) {
             LayerChannelsPopup(
                 onDismiss = {
                     showChannelToggle = false
@@ -3337,6 +3343,7 @@ private fun MapControlsOverlay(
     onCenterOnSelf: () -> Unit,
     onOpenLayers: () -> Unit,
     onOpenChannels: () -> Unit,
+    channelsEnabled: Boolean,
     // Determines whether the optional map controls should be hidden.
     hideControls: Boolean,
     onBack: () -> Unit
@@ -3470,21 +3477,13 @@ private fun MapControlsOverlay(
             )
         }
 
-        CircularMapButton(
+        MapChannelsButton(
             onClick = onOpenChannels,
-            size = buttonSize,
-            showBorder = false,
+            enabled = channelsEnabled,
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .offset(x = -26.dp, y = 20.dp)
-        ) {
-            Image(
-                painter = painterResource(R.drawable.channels),
-                contentDescription = "Layers",
-                modifier = Modifier.size(30.dp),
-                colorFilter = ColorFilter.tint(Color.White)
-            )
-        }
+        )
 
         // Always visible so the user can leave the map.
         CircularMapButton(
@@ -3499,6 +3498,27 @@ private fun MapControlsOverlay(
                 fontWeight = FontWeight.Bold
             )
         }
+    }
+}
+
+@Composable
+internal fun MapChannelsButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    CircularMapButton(
+        onClick = onClick,
+        enabled = enabled,
+        showBorder = false,
+        modifier = modifier
+    ) {
+        Image(
+            painter = painterResource(R.drawable.channels),
+            contentDescription = "Channels",
+            modifier = Modifier.size(30.dp),
+            colorFilter = ColorFilter.tint(if (enabled) Color.White else Color.Gray)
+        )
     }
 }
 

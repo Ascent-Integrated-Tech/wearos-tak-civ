@@ -951,6 +951,7 @@ class SitxTakService : Service() {
     }
 
     private fun sendCotToAll(xml: String) {
+        if (dataRepo.isCompanionConnected.value) return
         sockets.values.forEach { it.send(xml) }
     }
 
@@ -960,6 +961,10 @@ class SitxTakService : Service() {
 
     // TODO Sitx: Merge with startCotReader in TakConnectService
     private fun handleTextMessage(flowTag: String, rawXml: String) {
+        if (dataRepo.isCompanionConnected.value) {
+            Log.d(TAG, "Suppressing direct SITX CoT while bonded companion is connected")
+            return
+        }
         if (PluginCotIngress.offer(
                 TakServerCotEnvelope(
                     "sitx:$flowTag", flowTag, System.currentTimeMillis(), rawXml

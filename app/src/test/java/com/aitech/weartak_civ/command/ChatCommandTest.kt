@@ -84,4 +84,35 @@ class ChatCommandTest {
     fun allowListParsingTrimsAndDeduplicates() {
         assertEquals(listOf("A", "b"), ChatCommandAuthorizer.parseAllowList(" A, b ,a,, "))
     }
+
+    @Test
+    fun allowListIsSortedCaseInsensitivelyAndDeduplicated() {
+        assertEquals(
+            listOf("Alpha", "BRAVO", "zulu"),
+            ChatCommandAuthorizer.sortedAllowList(listOf("zulu", "Alpha", "BRAVO", "alpha", " bravo "))
+        )
+    }
+
+    @Test
+    fun newCallsignsUseTheCommandValidationRulesAndDisplayUppercase() {
+        assertEquals("ODIN-1", ChatCommandAuthorizer.validatedCallsign("  odin-1  "))
+        assertEquals("A B._-9", ChatCommandAuthorizer.validatedCallsign("a b._-9"))
+        assertEquals("A".repeat(32), ChatCommandAuthorizer.validatedCallsign("a".repeat(32)))
+        assertEquals(null, ChatCommandAuthorizer.validatedCallsign(""))
+        assertEquals(null, ChatCommandAuthorizer.validatedCallsign("A".repeat(33)))
+        assertEquals(null, ChatCommandAuthorizer.validatedCallsign("bad;name"))
+    }
+
+    @Test
+    fun legacyCommaSeparatedCallsignsRemainAvailable() {
+        val legacy = "ODIN-ATAK-S9FE,ODIN-ATAK"
+        assertEquals(
+            listOf("ODIN-ATAK-S9FE", "ODIN-ATAK"),
+            ChatCommandAuthorizer.parseAllowList(legacy)
+        )
+        assertEquals(
+            listOf("ODIN-ATAK", "ODIN-ATAK-S9FE"),
+            ChatCommandAuthorizer.sortedAllowList(ChatCommandAuthorizer.parseAllowList(legacy))
+        )
+    }
 }

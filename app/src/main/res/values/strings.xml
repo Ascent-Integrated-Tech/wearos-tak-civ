@@ -37,11 +37,49 @@
     <string name="service_on_off">Service ON/OFF</string>
     <string name="biometrics">Biometrics</string>
     <string name="ditto">Ditto Edge Sync</string>
-    <string name="companion_app" translatable="false">Companion Plugin</string>
+    <string name="companion_app" translatable="false">WearTAK Companion</string>
+    <string name="companion_status_off">Off</string>
+    <string name="companion_status_bluetooth_off">Bluetooth off</string>
+    <string name="companion_status_permission">Permissions required</string>
+    <string name="companion_status_unavailable">Bluetooth unavailable</string>
+    <string name="companion_status_waiting">Waiting for phone</string>
+    <string name="companion_status_connecting">Connecting</string>
+    <string name="companion_status_disconnecting">Disconnecting</string>
+    <string name="companion_status_connected">Connected</string>
+    <string name="companion_status_failed">Connection failed</string>
+    <string name="companion_status_error">Connection error</string>
+    <string name="companion_connection_guidance">Choose connection method in the phone companion app.</string>
+    <string name="companion_bluetooth_settings">Android Bluetooth settings</string>
+    <string name="companion_bluetooth_settings_unavailable">Bluetooth settings are not available on this watch.</string>
+    <string name="companion_team_lead_priority">Team Lead EUD Priority</string>
+    <string name="companion_not_available_yet">Not available yet</string>
+    <string name="companion_location_diagnostics">Bonded Location Diagnostics</string>
+    <string name="companion_location_diagnostics_guidance">Compare watch and phone GNSS quality over a bonded Companion connection.</string>
+    <string name="companion_location_diagnostics_enabled_hint">GNSS quality only. No diagnostic CoT is sent.</string>
+    <string name="companion_location_diagnostics_disabled_hint">Off. Enable in Plugins > WearTAK Companion.</string>
     <string name="chat_commands" translatable="false">Commands</string>
     <string name="chat_commands_description" translatable="false">Allow chat commands</string>
     <string name="chat_command_callsigns" translatable="false">Allowed Callsigns</string>
+    <string name="add_callsign" translatable="false">Add</string>
+    <string name="no_chat_command_callsigns" translatable="false">No callsigns allowed</string>
+    <string name="invalid_chat_command_callsign" translatable="false">Enter a valid callsign (1-32 letters, numbers, spaces, ., _ or -)</string>
+    <string name="duplicate_chat_command_callsign" translatable="false">That callsign is already allowed</string>
     <string name="chat_command_examples" translatable="false">Command Examples</string>
+    <string name="command_profiles" translatable="false">Profiles</string>
+    <string name="command_profiles_loading" translatable="false">Loading saved profiles...</string>
+    <string name="command_profiles_read_only" translatable="false">View only. Passwords and usernames are hidden.</string>
+    <string name="command_profiles_empty" translatable="false">No saved profiles. Add preset JSON files to the app\'s presets folder.</string>
+    <string name="command_profiles_error" translatable="false">Could not read saved profiles. Check the preset files and reopen Profiles.</string>
+    <string name="command_profiles_servers" translatable="false">Servers</string>
+    <string name="command_profiles_no_servers" translatable="false">No servers saved.</string>
+    <string name="command_profiles_no_fields" translatable="false">No profile fields saved.</string>
+    <string name="command_profile_height" translatable="false">Height (ft/in)</string>
+    <string name="command_profile_weight" translatable="false">Weight (lb)</string>
+    <string name="command_profile_pants" translatable="false">Pants length (in)</string>
+    <string name="command_profile_waist" translatable="false">Waist (in)</string>
+    <string name="command_profile_birthyear" translatable="false">Birth year</string>
+    <string name="command_profile_sex" translatable="false">Sex</string>
+    <string name="command_profile_usertype" translatable="false">User type</string>
     <string name="chat_command_example_team" translatable="false">#weartakcommandsetteam team=\"Dark Green\"</string>
     <string name="chat_command_example_role" translatable="false">#weartakcommandsetrole role=\"Team Member\"</string>
     <string name="chat_command_example_callsign" translatable="false">#weartakcommandsetcallsign callsign=ALPHA-1</string>

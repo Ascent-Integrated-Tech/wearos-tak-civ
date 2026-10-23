@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">Le suivi Bloodhound n’a pas pu être synchronisé avec le téléphone. Vérifiez la connexion de l’application compagnon.</string>
     <string name="debug_stay_awake">Garder l’écran allumé</string>
     <string name="debug_stay_awake_warning">Consommation accrue de la batterie. La montre peut chauffer.</string>
-    <string name="debug_stay_awake_active">Actif jusqu’à l’arrêt ou la fin du processus. Reprend après les mises à jour uniquement si cette option est activée.</string>
-    <string name="debug_stay_awake_resume_update">Reprendre après la mise à jour</string>
+    <string name="debug_stay_awake_active">Activé jusqu’à votre arrêt. Reprend après les mises à jour et redémarrages si Android le permet.</string>
     <string name="debug_stay_awake_channel">Débogage : garder l’écran allumé</string>
     <string name="debug_stay_awake_stop">Arrêter</string>
-    <string name="debug_stay_awake_failed">Impossible de garder l’écran allumé. Consultez les journaux de débogage WearTAK.</string>
+    <string name="debug_stay_awake_failed">Activé, mais le démarrage a échoué. Ouvrez WearTAK pour réessayer. Consultez les journaux de débogage.</string>
     <string name="remote_emergency_alert">Urgence à distance</string>
     <string name="remote_emergency_no_location">Position indisponible. La navigation est désactivée.</string>
     <string name="remote_emergency_description">Urgence : %1$s</string>

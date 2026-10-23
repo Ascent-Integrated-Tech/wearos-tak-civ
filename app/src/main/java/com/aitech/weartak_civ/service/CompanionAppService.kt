@@ -24,7 +24,6 @@ import android.bluetooth.BluetoothGattService
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.AdvertiseCallback
-import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.content.BroadcastReceiver
@@ -32,7 +31,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.IBinder
-import android.os.ParcelUuid
 import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
@@ -62,7 +60,7 @@ import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -500,18 +498,6 @@ class CompanionAppService : Service() {
     @SuppressLint("MissingPermission")
     private fun collectBleState() {
         serviceScope.launch {
-            capRepo.bleConnectionState
-                .map { it == CompanionAppRepository.BleConnectionState.SERVICES_READY }
-                .collect { ready ->
-                    Log.i(TAG, "bleReady: $ready (state=${capRepo.bleConnectionState.value})")
-
-                    if (ready) repo.setCompanionAppConnected()
-                    else repo.setCompanionAppDisconnected()
-                }
-        }
-
-        // keep your advertising logic separate so it doesn't also spam endpoint updates
-        serviceScope.launch {
             capRepo.bleConnectionState.collect { state ->
                 if (state in listOf(DISCONNECTED, ERROR, CONNECTION_FAILED, NOT_CONNECTED)) {
                     if (connectedDevice == null) startAdvertising()
@@ -535,6 +521,13 @@ class CompanionAppService : Service() {
                 flushPendingIfReady()
                 sendJsonToCompanion(json)
             }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    internal fun startAdvertisingCallsignCollector() {
+        serviceScope.launch {
+            repo.getStandaloneCallsign.distinctUntilChanged().collect(::updateAdvertisingCallsign)
         }
     }
 
@@ -619,6 +612,7 @@ class CompanionAppService : Service() {
     @Volatile private var handshakeWatchdogArmed: Boolean = false
     private val watchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val HANDSHAKE_TIMEOUT_MS = 4_000L
+    private val ADVERTISING_START_TIMEOUT_MS = 30_000L
 
     @SuppressLint("MissingPermission")
     private fun armHandshakeWatchdog(reason: String) {
@@ -641,6 +635,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
     private fun forceBleReset(why: String) {
         Log.w(TAG, "forceBleReset: $why")
+        repo.setCompanionAppDisconnected()
         advanceCompanionGeneration()
         rxBuf.clear()
 
@@ -790,6 +785,7 @@ class CompanionAppService : Service() {
         Log.w(TAG, "Repo identity = ${System.identityHashCode(repo)}")
         Log.d(TAG, "CompanionAppService onCreate()")
         isRunning.set(true)
+        repo.setCompanionAppDisconnected()
 
         // 1) HARD RESET — this instance must never inherit BLE state
         connectedDevice = null
@@ -828,6 +824,7 @@ class CompanionAppService : Service() {
         // 5) Start outbound BLE collector & changed settings state
         startBleOutboundCollector()
         startSettingsChangedCollector()
+        startAdvertisingCallsignCollector()
         startPhoneManagementWatchdog()
         startPointDeletionRelay()
         startLocationDiagnostics()
@@ -1012,13 +1009,18 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
         Log.d(TAG, "CompanionAppService onDestroy()")
+        // Fence late GATT callbacks and queued starts before tearing down the transport.
+        synchronized(advertisingLock) {
+            serviceJob.cancel()
+            stopAdvertising()
+        }
         synchronized(phoneManagementLease) {
             advanceCompanionGeneration()
             phoneManagementLease.stop()
             repo.setPhoneManagementSessionActive(false)
         }
 
-        // 1) Update app-level state FIRST (avoid stale SERVICES_READY in repo)
+        // 1) Update app-level state (avoid stale SERVICES_READY in repo)
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
         notificationsEnabled = false
         negotiatedMtu = DEFAULT_ATT_MTU
@@ -1029,11 +1031,9 @@ class CompanionAppService : Service() {
         locationDiagnosticFrames.close()
         stopLocationDiagnosticsSession("service stopped")
         gatewayIncoming.close()
-        serviceJob.cancel()
 
-        // 3) Stop bond monitoring, advertising + close the server + force disconnect
+        // 3) Stop bond monitoring + close the server + force disconnect
         unregisterBondReceiver()
-        stopAdvertising()
         closeGattServer() // should cancel connection + close server
 
         // 4) Finalize state
@@ -1111,15 +1111,22 @@ class CompanionAppService : Service() {
     // --- Advertising ---------------------------------------------------------
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
-    private fun startAdvertising() {
-        Log.d(TAG, "startAdvertising(): advertising=$advertising connectedDevice=${connectedDevice?.address}")
-        if (connectedDevice != null) return
+    private fun startAdvertising(): Unit = synchronized(advertisingLock) {
+        Log.d(TAG, "startAdvertising(): advertising=$advertising pending=$advertisingStartPending connectedDevice=${connectedDevice?.address}")
+        if (!serviceJob.isActive || connectedDevice != null) return
+        if (advertisingFailedPermanently) return
+        val retryDelay = advertisingRetryNotBefore - android.os.SystemClock.elapsedRealtime()
+        if (retryDelay > 0) {
+            advertisingRefreshHandler.removeCallbacks(advertisingRetry)
+            advertisingRefreshHandler.postDelayed(advertisingRetry, retryDelay)
+            return
+        }
 
         if (advertiser == null) {
             advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
         }
 
-        if (advertising) {
+        if (advertising || advertisingStartPending) {
             Log.d(TAG, "startAdvertising(): already advertising; skipping")
             capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ADVERTISING)
             return
@@ -1127,9 +1134,12 @@ class CompanionAppService : Service() {
 
         val adv = advertiser ?: run {
             Log.w(TAG, "No BLE advertiser available")
+            handleAdvertisingFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
             return
         }
 
+        advertisingStartPending = true
+        advertisingRefreshHandler.postDelayed(advertisingStartTimeout, ADVERTISING_START_TIMEOUT_MS)
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ADVERTISING)
 
         val settings = AdvertiseSettings.Builder()
@@ -1138,45 +1148,140 @@ class CompanionAppService : Service() {
             .setConnectable(true)
             .build()
 
-        val data = AdvertiseData.Builder()
-            .setIncludeDeviceName(true)
-            .addServiceUuid(ParcelUuid(capRepo.COMPANION_SERVICE_UUID))
-            .build()
-
-        adv.startAdvertising(settings, data, advertiseCallback)
+        val uuid = capRepo.COMPANION_SERVICE_UUID
+        advertiseCallback = createAdvertiseCallback()
+        try {
+            adv.startAdvertising(
+                settings,
+                CompanionAdvertisingData.primary(uuid),
+                CompanionAdvertisingData.scanResponse(uuid, advertisingCallsign),
+                advertiseCallback
+            )
+        } catch (error: IllegalArgumentException) {
+            Log.e(TAG, "Invalid companion advertising data", error)
+            handleAdvertisingFailure(AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE)
+        } catch (error: IllegalStateException) {
+            Log.w(TAG, "Companion advertiser unavailable", error)
+            handleAdvertisingFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        } catch (error: SecurityException) {
+            Log.e(TAG, "Companion advertising permission denied", error)
+            advertisingFailedPermanently = true
+            advertising = false
+            advertisingStartPending = false
+            advertisingRefreshHandler.removeCallbacks(advertisingStartTimeout)
+            advertisingRefreshHandler.removeCallbacks(advertisingRetry)
+            capRepo.updateBleConnectionState(ERROR)
+        }
     }
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
-    private fun stopAdvertising() {
-        if (!advertising) return
+    private fun stopAdvertising(): Unit = synchronized(advertisingLock) {
+        advertisingRefreshHandler.removeCallbacks(advertisingStartTimeout)
+        advertisingRefreshHandler.removeCallbacks(advertisingRetry)
+        if (!advertising && !advertisingStartPending) return
         try {
             advertiser?.stopAdvertising(advertiseCallback)
         } finally {
             advertising = false
+            advertisingStartPending = false
         }
     }
 
+    private val advertisingLock = Any()
     @Volatile private var advertising: Boolean = false
+    @Volatile private var advertisingStartPending: Boolean = false
+    private val advertisingRefreshHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val advertisingStartTimeout = Runnable { handleAdvertisingStartTimeout() }
+    @SuppressLint("MissingPermission")
+    private val advertisingRetry = Runnable { startAdvertising() }
+    private var advertisingRetryNotBefore = 0L
+    private var advertisingFailures = 0
+    private var advertisingFailedPermanently = false
+    private var advertisingCallsign = CompanionAdvertisingData.encodeCallsign("")
 
-    private val advertiseCallback = object : AdvertiseCallback() {
-        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-            Log.d(TAG, "Companion BLE advertising started")
+    @SuppressLint("MissingPermission")
+    internal fun updateAdvertisingCallsign(callsign: String): Unit = synchronized(advertisingLock) {
+        val encoded = CompanionAdvertisingData.encodeCallsign(callsign)
+        if (advertisingCallsign.contentEquals(encoded)) return
+        advertisingCallsign = encoded
+        if (serviceJob.isActive && connectedDevice == null && (advertising || advertisingStartPending)) {
+            stopAdvertising()
+            startAdvertising()
+        }
+    }
+
+    private fun handleAdvertisingFailure(errorCode: Int) {
+        val errorName = when (errorCode) {
+            AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE -> "ADVERTISE_FAILED_DATA_TOO_LARGE"
+            AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS -> "ADVERTISE_FAILED_TOO_MANY_ADVERTISERS"
+            AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED -> "ADVERTISE_FAILED_ALREADY_STARTED"
+            AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR -> "ADVERTISE_FAILED_INTERNAL_ERROR"
+            AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED -> "ADVERTISE_FAILED_FEATURE_UNSUPPORTED"
+            else -> "UNKNOWN_ADVERTISE_ERROR"
+        }
+        Log.w(TAG, "Companion advertising failed: $errorName ($errorCode)")
+        advertisingStartPending = false
+        advertisingRefreshHandler.removeCallbacks(advertisingStartTimeout)
+        advertisingRefreshHandler.removeCallbacks(advertisingRetry)
+        if (errorCode == AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED) {
             advertising = true
+            advertisingFailures = 0
+            advertisingRetryNotBefore = 0L
+            capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ADVERTISING)
+            return
         }
 
-        override fun onStartFailure(errorCode: Int) {
-            Log.d(TAG, "onStartFailure($errorCode): advertising=$advertising")
+        advertising = false
+        val transient = errorCode == AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS ||
+            errorCode == AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR
+        advertisingFailures++
+        if (!advertisingFailedPermanently && transient && advertisingFailures <= 5) {
+            val delayMs = 1_000L shl (advertisingFailures - 1)
+            advertisingRetryNotBefore = android.os.SystemClock.elapsedRealtime() + delayMs
+            advertisingRefreshHandler.postDelayed(advertisingRetry, delayMs)
+            Log.w(TAG, "Retrying companion advertising in ${delayMs}ms (retry $advertisingFailures/5)")
+        } else {
+            advertisingFailedPermanently = true
+            Log.e(TAG, "Companion advertising stopped; restart Companion after resolving $errorName")
+        }
+        // Set the retry/terminal gate before publishing ERROR: the state collector requests a start.
+        capRepo.updateBleConnectionState(ERROR)
+    }
 
-            // ADVERTISE_FAILED_ALREADY_STARTED == 3
-            if (errorCode == 3) {
-                Log.w(TAG, "Advertising already started; keeping ADVERTISING state")
-                advertising = true
-                capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ADVERTISING)
-                return
-            }
+    // Only an unanswered start expires. Recreating healthy advertising rotates the private
+    // address on some watches, invalidating scan results while the phone tries to bond.
+    @SuppressLint("MissingPermission")
+    private fun handleAdvertisingStartTimeout(): Unit = synchronized(advertisingLock) {
+        if (!serviceJob.isActive || connectedDevice != null || !advertisingStartPending) return
+        Log.w(TAG, "Companion advertising start callback timed out")
+        try {
+            stopAdvertising()
+        } catch (error: IllegalStateException) {
+            Log.w(TAG, "Advertiser unavailable while cancelling timed-out start", error)
+        } catch (error: SecurityException) {
+            Log.e(TAG, "Permission denied while cancelling timed-out advertising start", error)
+            advertisingFailedPermanently = true
+        }
+        handleAdvertisingFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+    }
 
-            advertising = false
-            capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR)
+    private var advertiseCallback: AdvertiseCallback = createAdvertiseCallback()
+
+    private fun createAdvertiseCallback() = object : AdvertiseCallback() {
+        override fun onStartSuccess(settingsInEffect: AdvertiseSettings?): Unit = synchronized(advertisingLock) {
+            if (advertiseCallback !== this || !advertisingStartPending) return
+            Log.d(TAG, "Companion BLE advertising started")
+            advertisingStartPending = false
+            advertisingRefreshHandler.removeCallbacks(advertisingStartTimeout)
+            advertising = true
+            advertisingFailures = 0
+            advertisingRetryNotBefore = 0L
+            advertisingRefreshHandler.removeCallbacks(advertisingRetry)
+        }
+
+        override fun onStartFailure(errorCode: Int): Unit = synchronized(advertisingLock) {
+            if (advertiseCallback !== this || !advertisingStartPending) return
+            handleAdvertisingFailure(errorCode)
         }
     }
 
@@ -1208,6 +1313,7 @@ class CompanionAppService : Service() {
                     return
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
+                repo.setCompanionAppDisconnected()
                 advanceCompanionGeneration()
                 rxBuf.clear()
                 activeAddr = null
@@ -1232,6 +1338,7 @@ class CompanionAppService : Service() {
                     }
 
                     activeAddr = device.address
+                    repo.setCompanionAppDisconnected()
                     connectedDevice = device
                     advanceCompanionGeneration()
                     rxBuf.clear()
@@ -1254,6 +1361,7 @@ class CompanionAppService : Service() {
 
 
                     Log.d(TAG, "Active device disconnected: ${device.address}")
+                    repo.setCompanionAppDisconnected()
                     advanceCompanionGeneration()
                     rxBuf.clear()
                     activeAddr = null
@@ -1389,6 +1497,7 @@ class CompanionAppService : Service() {
             if (enableNoti) {
                 beginCompanionSubscription()
                 notificationsEnabled = true
+                repo.setCompanionAppConnected()
                 disarmHandshakeWatchdog()
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.SERVICES_READY)
 
@@ -1408,6 +1517,7 @@ class CompanionAppService : Service() {
 
             if (disableNoti) {
                 notificationsEnabled = false
+                repo.setCompanionAppDisconnected()
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.CONNECTED)
                 respond(BluetoothGatt.GATT_SUCCESS)
                 return
@@ -1936,6 +2046,41 @@ class CompanionAppService : Service() {
                         }
                         Log.i(TAG, "Sending settings snapshot generation=$generation")
                         sendJsonForPeer(capRepo.envelopeToJson(env), address, generation)
+                    }
+                }
+
+                "set_callsign", "set_team", "set_role" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    serviceScope.launch {
+                        val ack = try {
+                            val payload = org.json.JSONObject(json).getJSONObject("payload")
+                            val field = base.type.removePrefix("set_")
+                            require(payload.keys().asSequence().toSet() == setOf(field)) {
+                                "${base.type} requires only $field"
+                            }
+                            val value = payload.get(field)
+                            require(value is String && value.isNotBlank()) {
+                                "$field must be a nonblank string"
+                            }
+                            phoneManagementSettingsMutex.withLock {
+                                fun mayApply() = currentPeer(address, generation) &&
+                                    phoneManagementReleaseGeneration.get() != generation &&
+                                    capRepo.gateway.session == null
+                                check(mayApply()) { "Identity belongs to an ended or released companion session" }
+                                repo.applyPhoneManagedIdentity(
+                                    address, field, value,
+                                    mayApply = ::mayApply
+                                ).applyToRuntimeConstants()
+                            }
+                            capRepo.buildSettingsAck(ok = true)
+                        } catch (error: kotlinx.coroutines.CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            Log.w(TAG, "${base.type}: failed to parse/apply", error)
+                            capRepo.buildSettingsAck(ok = false, error = error.message ?: "parse/apply error")
+                        }
+                        sendJsonForPeer(capRepo.envelopeToJson(ack), address, generation)
                     }
                 }
 

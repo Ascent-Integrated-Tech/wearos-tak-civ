@@ -130,6 +130,10 @@ class WearTakCotIpcService : Service() {
     }
 
     private fun handleIncomingPayload(route: AtosIpcRoute, cotXml: String) {
+        if ((applicationContext as WearTakApplication).repo.isCompanionConnected.value) {
+            Log.d(AtosIpcConstants.LOG_TAG, "Suppressing plugin CoT while bonded companion is connected")
+            return
+        }
         val size = cotXml.toByteArray(Charsets.UTF_8).size
         val callingUid = Binder.getCallingUid()
         val callerPackages = packageManager.getPackagesForUid(callingUid)?.toList().orEmpty()

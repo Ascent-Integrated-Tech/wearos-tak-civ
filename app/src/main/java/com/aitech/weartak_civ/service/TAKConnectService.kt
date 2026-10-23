@@ -239,8 +239,7 @@ class TAKConnectService: Service() {
         scope.launch {
             dataRepository.isCompanionConnected
                 .collect { connected ->
-                    Log.w(TAG, "isCompanionConnected=$connected") // temporary
-                    isCompanionAppConnected = connected
+                    Log.i(TAG, "Bonded companion transport connected=$connected")
                     if (connected) {
                         Log.w(TAG, "closing TAK sockets because companion is ready")
                         closeTakServerSockets()
@@ -273,7 +272,8 @@ class TAKConnectService: Service() {
         val net: Network?,
         val enable: Boolean?,
         val address: String?,
-        val port: Int?
+        val port: Int?,
+        val companionConnected: Boolean = false
     )
 
     private fun startMulticastCollector() {
@@ -285,9 +285,11 @@ class TAKConnectService: Service() {
         multicastWifiRequest = wifiRequest
         scope.launch(Dispatchers.Main.immediate) {
             try {
-                dataRepository.multicastEnabled.collect { enabled ->
+                combine(dataRepository.multicastEnabled, dataRepository.isCompanionConnected) {
+                    enabled, connected -> enabled == true && !connected
+                }.distinctUntilChanged().collect { enabled ->
                     try {
-                        wifiRequest.setEnabled(enabled == true)
+                        wifiRequest.setEnabled(enabled)
                     } catch (error: SecurityException) {
                         Log.e(TAG, "Multicast Wi-Fi request permission denied", error)
                     }
@@ -300,8 +302,9 @@ class TAKConnectService: Service() {
             collectMulticastConfigurations(combine(NetworkManager.getInstance().wifiNetwork,
                 dataRepository.multicastEnabled,
                 dataRepository.multicastAddress,
-                dataRepository.multicastPort) { net, enable, address, port ->
-                MulticastConfig(net, enable, address, port)
+                dataRepository.multicastPort,
+                dataRepository.isCompanionConnected) { net, enable, address, port, connected ->
+                MulticastConfig(net, enable, address, port, connected)
             })
         }
     }
@@ -316,7 +319,7 @@ class TAKConnectService: Service() {
         }
     ) {
         configurations.distinctUntilChanged().collectLatest { cfg ->
-            val shouldRun = cfg.enable == true && cfg.net != null &&
+            val shouldRun = !cfg.companionConnected && cfg.enable == true && cfg.net != null &&
                 !cfg.address.isNullOrBlank() && cfg.port != null
             Log.i(TAG, "Multicast collector called: $cfg with shouldRun=$shouldRun")
             updatePublisher(cfg, shouldRun)
@@ -511,7 +514,7 @@ class TAKConnectService: Service() {
             "Provisioned TAK configuration refreshed servers=${refreshed.size} replaced=$replacedCount"
         )
 
-        val companionConnected = isCompanionAppConnected || dataRepository.isCompanionConnected.value
+        val companionConnected = dataRepository.isCompanionConnected.value
         refreshed
             .filter { detail ->
                 detail.serverId != registrationServerId &&
@@ -897,7 +900,9 @@ class TAKConnectService: Service() {
             val source = try {
                 if (detail == null) throw IOException("Package source is no longer configured")
                 synchronized(detail.runtime.lock) {
-                    val attempt = requireDataPackageSession(detail, envelope, serviceStopping)
+                    val attempt = requireDataPackageSession(
+                        detail, envelope, serviceStopping || dataRepository.isCompanionConnected.value
+                    )
                     attempt to TakDataPackageClient(
                         address = detail.address,
                         sslContext = detail.channelSslContext ?: throw IOException("Package TLS context unavailable"),
@@ -927,7 +932,9 @@ class TAKConnectService: Service() {
                     val routes = client.downloadRoutes(offer, detail.serverId)
                     kotlinx.coroutines.currentCoroutineContext().ensureActive()
                     synchronized(detail.runtime.lock) {
-                        requireDataPackageSession(detail, envelope, serviceStopping)
+                        requireDataPackageSession(
+                            detail, envelope, serviceStopping || dataRepository.isCompanionConnected.value
+                        )
                         if (takServerDetailsById[detail.serverId] !== detail) {
                             throw IOException("Package source configuration changed")
                         }
@@ -960,7 +967,8 @@ class TAKConnectService: Service() {
             connectionScope.launch {
                 var acquired = false
                 try {
-                    if (source == null || source.second != envelope.sourceSessionId || serviceStopping) {
+                    if (source == null || source.second != envelope.sourceSessionId || serviceStopping ||
+                        dataRepository.isCompanionConnected.value) {
                         throw IOException("Local receive session changed")
                     }
                     val connectivity = context.getSystemService(ConnectivityManager::class.java)
@@ -976,7 +984,8 @@ class TAKConnectService: Service() {
                     if (!acquired) throw IOException("Route package importer is busy")
                     val routes = TakDataPackageClient.peer(offer, peer, source.first).downloadRoutes(offer, sourceId)
                     currentCoroutineContext().ensureActive()
-                    if (activeMulticastSource != source || serviceStopping) {
+                    if (activeMulticastSource != source || serviceStopping ||
+                        dataRepository.isCompanionConnected.value) {
                         throw IOException("Local receive session changed")
                     }
                     routes.forEach { dataRepository.upsertTakRoute(it) }
@@ -1075,6 +1084,10 @@ class TAKConnectService: Service() {
             )
             connectionScope.launch {
                 detail.channelMutex.withLock {
+                    if (dataRepository.networkSettingsLocked.first()) {
+                        Log.w(TAG, "Channel refresh blocked trace=$traceId: network settings are locked")
+                        return@withLock
+                    }
                     loadTakChannels(
                         detail = detail,
                         sendLatestSa = true,
@@ -1104,6 +1117,10 @@ class TAKConnectService: Service() {
             )
             connectionScope.launch {
                 detail.channelMutex.withLock {
+                    if (dataRepository.networkSettingsLocked.first()) {
+                        Log.w(TAG, "Channel update blocked trace=$traceId: network settings are locked")
+                        return@withLock
+                    }
                     updateTakChannelLocked(
                         detail = detail,
                         channelBitPosition = channelBitPosition,
@@ -1702,7 +1719,7 @@ class TAKConnectService: Service() {
                 Log.d(
                     TAG,
                     "Stored routes for mission=$missionName: " +
-                            dataRepository.takRoutes.value.map {
+                            dataRepository.takRouteCopies.map {
                                 "${it.name} uid=${it.uid} mission=${it.missionName}"
                             }
                 )
@@ -1712,7 +1729,7 @@ class TAKConnectService: Service() {
                 // Also download if the server reports any unprocessed changes
                 // Otherwise skip downloading the same mission content again
                 if (
-                    dataRepository.takRoutes.value.none {
+                    dataRepository.takRouteCopies.none {
                         it.serverId == serverId && it.missionName == missionName
                     } || newChanges.isNotEmpty()
                 ) {
@@ -1782,7 +1799,7 @@ class TAKConnectService: Service() {
 
 
                 // Attach mission creator information to matching routes
-                dataRepository.takRoutes.value
+                dataRepository.takRouteCopies
                     .filter { route ->
                         route.serverId == serverId &&
                                 creatorByRouteUid.containsKey(route.uid) &&
@@ -2327,7 +2344,8 @@ class TAKConnectService: Service() {
                 deviceUid = { MainActivity.device_uid },
                 deviceCallsign = { MainActivity.callsign },
                 chatCommandHandler = ChatCommandRuntime.create(context, dataRepository),
-                dataPackageHandler = { offer, envelope -> receiveDataPackage(offer, envelope) }
+                dataPackageHandler = { offer, envelope -> receiveDataPackage(offer, envelope) },
+                isInboundAllowed = { !dataRepository.isCompanionConnected.value }
             )
         }
 
@@ -2354,7 +2372,7 @@ class TAKConnectService: Service() {
                 return detail.runtime.currentAttempt === attempt &&
                         detail.runtime.generation == attempt.generation &&
                         !detail.runtime.terminated &&
-                        !serviceStopping
+                        !serviceStopping && !dataRepository.isCompanionConnected.value
             }
         }
 
@@ -2889,7 +2907,7 @@ class TAKConnectService: Service() {
                 )
                 return
             }
-            if (isCompanionAppConnected || dataRepository.isCompanionConnected.value ||
+            if (dataRepository.isCompanionConnected.value ||
                 serviceStopping || takServerDetail.runtime.terminated || !takServerDetail.isEnabled ||
                 !connectionScope.isActive) {
                 Log.w(TAG, "TAK connection unavailable: companion, service or server gate")
@@ -3173,13 +3191,11 @@ class TAKConnectService: Service() {
             false
         }
 
-        var isCompanionAppConnected = false
-        
         fun connectTAKServer(
             takServerDetail: TakServerDetail,
             attempt: ConnectionAttempt
         ) {
-            if (isCompanionAppConnected) {
+            if (dataRepository.isCompanionConnected.value) {
                 Log.w(TAG, "connectTAKServer CompanionAppIsConnected back out early")
                 return
             }
@@ -3340,6 +3356,7 @@ class TAKConnectService: Service() {
         }
 
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
+            if (dataRepository.isCompanionConnected.value) return
             //Log.d(TAG, "sendData called")
             val socket: SSLSocket
             val attempt: ConnectionAttempt
@@ -3351,6 +3368,7 @@ class TAKConnectService: Service() {
             }
             connectionScope.launch {
                 try {
+                    if (!isCurrent(takServerDetail, attempt)) return@launch
                     val outputStream = socket.getOutputStream()
                     outputStream.write(msg.toByteArray(charset("UTF-8")))
                     outputStream.flush()
@@ -3595,6 +3613,7 @@ class TAKConnectService: Service() {
         }
 
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {
+            if (dataRepository.isCompanionConnected.value) return
             if (isLicenseValid() && isNetworkConnected) {
                 val currTime = System.currentTimeMillis()
                 for (takServerDetail in takServerDetails) {

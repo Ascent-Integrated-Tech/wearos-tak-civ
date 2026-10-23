@@ -268,13 +268,16 @@ class BloodhoundRepository(
                 vector = TargetVector(), compass = BloodhoundItem.Compass()
             ) ?: BloodhoundItem(e)
             val isNew = !_remoteAlerts.value.containsKey(event.uid)
+            val visibleTime = _remoteAlerts.value[event.uid]?.bhEvent?.mapItem?.cotEvent?.time
             if (!bloodhoundStore.upsertWithResult(item).applied) {
                 Log.i(TAG, "Emergency ignored reason=not-newer uid=${event.uid} source=$source time=${event.time}")
                 return@synchronized false
             }
             publishVisibleBloodhounds()
             reconcileActiveTrackingSource(event.uid)
-            _bloodhoundEvent.value = BloodhoundUpdate(e, isNew, false)
+            if (visibleTime == null || event.time > visibleTime) {
+                _bloodhoundEvent.value = BloodhoundUpdate(e, isNew, false)
+            }
             alertExpiryJobs.remove(key)?.cancel()
             alertExpiryJobs[key] = scope.launch {
                 delay((event.stale - System.currentTimeMillis()).coerceAtLeast(0))
@@ -925,6 +928,7 @@ class BloodhoundRepository(
     suspend fun updateBloodhoundEvent(event: BloodhoundEvent) {
         synchronized(bloodhoundStateLock) {
             val isNewUid = !isUidValid(event.uid)
+            val visibleTime = _bloodhoundMap.value[event.uid]?.bhEvent?.mapItem?.cotEvent?.time
             val previouslyFromHoundmaster = if (isNewUid) {
                 false
             } else {
@@ -933,6 +937,7 @@ class BloodhoundRepository(
             if (!upsertFromEvent(event) || visibleKey(event.uid) != sourceKey(event)) {
                 return@synchronized
             }
+            if (visibleTime != null && event.mapItem.cotEvent.time <= visibleTime) return@synchronized
             _bloodhoundEvent.value = BloodhoundUpdate(
                 event = event,
                 isNewUid = isNewUid,

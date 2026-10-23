@@ -6,6 +6,7 @@ import org.xmlpull.v1.XmlPullParser
 import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
 import android.util.Log
+import java.time.Instant
 
 // Reads incoming route CoT XML and turns it into a TakRoute object
 // CoT messages use XML to store route details and coordinates
@@ -27,6 +28,7 @@ object TakRouteCotParser {
 
             // UID used to identify the route
             var routeUid: String? = null
+            var eventTime: Long? = null
 
             // Name of the route shown in TAK
             var routeName: String? = null
@@ -76,6 +78,9 @@ object TakRouteCotParser {
                             // Only get the UID if the message is a route
                             if (isRoute) {
                                 routeUid = parser.getAttributeValue(null, "uid")
+                                eventTime = parser.getAttributeValue(null, "time")?.let {
+                                    Instant.parse(it).toEpochMilli().also { time -> require(time > 0) }
+                                }
                             }
                         }
 
@@ -195,7 +200,8 @@ object TakRouteCotParser {
                 points = points,
                 serverId = serverId,
                 missionName = missionName,
-                sender = sender
+                sender = sender,
+                eventTime = eventTime
             )
 
         } catch (e: Exception) {

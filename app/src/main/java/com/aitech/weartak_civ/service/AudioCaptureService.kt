@@ -28,6 +28,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -108,13 +109,16 @@ class AudioCaptureService : Service() {
 
     private fun collectAudioFlows() {
         serviceScope.launch(Dispatchers.IO) {
-            audioRepo.getRecordRequest.collect { req ->
-                when (req) {
-                    AudioCaptureRepository.RecordAction.START -> startAudioCollection()
-                    AudioCaptureRepository.RecordAction.STOP  -> stopAudioCollection()
-                    AudioCaptureRepository.RecordAction.PAUSE -> pauseAudioCollection()
+            audioRepo.activeConsumers
+                .map { it.isNotEmpty() }
+                .distinctUntilChanged()
+                .collect { hasConsumers ->
+                    if (hasConsumers) {
+                        startAudioCollection()
+                    } else {
+                        stopAudioCollection()
+                    }
                 }
-            }
         }
 
         serviceScope.launch(Dispatchers.IO) {

@@ -6,6 +6,7 @@ import com.aitech.weartak_civ.integration.plugin.PluginUI
 
 internal enum class BuiltInPlugin(@DrawableRes val brandIconRes: Int? = null) {
     COMMANDS,
+    COMPANION,
     CRM,
     DART(R.drawable.ic_integration_certus),
     DATA_SYNC,

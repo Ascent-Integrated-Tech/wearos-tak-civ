@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">Die Bloodhound-Ortung konnte nicht mit dem Smartphone synchronisiert werden. Prüfe die Verbindung zur Begleit-App.</string>
     <string name="debug_stay_awake">Bildschirm eingeschaltet lassen</string>
     <string name="debug_stay_awake_warning">Höherer Akkuverbrauch. Die Uhr kann warm werden.</string>
-    <string name="debug_stay_awake_active">Aktiv, bis der Vorgang beendet wird oder der Prozess endet. Wird nach Updates nur fortgesetzt, wenn aktiviert.</string>
-    <string name="debug_stay_awake_resume_update">Nach Update fortsetzen</string>
+    <string name="debug_stay_awake_active">Bleibt bis zum Ausschalten aktiviert. Wird nach Updates und Neustarts fortgesetzt, wenn Android es erlaubt.</string>
     <string name="debug_stay_awake_channel">Debug: Bildschirm eingeschaltet lassen</string>
     <string name="debug_stay_awake_stop">Beenden</string>
-    <string name="debug_stay_awake_failed">„Bildschirm eingeschaltet lassen“ konnte nicht gestartet werden. Siehe WearTAK-Debugprotokolle.</string>
+    <string name="debug_stay_awake_failed">Aktiviert, aber nicht gestartet. Öffne WearTAK für einen neuen Versuch. Siehe Debugprotokolle.</string>
     <string name="remote_emergency_alert">Fernnotfall</string>
     <string name="remote_emergency_no_location">Standort nicht verfügbar. Navigation ist deaktiviert.</string>
     <string name="remote_emergency_description">Notfall: %1$s</string>

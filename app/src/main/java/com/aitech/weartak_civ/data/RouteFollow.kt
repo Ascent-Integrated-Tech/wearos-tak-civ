@@ -74,6 +74,8 @@ data class RouteFollowSession(
     val navigation: RouteFollow,
     val remainingMeters: Double?
 ) {
-    val uid: String get() = "route-follow-${route.serverId.length}-${route.serverId}-${route.uid}"
-    fun matches(route: TakRoute): Boolean = this.route.serverId == route.serverId && this.route.uid == route.uid
+    val uid: String get() = if (route.eventTime != null) "route-follow-cot-${route.uid}"
+        else "route-follow-${route.serverId.length}-${route.serverId}-${route.uid}"
+    fun matches(route: TakRoute): Boolean = this.route.uid == route.uid &&
+        (this.route.serverId == route.serverId || (this.route.eventTime != null && route.eventTime != null))
 }

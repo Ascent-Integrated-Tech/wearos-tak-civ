@@ -45,6 +45,7 @@ interface TakServerCotSink {
 
 enum class TakServerCotIngestResult {
     CHAT,
+    COMMAND,
     GEOFENCE,
     USER,
     MARKER,
@@ -53,9 +54,9 @@ enum class TakServerCotIngestResult {
     DATA_PACKAGE,
     CHANNEL_CHANGED,
     CONFIGURATION,
+    SUPPRESSED,
     UNSUPPORTED,
-    MALFORMED,
-    COMMAND
+    MALFORMED
 }
 
 class TakServerCotIngestor(
@@ -67,12 +68,17 @@ class TakServerCotIngestor(
     private val chatCommandHandler: (suspend (ChatCommandRequest) -> Boolean)? = null,
     private val dataPackageHandler: (suspend (TakDataPackageRequest, TakServerCotEnvelope) -> Unit)? = null,
 
+    private val isInboundAllowed: () -> Boolean = { true },
     // Logs problems found while processing incoming CoT messages
     private val logger: (String, Throwable?) -> Unit = { message, error ->
         if (error == null) Log.w(TAG, message) else Log.w(TAG, message, error)
     }
 ) {
     suspend fun ingest(envelope: TakServerCotEnvelope): TakServerCotIngestResult {
+        if (!isInboundAllowed()) {
+            logger("Suppressing direct CoT while bonded companion is connected source=${envelope.sourceServerId}", null)
+            return TakServerCotIngestResult.SUPPRESSED
+        }
         return try {
             require(envelope.sourceServerId.isNotBlank()) { "TAK server ID cannot be blank" }
             ingestMessage(envelope)
@@ -122,9 +128,6 @@ class TakServerCotIngestor(
                 if (chatCommandHandler(request)) return TakServerCotIngestResult.COMMAND
             }
         }
-
-        // Check whether the incoming message is a chat
-        // Only process chats when chat is enabled and the message is for this device
 
         // Check whether the incoming message is a chat
         // Only process chats when chat is enabled and the message is for this device

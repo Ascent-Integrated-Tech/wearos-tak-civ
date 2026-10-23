@@ -81,6 +81,12 @@ class MulticastServiceLifecycleTest {
             configure(enabled, true)
             val third = withTimeout(3000) { opened.receive() }
             assertTrue(second.isClosed)
+            repeat(2) {
+                configure(enabled.copy(companionConnected = true), false)
+                assertTrue(if (it == 0) third.isClosed else live.get() == 0)
+                configure(enabled, true)
+                withTimeout(3000) { opened.receive() }
+            }
             configure(enabled.copy(enable = false), false)
             assertTrue(third.isClosed)
             configure(enabled, true)
@@ -88,7 +94,7 @@ class MulticastServiceLifecycleTest {
             withTimeout(3000) { collector.cancelAndJoin() }
             assertTrue(last.isClosed)
             assertEquals(0, live.get())
-            assertEquals(4, totalOpened.get())
+            assertEquals(6, totalOpened.get())
             assertEquals(totalOpened.get(), totalClosed.get())
         } finally {
             withTimeout(3000) { collector.cancelAndJoin() }

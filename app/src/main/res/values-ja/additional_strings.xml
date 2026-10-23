@@ -17,11 +17,10 @@
     <string name="companion_bloodhound_sync_failed">Bloodhound の追跡をスマートフォンと同期できませんでした。コンパニオンアプリの接続を確認してください。</string>
     <string name="debug_stay_awake">画面を常にオン</string>
     <string name="debug_stay_awake_warning">バッテリー消費が増加します。時計が熱くなる場合があります。</string>
-    <string name="debug_stay_awake_active">停止するかプロセスが終了するまで有効です。更新後の再開は、選択した場合のみ行われます。</string>
-    <string name="debug_stay_awake_resume_update">更新後に再開</string>
+    <string name="debug_stay_awake_active">手動で無効にするまで設定を保持します。Android が許可する場合、更新や再起動後に再開します。</string>
     <string name="debug_stay_awake_channel">デバッグ：画面を常にオン</string>
     <string name="debug_stay_awake_stop">停止</string>
-    <string name="debug_stay_awake_failed">画面を常にオンにできませんでした。WearTAK のデバッグログを確認してください。</string>
+    <string name="debug_stay_awake_failed">設定は有効ですが開始できませんでした。WearTAK を開いて再試行してください。デバッグログを確認してください。</string>
     <string name="remote_emergency_alert">リモート緊急事態</string>
     <string name="remote_emergency_no_location">位置情報を利用できません。ナビゲーションは無効です。</string>
     <string name="remote_emergency_description">緊急事態：%1$s</string>

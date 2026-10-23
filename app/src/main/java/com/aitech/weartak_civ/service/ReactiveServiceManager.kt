@@ -17,6 +17,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.service.LicenseManager.validateLicense
@@ -159,12 +160,20 @@ class ReactiveServiceManager : Service() {
         }
     }
 
+    private val audioRepo by lazy {
+        try {
+            (applicationContext as WearTakApplication).audioRepo
+        } catch (_: Throwable) {
+            AudioCaptureRepository(applicationContext)
+        }
+    }
+
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "ReactiveServiceManager onCreate() Start...")
         isRunning.set(true)
         registry         = ServiceRegistry()
-        config           = ServiceConfiguration(applicationContext, repo)
+        config           = ServiceConfiguration(applicationContext, repo, audioRepo)
         runnableServicesList = registry.getAllServiceTypes()
 
         startForegroundServiceCompat(
@@ -355,8 +364,9 @@ class ReactiveServiceManager : Service() {
         var anyChange = false
         val changedTypes = mutableListOf<ServiceType>()
 
-        // START phase (deps before dependents)
-        anyChange = reconcileStartPhase(order, changedTypes) || anyChange
+        // START phase (deps before dependents). Companion has no dependencies or dependents; start it
+        // first so its BLE advertising is not queued behind slower main-thread service startups.
+        anyChange = reconcileStartPhase(order.sortedBy { it != ServiceType.COMPANION_APP }, changedTypes) || anyChange
 
         // STOP phase (dependents before deps)
         anyChange = reconcileStopPhase(order.asReversed(), changedTypes) || anyChange

@@ -80,6 +80,18 @@ pipeline (including retries) from replacing a successfully published newer one.
 Reusing a pipeline IID with different bytes/source fails rather than overwriting.
 This is not a cross-project/distributed lock against other writers.
 
+Generated release prose is bounded by hidden
+`weartak-release-managed:start` / `weartak-release-managed:end` comments.
+Manual notes before or after that block are preserved byte-for-byte; keep notes
+outside it and do not edit its provenance marker or boundaries. Existing unbounded
+releases migrate only an exact recognized historical generated block. Otherwise
+only the ownership marker is replaced by a new managed block and all unknown
+prose is retained, even if it resembles old generated text. Missing, duplicate or
+misordered boundaries fail before upload or cleanup. The complete updated body,
+including retained notes, must match the API readback before old assets are removed.
+This prevents automated overwrites of existing notes, not concurrent editing by
+another writer during a publish; retain the single-writer restriction above.
+
 The first release is created as a draft. Each APK receives a unique `WearTAK-<version>.apk`
 name (the pipeline IID is part of `<version>`), is uploaded alongside the previous APK, then is downloaded using the
 authenticated asset API and checked for exact size and SHA256. Only after that

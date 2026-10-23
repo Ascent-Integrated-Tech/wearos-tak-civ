@@ -82,6 +82,17 @@ class ProfileCommandsTest {
     }
 
     @Test
+    fun longUniformAliasesUseTheSameSingleFieldValidationAndWrites() {
+        assertTrue(run("setuniformpantslengthinches", "pants=30").ok)
+        assertTrue(run("setwaistsize", "waist=32").ok)
+        assertEquals(listOf("pants=30", "waist=32"), calls)
+        assertFalse(run("setuniformpantslengthinches", "pants=19").ok)
+        assertFalse(run("setwaistsize", "waist=61").ok)
+        assertFalse(run("setwaistsize", "waist=32 callsign=BAD").ok)
+        assertEquals(listOf("pants=30", "waist=32"), calls)
+    }
+
+    @Test
     fun missingArgumentsAreRejected() {
         assertFalse(ProfileHandler(setOf("team"), { false }, options, store).let { h ->
             runBlocking { h.execute(ChatCommand("setteam", emptyMap()), ChatCommandRequest("u", "me", "", "m", 0, 0, "s")).ok }

@@ -19,6 +19,7 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.UUID
 import java.util.concurrent.locks.ReentrantLock
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.withLock
 
 data class AudioDetectionSpec(
@@ -86,22 +87,34 @@ class AudioDetectionRuntime(
     private var streamSegmentIndex = 0
     private var nextWindowIndex = 0L
     private var nextWindowStartSample = 0L
+    private val started = AtomicBoolean(false)
+    private val captureConsumerId = "core:${spec.detectorKey}"
 
     fun start() {
-        env = OrtEnvironment.getEnvironment()
-        ensureDetectorLoaded()
-        scope.launch { audioRepo.requestStartRecording() }
-        pcmCollectJob = scope.launch { collectPcmStream() }
+        if (!started.compareAndSet(false, true)) return
+        audioRepo.acquireConsumer(captureConsumerId)
+        try {
+            env = OrtEnvironment.getEnvironment()
+            ensureDetectorLoaded()
+            pcmCollectJob = scope.launch { collectPcmStream() }
+        } catch (t: Throwable) {
+            audioRepo.releaseConsumer(captureConsumerId)
+            started.set(false)
+            throw t
+        }
     }
 
     fun shutdown() {
+        if (!started.getAndSet(false)) return
         pcmCollectJob?.cancel()
+        pcmCollectJob = null
         metricsLogger.close()
         lock.withLock {
             try { detectorSession?.close() } catch (_: Throwable) {}
             detectorSession = null
             detectorLoaded = false
         }
+        audioRepo.releaseConsumer(captureConsumerId)
     }
 
     private suspend fun collectPcmStream() {
