@@ -850,6 +850,34 @@ Asynchronous repository failures are logged; cancellation is not treated as an e
 
 Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. Only direct messages from callsigns in **Allowed Callsigns** (comma separated, case-insensitive) are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
 
+TAK-server and Wi-Fi multicast receive already share the same command runtime and
+recipient checks. A server is not required for multicast commands. After a reset,
+first open WearTAK, grant its required permissions and connect watch and sender to
+the same multicast-capable Wi-Fi network. Enable **Network Preferences > TAK SA
+Multicast** (with valid address/port), then **Plugins > Commands** and add the
+sender's callsign to **Allowed Callsigns**. Keep Chat enabled for the normal inbox
+and outcome replies. This is bootstrap configuration, not a full backup restore.
+Enabling multicast also enables normal multicast publishing, not a receive-only
+provisioning mode; use an appropriately scoped test network.
+
+The receiver listens on the configured group/port plus standard GeoChat
+`224.10.10.1:17012` and direct CoT `224.10.10.1:6969`. In the sender, choose the
+actual watch contact for a **direct** chat, not a group or All Chat Rooms. CoT must
+identify the watch as a recipient: normally `__chat.id`/`chatgrp.id` is the watch UID
+and `chatgrp.uid1` is that UID (`uid0` is the sender); `remarks.to` can name the watch
+UID/current callsign. Watch UID membership also supports direct chats without
+`remarks.to`. Missing or other-device recipients are not a provisioning shortcut.
+Keep the device clocks within five minutes. Phone-managed identity/network locks
+still apply. A factory reset may change the UID: discover the current contact
+rather than replaying a saved recipient UID.
+
+The shared process-local replay cache ignores repeat sender/message-ID pairs
+across server and multicast, including either arrival order. It remembers the
+last 128 accepted pairs, not a durable execution ledger across app restarts.
+Consumed commands are not inserted as ordinary chat or rebroadcast; one normal
+outcome reply is generated for a newly accepted command. With Commands disabled,
+addressed command-looking text retains normal chat behavior.
+
 Format: `#weartakcommand<name> key=value key2="value with spaces"`
 
 | Command | Arguments | Effect |
@@ -884,7 +912,15 @@ The callsign, team and role fields (including in `setprofile`) are refused when 
 
 The profile is validated and applied, then each server is added through the normal add-server path (servers already present are skipped). Names are lowercase letters, digits and `-`. The reply says only how many servers were added. Refused when network settings are locked.
 
-The watch replies in chat with the outcome. Callsigns are not authenticated, so anyone on the same server can pick an allowed callsign; this is why server enrollment always needs the user at the watch. Command arguments are never logged.
+The watch replies in chat with the outcome. Callsigns are not authenticated:
+another participant on the server or anyone able to inject multicast on the LAN
+can impersonate an allowed callsign. Neither recipient UIDs nor replay filtering
+prove origin; only enable this convenience feature on a trusted, scoped network.
+Multicast is plaintext. Never put passwords, enrollment secrets or other
+credentials in chat. Server enrollment still prompts on the watch and uses the
+normal TLS/enrollment path; it does not accept credentials through either chat
+transport. Command audit messages omit argument values, but ordinary chat and
+packet diagnostics are not a secret-storage channel.
 ### WEARTAK-112: explicit shared-point deletion
 
 **Local paired-device mirrors only.** A watch deletion removes the selected local
