@@ -56,7 +56,8 @@ The scan response contains service data under the same UUID: a version byte
 truncated at a complete Unicode code point. The 12-byte budget fits the 31-byte
 legacy limit even with a full 128-bit service-data UUID (2-byte AD header +
 16-byte UUID + 1-byte version + 12-byte callsign). Empty callsigns send only the
-version byte. Callsign changes refresh an active advertisement; no GATT
+version byte. The advertised callsign is always the watch's **standalone**
+callsign, including while phone-managed (WEARTAK-273). Standalone callsign changes refresh an active advertisement; no GATT
 disconnect or system setting change is needed.
 
 The ATAK Companion scanner on canonical develop
@@ -68,6 +69,18 @@ version 1, strictly decode the remaining bytes as UTF-8, and prefer a nonblank
 callsign over device name or address. Missing, malformed, or unsupported-version
 data must preserve those fallbacks; primary-only results should not erase a
 previously received callsign. This watch-side change does not modify the plugin.
+
+Companion JSON envelopes (`vers: 1`) also expose the full, untruncated standalone
+identity as `payload.standaloneCallsign` in `watch_info`, `settings_request`,
+and the initial/changed `settings_changed` payload. The existing `watch_info.cs`
+and settings `callsign` remain the effective (possibly phone-managed) identity.
+For example, while managed, `watch_info.payload` includes
+`{"cs":"PHONE","standaloneCallsign":"ODIN-WEARTAK"}` and settings include
+`{"callsign":"PHONE","standaloneCallsign":"ODIN-WEARTAK"}` alongside their other
+fields. Settings deltas include `standaloneCallsign` only initially or when that
+value changes. An empty standalone value stays empty, never the phone's callsign.
+The saved watch identity survives repeated managed pushes and is restored on
+disconnect; this adds no device-name or bond changes.
 
 Advertising resource/internal failures retry after 1, 2, 4, 8, and 16 seconds
 (five retries maximum), with named errors in logcat. Oversized data, unsupported

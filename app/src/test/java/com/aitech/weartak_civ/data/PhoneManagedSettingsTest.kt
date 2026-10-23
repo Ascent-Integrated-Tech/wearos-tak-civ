@@ -58,9 +58,59 @@ class PhoneManagedSettingsTest {
         assertTrue(repo.getEnableDynamicReportingStrategy.first())
         assertEquals(60, repo.getConstantReportingInterval.first())
         assertEquals("ODIN-WEARTAK", repo.getCallsign.first())
+        assertEquals("ODIN-WEARTAK", repo.getStandaloneCallsign.first())
         assertEquals("Dark Green", repo.getTeam.first())
         assertEquals("K9", repo.getRole.first())
         assertEquals("CIV", repo.getRoleCategory.first())
+    }
+
+    @Test fun standaloneIdentitySurvivesManagedPushesRepositoryRecreationAndDisconnect() = runBlocking {
+        storeWatchIdentity()
+        val cap = CompanionAppRepository(RuntimeEnvironment.getApplication())
+        CompanionAppRepository::class.java.getDeclaredField("repo\$delegate").apply {
+            isAccessible = true
+            set(cap, lazyOf(repo))
+        }
+        suspend fun assertIdentity(effective: String, standalone: String) {
+            assertEquals(standalone, repo.getStandaloneCallsign.first())
+            val recreated = DataRepository(RuntimeEnvironment.getApplication())
+            assertEquals(standalone, recreated.getStandaloneCallsign.first())
+            val info = org.json.JSONObject(cap.envelopeToJson(cap.buildWatchInfoEnvelope()))
+                .getJSONObject("payload")
+            assertEquals(effective, info.getString("cs"))
+            assertEquals(standalone, info.getString("standaloneCallsign"))
+            val settings = org.json.JSONObject(cap.envelopeToJson(cap.buildWatchSettingsEnvelope()))
+                .getJSONObject("payload")
+            assertEquals(effective, settings.getString("callsign"))
+            assertEquals(standalone, settings.getString("standaloneCallsign"))
+        }
+        assertIdentity("ODIN-WEARTAK", "ODIN-WEARTAK")
+        repo.enablePhoneManagedSettings("AA:BB")
+        repeat(2) {
+            repo.applyPhoneManagedSettings("PHONE-$it", "Cyan", "Team Lead", 15)
+            assertIdentity("PHONE-$it", "ODIN-WEARTAK")
+        }
+        repo.restorePhoneManagedSnapshot()
+        assertIdentity("ODIN-WEARTAK", "ODIN-WEARTAK")
+        repo.storeCallsign("THOR")
+        assertIdentity("THOR", "THOR")
+        repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Lead", 15)
+        assertIdentity("PHONE", "THOR")
+        repo.clearPhoneManagedSettingsForPeer("AA:BB")
+        assertIdentity("THOR", "THOR")
+    }
+
+    @Test fun emptyStandaloneCallsignNeverFallsBackToManagedIdentity() = runBlocking {
+        repo.storeCallsign("")
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.applyPhoneManagedSettings("PHONE", "Cyan", "Team Lead", 15)
+        assertEquals("", repo.getStandaloneCallsign.first())
+        assertEquals("", repo.snapshotSystem().standaloneCallsign)
+        repo.applyPhoneManagedSettings("PHONE-2", "Cyan", "Team Lead", 15)
+        assertEquals("", repo.getStandaloneCallsign.first())
+        repo.restorePhoneManagedSnapshot()
+        assertEquals("", repo.getCallsign.first())
+        assertEquals("", repo.getStandaloneCallsign.first())
     }
 
     @Test fun releaseRestoresEveryPhoneLockedValueSavedBeforeManagement() = runBlocking {

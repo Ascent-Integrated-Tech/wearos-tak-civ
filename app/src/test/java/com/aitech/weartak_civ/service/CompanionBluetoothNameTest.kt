@@ -82,6 +82,7 @@ class CompanionBluetoothNameTest {
         val snapshot = mockk<DataRepository.SystemSnapshot>(relaxed = true)
         var storedCallsign = "WATCH"
         every { snapshot.callsign } answers { storedCallsign }
+        every { snapshot.standaloneCallsign } returns "ODIN-WEARTAK"
         every { snapshot.deviceId } returns "test-watch"
         val repo = mockk<DataRepository>()
         coEvery { repo.snapshotSystem() } returns snapshot
@@ -98,6 +99,7 @@ class CompanionBluetoothNameTest {
             val payload = envelope.getJSONObject("payload")
             assertEquals("test-watch", payload.getString("uid"))
             assertEquals(callsign, payload.getString("cs"))
+            assertEquals("ODIN-WEARTAK", payload.getString("standaloneCallsign"))
         }
         verify(exactly = 0) { adapter.name }
         assertEquals("Galaxy Watch", adapter.name)

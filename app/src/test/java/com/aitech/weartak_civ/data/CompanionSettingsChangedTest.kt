@@ -30,12 +30,14 @@ class CompanionSettingsChangedTest {
         callsign = "TEST-WATCH",
         team = "Cyan",
         role = "Medic",
-        phoneManagedSettings = false
+        phoneManagedSettings = false,
+        standaloneCallsign = "TEST-WATCH"
     )
 
     @Test fun initialDeltaIncludesIdentityAndExistingSettings() {
         val payload = deltas(initial).single()
-        assertEquals(setOf("callsign", "team", "role", "reportIntSecs", "takServerList"), payload.fieldNames())
+        assertEquals(setOf("callsign", "standaloneCallsign", "team", "role", "reportIntSecs", "takServerList"), payload.fieldNames())
+        assertEquals("TEST-WATCH", payload.getString("standaloneCallsign"))
         assertEquals("TEST-WATCH", payload.getString("callsign"))
         assertEquals("Cyan", payload.getString("team"))
         assertEquals("Medic", payload.getString("role"))
@@ -53,6 +55,12 @@ class CompanionSettingsChangedTest {
 
     @Test fun callsignOnlyChangeStillOmitsUnchangedFields() {
         assertOnlyChange("callsign", "TEST-UPDATED", initial.copy(callsign = "TEST-UPDATED"))
+    }
+
+    @Test fun standaloneOnlyChangeIsEmittedWithoutReplacingEffectiveCallsign() {
+        assertOnlyChange("standaloneCallsign", "ODIN-WEARTAK",
+            initial.copy(standaloneCallsign = "ODIN-WEARTAK"))
+        assertOnlyChange("standaloneCallsign", "", initial.copy(standaloneCallsign = ""))
     }
 
     @Test fun combinedIdentityChangePreservesEscapedValuesAndEnvelopeVersion() {
@@ -89,6 +97,8 @@ class CompanionSettingsChangedTest {
         every { repo.getTakServerListReady } returns MutableStateFlow(emptyList())
         every { repo.getConstantReportingInterval } returns MutableStateFlow(60)
         every { repo.getCallsign } returns MutableStateFlow(initial.callsign)
+        val standalone = MutableStateFlow(initial.standaloneCallsign)
+        every { repo.getStandaloneCallsign } returns standalone
         every { repo.getTeam } returns team
         every { repo.getRole } returns role
         every { repo.phoneManagedSettingsEnabled } returns MutableStateFlow(false)
@@ -115,6 +125,10 @@ class CompanionSettingsChangedTest {
                 val roleDelta = received.receive()
                 assertEquals(setOf("role"), roleDelta.fieldNames())
                 assertEquals("Team Lead", roleDelta.getString("role"))
+                standalone.value = "ODIN-WEARTAK"
+                val standaloneDelta = received.receive()
+                assertEquals(setOf("standaloneCallsign"), standaloneDelta.fieldNames())
+                assertEquals("ODIN-WEARTAK", standaloneDelta.getString("standaloneCallsign"))
             }
         } finally {
             collector.cancel()
