@@ -4461,6 +4461,12 @@ class DataRepository(private val context: Context) {
             .map { prefs -> prefs[NETWORK_PREFERENCES_LOCKED] ?: false }
             .distinctUntilChanged()
 
+    val networkSettingsLocked: Flow<Boolean> = kotlinx.coroutines.flow.combine(
+        phoneManagedSettingsLocked,
+        getNetworkPreferencesLocked
+    ) { phoneManaged, networkLocked -> phoneManaged || networkLocked }
+        .distinctUntilChanged()
+
     suspend fun storeNetworkPreferencesLocked(locked: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[NETWORK_PREFERENCES_LOCKED] = locked

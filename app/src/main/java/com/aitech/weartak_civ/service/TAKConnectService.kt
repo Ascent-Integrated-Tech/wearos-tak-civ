@@ -1075,6 +1075,10 @@ class TAKConnectService: Service() {
             )
             connectionScope.launch {
                 detail.channelMutex.withLock {
+                    if (dataRepository.networkSettingsLocked.first()) {
+                        Log.w(TAG, "Channel refresh blocked trace=$traceId: network settings are locked")
+                        return@withLock
+                    }
                     loadTakChannels(
                         detail = detail,
                         sendLatestSa = true,
@@ -1104,6 +1108,10 @@ class TAKConnectService: Service() {
             )
             connectionScope.launch {
                 detail.channelMutex.withLock {
+                    if (dataRepository.networkSettingsLocked.first()) {
+                        Log.w(TAG, "Channel update blocked trace=$traceId: network settings are locked")
+                        return@withLock
+                    }
                     updateTakChannelLocked(
                         detail = detail,
                         channelBitPosition = channelBitPosition,

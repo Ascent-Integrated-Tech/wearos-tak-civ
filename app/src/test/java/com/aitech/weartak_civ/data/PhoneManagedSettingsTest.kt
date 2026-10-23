@@ -126,6 +126,25 @@ class PhoneManagedSettingsTest {
         assertWatchValues()
     }
 
+    @Test fun networkSettingsLockCombinesAdminAndLivePhoneManagement() = runBlocking {
+        assertFalse(repo.networkSettingsLocked.first())
+        repo.storeNetworkPreferencesLocked(true)
+        assertTrue(repo.networkSettingsLocked.first())
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.setPhoneManagementSessionActive(true)
+        assertTrue(repo.networkSettingsLocked.first())
+        repo.storeNetworkPreferencesLocked(false)
+        assertTrue(repo.networkSettingsLocked.first())
+        repo.setPhoneManagementSessionActive(false)
+        assertFalse(repo.networkSettingsLocked.first())
+        repo.storeNetworkPreferencesLocked(true)
+        repo.setPhoneManagementSessionActive(true)
+        repo.setPhoneManagementSessionActive(false)
+        assertTrue(repo.networkSettingsLocked.first())
+        repo.storeNetworkPreferencesLocked(false)
+        assertFalse(repo.networkSettingsLocked.first())
+    }
+
     @Test fun unlockedWatchEditsBecomeTheRestoredValuesButLockedWritesDoNot() = runBlocking {
         storeWatchIdentity()
         repo.enablePhoneManagedSettings("AA:BB")
