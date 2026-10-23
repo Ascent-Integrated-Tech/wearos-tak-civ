@@ -12,11 +12,16 @@ import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.os.Looper
+import android.os.ParcelUuid
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.DataRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -61,7 +66,7 @@ class CompanionAdvertisingRecoveryTest {
 
         idle(31)
 
-        verify(exactly = 1) { advertiser.stopAdvertising(callback()) }
+        verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
         verifyStarts(2)
     }
 
@@ -90,7 +95,7 @@ class CompanionAdvertisingRecoveryTest {
 
         idle(31)
 
-        verify(exactly = 1) { advertiser.stopAdvertising(callback()) }
+        verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
         verifyStarts(1)
     }
 
@@ -113,7 +118,7 @@ class CompanionAdvertisingRecoveryTest {
         startAdvertising()
         idle(61)
 
-        verify(exactly = 1) { advertiser.stopAdvertising(callback()) }
+        verify(exactly = 1) { advertiser.stopAdvertising(any<AdvertiseCallback>()) }
         verifyStarts(1)
     }
 
@@ -169,16 +174,225 @@ class CompanionAdvertisingRecoveryTest {
         verifyStarts(1)
     }
 
+    @Test fun dataTooLargeIsTerminalAndStateDrivenStartsCannotLoop() {
+        every { cap.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR) } answers {
+            startAdvertising()
+        }
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE)
+        repeat(100) { startAdvertising() }
+        idle(600)
+        verifyStarts(1)
+        verify { cap.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR) }
+        assertTrue(org.robolectric.shadows.ShadowLog.getLogsForTag("WearTAK-CompanionAppService")
+            .any { it.msg.contains("ADVERTISE_FAILED_DATA_TOO_LARGE") })
+    }
+
+    @Test fun unsupportedFailureIsTerminal() {
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_FEATURE_UNSUPPORTED)
+        startAdvertising()
+        idle(60)
+        verifyStarts(1)
+    }
+
+    @Test fun unknownFailureIsTerminal() {
+        startAdvertising()
+        callback().onStartFailure(999)
+        startAdvertising()
+        idle(60)
+        verifyStarts(1)
+    }
+
+    @Test fun transientFailuresBackOffExponentiallyAndStopAfterFiveRetries() {
+        every { cap.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR) } answers {
+            startAdvertising()
+        }
+        startAdvertising()
+        for ((index, seconds) in listOf(1L, 2L, 4L, 8L, 16L).withIndex()) {
+            callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+            repeat(10) { startAdvertising() }
+            idleMillis(seconds * 1000 - 1)
+            verifyStarts(index + 1)
+            idleMillis(1)
+            verifyStarts(index + 2)
+        }
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        repeat(100) { startAdvertising() }
+        idle(600)
+        verifyStarts(6)
+    }
+
+    @Test fun successfulStartResetsRetryBudget() {
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_TOO_MANY_ADVERTISERS)
+        idle(1)
+        callback().onStartSuccess(null)
+        invoke("stopAdvertising")
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        idleMillis(999)
+        verifyStarts(3)
+        idleMillis(1)
+        verifyStarts(4)
+    }
+
+    @Test fun alreadyStartedKeepsAdvertisingAndRefreshesRatherThanRetries() {
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED)
+        idle(16)
+        verifyStarts(1)
+        idle(15)
+        verifyStarts(2)
+    }
+
+    @Test fun stopAndDestroyCancelPendingRetries() {
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        invoke("stopAdvertising")
+        idle(60)
+        verifyStarts(1)
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        service.onDestroy()
+        idle(60)
+        verifyStarts(2)
+    }
+
+    @Test fun retryDoesNotRestartWhileConnected() {
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        inject("connectedDevice", mockk<BluetoothDevice>(relaxed = true))
+        idle(60)
+        verifyStarts(1)
+    }
+
+    @Test fun synchronousInternalErrorsUseTheSameBoundedBackoff() {
+        every { advertiser.startAdvertising(any(), any(), any(), any()) } throws IllegalStateException("off")
+        startAdvertising()
+        repeat(100) { startAdvertising() }
+        idleMillis(999)
+        verifyStarts(1)
+        idleMillis(1)
+        verifyStarts(2)
+    }
+
+    @Test fun synchronousInvalidPayloadDoesNotRetry() {
+        every { advertiser.startAdvertising(any(), any(), any(), any()) } throws IllegalArgumentException("size")
+        startAdvertising()
+        repeat(100) { startAdvertising() }
+        service.updateAdvertisingCallsign("NEW")
+        idle(600)
+        verifyStarts(1)
+    }
+
+    @Test fun permissionFailureIsTerminal() {
+        every { advertiser.startAdvertising(any(), any(), any(), any()) } throws SecurityException("permission")
+        startAdvertising()
+        startAdvertising()
+        idle(600)
+        verifyStarts(1)
+        verify { cap.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR) }
+    }
+
+    @Test fun missingAdvertiserHasBoundedRetriesRatherThanErrorStateLoop() {
+        inject("advertiser", null)
+        every { adapter.bluetoothLeAdvertiser } returns null
+        every { cap.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR) } answers {
+            startAdvertising()
+        }
+        startAdvertising()
+        idle(600)
+        verify(exactly = 6) { adapter.bluetoothLeAdvertiser }
+        verifyStarts(0)
+    }
+
+    @Test fun chosenCallsignRefreshesScanResponseWithoutReadingOrChangingLongSystemName() {
+        every { adapter.name } returns "Galaxy Watch Ultra2 (RK2Z)" + "X".repeat(100)
+        service.updateAdvertisingCallsign("WATCH")
+        startAdvertising()
+        callback().onStartSuccess(null)
+        service.updateAdvertisingCallsign("NEW")
+        verifyStarts(2)
+        assertEquals(listOf("WATCH", "NEW"), advertisedCallsigns())
+        verify(exactly = 0) { adapter.name }
+        verify(exactly = 0) { adapter.setName(any()) }
+    }
+
+    @Test fun callsignUpdateWhilePendingRestartsButSameEncodedValueDoesNot() {
+        service.updateAdvertisingCallsign("ABCDEFGHIJKL")
+        startAdvertising()
+        service.updateAdvertisingCallsign("ABCDEFGHIJKLZ")
+        verifyStarts(1)
+        service.updateAdvertisingCallsign("")
+        verifyStarts(2)
+        assertEquals(listOf("ABCDEFGHIJKL", ""), advertisedCallsigns())
+    }
+
+    @Test fun lateCallbackFromReplacedCallsignAdvertisementIsIgnored() {
+        startAdvertising()
+        val stale = callback()
+        service.updateAdvertisingCallsign("NEW")
+        stale.onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_DATA_TOO_LARGE)
+        stale.onStartSuccess(null)
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        idle(1)
+        verifyStarts(3)
+        assertEquals("NEW", advertisedCallsigns().last())
+    }
+
+    @Test fun callsignChangesDoNotRestartWhileConnectedOrBypassFailureGate() {
+        startAdvertising()
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        service.updateAdvertisingCallsign("NEW")
+        verifyStarts(1)
+        idle(1)
+        assertEquals("NEW", advertisedCallsigns().last())
+        callback().onStartSuccess(null)
+        inject("connectedDevice", mockk<BluetoothDevice>(relaxed = true))
+        service.updateAdvertisingCallsign("BONDED")
+        verifyStarts(2)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun repositoryCallsignChangesRefreshAdvertising() = runTest {
+        val callsigns = MutableStateFlow("INITIAL")
+        val repo = mockk<DataRepository>(relaxed = true)
+        every { repo.getCallsign } returns callsigns
+        inject("repo\$delegate", lazyOf(repo))
+        inject("serviceScope", backgroundScope)
+        service.startAdvertisingCallsignCollector()
+        runCurrent()
+        startAdvertising()
+        callback().onStartSuccess(null)
+        callsigns.value = "UPDATED"
+        runCurrent()
+        assertEquals(listOf("INITIAL", "UPDATED"), advertisedCallsigns())
+    }
+
+    private fun advertisedCallsigns(): List<String> {
+        val responses = mutableListOf<AdvertiseData>()
+        verify { advertiser.startAdvertising(any(), any(), capture(responses), any()) }
+        return responses.map {
+            val payload = it.serviceData.getValue(ParcelUuid(cap.COMPANION_SERVICE_UUID))
+            assertEquals(1.toByte(), payload[0])
+            payload.copyOfRange(1, payload.size).toString(Charsets.UTF_8)
+        }
+    }
+
+    private fun idleMillis(milliseconds: Long) =
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(milliseconds))
+
     private fun startAdvertising() = invoke("startAdvertising")
 
     private fun startedModes(): List<Int> {
         val settings = mutableListOf<AdvertiseSettings>()
-        verify { advertiser.startAdvertising(capture(settings), any<AdvertiseData>(), any<AdvertiseCallback>()) }
+        verify { advertiser.startAdvertising(capture(settings), any<AdvertiseData>(), any<AdvertiseData>(), any<AdvertiseCallback>()) }
         return settings.map { it.mode }
     }
 
     private fun verifyStarts(count: Int) = verify(exactly = count) {
-        advertiser.startAdvertising(any<AdvertiseSettings>(), any<AdvertiseData>(), any<AdvertiseCallback>())
+        advertiser.startAdvertising(any<AdvertiseSettings>(), any<AdvertiseData>(), any<AdvertiseData>(), any<AdvertiseCallback>())
     }
 
     private fun idle(seconds: Long) = shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(seconds))

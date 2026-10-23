@@ -46,6 +46,35 @@ the companion notification subscription is ready, not just that a Bluetooth bond
 exists. The watch does not infer Samsung-versus-Traditional mode from a bond or
 device brand; choose the method in the phone companion app.
 
+### Companion BLE discovery (WEARTAK-269)
+
+Legacy advertising keeps the Companion service UUID
+`0000A11A-0000-1000-8000-00805F9B34FB` in the primary packet. Neither packet
+includes the system Bluetooth name, and WearTAK never renames the device.
+The scan response contains service data under the same UUID: a version byte
+`0x01`, followed by **at most 12 UTF-8 bytes** of the chosen WearTAK callsign,
+truncated at a complete Unicode code point. The 12-byte budget fits the 31-byte
+legacy limit even with a full 128-bit service-data UUID (2-byte AD header +
+16-byte UUID + 1-byte version + 12-byte callsign). Empty callsigns send only the
+version byte. Callsign changes refresh an active advertisement; no GATT
+disconnect or system setting change is needed.
+
+The ATAK Companion scanner on canonical develop
+`3240a0d421bc9056676d83dd60b31c1853305250` discovers watches by the service UUID,
+not their names. Its existing scan-result display reads the local/device name,
+not service data. To display the callsign it must read
+`ScanRecord.getServiceData(new ParcelUuid(COMPANION_SERVICE_UUID))`, accept
+version 1, strictly decode the remaining bytes as UTF-8, and prefer a nonblank
+callsign over device name or address. Missing, malformed, or unsupported-version
+data must preserve those fallbacks; primary-only results should not erase a
+previously received callsign. This watch-side change does not modify the plugin.
+
+Advertising resource/internal failures retry after 1, 2, 4, 8, and 16 seconds
+(five retries maximum), with named errors in logcat. Oversized data, unsupported
+features, permission failures, and unknown failures stop without retrying.
+Success resets the retry budget. After a terminal failure, resolve the cause and
+restart Companion; BLE-state notifications cannot bypass the retry/terminal gate.
+
 Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
 Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
 Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.
