@@ -2049,6 +2049,41 @@ class CompanionAppService : Service() {
                     }
                 }
 
+                "set_callsign", "set_team", "set_role" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    serviceScope.launch {
+                        val ack = try {
+                            val payload = org.json.JSONObject(json).getJSONObject("payload")
+                            val field = base.type.removePrefix("set_")
+                            require(payload.keys().asSequence().toSet() == setOf(field)) {
+                                "${base.type} requires only $field"
+                            }
+                            val value = payload.get(field)
+                            require(value is String && value.isNotBlank()) {
+                                "$field must be a nonblank string"
+                            }
+                            phoneManagementSettingsMutex.withLock {
+                                fun mayApply() = currentPeer(address, generation) &&
+                                    phoneManagementReleaseGeneration.get() != generation &&
+                                    capRepo.gateway.session == null
+                                check(mayApply()) { "Identity belongs to an ended or released companion session" }
+                                repo.applyPhoneManagedIdentity(
+                                    address, field, value,
+                                    mayApply = ::mayApply
+                                ).applyToRuntimeConstants()
+                            }
+                            capRepo.buildSettingsAck(ok = true)
+                        } catch (error: kotlinx.coroutines.CancellationException) {
+                            throw error
+                        } catch (error: Exception) {
+                            Log.w(TAG, "${base.type}: failed to parse/apply", error)
+                            capRepo.buildSettingsAck(ok = false, error = error.message ?: "parse/apply error")
+                        }
+                        sendJsonForPeer(capRepo.envelopeToJson(ack), address, generation)
+                    }
+                }
+
                 "set_settings" -> {
                     val address = connectedDevice?.address ?: return
                     val generation = bloodhoundConnectionGeneration.get()
