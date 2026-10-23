@@ -126,7 +126,9 @@ class ProfileHandler(
             "setsex" to setOf("sex"),
             "setusertype" to setOf("usertype"),
             "setpants" to setOf("pants"),
+            "setuniformpantslengthinches" to setOf("pants"),
             "setwaist" to setOf("waist"),
+            "setwaistsize" to setOf("waist"),
             "setprofile" to setOf(
                 "callsign", "team", "role", "height", "weight", "birthyear", "sex", "usertype", "pants", "waist"
             )
