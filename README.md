@@ -27,8 +27,11 @@ is not used for this override. Missing, empty, or whitespace-only values retain 
 subtitle. This changes only the menu subtitle: the info popup still shows the actual loading status,
 and the toggle, tap-to-open, and swipe remove/info actions are unchanged.
 
-Companion Plugin is a built-in split chip in Plugins, not Network Preferences.
-Its switch uses the existing saved enable setting and service policies. Tap the
+WearTAK Companion is a built-in split chip in Plugins, not Network Preferences,
+with the same icon as the ATAK-side WearTAK Companion plugin.
+Its switch uses the existing saved enable setting and service policies. Turning
+it off stops Companion BLE advertising, pending starts, refreshes, and its GATT
+connection; other BLE/beacon settings are independent and unchanged. Tap the
 row for connection status, phone-side connection-method guidance, and a link to
 normal Android Bluetooth settings. Opening the link does not pair, reset, or
 enable Bluetooth automatically. Team Lead EUD Priority is a disabled

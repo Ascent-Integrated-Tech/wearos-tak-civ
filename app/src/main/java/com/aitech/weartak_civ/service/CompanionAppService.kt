@@ -1016,13 +1016,18 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
         Log.d(TAG, "CompanionAppService onDestroy()")
+        // Fence late GATT callbacks and queued starts before tearing down the transport.
+        synchronized(advertisingLock) {
+            serviceJob.cancel()
+            stopAdvertising()
+        }
         synchronized(phoneManagementLease) {
             advanceCompanionGeneration()
             phoneManagementLease.stop()
             repo.setPhoneManagementSessionActive(false)
         }
 
-        // 1) Update app-level state FIRST (avoid stale SERVICES_READY in repo)
+        // 1) Update app-level state (avoid stale SERVICES_READY in repo)
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTING)
         notificationsEnabled = false
         negotiatedMtu = DEFAULT_ATT_MTU
@@ -1033,11 +1038,9 @@ class CompanionAppService : Service() {
         locationDiagnosticFrames.close()
         stopLocationDiagnosticsSession("service stopped")
         gatewayIncoming.close()
-        serviceJob.cancel()
 
-        // 3) Stop bond monitoring, advertising + close the server + force disconnect
+        // 3) Stop bond monitoring + close the server + force disconnect
         unregisterBondReceiver()
-        stopAdvertising()
         closeGattServer() // should cancel connection + close server
 
         // 4) Finalize state
@@ -1117,7 +1120,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(Manifest.permission.BLUETOOTH_ADVERTISE)
     private fun startAdvertising(): Unit = synchronized(advertisingLock) {
         Log.d(TAG, "startAdvertising(): advertising=$advertising pending=$advertisingStartPending connectedDevice=${connectedDevice?.address}")
-        if (connectedDevice != null) return
+        if (!serviceJob.isActive || connectedDevice != null) return
 
         if (advertiser == null) {
             advertiser = bluetoothAdapter?.bluetoothLeAdvertiser
@@ -1197,7 +1200,7 @@ class CompanionAppService : Service() {
     // incomplete inbound connection), so periodically re-create it while no central is connected.
     @SuppressLint("MissingPermission")
     private fun refreshIdleAdvertising(): Unit = synchronized(advertisingLock) {
-        if (connectedDevice != null || !(advertising || advertisingStartPending)) return
+        if (!serviceJob.isActive || connectedDevice != null || !(advertising || advertisingStartPending)) return
         if (bluetoothAdapter?.isEnabled != true) {
             scheduleAdvertisingRefresh()
             return
@@ -1219,8 +1222,8 @@ class CompanionAppService : Service() {
 
     private val advertiseCallback = object : AdvertiseCallback() {
         override fun onStartSuccess(settingsInEffect: AdvertiseSettings?): Unit = synchronized(advertisingLock) {
-            Log.d(TAG, "Companion BLE advertising started")
             if (!advertisingStartPending) return
+            Log.d(TAG, "Companion BLE advertising started")
             advertisingStartPending = false
             advertising = true
         }

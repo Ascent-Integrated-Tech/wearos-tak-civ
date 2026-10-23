@@ -86,9 +86,12 @@ class CompanionPluginUiTest {
         compose.onNode(isToggleable()).assertIsOn()
         compose.runOnIdle { assertEquals(listOf(true), toggles) }
         compose.onNodeWithText("Waiting for phone").assertIsDisplayed()
-        compose.onNodeWithText("Companion Plugin").performClick()
+        compose.onNode(isToggleable()).performClick().assertIsOff()
+        compose.onNodeWithText("Off").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(listOf(true, false), toggles) }
+        compose.onNodeWithText("WearTAK Companion").assertIsDisplayed().performClick()
         compose.onNodeWithText("Choose connection method in the phone companion app.").assertExists()
-        compose.runOnIdle { assertEquals(listOf(true), toggles) }
+        compose.runOnIdle { assertEquals(listOf(true, false), toggles) }
     }
 
     @Test fun detailsHasDisabledPriorityAndNormalBluetoothSettingsLink() {
@@ -133,6 +136,17 @@ class CompanionPluginUiTest {
         every { context.checkPermission(any(), any(), any()) } returns android.content.pm.PackageManager.PERMISSION_GRANTED
         every { context.getSystemService(BluetoothManager::class.java) } returns null
         assertEquals(CompanionBluetoothState.UNAVAILABLE, readCompanionBluetoothState(context))
+    }
+
+    @Test
+    @Config(qualifiers = "w227dp-h227dp-round")
+    fun largerRoundChipShowsCompanionNameAndToggle() {
+        compose.setContent {
+            CompanionPluginChip(true, "Waiting for phone", onToggle = {}, onDetails = {})
+        }
+        compose.onNodeWithText("WearTAK Companion").assertIsDisplayed()
+        compose.onNodeWithText("Waiting for phone").assertIsDisplayed()
+        compose.onNode(isToggleable()).assertIsOn()
     }
 
     @Test

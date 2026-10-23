@@ -37,7 +37,7 @@
     <string name="service_on_off">Service ON/OFF</string>
     <string name="biometrics">Biometrics</string>
     <string name="ditto">Ditto Edge Sync</string>
-    <string name="companion_app" translatable="false">Companion Plugin</string>
+    <string name="companion_app" translatable="false">WearTAK Companion</string>
     <string name="companion_status_off">Off</string>
     <string name="companion_status_bluetooth_off">Bluetooth off</string>
     <string name="companion_status_permission">Permissions required</string>

@@ -3,12 +3,17 @@ package com.aitech.weartak_civ.service
 import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
+import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattServer
+import android.bluetooth.BluetoothGattServerCallback
+import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.AdvertiseCallback
 import android.bluetooth.le.AdvertiseData
 import android.bluetooth.le.AdvertiseSettings
 import android.bluetooth.le.BluetoothLeAdvertiser
 import android.os.Looper
 import com.aitech.weartak_civ.data.CompanionAppRepository
+import com.aitech.weartak_civ.data.DataRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -18,6 +23,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Robolectric
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import java.time.Duration
@@ -26,7 +32,7 @@ import java.util.UUID
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class CompanionAdvertisingRecoveryTest {
-    private val service = CompanionAppService()
+    private val service = Robolectric.buildService(CompanionAppService::class.java).get()
     private val adapter = mockk<BluetoothAdapter>(relaxed = true)
     private val advertiser = mockk<BluetoothLeAdvertiser>(relaxed = true)
     private val cap = mockk<CompanionAppRepository>(relaxed = true)
@@ -38,6 +44,8 @@ class CompanionAdvertisingRecoveryTest {
         inject("bluetoothAdapter", adapter)
         inject("advertiser", advertiser)
         inject("capRepo\$delegate", lazyOf(cap))
+        inject("repo\$delegate", lazyOf(mockk<DataRepository>(relaxed = true)))
+        inject("locationDiagnostics\$delegate", lazyOf(mockk<BondedLocationDiagnostics>(relaxed = true)))
     }
 
     @Test fun concurrentStartsBeforeCallbackIssueOneAdvertiseRequest() {
@@ -94,6 +102,41 @@ class CompanionAdvertisingRecoveryTest {
         startAdvertising()
 
         verifyStarts(2)
+    }
+
+    @Test fun destroyedServiceRejectsQueuedStartAndRefresh() {
+        startAdvertising()
+        service.onDestroy()
+
+        callback().onStartSuccess(null)
+        callback().onStartFailure(AdvertiseCallback.ADVERTISE_FAILED_ALREADY_STARTED)
+        startAdvertising()
+        idle(61)
+
+        verify(exactly = 1) { advertiser.stopAdvertising(callback()) }
+        verifyStarts(1)
+    }
+
+    @Test fun destroyedServiceRejectsLateDisconnectAndConnectionError() {
+        val server = mockk<BluetoothGattServer>(relaxed = true)
+        inject("gattServer", server)
+        startAdvertising()
+        callback().onStartSuccess(null)
+        val peer = mockk<BluetoothDevice>(relaxed = true)
+        inject("connectedDevice", peer)
+        service.onDestroy()
+        val gattCallback = CompanionAppService::class.java.getDeclaredField("gattServerCallback").run {
+            isAccessible = true
+            get(service) as BluetoothGattServerCallback
+        }
+
+        gattCallback.onConnectionStateChange(peer, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_DISCONNECTED)
+        gattCallback.onConnectionStateChange(peer, BluetoothGatt.GATT_FAILURE, BluetoothProfile.STATE_DISCONNECTED)
+        idle(61)
+
+        verify(exactly = 1) { server.close() }
+        verify(exactly = 1) { server.cancelConnection(peer) }
+        verifyStarts(1)
     }
 
     @Test fun lowLatencyWindowFallsBackToBalancedAfterTwoMinutes() {

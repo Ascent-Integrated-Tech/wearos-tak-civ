@@ -22,9 +22,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
@@ -104,6 +107,13 @@ internal fun companionPluginStatus(enabled: Boolean): String {
 @Composable
 internal fun CompanionPluginChip(enabled: Boolean, status: String, onToggle: (Boolean) -> Unit, onDetails: () -> Unit) {
     WearTAKSplitToggleChip(
+        appIcon = {
+            Image(
+                painter = painterResource(R.drawable.weartak_companion_plugin),
+                contentDescription = null,
+                modifier = Modifier.padding(end = 4.dp).size(24.dp)
+            )
+        },
         title = stringResource(R.string.companion_app),
         label = status,
         checked = enabled,
