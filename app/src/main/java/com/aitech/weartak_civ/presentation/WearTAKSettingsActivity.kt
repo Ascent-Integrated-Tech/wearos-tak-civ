@@ -2146,14 +2146,144 @@ fun WearTAKSettingsNav(
         }
 
         composable("chat_command_callsigns") {
-            WearTAKStringEntryPage(
-                navController = navController,
-                item = chatCommandCallsigns.joinToString(","),
-                label = stringResource(R.string.chat_command_callsigns),
-                confirmFunction = {
-                    settingsVm.storeChatCommandCallsigns(ChatCommandAuthorizer.parseAllowList(it))
-                }
+            var showAddDialog by rememberSaveable { mutableStateOf(false) }
+            var newCallsign by rememberSaveable { mutableStateOf("") }
+            var callsignError by rememberSaveable { mutableStateOf<String?>(null) }
+            val sortedCallsigns = ChatCommandAuthorizer.sortedAllowList(chatCommandCallsigns)
+
+            WearTAKPageWithBackArrow(
+                title = stringResource(R.string.chat_command_callsigns),
+                columnContent = {
+                    if (sortedCallsigns.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.no_chat_command_callsigns),
+                                modifier = Modifier.padding(8.dp),
+                                textAlign = TextAlign.Center
+                            )
+                        }
+                    } else {
+                        items(
+                            count = sortedCallsigns.size,
+                            key = { index -> sortedCallsigns[index] }
+                        ) { index ->
+                            val callsign = sortedCallsigns[index]
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(Color.DarkGray, RoundedCornerShape(24.dp))
+                                    .padding(start = 16.dp, end = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = callsign,
+                                    modifier = Modifier.weight(1f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                IconButton(
+                                    onClick = {
+                                        settingsVm.storeChatCommandCallsigns(
+                                            ChatCommandAuthorizer.sortedAllowList(
+                                                chatCommandCallsigns.filterNot {
+                                                    ChatCommandAuthorizer.normalize(it) ==
+                                                        ChatCommandAuthorizer.normalize(callsign)
+                                                }
+                                            )
+                                        )
+                                    }
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = stringResource(R.string.remove)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    item {
+                        Chip(
+                            onClick = {
+                                newCallsign = ""
+                                callsignError = null
+                                showAddDialog = true
+                            },
+                            label = { Text(stringResource(R.string.add_callsign)) },
+                            icon = { Icon(Icons.Filled.Add, contentDescription = null) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ChipDefaults.chipColors(
+                                backgroundColor = Color.DarkGray,
+                                contentColor = Color.White
+                            )
+                        )
+                    }
+                },
+                navController = navController
             )
+
+            if (showAddDialog) {
+                AlertDialog(
+                    containerColor = colors.background,
+                    onDismissRequest = { showAddDialog = false },
+                    title = { Text(stringResource(R.string.add_callsign)) },
+                    text = {
+                        Column {
+                            OutlinedTextField(
+                                value = newCallsign,
+                                onValueChange = {
+                                    newCallsign = it
+                                    callsignError = null
+                                },
+                                singleLine = true,
+                                label = { Text(stringResource(R.string.callsign)) },
+                                keyboardOptions = KeyboardOptions(
+                                    keyboardType = KeyboardType.Ascii,
+                                    imeAction = ImeAction.Done
+                                ),
+                                isError = callsignError != null
+                            )
+                            callsignError?.let { error ->
+                                Text(
+                                    text = error,
+                                    color = Color.Red,
+                                    modifier = Modifier.padding(top = 4.dp)
+                                )
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                val callsign = ChatCommandAuthorizer.validatedCallsign(newCallsign)
+                                when {
+                                    callsign == null -> {
+                                        callsignError = getString(context, R.string.invalid_chat_command_callsign)
+                                    }
+                                    chatCommandCallsigns.any {
+                                        ChatCommandAuthorizer.normalize(it) ==
+                                            ChatCommandAuthorizer.normalize(callsign)
+                                    } -> {
+                                        callsignError = getString(context, R.string.duplicate_chat_command_callsign)
+                                    }
+                                    else -> {
+                                        settingsVm.storeChatCommandCallsigns(
+                                            ChatCommandAuthorizer.sortedAllowList(chatCommandCallsigns + callsign)
+                                        )
+                                        showAddDialog = false
+                                    }
+                                }
+                            }
+                        ) {
+                            Text(stringResource(R.string.add_callsign))
+                        }
+                    },
+                    dismissButton = {
+                        Button(onClick = { showAddDialog = false }) {
+                            Text(stringResource(R.string.cancel))
+                        }
+                    }
+                )
+            }
         }
         composable("sms_number_list"){
             val focusManager = LocalFocusManager.current

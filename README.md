@@ -848,7 +848,7 @@ Asynchronous repository failures are logged; cancellation is not treated as an e
 
 ### WEARTAK-130: chat commands
 
-Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. Only direct messages from callsigns in **Allowed Callsigns** (comma separated, case-insensitive) are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
+Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. Only direct messages from allowed callsigns are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
 
 TAK-server and Wi-Fi multicast receive already share the same command runtime and
 recipient checks. A server is not required for multicast commands. After a reset,
