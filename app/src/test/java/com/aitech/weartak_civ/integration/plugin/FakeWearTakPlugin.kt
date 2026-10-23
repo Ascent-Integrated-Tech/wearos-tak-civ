@@ -16,6 +16,7 @@ import com.weartak.plugin.sdk.model.SettingsApplyResultParcel
 import com.weartak.plugin.sdk.model.SettingsSchemaParcel
 import com.weartak.plugin.sdk.validation.SettingsApplyValidator
 import com.weartak.plugin.sdk.v2.aidl.IWearTakPluginHostControlV2
+import com.weartak.plugin.sdk.v3.aidl.IWearTakPluginHostControlV3
 
 /**
  * Minimal in-process [IWearTakPlugin] for host bind/lifecycle tests (no plugin APK).
@@ -33,6 +34,8 @@ class FakeWearTakPlugin(
     var initializePluginCalls = 0
         private set
     var initializePluginV2Calls = 0
+        private set
+    var initializePluginV3Calls = 0
         private set
     var lastInit: com.weartak.plugin.sdk.model.PluginInitParcel? = null
         private set
@@ -69,6 +72,17 @@ class FakeWearTakPlugin(
         initializePluginV2Calls++
         lastInit = init
         lifecycleCalls += "initializePluginV2"
+    }
+
+    override fun initializePluginV3(
+        init: com.weartak.plugin.sdk.model.PluginInitParcel?,
+        control: IWearTakPluginControl?,
+        controlV2: IWearTakPluginHostControlV2?,
+        controlV3: IWearTakPluginHostControlV3?,
+    ) {
+        initializePluginV3Calls++
+        lastInit = init
+        lifecycleCalls += "initializePluginV3"
     }
 
     override fun startPlugin() {

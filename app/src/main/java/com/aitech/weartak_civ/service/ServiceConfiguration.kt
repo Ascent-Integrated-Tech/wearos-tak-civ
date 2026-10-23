@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
@@ -37,7 +38,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 class ServiceConfiguration(
     private val context: Context,
-    private val dataRepository: DataRepository
+    private val dataRepository: DataRepository,
+    private val audioCaptureRepository: AudioCaptureRepository,
 ) {
     private val TAG = "WearTAK-ServiceConfig"
 
@@ -88,9 +90,10 @@ class ServiceConfiguration(
         ServiceType.BLOOD_HOUND -> dataRepository.getEnableBloodhoundCompassService.distinctUntilChanged()
         ServiceType.AUDIO_CAP -> combine(
             dataRepository.getEnableOnnxGunshotService.distinctUntilChanged(),
-            dataRepository.getEnableOnnxUasService.distinctUntilChanged()
-        ) { gunshotOn, uasOn ->
-            gunshotOn || uasOn
+            dataRepository.getEnableOnnxUasService.distinctUntilChanged(),
+            audioCaptureRepository.activeConsumers,
+        ) { gunshotOn, uasOn, consumers ->
+            gunshotOn || uasOn || consumers.isNotEmpty()
         }.distinctUntilChanged()
         ServiceType.ONNX_GUNSHOT -> dataRepository.getEnableOnnxGunshotService.distinctUntilChanged()
         ServiceType.ONNX_UAS -> dataRepository.getEnableOnnxUasService.distinctUntilChanged()
