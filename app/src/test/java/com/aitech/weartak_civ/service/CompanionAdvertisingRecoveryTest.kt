@@ -12,6 +12,8 @@ import com.aitech.weartak_civ.data.CompanionAppRepository
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -94,6 +96,26 @@ class CompanionAdvertisingRecoveryTest {
         verifyStarts(2)
     }
 
+    @Test fun lowLatencyWindowFallsBackToBalancedAfterTwoMinutes() {
+        invoke("openLowLatencyAdvertisingWindow")
+        startAdvertising()
+        callback().onStartSuccess(null)
+
+        idle(119)
+        assertEquals(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY, startedModes().last())
+        callback().onStartSuccess(null)
+
+        idle(2)
+        assertEquals(AdvertiseSettings.ADVERTISE_MODE_BALANCED, startedModes().last())
+        assertTrue(startedModes().dropLast(1).all { it == AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY })
+    }
+
+    @Test fun advertisingOutsideWindowUsesBalanced() {
+        startAdvertising()
+
+        assertEquals(listOf(AdvertiseSettings.ADVERTISE_MODE_BALANCED), startedModes())
+    }
+
     @Test fun refreshSkipsWhileBluetoothIsOff() {
         startAdvertising()
         callback().onStartSuccess(null)
@@ -105,6 +127,12 @@ class CompanionAdvertisingRecoveryTest {
     }
 
     private fun startAdvertising() = invoke("startAdvertising")
+
+    private fun startedModes(): List<Int> {
+        val settings = mutableListOf<AdvertiseSettings>()
+        verify { advertiser.startAdvertising(capture(settings), any<AdvertiseData>(), any<AdvertiseCallback>()) }
+        return settings.map { it.mode }
+    }
 
     private fun verifyStarts(count: Int) = verify(exactly = count) {
         advertiser.startAdvertising(any<AdvertiseSettings>(), any<AdvertiseData>(), any<AdvertiseCallback>())
