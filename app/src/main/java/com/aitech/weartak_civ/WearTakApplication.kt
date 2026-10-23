@@ -38,7 +38,9 @@ import com.aitech.weartak_civ.data.secure.takserver.TakServerEncryptedDataStore
 import com.aitech.weartak_civ.data.secure.takserver.TakServerSecretsRepository
 import com.aitech.weartak_civ.integration.plugin.PluginRepository
 import com.aitech.weartak_civ.manager.NetworkManager
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
+import com.aitech.weartak_civ.presentation.ChatActivity
+import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.presentation.PhysioAlertsActivity
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CompletableDeferred
@@ -78,11 +80,19 @@ class WearTakApplication : Application() {
 
     companion object {
         val TAG = "WearTAK-Application"
+
+        internal fun installProcessRepositories(application: WearTakApplication) {
+            MainActivity.dataRepository = application.repo
+            MainActivity.bhRepo = application.bhRepo
+            MainActivity.sitxRepo = application.sitxRepo
+            ChatActivity.dataRepository = application.repo
+            PhysioAlertsActivity.dataRepository = application.repo
+        }
     }
 
     override fun onCreate() {
         super.onCreate()
-        device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
+        MainActivity.device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)
         bhRepo = BloodhoundRepository(applicationContext)
@@ -96,6 +106,7 @@ class WearTakApplication : Application() {
         gunshotOnnxRepo = GunshotOnnxRepository(applicationContext)
         uasOnnxRepo = UasOnnxRepository(applicationContext)
         sitxRepo = SitxSecretsRepository(SitxEncryptedDataStore(applicationContext))
+        installProcessRepositories(this)
 
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")

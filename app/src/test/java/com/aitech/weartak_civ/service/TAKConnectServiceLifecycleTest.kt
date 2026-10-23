@@ -218,6 +218,40 @@ class TAKConnectServiceLifecycleTest {
     }
 
     @Test
+    fun repeatedServiceStartKeepsAnExistingTakConnectionAttempt() = runBlocking {
+        val controller = createService()
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        val attempt = TAKConnectService.ConnectionAttempt(1L)
+        detail.runtime.generation = attempt.generation
+        detail.runtime.currentAttempt = attempt
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+
+        controller.get().connectToTakServers()
+
+        assertSame(attempt, detail.runtime.currentAttempt)
+        assertEquals(attempt.generation, detail.runtime.generation)
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT, detail.connectionStatus.get())
+    }
+
+    @Test
+    fun missionSyncRequiresAnActiveDirectTakConnection() {
+        val detail = TAKConnectService.TakServerDetail(
+            serverId, true, "Test", "tak.example.invalid", 8089, false,
+            "user", "password", null, null,
+        )
+
+        assertFalse(TAKConnectService.missionConnectionReady(detail))
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+        assertTrue(TAKConnectService.missionConnectionReady(detail))
+
+        companionConnected.value = true
+        assertFalse(TAKConnectService.missionConnectionReady(detail))
+        companionConnected.value = false
+        detail.isEnabled = false
+        assertFalse(TAKConnectService.missionConnectionReady(detail))
+    }
+
+    @Test
     fun destructionEndsActiveEnrollmentAndRecreationCanRetryWithoutStalePublication() = runBlocking {
         val first = createService()
         val started = CompletableDeferred<Unit>()

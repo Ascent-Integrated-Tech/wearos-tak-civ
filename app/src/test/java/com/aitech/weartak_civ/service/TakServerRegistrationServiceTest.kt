@@ -31,13 +31,9 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.ByteArrayInputStream
 import java.security.KeyStore
-import java.security.cert.X509Certificate
-import javax.net.ssl.KeyManagerFactory
 import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
-import javax.net.ssl.TrustManagerFactory
-import javax.net.ssl.X509TrustManager
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE, application = Application::class)
@@ -211,13 +207,8 @@ class TakServerRegistrationServiceTest {
             firstArg<KeyStore>().load(null, null)
             true
         }
-        every { TAKConnectService.findRootInChain(any()) } returns mockk<X509Certificate>(relaxed = true)
-        mockkStatic(KeyManagerFactory::class, TrustManagerFactory::class, SSLContext::class)
-        val keyManager = mockk<KeyManagerFactory>(relaxed = true)
-        every { KeyManagerFactory.getInstance(any<String>()) } returns keyManager
-        val trustManager = mockk<TrustManagerFactory>(relaxed = true)
-        every { TrustManagerFactory.getInstance(any<String>()) } returns trustManager
-        every { trustManager.trustManagers } returns arrayOf(mockk<X509TrustManager>(relaxed = true))
+        every { TAKConnectService.findRootInChain(any()) } returns null
+        mockkStatic(SSLContext::class)
         val sslContext = mockk<SSLContext>(relaxed = true)
         every { SSLContext.getInstance("TLSv1.3") } returns sslContext
         val socketFactory = mockk<SSLSocketFactory>()
