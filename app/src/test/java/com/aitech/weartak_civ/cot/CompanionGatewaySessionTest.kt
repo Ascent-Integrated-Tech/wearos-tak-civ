@@ -45,7 +45,8 @@ class CompanionGatewaySessionTest {
         session.negotiate(hello())
         session.confirm("session-1")
         for (xml in listOf(cot("a-f-G-U-C"), cot("a-f-G-E"), cot("a-h-G"),
-                cot("b-m-p-s-p-i"), emergencyCot(), chatCot())) {
+                cot("b-m-p-s-p-i"), cot("a-n-A-C-F"), cot("a-h-G-U-C"),
+                cot("a-s-S"), cot("a-a-G-X"), emergencyCot(), chatCot())) {
             val envelope = JSONObject(session.envelope(xml))
             assertEquals(xml, session.accepts(envelope))
             assertEquals("session-1", envelope.getString("session"))

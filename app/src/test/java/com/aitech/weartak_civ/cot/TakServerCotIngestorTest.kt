@@ -26,6 +26,23 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [34])
 class TakServerCotIngestorTest {
     @Test
+    fun genericAffiliationMarkersReachTheMapSinkFromEveryDirectSource() = runTest {
+        val sink = RecordingSink()
+        val ingestor = ingestor(sink)
+        for (source in listOf(SERVER_ID, "multicast:239.2.3.1:6969", "plugin:mesh")) {
+            for (type in listOf("a-n-A-C-F", "a-h-G-U-C", "a-s-S", "a-a-G-X")) {
+                val message = envelope(MARKER_XML.replace("type='a-h-G'", "type='$type'"), 102L)
+                    .copy(sourceServerId = source)
+                assertEquals(TakServerCotIngestResult.MARKER, ingestor.ingest(message))
+                assertEquals(type, sink.markers.last().first.type)
+                assertEquals(message, sink.markers.last().second)
+            }
+        }
+        assertEquals(12, sink.markers.size)
+        assertEquals(TakServerCotIngestResult.USER, ingestor.ingest(envelope(USER_XML, 103L)))
+    }
+
+    @Test
     fun phoneOnlyGateBlocksEveryDirectTypeBeforePluginCommandsOrPackagesAndResumesAfterDisconnect() = runTest {
         var connected = false
         val sink = RecordingSink()

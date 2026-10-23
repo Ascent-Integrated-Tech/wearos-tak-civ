@@ -14,6 +14,20 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class AtosCotModelsTest {
+    @Test fun tagTypeSelectsSymbolWithoutOverwritingPacketAffiliation() {
+        for (affiliation in listOf("f", "a", "h", "s", "j", "k", "n", "u", "p", "o")) {
+            val parsed = AtosCotParser.parse("""
+                <event uid="aircraft" type="a-$affiliation-G-c">
+                    <point lat="35" lon="-78" hae="9999999"/>
+                    <detail><contact callsign="AIRCRAFT"/><__atos tag_type="Fixed Wing" color="Blue"></__atos></detail>
+                </event>
+            """.trimIndent())
+            val packet = (parsed as AtosCotParseResult.Success).packet
+            assertEquals("a-$affiliation-A-C-F", packet.toAtosMapMarkerOrNull()?.iconCotType)
+            assertEquals(9999999.0, packet.toAtosMapMarkerOrNull()?.hae)
+        }
+    }
+
     @Test
     fun toAtosMapMarkerPrefersAtosTagTypeWhenPacketCotTypeDisagrees() {
         val packet = AtosCotPacket(

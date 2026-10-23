@@ -57,6 +57,8 @@ import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.cot.CotAffiliation
+import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.ipc.AtosMapMarkerResult
 import com.aitech.weartak_civ.ipc.toAtosMapMarkerResult
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.team
@@ -418,7 +420,7 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
-                            "title" to JsonPrimitive(m.title.ellipsizeMarkerTitle()),
+                            "title" to JsonPrimitive(m.title.ifBlank { markerTextFromString(m.markerType) }.ellipsizeMarkerTitle()),
                             "markerType" to JsonPrimitive(m.markerType),
                             "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent),
                             "cotType" to JsonPrimitive(m.cotType.name),
@@ -453,22 +455,7 @@ data class MapMarkerItem(
 // Selects the gray icon used for cleared markers
 @Composable
 fun grayMarkerIconFromString(markerType: String): Painter {
-    val painter: Painter = when (markerType) {
-        MarkerType.UNKNOWN.displayName -> painterResource(R.drawable.unknown_gray)
-        MarkerType.UNKNOWN.type -> painterResource(R.drawable.unknown_gray)
-        MarkerType.FRIENDLY.displayName -> painterResource(R.drawable.friendly_gray)
-        MarkerType.FRIENDLY.type -> painterResource(R.drawable.friendly_gray)
-        MarkerType.HOSTILE.displayName -> painterResource(R.drawable.hostile_gray)
-        MarkerType.HOSTILE.type -> painterResource(R.drawable.hostile_gray)
-        MarkerType.NEUTRAL.displayName -> painterResource(R.drawable.neutral_gray)
-        MarkerType.NEUTRAL.type -> painterResource(R.drawable.neutral_gray)
-        "b-m-p-s-p-i" -> painterResource(R.drawable.spi1_icon)
-        "a-f-A-M-F-Q", "a-u-A-M-F-Q", "a-h-A-M-F-Q" ->
-            painterResource(R.drawable.ic_track_uas_no_gps)
-        else ->  //TODO: Change to error icon
-            painterResource(R.drawable.unknown_gray)
-    }
-    return painter
+    return markerPainter(markerVisualSpec(markerType, cleared = true))
 }
 
 // Creates MapLibre symbol layers for dropped and received markers
@@ -584,28 +571,6 @@ data class ATOSItem(
     val hae: Double?
 )
 
-private data class AtosMarkerVisualSpec(
-    val gpsOnIcon: Int,
-    val gpsOffIcon: Int
-)
-
-// ATOS tag_type drives icon identity; each CoT type resolves to the corresponding watch drawable.
-private val atosMarkerVisualsByCotType = mapOf(
-    "a-f-G" to AtosMarkerVisualSpec(R.drawable.ic_track_pax, R.drawable.ic_pax_no_gps),
-    "a-f-G-U-C-I" to AtosMarkerVisualSpec(R.drawable.ic_track_pax, R.drawable.ic_pax_no_gps),
-    "a-f-G-A" to AtosMarkerVisualSpec(R.drawable.ic_track_hound, R.drawable.ic_track_hound_no_gps),
-    "a-f-G-U-C-I-I" to AtosMarkerVisualSpec(R.drawable.ic_track_veh, R.drawable.ic_track_veh_no_gps),
-    "a-g-G-E" to AtosMarkerVisualSpec(R.drawable.ic_track_equipment, R.drawable.ic_track_equipment_no_gps),
-    "a-f-G-U-S-M" to AtosMarkerVisualSpec(R.drawable.ic_track_medical, R.drawable.ic_track_medical_no_gps),
-    "a-f-G-E-W" to AtosMarkerVisualSpec(R.drawable.ic_track_weapon, R.drawable.ic_track_weapon_no_gps),
-    "a-f-G-c" to AtosMarkerVisualSpec(R.drawable.ic_track_custom, R.drawable.ic_track_custom_no_gps),
-    "a-f-A" to AtosMarkerVisualSpec(R.drawable.ic_track_bundle, R.drawable.ic_track_bundle_no_gps),
-    "a-f-S" to AtosMarkerVisualSpec(R.drawable.ic_track_boat, R.drawable.ic_track_boat_no_gps),
-    "a-f-A-C-F" to AtosMarkerVisualSpec(R.drawable.ic_track_fixed, R.drawable.ic_track_fixed_no_gps),
-    "a-f-A-C-H" to AtosMarkerVisualSpec(R.drawable.ic_track_rotary, R.drawable.ic_track_rotary_no_gps),
-    "a-f-A-M" to AtosMarkerVisualSpec(R.drawable.ic_track_uas, R.drawable.ic_track_uas_no_gps),
-)
-
 // Creates MapLibre symbol layers for ATOS tags
 @Composable
 fun ATOSTagsOnMap(
@@ -668,13 +633,6 @@ fun ATOSTagsOnMap(
     }
 }
 
-private fun atosMarkerVisualSpec(cotType: String?): AtosMarkerVisualSpec {
-    return atosMarkerVisualsByCotType[cotType] ?: AtosMarkerVisualSpec(
-        gpsOnIcon = R.drawable.ic_track_custom,
-        gpsOffIcon = R.drawable.ic_track_custom_no_gps
-    )
-}
-
 private fun atosMarkerColor(colorName: String?): Color {
     return when (colorName) {
         "White" -> Color(0xFFFFFFFF)
@@ -696,11 +654,12 @@ private fun atosMarkerColor(colorName: String?): Color {
 
 @Composable
 fun atosMarkerPainter(colorName: String?, iconType: String?, gpsOn: Boolean): Painter {
-    val visualSpec = remember(iconType) {
-        atosMarkerVisualSpec(iconType)
-    }
-    val drawableId = if (gpsOn) visualSpec.gpsOnIcon else visualSpec.gpsOffIcon
-    return tintedPainter(drawableId, atosMarkerColor(colorName))
+    val spec = markerVisualSpec(iconType.orEmpty(), cleared = !gpsOn, atos = true)
+    val affiliation = CotAffiliation.fromType(iconType.orEmpty())
+    // Friendly ATOS tags retain their configured team color and GPS-off silhouette.
+    val tint = if (affiliation == CotAffiliation.FRIENDLY ||
+        iconType == "a-g-G-E") atosMarkerColor(colorName) else Color(affiliation.argb)
+    return if (spec.tintArgb != null) tintedPainter(spec.icon, tint) else markerPainter(spec)
 }
 
 @Composable
@@ -787,7 +746,8 @@ fun UsersOnMap(
             sortKey = const(0),
             zOrder = const(SymbolZOrder.Source),
             filter = eq(get("type").asString(),const(type), c),
-            iconImage = switch(
+            iconImage = if (!CotMessageParser.isUserPositionType(type) ||
+                markerVisualSpec(type).tintArgb != null) image(markerIconFromString(type)) else switch(
                 condition(eq(get("team").asString(), const("White"), c), image(painterResource(R.drawable.user_white))),
                 condition(eq(get("team").asString(), const("Yellow"), c), image(painterResource(R.drawable.user_yellow))),
                 condition(eq(get("team").asString(), const("Orange"), c), image(painterResource(R.drawable.user_orange))),

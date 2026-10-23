@@ -9,6 +9,8 @@
 
 package com.aitech.weartak_civ.ipc
 
+import com.aitech.weartak_civ.cot.CotAffiliation
+
 data class AtosCotPacket(
     val version: String?,
     val uid: String?,
@@ -140,6 +142,12 @@ fun AtosCotPacket.toAtosMapMarkerResult(): AtosMapMarkerResult {
     val markerLon = markerPoint.lon ?: return AtosMapMarkerResult.Failure("missing point.lon")
     // ATOS tag_type is the most stable source for local icon selection; packet type is fallback only.
     val resolvedIconCotType = AtosReferenceTables.resolveTagTypeToCotType(atosDetail?.tagType)
+        ?.let { tagType ->
+            val eventType = type?.trim()
+            if (eventType != null && CotAffiliation.isAtomType(eventType)) {
+                "a-${eventType[2]}-${tagType.substring(4)}"
+            } else tagType
+        }
         ?: type?.trim()?.takeIf { it.isNotEmpty() }
         ?: return AtosMapMarkerResult.Failure("missing renderable type and no tag_type fallback")
 

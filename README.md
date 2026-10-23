@@ -4,6 +4,23 @@ WearTAK-CIV is a standalone Wear OS application that connects a watch to the Tea
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
+### Received CoT marker symbols
+
+TAK and Companion marker ingress accept generic `a-<affiliation>-...` atom types,
+not only the watch's four drop-marker types. Friendly/assumed friend (`f`, `a`),
+hostile/suspect/joker/faker (`h`, `s`, `j`, `k`), neutral (`n`), and
+unknown/pending/other (`u`, `p`, `o`) use the corresponding affiliation icon and
+label; unrecognized affiliations use Unknown. Callsigns remain the map labels.
+Existing PLI routing, coordinate bounds, source isolation, and stale/replay
+handling are unchanged.
+
+UAV and SPI symbols take precedence over generic frames. Fixed-wing, rotary-wing,
+surface/boat, and ground-vehicle hierarchies use the existing platform symbols,
+tinted by affiliation, in both marker lists and maps. Cleared markers retain gray
+variants. ATOS tag types still select their specific symbols and GPS-off variants
+without replacing the packet's affiliation. Friendly ATOS tags retain configured
+team colors; nonfriendly tags use affiliation colors.
+
 Configure Ditto Edge Sync under **Preferences > Tool Preferences > Plugins**. The switch enables or disables Ditto;
 tap the Ditto Edge Sync row to select Community or configure a custom PDL in Ditto Edge Sync Identity. The row subtitle shows
 Community or the saved custom PDL, truncated to fit. Ditto is off by default on fresh installs, and saved

@@ -23,14 +23,29 @@ class CotMessageParserTest {
     }
 
     @Test
-    fun parsesSupportedUavAffiliationsAsGenericMarkersAndStillRejectsUnsupportedTypes() {
-        listOf("a-f-A-M-F-Q", "a-u-A-M-F-Q", "a-h-A-M-F-Q").forEach { type ->
+    fun parsesGenericAtomsWithoutDiscardingTheirTypeOrCallsign() {
+        listOf("a-f-A-M-F-Q", "a-u-A-M-F-Q", "a-h-A-M-F-Q", "a-n-A-C-F",
+            "a-h-G-U-C", "a-a-G-X", "a-s-S", "a-j-G-E-V", "a-k-A-C-H",
+            "a-p-G", "a-o-G", "a-f-A-Z-unsupported").forEach { type ->
             val uas = CotMessageParser.parseMarkerOrNull(MARKER_XML.replace("type='a-h-G'", "type='$type'"))
             assertNotNull(uas)
             assertEquals(type, uas!!.type)
+            assertEquals("Target", uas.detail.markerCallsign)
             assertTrue(CotMessageParser.isMarkerType(type))
         }
-        assertFalse(CotMessageParser.isMarkerType("a-f-A-Z-unsupported"))
+        listOf("a-", "a-n", "a--G", "a-n-", "a-n--A", "a-n-A ", "b-n-A", "a-n-A/garbage")
+            .forEach { assertFalse(it, CotMessageParser.isMarkerType(it)) }
+    }
+
+    @Test
+    fun genericAtomsRetainCoordinateTimeAndStaleValidation() {
+        val xml = MARKER_XML.replace("type='a-h-G'", "type='a-n-A-C-F'")
+        assertNull(CotMessageParser.parseMarkerOrNull(xml.replace("lat='41.0'", "lat='91'")))
+        assertNull(CotMessageParser.parseMarkerOrNull(xml.replace("lon='-87.0'", "lon='181'")))
+        assertNull(CotMessageParser.parseMarkerOrNull(xml.replace("hae='100.0'", "hae='NaN'")))
+        assertNull(CotMessageParser.parseMarkerOrNull(xml.replace(Regex("stale='[^']*'"), "stale='bad'")))
+        assertEquals(CotMessageParser.parseMarkerOrNull(MARKER_XML)?.stale,
+            CotMessageParser.parseMarkerOrNull(xml)?.stale)
     }
 
     @Test
