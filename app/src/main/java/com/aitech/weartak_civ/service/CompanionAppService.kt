@@ -620,6 +620,7 @@ class CompanionAppService : Service() {
     private val watchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val HANDSHAKE_TIMEOUT_MS = 4_000L
     private val ADVERTISING_REFRESH_MS = 30_000L
+    private val LOW_LATENCY_ADVERTISING_MS = 120_000L
 
     @SuppressLint("MissingPermission")
     private fun armHandshakeWatchdog(reason: String) {
@@ -660,6 +661,7 @@ class CompanionAppService : Service() {
         initBle()
 
         // Resume advertising (if available)
+        openLowLatencyAdvertisingWindow()
         startAdvertising()
 
         capRepo.updateBleConnectionState(NOT_CONNECTED)
@@ -800,6 +802,7 @@ class CompanionAppService : Service() {
         clearPendingQueue()
 
         capRepo.updateBleConnectionState(NOT_CONNECTED)
+        openLowLatencyAdvertisingWindow()
 
         // 2) Foreground FIRST (keeps process alive during BLE init)
         startForegroundServiceCompat(
@@ -1132,11 +1135,15 @@ class CompanionAppService : Service() {
         }
 
         advertisingStartPending = true
+        val lowLatency = lowLatencyAdvertisingRemainingMs() > 0
         scheduleAdvertisingRefresh()
         capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ADVERTISING)
 
         val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_BALANCED)
+            .setAdvertiseMode(
+                if (lowLatency) AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY
+                else AdvertiseSettings.ADVERTISE_MODE_BALANCED
+            )
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_MEDIUM)
             .setConnectable(true)
             .build()
@@ -1169,8 +1176,22 @@ class CompanionAppService : Service() {
 
     private fun scheduleAdvertisingRefresh() {
         advertisingRefreshHandler.removeCallbacks(advertisingRefresh)
-        advertisingRefreshHandler.postDelayed(advertisingRefresh, ADVERTISING_REFRESH_MS)
+        val lowLatencyRemaining = lowLatencyAdvertisingRemainingMs()
+        val delay = if (lowLatencyRemaining > 0) minOf(ADVERTISING_REFRESH_MS, lowLatencyRemaining)
+        else ADVERTISING_REFRESH_MS
+        advertisingRefreshHandler.postDelayed(advertisingRefresh, delay)
     }
+
+    // Faster advertising briefly after service start or a disconnect, when a central is most likely
+    // reconnecting; the refresh then re-creates the set as BALANCED once the window ends.
+    @Volatile private var lowLatencyAdvertisingUntil: Long = 0L
+
+    private fun openLowLatencyAdvertisingWindow() {
+        lowLatencyAdvertisingUntil = android.os.SystemClock.elapsedRealtime() + LOW_LATENCY_ADVERTISING_MS
+    }
+
+    private fun lowLatencyAdvertisingRemainingMs(): Long =
+        lowLatencyAdvertisingUntil - android.os.SystemClock.elapsedRealtime()
 
     // Legacy advertising reports no stop when the controller ends the set (for example on an
     // incomplete inbound connection), so periodically re-create it while no central is connected.
@@ -1261,6 +1282,7 @@ class CompanionAppService : Service() {
                 capRepo.updateBleConnectionState(
                     CompanionAppRepository.BleConnectionState.CONNECTION_FAILED
                 )
+                openLowLatencyAdvertisingWindow()
                 restartAdvertisingSafely()
                 return
             }
@@ -1309,6 +1331,7 @@ class CompanionAppService : Service() {
 
                     clearPendingQueue()
 
+                    openLowLatencyAdvertisingWindow()
                     capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.DISCONNECTED)
                     startAdvertising()
                     disarmHandshakeWatchdog()
