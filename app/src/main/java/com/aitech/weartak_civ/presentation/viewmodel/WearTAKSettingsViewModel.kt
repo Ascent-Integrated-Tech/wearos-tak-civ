@@ -909,6 +909,17 @@ fun displaySitxGroupDialog(
             initialValue = DEFAULT_ENABLE_CHAT_COMMANDS
         )
 
+    val savedBondedLocationDiagnosticsEnabled: StateFlow<Boolean> =
+        dataRepository.getBondedLocationDiagnosticsEnabled.stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = false
+        )
+
+    fun storeBondedLocationDiagnosticsEnabled(enabled: Boolean) {
+        viewModelScope.launch { dataRepository.storeBondedLocationDiagnosticsEnabled(enabled) }
+    }
+
     fun storeEnableChatCommands(enable: Boolean) {
         viewModelScope.launch { dataRepository.storeEnableChatCommands(enable) }
     }

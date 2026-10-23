@@ -7,6 +7,9 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Before
@@ -82,6 +85,31 @@ class ReactiveServiceStartOrderTest {
         desire(ServiceType.TAK_CONNECT)
 
         assertEquals(listOf(TAKConnectService::class.java.name), reconcile())
+    }
+
+    @Test fun disablingRunningCompanionStopsOnlyCompanionNotBeacon() {
+        registry.setServiceRunning(ServiceType.COMPANION_APP, true)
+        registry.setServiceRunning(ServiceType.BLE_BEACON, true)
+        desire(ServiceType.BLE_BEACON)
+
+        assertEquals(emptyList<String>(), reconcile())
+        val shadow = shadowOf(app)
+        val stopped = generateSequence { shadow.nextStoppedService }.map { it.component!!.className }.toList()
+        assertEquals(listOf(CompanionAppService::class.java.name), stopped)
+    }
+
+    @Test fun savedCompanionToggleControlsItsOwnFlowIndependentlyOfBeacon() = runBlocking {
+        val enabled = MutableStateFlow(false)
+        val repo = mockk<DataRepository>(relaxed = true)
+        every { repo.getEnableCompanionAppService } returns enabled
+        every { repo.getEnableBleBeaconService } returns MutableStateFlow(true)
+        val config = ServiceConfiguration(app, repo)
+
+        for (value in listOf(false, true, false)) {
+            enabled.value = value
+            assertEquals(value, config.getServiceEnabledFlow(ServiceType.COMPANION_APP).first())
+            assertEquals(true, config.getServiceEnabledFlow(ServiceType.BLE_BEACON).first())
+        }
     }
 
     private fun desire(vararg types: ServiceType) {
