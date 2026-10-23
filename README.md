@@ -684,29 +684,53 @@ existed restore only what they saved: reporting and the current identity and ser
 
 ### WEARTAK-66: Interaction-triggered PLI refresh and identity updates
 
-Changing callsign, team, or role (but not saving the same value), opening/resuming the map,
-sending chat, and activating or clearing manual/physiological alerts request a new watch
-location and then rebroadcast own PLI through the existing configured dispatcher, including
-the companion when available. Alerts (including cancellations) and chat retain their
-baseline send/queue behavior: existing alert location-freshness protections are unchanged,
-and the additional PLI request adds no new waiting to those messages. A qualifying new
-interaction fix also releases queued alerts using the existing dispatcher. The separate
-extra PLI requires a new fix.
+Changing callsign, team, or role (but not saving the same value), opening/resuming or
+recentering the map, opening own-position/distance details, sending chat, dropping/updating a point at self, starting Bloodhound
+or route navigation, and activating or clearing manual/physiological alerts request a new
+watch location. Actions do not wait for GPS: existing coordinates are used immediately
+where available. Explicit-coordinate point drops do not move when the watch moves.
+A self-point receives one same-UID location update if a qualifying fix arrives within
+5 seconds; deleted points are never recreated. Map opening/recentering follows that fix
+without overriding an explicit target/route camera focus. Navigation vectors follow the
+normal location flow.
 
-Identity changes also publish promptly using an already-usable watch fix no more than
-3 seconds old, if one exists. Settings saved together coalesce over 150 milliseconds,
-and PLI contains the latest persisted callsign, role, and team. This fast identity
-announcement keeps the original fix timestamp; it does not pretend the position was
-just measured. A concurrent new GPS request still publishes a qualifying new fix.
-Without an already-fresh fix, identity publication waits for GPS (up to the bounded
-request timeout), not the periodic reporting interval.
+Identity changes publish promptly using the best available valid fix while requesting a
+new one. An old fix keeps its timestamp in `weartak_location@timeMillis`; the identity
+announcement itself has a current event time so servers do not discard it as expired.
+Settings saved together coalesce over 150
+milliseconds. PLI contains the latest persisted callsign, role and team. Without any fix,
+identity PLI waits for the first usable position rather than inventing coordinates.
 
-Overlapping interactions share a high-accuracy acquisition bounded to 15 seconds. The fix
+Overlapping interactions share a high-accuracy acquisition bounded to 5 seconds. The fix
 must be usable and measured after the latest interaction; cached coordinates are not
 re-stamped as a fresh fix. PLI uses persisted identity and is sent as soon as a qualifying
 fix arrives, not literally instantly. Missing permission, provider failure, or no fix ends
 the refresh without sending an extra PLI. This does not change periodic reporting,
 reconnect behavior, or enable services/transports that are disabled.
+
+Manual and physiological emergencies send immediately with the newest available valid
+fix, even when it is older than the former 3-second cutoff. The last valid fix is retained
+in memory against invalid/out-of-order callbacks. The original fix time is exposed as
+`detail/weartak_location@timeMillis` (Unix milliseconds) and remains unchanged in the
+Companion snapshot. For a fix older than 3 seconds, CE grows by at least 5 metres per
+second (or the recorded speed if greater), capped at the unknown-error sentinel
+9,999,999 metres; missing/invalid accuracy is unknown, never zero. This is a conservative
+movement estimate, not a guarantee that an old fix is current.
+
+If there has been no valid fix, no positional emergency is generated. Instead an immediate
+GeoChat says `EMERGENCY from <callsign>: location unavailable, acquiring GPS`; the
+positional emergency is queued until a real fix arrives. Clearing before that fix removes
+the queued activation and sends a cancellation chat rather than replaying a cancelled
+alert later. GeoChat's standard non-positional point placeholder is not an emergency
+map location. SMS behavior remains independent.
+
+While an alert is active, new location fixes send same-UID emergency position updates;
+cleared alerts stop updating. A bounded in-memory receipt cache (1,024 uid/state/route
+entries) suppresses repeated submissions with the same fix to each configured route,
+including Companion/Gateway. A new fix, cancellation, or previously unused route is not
+suppressed. Receipts record local transport acceptance, not remote-server acknowledgement.
+Independent routes can still converge on the same downstream server; no watch-side
+dedupe can identify that topology. There is no special repeated-send loop for 911.
 
 Configure the TAK endpoint and identity/certificates in the app before attempting to connect. Service enablement is persisted in `DataRepository` and centrally evaluated by `ReactiveServiceManager` and `ServiceConfiguration`; a service will run only when its setting, permissions, and prerequisite conditions are satisfied.
 

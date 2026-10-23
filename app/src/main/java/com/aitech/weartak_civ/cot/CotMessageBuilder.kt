@@ -48,6 +48,9 @@ object CotMessageBuilder {
         )
         val detail =
             CotDetailBuilder.takv() + status +
+                    (location?.takeIf { time.time - it.timeMillis > 3_000L }?.let {
+                        CotXml.element("weartak_location", listOf("timeMillis" to it.timeMillis))
+                    } ?: "") +
                     "<remarks>$remarks</remarks>$batdok$biometrics" +
                     CotXml.element(
                         "contact",
@@ -78,22 +81,15 @@ object CotMessageBuilder {
     }
 
     fun emergency(snapshot: DataRepository.EmergencyEventSnapshot): String {
-        val location = snapshot.location?.takeIf {
+        val location = requireNotNull(snapshot.location?.takeIf {
             it.lat.isFinite() && it.lat in -90.0..90.0 &&
                 it.lon.isFinite() && it.lon in -180.0..180.0
-        }
-        val point = if (location == null) {
-            listOf(
-                "lat" to 0.0, "lon" to 0.0, "hae" to 0.0,
-                "ce" to UNKNOWN_LOCATION_ERROR_METERS, "le" to UNKNOWN_LOCATION_ERROR_METERS,
-            )
-        } else {
-            listOf(
+        }) { "Positional emergency requires a valid fix; send location-unavailable chat instead" }
+        val point = listOf(
                 "lat" to location.lat, "lon" to location.lon,
                 "hae" to (location.hae?.takeIf { it.isFinite() } ?: 0.0),
                 "ce" to normalizedError(location.ce), "le" to normalizedError(location.le),
-            )
-        }
+        )
         val physio = snapshot.physio?.data
         val standardType = StandardEmergencyType.fromDisplayName(snapshot.description)
         val alertBiometrics = CotXml.element(
@@ -113,7 +109,8 @@ object CotMessageBuilder {
                         CotXml.element("exert", content = rectifiedNumber(physio?.exertion, "%.2f", zeroIsInvalid = false))
             )
         )
-        val detail = if (snapshot.alertState == DataRepository.AlertState.CANCEL) {
+        val locationDetail = CotXml.element("weartak_location", listOf("timeMillis" to location.timeMillis))
+        val detail = locationDetail + if (snapshot.alertState == DataRepository.AlertState.CANCEL) {
             alertBiometrics + CotXml.element("emergency", listOf("cancel" to "true"), snapshot.system.callsign)
         } else {
             alertBiometrics + CotXml.element("link", listOf("uid" to snapshot.system.deviceId, "type" to "a-f-G-U-C", "relation" to "p-p")) +

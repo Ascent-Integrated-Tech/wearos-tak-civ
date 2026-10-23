@@ -1835,6 +1835,18 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
             zoom = 15.5,
         )
     )
+    var selfRecenterRequestedNanos by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(locationFlow, selfRecenterRequestedNanos) {
+        val requested = selfRecenterRequestedNanos ?: return@LaunchedEffect
+        val fix = locationFlow ?: return@LaunchedEffect
+        if (fix.elapsedRealtimeNanos >= requested &&
+            android.os.SystemClock.elapsedRealtimeNanos() - requested <= 5_000_000_000L &&
+            fix.latitude.isFinite() && fix.longitude.isFinite() && mapFocus == null
+        ) {
+            selfRecenterRequestedNanos = null
+            cameraState.animateTo(cameraState.position.copy(target = Position(fix.longitude, fix.latitude)))
+        }
+    }
 
 
 
@@ -1919,6 +1931,8 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
 
     // Recenter the camera on the latest device location
     fun snapToSelf() {
+        selfRecenterRequestedNanos = android.os.SystemClock.elapsedRealtimeNanos()
+        dataRepository.requestInteractionPliRefresh(PliRefreshReason.MAP_RECENTERED)
         // Stop when the device does not have a valid location
         val currentLocation = locationFlow ?: return
 
@@ -2401,6 +2415,7 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 Log.i(TAG, "MapApp Lifecycle.Event.ON_RESUME called")
+                selfRecenterRequestedNanos = android.os.SystemClock.elapsedRealtimeNanos()
                 dataRepository.requestInteractionPliRefresh(PliRefreshReason.MAP_OPENED)
             }
         }
@@ -2967,6 +2982,9 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
         }
         selectedRoutePoint?.let { point ->
             val pointUid = "route-point-${point.serverId}-${point.routeUid}-${point.pointIndex}"
+            LaunchedEffect(pointUid) {
+                dataRepository.requestInteractionPliRefresh(PliRefreshReason.POSITION_VIEWED)
+            }
             val heading by dataRepository.azimuthTrueDegSmoothed.collectAsStateWithLifecycle()
             val vector = locationFlow?.let {
                 com.aitech.weartak_civ.provider.LocationVectorCalculator.calculate(

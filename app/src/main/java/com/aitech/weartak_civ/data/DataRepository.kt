@@ -1611,8 +1611,8 @@ class DataRepository(private val context: Context) {
         var latActual   = baseLoc.latitude
         var lonActual   = baseLoc.longitude
         var haeActual   = baseLoc.altitude
-        var ceActual    = baseLoc.accuracy
-        var leActual    = baseLoc.verticalAccuracyMeters
+        var ceActual    = if (baseLoc.hasAccuracy()) baseLoc.accuracy else 9_999_999f
+        var leActual    = if (baseLoc.hasVerticalAccuracy()) baseLoc.verticalAccuracyMeters else 9_999_999f
 
         // TODO Senni: Do we need 2 lines below as it is checked in buildPliCot
         if (ceActual.isNaN()) ceActual = 9999999.0f
@@ -1882,7 +1882,7 @@ class DataRepository(private val context: Context) {
             staleOffset = CotTimeOffset(minutes = 15) // or whatever SOS stale you want
         )
 
-        val locSnap = snapshotLocation()
+        val locSnap = snapshotLocation(bestKnownLocation())
         val systemSnap = snapshotSystem()
         val physioSnap = snapshotPhysio()
 
@@ -2022,8 +2022,8 @@ class DataRepository(private val context: Context) {
     val clearManualAlert: SharedFlow<ClearRequest> = _clearManualAlert
 
     suspend fun addManualAlertRequest(alertState: AlertState, category: String, description: String, timeMillis: Long) {
-        _addManualAlert.emit(ManualAlertRequest(alertState, category, description, timeMillis))
         requestInteractionPliRefresh(if (alertState == AlertState.CANCEL) PliRefreshReason.MANUAL_ALERT_CLEARED else PliRefreshReason.MANUAL_ALERT_ACTIVATED)
+        _addManualAlert.emit(ManualAlertRequest(alertState, category, description, timeMillis))
     }
 
     suspend fun clearManualAlertRequestUid(uid: String) {
@@ -2093,8 +2093,8 @@ class DataRepository(private val context: Context) {
             "addPhysioAndAutoGenAlertRequest emit start uid=$uid category=$category priority=$priority " +
                 "sendSms=$sendSms subscriptionCount=${_addPhysioAndAutoGenAlert.subscriptionCount.value}",
         )
-        _addPhysioAndAutoGenAlert.emit(PhysioAndAutoGenAlertRequest(uid, AlertState.ALERT, category, description, priority, sendSms, timeMillis))
         requestInteractionPliRefresh(PliRefreshReason.PHYSIO_ALERT_ACTIVATED)
+        _addPhysioAndAutoGenAlert.emit(PhysioAndAutoGenAlertRequest(uid, AlertState.ALERT, category, description, priority, sendSms, timeMillis))
         Log.i(
             TAG,
             "addPhysioAndAutoGenAlertRequest emit complete uid=$uid category=$category priority=$priority " +
@@ -2933,7 +2933,22 @@ class DataRepository(private val context: Context) {
         CepProvider.getOrCreateEngine(context).updateSpo2Profile()
     }
 
+    @Volatile private var lastValidLocation: Location? = null
+
+    fun bestKnownLocation(): Location? =
+        listOfNotNull(latestLocation.value?.takeIf { validLocationFix(it) }, lastValidLocation)
+            .maxByOrNull { it.time }?.let { Location(it) }
+
+    private fun validLocationFix(location: Location): Boolean =
+        location.time > 0 && location.latitude.isFinite() && location.latitude in -90.0..90.0 &&
+            location.longitude.isFinite() && location.longitude in -180.0..180.0
+
     suspend fun storeLatestLocation(location: Location) {
+        synchronized(_latestLocation) {
+            if (validLocationFix(location) && location.time >= (lastValidLocation?.time ?: 0)) {
+                lastValidLocation = Location(location)
+            }
+        }
         _latestLocation.emit(location)
     }
 

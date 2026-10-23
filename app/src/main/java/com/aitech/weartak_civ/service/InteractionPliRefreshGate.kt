@@ -28,7 +28,7 @@ internal class InteractionPliRefreshGate {
     }
 
     companion object {
-        const val TIMEOUT_MILLIS = 15_000L
+        const val TIMEOUT_MILLIS = 5_000L
         const val IDENTITY_FIX_MAX_AGE_MILLIS = 3_000L
 
         fun freshForIdentity(fixNanos: Long, nowNanos: Long, usable: Boolean): Boolean =

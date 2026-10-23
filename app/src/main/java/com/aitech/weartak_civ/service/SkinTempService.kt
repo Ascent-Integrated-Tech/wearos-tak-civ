@@ -919,7 +919,7 @@ class SkinTempService : Service() {
     // ---- PPG burst (green) ----
     private var ppgStartUptimeMs: Long = 0L
     private var ppgBurstDurationMs: Long = 0L
-    private val ppgSamples = mutableListOf<Float>()
+    private val ppgSamples = PpgSampleBuffer()
 
     private val ppgEventListener = object : HealthTracker.TrackerEventListener {
         override fun onDataReceived(dataPoints: List<DataPoint>) {
@@ -1155,22 +1155,24 @@ class SkinTempService : Service() {
     // Rolling window helpers
     private fun appendPpgSampleAndPrune(rawInt: Int, now: Long = SystemClock.uptimeMillis()) {
         val v = rawInt.toFloat()
-        ppgWindow.addLast(TimedSample(now, v))
-        val cutoff = now - PPG_WINDOW_MS
-        while (ppgWindow.isNotEmpty() && ppgWindow.first().tUptimeMs < cutoff) {
-            ppgWindow.removeFirst()
+        synchronized(ppgWindow) {
+            ppgWindow.addLast(TimedSample(now, v))
+            val cutoff = now - PPG_WINDOW_MS
+            while (ppgWindow.isNotEmpty() && ppgWindow.first().tUptimeMs < cutoff) {
+                ppgWindow.removeFirst()
+            }
+            lastPpgSampleCount = ppgWindow.size
         }
-        lastPpgSampleCount = ppgWindow.size
     }
     private fun computeAndCachePpgAmplitudeIfPossible(reason: String) {
-        if (ppgWindow.isEmpty()) {
+        val values = synchronized(ppgWindow) { ppgWindow.map { it.v } }
+        if (values.isEmpty()) {
             lastPpgAmplitude = null
             lastPpgTs = System.currentTimeMillis()
             Log.w(TAG, "[PPG] No samples in window; amplitude=null ($reason)")
             return
         }
         // Robust amplitude using 5th–95th percentile
-        val values = ppgWindow.map { it.v }
         val amp = computeAmplitudeP5P95(values)
         lastPpgAmplitude = amp
         lastPpgTs = System.currentTimeMillis()
@@ -1234,6 +1236,11 @@ class SkinTempService : Service() {
     }
 
     private fun completePpgPhase(reason: String) {
+        if (android.os.Looper.myLooper() != backgroundHandler.looper) {
+            backgroundHandler.post { completePpgPhase(reason) }
+            return
+        }
+        if (measureState.get() != MeasurementState.PPG_RUNNING) return
         // Only stop the tracker for on-demand mode; keep continuous listener running
         if (ppgTrackerType != HealthTrackerType.PPG_CONTINUOUS) {
             stopPpgTracker()
@@ -1243,14 +1250,15 @@ class SkinTempService : Service() {
         if (ppgTrackerType == HealthTrackerType.PPG_CONTINUOUS) {
             computeAndCachePpgAmplitudeIfPossible(reason)
         } else {
-            if (ppgSamples.isNotEmpty()) {
-                val min = ppgSamples.minOrNull() ?: 0f
-                val max = ppgSamples.maxOrNull() ?: 0f
+            val samples = ppgSamples.drain()
+            if (samples.isNotEmpty()) {
+                val min = samples.minOrNull() ?: 0f
+                val max = samples.maxOrNull() ?: 0f
                 val amp = (max - min).toDouble()
                 lastPpgAmplitude = if (amp.isFinite()) amp else null
                 lastPpgTs = System.currentTimeMillis()
                 lastPpgQuality = (amp.toFloat() / (amp.toFloat() + 50f)).coerceIn(0f, 1f)
-                Log.i(TAG, "[PPG] Completed ($reason) samples=${ppgSamples.size} amp=${lastPpgAmplitude ?: -1.0} q=${lastPpgQuality}")
+                Log.i(TAG, "[PPG] Completed ($reason) samples=${samples.size} amp=${lastPpgAmplitude ?: -1.0} q=${lastPpgQuality}")
             } else {
                 lastPpgAmplitude = null
                 lastPpgTs = System.currentTimeMillis()
@@ -1259,7 +1267,6 @@ class SkinTempService : Service() {
             }
         }
         finishMeasurementCycle()
-        ppgSamples.clear()
         ppgStartUptimeMs = 0L
     }
 

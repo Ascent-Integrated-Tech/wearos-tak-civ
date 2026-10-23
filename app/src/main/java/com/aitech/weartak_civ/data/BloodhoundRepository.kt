@@ -631,6 +631,8 @@ class BloodhoundRepository(
             }
             publishVisibleBloodhounds()
             setActiveKey(selectedKey)
+            org.greenrobot.eventbus.EventBus.getDefault().post(com.aitech.weartak_civ.events.InteractionPliRefresh(
+                com.aitech.weartak_civ.events.PliRefreshReason.NAVIGATION_STARTED))
 
             val updatedItem = bloodhoundStore.item(selectedKey) ?: currentItem
             val normalizedResult = if (
