@@ -1399,7 +1399,7 @@ class MainActivity : ComponentActivity() {
         }
          */
 
-        val manifestRestrictions = restrictionsManager.getManifestRestrictions("com.aitech.weartak_civ") ?: listOf()
+        val manifestRestrictions = restrictionsManager.getManifestRestrictions(packageName) ?: listOf()
         if (manifestRestrictions.size == 0) {
             Log.w(TAG, "Size of manifestRestrictions is 0. Returning...")
             return
@@ -3289,6 +3289,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
             kilometersLabel = stringResource(R.string.km)
         )
     val hasUnreadBloodhound by dataRepository.hasUnreadBloodhounds.collectAsState() // monitor the number of unread messages
+    val activeType = activeItem?.targetKind
 
     requestBloodhoundComplicationUpdate(context)
  Row(
@@ -3322,8 +3323,18 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
                     rotationZ = needleOrientation.toFloat()
                 }
         )
+         if (activeItem != null) {
+             Image(
+                 painter = if (activeType == Utils.BloodhoundTargetKind.POINT) painterResource(R.drawable.atak_nav_routes) else painterResource(R.drawable.bloodhound),
+                 contentDescription = "Bloodhound Route Icon",
+                 modifier = Modifier
+                     .size(25.dp)
+                     .padding(start = 4.dp),
+                 alignment = Alignment.Center
+             )
+         }
         Column (
-            modifier = Modifier.padding(start = 7.dp)
+            modifier = Modifier.padding(start = 5.dp)
         ) {
             if (activeItem != null) {
                 Text(
