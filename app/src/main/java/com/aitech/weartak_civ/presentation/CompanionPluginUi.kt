@@ -123,7 +123,12 @@ internal fun CompanionPluginChip(enabled: Boolean, status: String, onToggle: (Bo
 }
 
 @Composable
-internal fun CompanionDetailsPage(status: String, navController: NavController) {
+internal fun CompanionDetailsPage(
+    status: String,
+    navController: NavController,
+    diagnosticsEnabled: Boolean,
+    onDiagnosticsEnabledChanged: (Boolean) -> Unit
+) {
     val context = LocalContext.current
     WearTAKPageWithBackArrow(
         stringResource(R.string.companion_app),
@@ -139,6 +144,17 @@ internal fun CompanionDetailsPage(status: String, navController: NavController) 
                     label = { Text(stringResource(R.string.companion_bluetooth_settings)) },
                     modifier = Modifier.fillMaxWidth()
                 )
+            }
+            item {
+                WearTAKToggleChip(
+                    checkedLive = diagnosticsEnabled,
+                    onCheckedChange = onDiagnosticsEnabledChanged,
+                    title = stringResource(R.string.companion_location_diagnostics)
+                )
+            }
+            item {
+                Text(stringResource(R.string.companion_location_diagnostics_guidance),
+                    modifier = Modifier.padding(8.dp))
             }
             item {
                 Chip(

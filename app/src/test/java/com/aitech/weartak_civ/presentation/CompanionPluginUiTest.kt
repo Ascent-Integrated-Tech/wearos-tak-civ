@@ -6,6 +6,9 @@ import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.provider.Settings
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.navigation.compose.NavHost
@@ -13,6 +16,10 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.CompanionAppRepository.BleConnectionState
+import com.aitech.weartak_civ.data.DataRepository
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -79,7 +86,7 @@ class CompanionPluginUiTest {
                         onToggle = { toggles += it; enabled.value = it },
                         onDetails = { nav.navigate(COMPANION_DETAILS_ROUTE) })
                 }
-                composable(COMPANION_DETAILS_ROUTE) { CompanionDetailsPage("Waiting for phone", nav) }
+                composable(COMPANION_DETAILS_ROUTE) { CompanionDetailsPage("Waiting for phone", nav, false, {}) }
             }
         }
         compose.onNode(isToggleable()).assertIsOff().performClick()
@@ -95,7 +102,7 @@ class CompanionPluginUiTest {
     }
 
     @Test fun detailsHasDisabledPriorityAndNormalBluetoothSettingsLink() {
-        compose.setContent { CompanionDetailsPage("Connected", rememberNavController()) }
+        compose.setContent { CompanionDetailsPage("Connected", rememberNavController(), false, {}) }
         compose.onNodeWithText("Connected").assertExists()
         compose.onAllNodes(hasScrollAction()).onFirst()
             .performScrollToNode(hasText("Team Lead EUD Priority"))
@@ -152,7 +159,7 @@ class CompanionPluginUiTest {
     @Test
     @Config(qualifiers = "w227dp-h227dp-round")
     fun largerRoundDetailsCanReachBothActions() {
-        compose.setContent { CompanionDetailsPage("Connection failed", rememberNavController()) }
+        compose.setContent { CompanionDetailsPage("Connection failed", rememberNavController(), false, {}) }
         compose.onNodeWithText("Connection failed").assertExists()
         compose.onAllNodes(hasScrollAction()).onFirst()
             .performScrollToNode(hasText("Team Lead EUD Priority"))
@@ -160,5 +167,56 @@ class CompanionPluginUiTest {
         compose.onAllNodes(hasScrollAction()).onFirst()
             .performScrollToNode(hasText("Android Bluetooth settings"))
         compose.onNodeWithText("Android Bluetooth settings").assertIsDisplayed().assertIsEnabled()
+    }
+
+    @Test fun smallRoundDiagnosticsPreservesSavedStateAndHelperIsReachable() {
+        diagnosticsPreservesSavedStateAndHelperIsReachable()
+    }
+
+    @Test
+    @Config(qualifiers = "w227dp-h227dp-round")
+    fun largerRoundDiagnosticsPreservesSavedStateAndHelperIsReachable() {
+        diagnosticsPreservesSavedStateAndHelperIsReachable()
+    }
+
+    private fun diagnosticsPreservesSavedStateAndHelperIsReachable() {
+        MainActivity.device_uid = "test-watch"
+        val repository = DataRepository(RuntimeEnvironment.getApplication())
+        runBlocking {
+            repository.storeBondedLocationDiagnosticsEnabled(true)
+            repository.storeEnableCompanionAppService(false)
+        }
+        val showDetails = mutableStateOf(true)
+        compose.setContent {
+            if (showDetails.value) {
+                val enabled by repository.getBondedLocationDiagnosticsEnabled.collectAsState(initial = true)
+                val scope = rememberCoroutineScope()
+                CompanionDetailsPage("Off", rememberNavController(), enabled) {
+                    scope.launch { repository.storeBondedLocationDiagnosticsEnabled(it) }
+                }
+            }
+        }
+        fun scrollToDiagnostics() {
+            compose.onAllNodes(hasScrollAction()).onFirst()
+                .performScrollToNode(hasText("Bonded Location Diagnostics"))
+        }
+        scrollToDiagnostics()
+        compose.onNode(isToggleable()).assertIsOn().performClick()
+        compose.waitUntil { runBlocking { !repository.getBondedLocationDiagnosticsEnabled.first() } }
+        compose.onNode(isToggleable()).assertIsOff()
+        compose.runOnIdle { showDetails.value = false }
+        compose.waitForIdle()
+        compose.runOnIdle { showDetails.value = true }
+        scrollToDiagnostics()
+        compose.onNode(isToggleable()).assertIsOff().performClick()
+        compose.waitUntil { runBlocking { repository.getBondedLocationDiagnosticsEnabled.first() } }
+        compose.onNode(isToggleable()).assertIsOn()
+        val helper = "Compare watch and phone GNSS quality over a bonded Companion connection."
+        compose.onAllNodes(hasScrollAction()).onFirst().performScrollToNode(hasText(helper))
+        compose.onNodeWithText(helper).assertIsDisplayed()
+        runBlocking {
+            assertFalse(repository.getEnableCompanionAppService.first())
+            repository.storeBondedLocationDiagnosticsEnabled(false)
+        }
     }
 }

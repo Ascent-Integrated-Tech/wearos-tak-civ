@@ -2820,7 +2820,13 @@ fun WearTAKSettingsNav(
 
         }
         composable(COMPANION_DETAILS_ROUTE) {
-            CompanionDetailsPage(companionPluginStatus(enableCompanionAppService), navController)
+            val diagnosticsEnabled by settingsVm.savedBondedLocationDiagnosticsEnabled.collectAsState()
+            CompanionDetailsPage(
+                companionPluginStatus(enableCompanionAppService),
+                navController,
+                diagnosticsEnabled,
+                settingsVm::storeBondedLocationDiagnosticsEnabled
+            )
         }
 
         composable("plugins") {

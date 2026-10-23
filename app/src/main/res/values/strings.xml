@@ -53,6 +53,10 @@
     <string name="companion_bluetooth_settings_unavailable">Bluetooth settings are not available on this watch.</string>
     <string name="companion_team_lead_priority">Team Lead EUD Priority</string>
     <string name="companion_not_available_yet">Not available yet</string>
+    <string name="companion_location_diagnostics">Bonded Location Diagnostics</string>
+    <string name="companion_location_diagnostics_guidance">Compare watch and phone GNSS quality over a bonded Companion connection.</string>
+    <string name="companion_location_diagnostics_enabled_hint">GNSS quality only. No diagnostic CoT is sent.</string>
+    <string name="companion_location_diagnostics_disabled_hint">Off. Enable in Plugins > WearTAK Companion.</string>
     <string name="chat_commands" translatable="false">Commands</string>
     <string name="chat_commands_description" translatable="false">Allow chat commands</string>
     <string name="chat_command_callsigns" translatable="false">Allowed Callsigns</string>
