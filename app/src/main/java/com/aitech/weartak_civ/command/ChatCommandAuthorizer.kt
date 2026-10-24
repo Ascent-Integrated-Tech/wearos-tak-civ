@@ -38,8 +38,7 @@ class ChatCommandAuthorizer(
         if (sentAtMs <= 0 || nowMs - sentAtMs > maxAgeMs || sentAtMs - nowMs > maxAgeMs) {
             return ChatCommandDecision.STALE
         }
-        val key = "$sender|$messageKey"
-        if (!seen.add(key)) return ChatCommandDecision.DUPLICATE
+        if (!seen.add(messageKey)) return ChatCommandDecision.DUPLICATE
         while (seen.size > maxRemembered) seen.remove(seen.first())
         return ChatCommandDecision.ALLOWED
     }

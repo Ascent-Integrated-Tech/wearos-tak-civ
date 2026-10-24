@@ -41,6 +41,9 @@ class DittoIdentityApplyTest {
         every { context.stopService(any()) } returns false
         every { app.audioRepo } returns mockk(relaxed = true)
         every { repo.getEnableDittoService } returns enabled
+        every { repo.phoneManagedSettingsLocked } returns flowOf(false)
+        every { repo.getNetworkPreferencesLocked } returns flowOf(false)
+        coEvery { repo.storeEnableDittoService(any()) } answers { enabled.value = firstArg() }
         every { repo.isCompanionConnected } returns companion
         set("dittoInstance", old)
         mockkObject(DittoService.Companion, recordPrivateCalls = true)
@@ -67,6 +70,29 @@ class DittoIdentityApplyTest {
         assertSame(replacement, DittoService.getDittoInstance())
         assertFalse(DittoService.isReconfiguring.value)
         verify(exactly = 0) { replacement.startSync() }
+    }
+
+    @Test fun explicitEnableDisableUsesPersistedToggleWithoutReplacingIdentity() = runTest {
+        mockkConstructor(ServiceConfiguration::class)
+        every { anyConstructed<ServiceConfiguration>().getServiceEnabledFlow(any()) } returns flowOf(false)
+        every { anyConstructed<ServiceConfiguration>().isServiceAvailable(any()) } returns false
+        repeat(2) {
+            assertTrue(DittoService.applyEnabled(context, repo, true))
+            assertTrue(enabled.value)
+        }
+        repeat(2) {
+            assertTrue(DittoService.applyEnabled(context, repo, false))
+            assertFalse(enabled.value)
+        }
+        assertSame(old, DittoService.getDittoInstance())
+        verify(exactly = 0) { old.close() }
+        verify(exactly = 0) { DittoService.Companion["initializeDitto"](context, repo) }
+    }
+
+    @Test fun managedToggleNeverMutatesSettings() = runTest {
+        every { repo.getNetworkPreferencesLocked } returns flowOf(true)
+        assertFalse(DittoService.applyEnabled(context, repo, true))
+        coVerify(exactly = 0) { repo.storeEnableDittoService(any()) }
     }
 
     @Test fun companionConnectionStillSuppressesSyncAfterIdentityApply() = runTest {

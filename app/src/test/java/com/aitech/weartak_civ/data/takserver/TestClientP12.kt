@@ -12,10 +12,10 @@ import java.util.Base64
 import java.util.Date
 
 internal object TestClientP12 {
-    fun p12(password: String): String {
+    fun p12(password: String, validAt: Long = System.currentTimeMillis()): String {
         val keyPair = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }.generateKeyPair()
         val name = X500Name("CN=WearTAK Test Client")
-        val now = System.currentTimeMillis()
+        val now = validAt
         val certificate = JcaX509CertificateConverter().getCertificate(
             JcaX509v3CertificateBuilder(
                 name, BigInteger.ONE, Date(now - 60_000), Date(now + 86_400_000),

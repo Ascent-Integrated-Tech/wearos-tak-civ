@@ -70,6 +70,28 @@ class ChatCommandProcessorTest {
         assertEquals(1, storedCallsigns.size)
     }
 
+    @Test fun sharedSenderMessageIdentityDeduplicatesAllRoutesButNotDifferentSenders() = runBlocking {
+        val p = processor()
+        val original = request("#weartakcommandsetcallsign callsign=ODIN-2")
+        listOf("srv", "ditto:peer", "multicast:224.10.10.1:17012", "sitx:flow",
+            "companion-gateway", "companion-bluetooth").forEach {
+            p.handle(original.copy(sourceServerId = it))
+        }
+        assertEquals(1, storedCallsigns.size)
+        p.handle(original.copy(senderUid = "another-sender"))
+        assertEquals(2, storedCallsigns.size)
+        p.handle(original.copy(messageId = null))
+        assertEquals(2, storedCallsigns.size)
+    }
+
+    @Test fun credentialCommandsNeverBecomeLocalHistoryWhenDisabled() = runBlocking {
+        enabled = false
+        val p = processor()
+        assertTrue(p.handle(request("#weartakcommandusep12 ab server=x")))
+        assertTrue(p.handle(request("#weartakcommandsetpdl community")))
+        assertTrue(replies.isEmpty())
+    }
+
     @Test
     fun invalidCallsignAndLockedSettingsAreRejected() = runBlocking {
         val p = processor()

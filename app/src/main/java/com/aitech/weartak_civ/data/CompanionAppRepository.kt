@@ -304,6 +304,7 @@ class CompanionAppRepository(private val context: Context) {
         val conversationTitle: String? = null,
         val isGroup: Boolean? = null,
         val participantUids: List<String>? = null,
+        val sentAt: Long? = null,
     )
 
     data class TakServerList(

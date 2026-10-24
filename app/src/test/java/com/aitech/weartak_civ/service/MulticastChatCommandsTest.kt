@@ -60,12 +60,14 @@ class MulticastChatCommandsTest {
         MainActivity.callsign = "TEST-WATCH"
         repo = spyk(DataRepository(app))
         MainActivity.dataRepository = repo
-        coEvery { repo.sendChatMessage(any(), any(), any(), any()) } coAnswers {
-            replies += thirdArg<String>()
-        }
-        coEvery { repo.sendGroupChatReply(any(), any(), any(), any(), any()) } coAnswers {
-            groupReplyUids += firstArg<String>()
-            replies += thirdArg<String>()
+        val commandHandler = ChatCommandRuntime.build(app, repo)
+        every { repo.chatCommandHandler } returns commandHandler
+        mockkObject(ChatCommandReplies)
+        coEvery { ChatCommandReplies.send(any(), any(), any(), any()) } coAnswers {
+            val request = thirdArg<com.aitech.weartak_civ.command.ChatCommandRequest>()
+            if (request.replyIsGroup) groupReplyUids += requireNotNull(request.replyRoomUid)
+            replies += arg<String>(3)
+            true
         }
         mockkObject(DittoService.Companion)
         coEvery { DittoService.applySelectedIdentity(any(), any()) } returns true
@@ -90,6 +92,7 @@ class MulticastChatCommandsTest {
         replies.clear()
         groupReplyUids.clear()
         clearMocks(repo, answers = false)
+        clearMocks(ChatCommandReplies, answers = false)
         chat = Robolectric.buildService(ChatService::class.java).get()
         ChatService::class.java.getDeclaredField("dataRepository").apply {
             isAccessible = true
@@ -105,6 +108,7 @@ class MulticastChatCommandsTest {
         PendingServerEnrollment.clear()
         unmockkObject(TAKConnectService.Companion)
         unmockkObject(DittoService.Companion)
+        unmockkObject(ChatCommandReplies)
     }
 
     @Test fun productionMulticastCommandPolicyAndCrossTransportMatrix() = runBlocking {
@@ -202,8 +206,10 @@ class MulticastChatCommandsTest {
         coVerify(exactly = 3) { repo.storeDittoCommandSettings(DittoPdlSource.CUSTOM, pdl) }
         coVerify(exactly = 3) { DittoService.applySelectedIdentity(any(), repo) }
         coVerify(exactly = 1) {
-            repo.sendGroupChatReply("synthetic-group", "Synthetic chat", any(), any(),
-                listOf("synthetic-sender", "test-watch"))
+            ChatCommandReplies.send(any(), repo, match {
+                it.replyRoomUid == "synthetic-group" && it.replyRoomTitle == "Synthetic chat" &&
+                    it.replyParticipantUids == listOf("synthetic-sender", "test-watch")
+            }, any())
         }
         assertEquals(listOf("synthetic-group", "All Chat Rooms"), groupReplyUids)
         assertEquals(3, replies.size)

@@ -147,6 +147,20 @@ object NetworkUtils {
          * PLI CoT is small; if you ever send big payloads, consider chunking.
          */
         @Synchronized
+        fun sendCommandReply(cotXml: String, destination: String, destinationPort: Int): Boolean {
+            if (!running || !MainActivity.enableMulticastOnWifi ||
+                MainActivity.dataRepository.isCompanionConnected.value) return false
+            val ms = socket ?: return false
+            if (destinationPort !in 1..65535) return false
+            val target = InetAddress.getByName(destination)
+            if (!target.isMulticastAddress) return false
+            val bytes = TakMulticastEndpoints.prepareOutbound(cotXml).toByteArray(Charsets.UTF_8)
+            if (bytes.size > 65507) return false
+            ms.send(DatagramPacket(bytes, bytes.size, target, destinationPort))
+            return true
+        }
+
+        @Synchronized
         fun send(cotXml: String) {
             if (MainActivity.dataRepository.isCompanionConnected.value) return
             //Log.i(TAG, "Checking socket")

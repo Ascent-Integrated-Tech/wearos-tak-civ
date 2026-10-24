@@ -24,6 +24,7 @@ internal class DittoCotReceiver(
     private val deviceUid: () -> String,
     private val callsign: () -> String,
     private val localPeer: () -> String,
+    private val chatCommandHandler: (suspend (com.aitech.weartak_civ.command.ChatCommandRequest) -> Boolean)? = null,
     private val postChat: (TakChatEvent) -> Unit = { EventBus.getDefault().post(it) },
     private val now: () -> Long = System::currentTimeMillis,
     private val log: (String, Throwable?) -> Unit = { message, error -> Log.w(TAG, message, error) }
@@ -70,6 +71,7 @@ internal class DittoCotReceiver(
         isGeofenceEnabled = { false },
         deviceUid = deviceUid,
         deviceCallsign = callsign,
+        chatCommandHandler = chatCommandHandler,
         logger = log
     )
 

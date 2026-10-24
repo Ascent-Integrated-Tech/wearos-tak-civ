@@ -1134,8 +1134,10 @@ zero-coordinate point. A real timestamped fix at `0,0` remains a valid position.
 
 Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change watch settings by sending chat commands. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. All commands accept direct messages, All Chat Rooms broadcasts, and groups containing the watch UID. Only messages from allowed callsigns are acted on. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
 
-TAK-server and Wi-Fi multicast receive already share the same command runtime and
-recipient checks. A server is not required for multicast commands. After a reset,
+TAK servers, Wi-Fi multicast, Ditto GeoChat, SIT(x), and the paired phone's raw-CoT
+gateway and legacy `chat_received` bridge share one command runtime. Replies use
+only the originating transport and conversation, not normal chat fan-out. A server
+is not required for multicast commands. After a reset,
 first open WearTAK, grant its required permissions and connect watch and sender to
 the same multicast-capable Wi-Fi network. Enable **Network Preferences > TAK SA
 Multicast** (with valid address/port), then **Plugins > Commands** and add the
@@ -1157,11 +1159,15 @@ still apply. A factory reset may change the UID: discover the current contact
 rather than replaying a saved recipient UID.
 
 The shared process-local replay cache ignores repeat sender/message-ID pairs
-across server and multicast, including either arrival order. It remembers the
+across every ingress route, including either arrival order. It remembers the
 last 128 accepted pairs, not a durable execution ledger across app restarts.
 Consumed commands are not inserted as ordinary chat or rebroadcast; one normal
 outcome reply is generated for a newly accepted command. With Commands disabled,
-addressed command-looking text retains normal chat behavior.
+addressed command-looking text retains normal chat behavior, except `usep12` and
+`setpdl` are always consumed to keep credentials out of the local inbox.
+The legacy phone bridge must supply original Unix-millisecond `sentAt`; missing
+timestamps are stale, never replaced with receipt time. Named groups require
+verified watch-UID membership; a room title alone never establishes membership.
 
 Format: `#weartakcommand<name> key=value key2="value with spaces"`
 
@@ -1169,6 +1175,8 @@ Format: `#weartakcommand<name> key=value key2="value with spaces"`
 | --- | --- | --- |
 | `setcallsign` | `callsign` (1-32 letters, digits, space, `.`, `_`, `-`) | Sets the callsign. Refused when settings are managed by the phone. |
 | `setpdl` | One positional argument: `community` or an encoded SharedKey v2 PDL | Validates the selected identity and expiry, atomically saves source/custom identity, then recreates Ditto with the new identity. Refused when network settings are locked or phone-managed. Does not change the Ditto enable toggle. |
+| `toggleditto` | Exactly one positional `on` or `off` | Persists the same enable setting as the UI, preserving selected identity and normal runtime gates. Repeated on/on or off/off is safe. |
+| `usep12` | `<hex> server=<configured-id> [password="..."]` | Installs one validated client P12 on exactly the existing server ID. Missing/unknown ID or managed network settings changes nothing. Standard Base64 is also accepted. |
 | `enrollserver` | `name`, `url` (host name or IP), `port` (default 8089) | Posts a notification on the watch. Tapping it opens the New Server screen pre-filled; the user enters the username and password there and they are stored like any other TAK server. Credentials are never accepted in chat. Refused when network settings are locked or phone-managed. |
 
 For example, `#weartakcommandsetpdl community` selects the unchanged built-in
@@ -1188,7 +1196,38 @@ Rooms. Outcome replies go back to the originating conversation,
 including the verified original participant roster for named groups. Broadcast
 or group provisioning exposes the original PDL to every recipient; only send a
 custom identity this way when that entire audience is authorized to possess it.
-Ditto chat replay remains data-only and cannot execute this or any other command.
+Ditto chat executes these opt-in, allow-listed commands with the same freshness,
+recipient and shared replay checks; other plugin/configuration/package dispatch
+remains disabled on Ditto ingress.
+
+`#weartakcommandtoggleditto off` received over Ditto attempts a native originating-room
+acknowledgement before shutdown, explicitly stating that delivery is not confirmed.
+Once disabled, `on` must arrive through another active route or the UI.
+
+`usep12` always requires the exact configured stable server ID, never a host name,
+implicit source server or all-server target. Omitted password uses the conventional
+TAK default; explicit quoted passwords are retained exactly (including spaces).
+Validation caps decoded P12 at 8 KiB / encoded input at 16,384 characters, requires
+one private-key entry with a currently valid client certificate chain and matching
+key, and initializes the TLS key manager before changing encrypted local storage.
+Only that server's certificate fields change. Local apply failure/cancellation
+restores previous storage and runtime; recovery failures are logged explicitly.
+Success acknowledges installation, leaf SHA-256 fingerprint and earliest chain
+expiry, **not** successful connection or server trust acceptance.
+
+Typical 2.5-4 KiB client P12 becomes 5-8K hex characters. This fits the watch's
+32-KiB gateway, 65,535-byte multicast receive buffer and 256-KiB Ditto document cap,
+but is not a delivery guarantee: UDP fragments and sender/server/phone framing may
+drop or truncate it. Use a reliable encrypted route and verify the status reply.
+Managed `tak_server_cert` remains Base64, not hex.
+
+**Security:** callsign allow-listing is not cryptographic sender authentication,
+especially with the shared Community Ditto identity. Prefer trusted encrypted direct
+chat. Per user choice, group/broadcast commands remain supported, exposing the P12
+private key to every audience member and any storing server/mesh/other client.
+The receiving app does not insert credential commands in its inbox, dispatch them
+to plugins, log their text, or echo keys/passwords in replies. It cannot erase the
+sender's or another system's history; rotate credentials after unintended exposure.
 
 Profile commands take the same values as the settings screens (case-insensitive) and validate everything before changing anything, so one bad value changes nothing:
 

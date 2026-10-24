@@ -28,6 +28,8 @@ import com.aitech.weartak_civ.command.ProfileStore
 import com.aitech.weartak_civ.command.ServerEnrollment
 import com.aitech.weartak_civ.command.SetCallsignHandler
 import com.aitech.weartak_civ.command.SetDittoPdlHandler
+import com.aitech.weartak_civ.command.UseP12Handler
+import com.aitech.weartak_civ.command.ToggleDittoHandler
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerId
@@ -40,6 +42,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import java.io.File
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 
 /** Connects the chat command processor to settings storage, chat replies and the credential prompt. */
 object ChatCommandRuntime {
@@ -48,7 +53,12 @@ object ChatCommandRuntime {
     private const val NOTIFICATION_ID = 7130
 
     fun create(context: Context, repo: DataRepository): suspend (ChatCommandRequest) -> Boolean {
+        return repo.chatCommandHandler
+    }
+
+    internal fun build(context: Context, repo: DataRepository): suspend (ChatCommandRequest) -> Boolean {
         val appContext = context.applicationContext
+        val commandScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val identityLocked: suspend () -> Boolean = { repo.phoneManagedSettingsLocked.first() }
         val options = ProfileOptions(
             teams = { MainActivity.teamEntriesValuesList.ltEntries },
@@ -81,6 +91,17 @@ object ChatCommandRuntime {
             isEnabled = { repo.getEnableChatCommands.first() },
             allowedCallsigns = { repo.getChatCommandCallsigns.first() },
             handlers = profileHandlers + mapOf(
+                "usep12" to UseP12Handler(
+                    isLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() },
+                    serverExists = { id -> repo.awaitTakServerList().any { it.serverId == id } },
+                    install = { id, p12 ->
+                        repo.installChatP12(id, p12) { TAKConnectService.getInstance().registerServer(id) }
+                    }
+                ),
+                "toggleditto" to ToggleDittoHandler(
+                    isLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() },
+                    apply = { enabled -> DittoService.applyEnabled(appContext, repo, enabled) }
+                ),
                 "setpdl" to SetDittoPdlHandler(
                     isLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() },
                     communityPdl = repo::communityDittoPdl,
@@ -111,18 +132,17 @@ object ChatCommandRuntime {
                 )
             ),
             reply = { request, text ->
-                if (request.replyIsGroup) {
-                    repo.sendGroupChatReply(
-                        requireNotNull(request.replyRoomUid), requireNotNull(request.replyRoomTitle),
-                        text, System.currentTimeMillis(), request.replyParticipantUids
-                    )
-                } else {
-                    repo.sendChatMessage(request.senderUid, request.senderCallsign, text, System.currentTimeMillis())
+                check(ChatCommandReplies.send(appContext, repo, request, text)) {
+                    "Command acknowledgement route unavailable"
                 }
             },
             audit = { Log.i(TAG, it) }
         )
-        return processor::handle
+        val mutex = kotlinx.coroutines.sync.Mutex()
+        return { request -> commandScope.async {
+            mutex.lock()
+            try { processor.handle(request) } finally { mutex.unlock() }
+        }.await() }
     }
 
     /** Presets are JSON files in the app's external files folder, pushed to the watch with adb. */

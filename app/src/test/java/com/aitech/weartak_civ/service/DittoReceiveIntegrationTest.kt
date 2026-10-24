@@ -157,8 +157,11 @@ class DittoReceiveIntegrationTest {
         }
 
         fun start(preferences: SharedPreferences = journal, repository: DataRepository = repo,
-                  uid: String = "watch", peer: String = "local-peer") = DittoStoreObservers(store, scope, DittoCotReceiver(
+                  uid: String = "watch", peer: String = "local-peer",
+                  commands: (suspend (com.aitech.weartak_civ.command.ChatCommandRequest) -> Boolean)? = null) =
+            DittoStoreObservers(store, scope, DittoCotReceiver(
             repository, bh, preferences, { uid }, { "WATCH" }, { peer },
+            chatCommandHandler = commands,
             log = { message, _ -> logs += message }
         ))
 
@@ -537,6 +540,37 @@ class DittoReceiveIntegrationTest {
             f.emit("track", pli)
             f.drain()
             assertEquals("alice", f.repo.receivedUserList.value.single().uid)
+        } finally { f.close() }
+    }
+
+    @Test fun nativeChatCommandsRetainVerifiedRoomAndNeverEnterInbox() = runTest {
+        val f = Fixture(this)
+        try {
+            var runs = 0
+            val replies = mutableListOf<com.aitech.weartak_civ.command.ChatCommandRequest>()
+            val processor = com.aitech.weartak_civ.command.ChatCommandProcessor(
+                { true }, { listOf("alice") },
+                mapOf("setcallsign" to com.aitech.weartak_civ.command.ChatCommandHandler { _, _ ->
+                    runs++
+                    com.aitech.weartak_civ.command.ChatCommandResult(true, "Callsign set")
+                }), reply = { request, _ -> replies += request }, audit = {}, now = { f.time })
+            f.observers.close()
+            f.observers = f.start(commands = processor::handle)
+            val text = "#weartakcommandsetcallsign callsign=UPDATED"
+            f.emit("chat", f.nativeChat("direct", text = text),
+                f.nativeChat("group", "team", text = text, members = "uid1='watch' uid2='alice'"),
+                f.nativeChat("all", "All Chat Rooms", text = text),
+                f.nativeChat("other", "someone-else", text = text),
+                f.nativeChat("unverified", "team", text = text, members = "uid1='bob'"),
+                f.nativeChat("own", recipient = "bob", sender = "watch", text = text))
+            f.drain()
+            assertEquals(3, runs)
+            assertTrue(f.chats.isEmpty())
+            assertTrue(f.repo.chatRoomsFlow.value.isEmpty())
+            assertEquals(listOf("alice", "team", "All Chat Rooms"), replies.map { it.replyRoomUid })
+            assertTrue(replies.all { it.sourceServerId.startsWith("ditto:") })
+            processor.handle(replies.first().copy(sourceServerId = "multicast:224.10.10.1:17012"))
+            assertEquals(3, runs)
         } finally { f.close() }
     }
 

@@ -24,7 +24,11 @@ data class ChatCommandRequest(
     override fun toString() = "ChatCommandRequest(senderUid=$senderUid, messageId=$messageId)"
 }
 
-data class ChatCommandResult(val ok: Boolean, val message: String)
+data class ChatCommandResult(
+    val ok: Boolean,
+    val message: String,
+    val afterReply: (suspend () -> Unit)? = null
+)
 
 fun interface ChatCommandHandler {
     suspend fun execute(command: ChatCommand, request: ChatCommandRequest): ChatCommandResult
@@ -49,9 +53,16 @@ class ChatCommandProcessor(
     suspend fun handle(request: ChatCommandRequest): Boolean {
         val parsed = ChatCommandParser.parse(request.text)
         if (parsed is ChatCommandParse.NotACommand) return false
-        if (!isEnabled()) return false
+        if (!isEnabled()) return request.text.trimStart().let {
+            it.startsWith("${ChatCommandParser.PREFIX}usep12", true) ||
+                it.startsWith("${ChatCommandParser.PREFIX}setpdl", true)
+        }
 
-        val messageKey = request.messageId ?: "${request.sentAtMs}:${request.text.hashCode()}"
+        if (request.messageId.isNullOrBlank() || request.senderUid.isBlank()) {
+            audit("ignored command without message ID")
+            return true
+        }
+        val messageKey = "${request.senderUid.length}:${request.senderUid}:${request.messageId}"
         val decision = authorizer.authorize(
             request.senderCallsign, allowedCallsigns(), messageKey, request.sentAtMs, now()
         )
@@ -86,6 +97,10 @@ class ChatCommandProcessor(
             ChatCommandResult(false, "Command failed")
         }
         audit("command ${command.name} from ${request.senderCallsign}: ${if (result.ok) "ok" else "failed"}")
-        reply(request, result.message)
+        try {
+            reply(request, result.message)
+        } finally {
+            result.afterReply?.invoke()
+        }
     }
 }

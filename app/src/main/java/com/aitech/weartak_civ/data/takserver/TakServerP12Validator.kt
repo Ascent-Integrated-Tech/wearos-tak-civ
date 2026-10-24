@@ -43,7 +43,7 @@ object TakServerP12Validator {
         } catch (error: IllegalArgumentException) {
             throw TakServerP12ValidationException("$label contains malformed P12 certificate data.", error)
         }
-        val password = item.p12CertPassword.trim().ifEmpty { DEFAULT_P12_PASSWORD }.toCharArray()
+        val password = item.p12CertPassword.ifEmpty { DEFAULT_P12_PASSWORD }.toCharArray()
         val keyStore = KeyStore.getInstance("PKCS12")
         try {
             ByteArrayInputStream(bytes).use { keyStore.load(it, password) }

@@ -22,4 +22,6 @@ data class TakChatEvent(
     val sourceServerId: String? = null,
     val receivedAt: Long = System.currentTimeMillis(),
     val parsedRooms: List<ChatRoom>? = null
-)
+) {
+    override fun toString() = "TakChatEvent(source=$sourceServerId)"
+}

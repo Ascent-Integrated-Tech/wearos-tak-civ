@@ -1004,6 +1004,9 @@ class CompanionAppService : Service() {
                 val time = CotMessageParser.eventTimeOrNull(xml)
                     ?: throw IllegalArgumentException("Gateway chat time invalid")
                 if (capRepo.gateway.acceptEvent(uid, time)) {
+                    if (com.aitech.weartak_civ.command.ChatCommandIngress.handle(
+                            rooms, time, System.currentTimeMillis(), "companion-gateway",
+                            ChatCommandRuntime.create(applicationContext, repo))) return
                     org.greenrobot.eventbus.EventBus.getDefault().post(
                         com.aitech.weartak_civ.events.TakChatEvent(
                             rawXml = xml,
@@ -2300,9 +2303,26 @@ class CompanionAppService : Service() {
                         return
                     }
                     val receivedAt = room.messageList.single().timeReceived
-                    EventBus.getDefault().post(
-                        TakChatEvent(rawXml = "", receivedAt = receivedAt, parsedRooms = listOf(room))
-                    )
+                    val generation = bloodhoundConnectionGeneration.get()
+                    val failureHandler = CoroutineExceptionHandler { _, _ ->
+                        Log.e(TAG, "Phone chat command processing or acknowledgement failed")
+                    }
+                    serviceScope.launch(failureHandler) {
+                        if (generation != bloodhoundConnectionGeneration.get() || !bloodhoundLinkReady()) return@launch
+                        if (room.messageList.single().uid == device_uid) return@launch
+                        if (room.isGroup && room.uid != "All Chat Rooms" &&
+                            device_uid !in room.participantUids) {
+                            Log.w(TAG, "Ignoring phone chat without local group membership")
+                            return@launch
+                        }
+                        val handled = com.aitech.weartak_civ.command.ChatCommandIngress.handle(
+                            listOf(room), payload?.sentAt ?: 0L, receivedAt, "companion-phone",
+                            ChatCommandRuntime.create(applicationContext, repo))
+                        if (!handled) EventBus.getDefault().post(
+                            TakChatEvent(rawXml = "", sourceServerId = "companion-phone",
+                                receivedAt = receivedAt, parsedRooms = listOf(room))
+                        )
+                    }
                 }
 
                 "phone_emergency_cot" -> {
@@ -2335,8 +2355,9 @@ class CompanionAppService : Service() {
             }
 
         } catch (t: Throwable) {
-            Log.w(TAG, "Failed to parse RX JSON bytes=${json.toByteArray().size}", t)
-            gatewayError(capRepo.gateway.session, "Gateway receive error: ${t.message}")
+            if (t is kotlinx.coroutines.CancellationException) throw t
+            Log.w(TAG, "Failed to parse RX JSON bytes=${json.toByteArray().size}")
+            gatewayError(capRepo.gateway.session, "Gateway receive error")
         }
     }
 

@@ -137,7 +137,8 @@ class DittoService : Service() {
                     journal = getSharedPreferences("ditto-cot-replay-v2", Context.MODE_PRIVATE),
                     deviceUid = { MainActivity.device_uid },
                     callsign = { callsign },
-                    localPeer = { localPeerKeyString }
+                    localPeer = { localPeerKeyString },
+                    chatCommandHandler = ChatCommandRuntime.create(applicationContext, dataRepository)
                 )
             )
             ditto.startSync() // Start syncing
@@ -617,6 +618,48 @@ class DittoService : Service() {
         private val identityMutex = Mutex()
 
         fun getDittoInstance(): Ditto? = dittoInstance
+
+        internal fun publishCommandReply(xml: String): Boolean {
+            val service = activeService.value ?: return false
+            if (!isRunning.get() || service.dataRepository.isCompanionConnected.value) return false
+            return service.publishDocument("chat", DittoChatDocument.encode(xml, localPeerKeyString))
+        }
+
+        internal suspend fun applyEnabled(context: Context, repo: DataRepository, enabled: Boolean): Boolean =
+            identityMutex.withLock {
+                if (repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first()) return@withLock false
+                val before = repo.getEnableDittoService.first()
+                try {
+                    if (enabled && !isRunning.get()) startupResult.value = null
+                    repo.storeEnableDittoService(enabled)
+                    if (!enabled) {
+                        withContext(Dispatchers.Main) { context.stopService(Intent(context, DittoService::class.java)) }
+                        withTimeout(15_000) { activeService.first { it == null } }
+                        true
+                    } else {
+                        val app = context.applicationContext as WearTakApplication
+                        val config = ServiceConfiguration(context, repo, app.audioRepo)
+                        if (!config.getServiceEnabledFlow(ReactiveServiceManager.ServiceType.DITTO).first() ||
+                            !config.isServiceAvailable(ReactiveServiceManager.ServiceType.DITTO)) {
+                            true
+                        } else if (isRunning.get()) true
+                        else {
+                            check(ReactiveServiceManager.isRunning.get())
+                            check(withTimeout(20_000) { startupResult.filterNotNull().first() })
+                            true
+                        }
+                    }
+                } catch (error: CancellationException) {
+                    withContext(kotlinx.coroutines.NonCancellable) { repo.storeEnableDittoService(before) }
+                    if (error !is kotlinx.coroutines.TimeoutCancellationException) throw error
+                    Log.e(TAG, "Ditto enable update timed out")
+                    false
+                } catch (_: Exception) {
+                    repo.storeEnableDittoService(before)
+                    Log.e(TAG, "Ditto enable update failed")
+                    false
+                }
+            }
 
         suspend fun applySelectedIdentity(context: Context, repo: DataRepository): Boolean =
             identityMutex.withLock {

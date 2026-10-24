@@ -114,7 +114,14 @@ Example JSON (the native `_c` CRDT is created by the SDK, so is omitted here):
 - Honor Ditto enablement/identity and the chat receive setting. A connected
   bonded companion suppresses direct Ditto send and receive, as for the other
   collections. Enabling/reconnecting companion alone does not suppress Ditto.
-  Mesh chat cannot execute configuration/commands or plugin/package handlers.
+  With Commands enabled, allow-listed leading `#weartakcommand...` messages use
+  the shared command runtime before inbox/plugin dispatch. Original event time
+  must be within five minutes and sender/message ID deduplicates every route.
+  Native replies retain the original direct/group/broadcast room and verified
+  roster, and publish only to Ditto. `toggleditto off` attempts its acknowledgement
+  before stopping Ditto; publication does not confirm remote delivery.
+  `setpdl`/`usep12` never enter the local inbox, even with Commands disabled.
+  Other configuration/plugin/package handlers remain unavailable via mesh.
 - Recipient filtering is UI addressing, not encryption or peer access control.
 
 ## Mesh identity is a separate prerequisite
