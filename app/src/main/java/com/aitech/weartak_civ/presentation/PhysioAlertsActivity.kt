@@ -86,8 +86,9 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context, settingsVm: Wear
         columnContent = {
             items(choices.size) { index ->
                 val (metric, label) = choices[index]
-                TopMetricChoice(label, topMetricValue(metric, repo),
-                    selected == metric.key) { settingsVm.storeSelectedPhysioMetric(metric.key) }
+                TopMetricChoice(label, topMetricValue(metric, repo), selected == metric.key) {
+                    settingsVm.storeSelectedPhysioMetric(metric.key)
+                }
             }
             item {
                 MetricAlertControls(alertsEnabled, settingsVm::storeEnablePhysiologicalAlerts) {
@@ -132,10 +133,8 @@ internal fun TopMetricChoice(label: String, value: String, selected: Boolean, on
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(Modifier.weight(1f)) {
-            Text(label, style = MaterialTheme.typography.body1)
-            Text(value, style = MaterialTheme.typography.caption1)
-        }
+        FittedTopMetricText("$label $value", modifier = Modifier.weight(1f),
+            style = MaterialTheme.typography.body1)
         RadioButton(selected = selected, onClick = null)
     }
 }

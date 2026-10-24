@@ -52,7 +52,7 @@ class TopMetricDisplayTest {
 
     @Test fun coordinatesIgnorePhysioStateAndNeverInventZeroForMissingFix() {
         val fix = Location("test").apply { time = 100; latitude = 41.881; longitude = -87.63 }
-        assertEquals("41.88100\n-87.63000", value(TopDisplayMetric.LAT_LONG, false, false, fix))
+        assertEquals("41.88100/-87.63000", value(TopDisplayMetric.LAT_LONG, false, false, fix))
         assertEquals(Utils.latLonToMgrs(41.881, -87.63), value(TopDisplayMetric.MGRS, false, false, fix))
         for (metric in listOf(TopDisplayMetric.LAT_LONG, TopDisplayMetric.MGRS)) {
             assertEquals("No fix", value(metric))
@@ -60,7 +60,16 @@ class TopMetricDisplayTest {
             assertEquals("No fix", value(metric, location = Location(fix).apply { latitude = Double.NaN }))
             assertEquals("No fix", value(metric, location = Location(fix).apply { time = 0 }))
         }
-        assertEquals("0.00000\n0.00000", value(TopDisplayMetric.LAT_LONG,
+        assertEquals("0.00000/0.00000", value(TopDisplayMetric.LAT_LONG,
             location = Location(fix).apply { latitude = 0.0; longitude = 0.0 }))
+    }
+
+    @Test fun compactCoordinatesPreserveSignsAndFiveDecimalPrecision() {
+        val fix = Location("test").apply { time = 100; latitude = -79.12345; longitude = -179.98765 }
+        assertEquals("-79.12345/-179.98765", value(TopDisplayMetric.LAT_LONG, location = fix))
+        assertEquals(Utils.latLonToMgrs(fix.latitude, fix.longitude),
+            value(TopDisplayMetric.MGRS, location = fix))
+        assertEquals(-79.12345, fix.latitude, 0.0)
+        assertEquals(-179.98765, fix.longitude, 0.0)
     }
 }

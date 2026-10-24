@@ -2848,7 +2848,9 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.Bottom
                 ) {
-                    Text(
+                    if (!containsAlert && !metric.physiological) {
+                        FittedTopMetricText(value)
+                    } else Text(
                         text = if (containsAlert) alertText(alerts) else value,
                         textAlign = TextAlign.Start,
                         fontSize = if (containsAlert) 12.sp else if (!metric.physiological) 14.sp else 16.sp,

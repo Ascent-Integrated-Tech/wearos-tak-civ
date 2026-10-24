@@ -2,10 +2,21 @@ package com.aitech.weartak_civ.presentation
 
 import android.location.Location
 import android.content.Context
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.sp
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.data.DataRepository
@@ -45,11 +56,36 @@ internal fun topMetricValue(
                 !location.latitude.isFinite() || location.latitude !in -90.0..90.0 ||
                 !location.longitude.isFinite() || location.longitude !in -180.0..180.0) return noFix
             if (metric == TopDisplayMetric.LAT_LONG) {
-                String.format(Locale.US, "%.5f\n%.5f", location.latitude, location.longitude)
+                String.format(Locale.US, "%.5f/%.5f", location.latitude, location.longitude)
             } else if (location.latitude in -80.0..84.0) {
                 Utils.latLonToMgrs(location.latitude, location.longitude)
             } else noFix
         }
+    }
+}
+
+@Composable
+internal fun FittedTopMetricText(
+    value: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.body1.copy(
+        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+) {
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val fontSize = remember(value, style, constraints.maxWidth, measurer) {
+            val width = measurer.measure(value, style, softWrap = false).size.width
+            val scale = if (width > 0) (constraints.maxWidth.toFloat() / width).coerceAtMost(1f) else 1f
+            var size = (style.fontSize.value * scale).coerceAtLeast(0.25f)
+            while (size > 0.25f && measurer.measure(
+                    value, style.copy(fontSize = size.sp), softWrap = false
+                ).size.width > constraints.maxWidth) {
+                size = (size - 0.25f).coerceAtLeast(0.25f)
+            }
+            size.sp
+        }
+        Text(value, style = style.copy(fontSize = fontSize),
+            maxLines = 1, softWrap = false)
     }
 }
 
