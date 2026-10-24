@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -22,9 +23,35 @@ class MoppSettingsTest {
         MainActivity.device_uid = "test-watch"
         DataRepository(RuntimeEnvironment.getApplication()).legacyDataStore().edit {
             it.remove(stringPreferencesKey("mopp_status"))
+            it.remove(longPreferencesKey("mopp_saved_at"))
             it.remove(booleanPreferencesKey("enable_mopp"))
             it.remove(booleanPreferencesKey("enable_data_sync"))
         }
+    }
+
+    @Test fun selfStatusOnlyUsesPersistedSelectionAndActualSampleTimes() = runBlocking {
+        val repo = DataRepository(RuntimeEnvironment.getApplication())
+        assertNull(repo.selfStatusInputs().first().policy.savedMopp)
+        repo.legacyDataStore().edit { it[stringPreferencesKey("mopp_status")] = "2" }
+        val legacy = repo.selfStatusInputs().first().policy.savedMopp!!
+        assertEquals(MoppStatus.LEVEL_2, legacy.status)
+        assertNull(legacy.savedAtMillis)
+        val before = System.currentTimeMillis()
+        repo.storeMoppStatus(MoppStatus.NONE)
+        val saved = repo.selfStatusInputs().first().policy.savedMopp!!
+        assertEquals(MoppStatus.NONE, saved.status)
+        assertTrue(saved.savedAtMillis!! in before..System.currentTimeMillis())
+        repo.storeLatestHeartRate(72)
+        assertNull(repo.selfStatusInputs().first().heartRate)
+        repo.storeLatestHeartRate(73, 123456L)
+        assertEquals(PhysioSample(73, 123456L), repo.selfStatusInputs().first().heartRate)
+        repo.storeLatestSkinTemp(93.4f, 123400L)
+        assertEquals(PhysioSample(93.4f, 123400L), repo.selfStatusInputs().first().skinTemperature)
+        repo.recordHeartRateSample(74, 123500L)
+        assertEquals(PhysioSample(74, 123500L), repo.selfStatusInputs().first().heartRate)
+        assertEquals(73, repo.latestHeartRate.value)
+        repo.storeLatestHeartRate(-1)
+        assertNull(repo.selfStatusInputs().first().heartRate)
     }
 
     @Test fun noneIsDefaultAndDistinctFromZeroAndInvalidPersistedValues() = runBlocking {

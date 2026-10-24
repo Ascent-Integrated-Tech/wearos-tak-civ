@@ -141,6 +141,19 @@ class PliMetadataCompatibilityTest {
         for (field in listOf("role", "team", "__group", "takv", "device", "platform", "os", "version")) {
             assertFalse("Legacy PLI schema unexpectedly gained $field", payload.has(field))
         }
+
+    }
+
+    @Test fun capabilityAwareCompanionOmitsUntimedLegacyHeartRateOnlyAfterSelfStatus() {
+        val repo = CompanionAppRepository(RuntimeEnvironment.getApplication())
+        val old = JSONObject(repo.envelopeToJson(repo.buildPliEnvelopeFromSnapshot(snapshot(), 30)))
+        val capable = JSONObject(repo.envelopeToJson(repo.buildPliEnvelopeFromSnapshot(
+            snapshot(), 30, includeLegacyHeartRate = false)))
+        assertEquals(65, old.getJSONObject("payload").getInt("hr"))
+        assertFalse(capable.getJSONObject("payload").has("hr"))
+        for (field in listOf("lat", "lon", "cs", "bat", "skt", "exr")) {
+            assertEquals(old.getJSONObject("payload").get(field), capable.getJSONObject("payload").get(field))
+        }
     }
 
     @Test

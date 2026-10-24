@@ -163,7 +163,7 @@ class HeartrateService: Service() {
                         "HR_STORE",
                         "OFF WRIST storing heartRate=$hr"
                     )
-                    sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
+                    sharedRepository.storeLatestHeartRate(hr)
                 }
             }
             deviceWorn = currDeviceWorn
@@ -287,6 +287,10 @@ class HeartrateService: Service() {
                 //Log.d(TAG, "Obtained heartrate: $hr")
 
                 val currTime = System.currentTimeMillis()
+                val measuredAt = event.timestamp.takeIf { it > 0 }?.let {
+                    currTime - (android.os.SystemClock.elapsedRealtimeNanos() - it) / 1_000_000L
+                }
+                sharedRepository.recordHeartRateSample(localHr, measuredAt)
                 if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.actualReportingIntervalSecs * 1000L)) {
                     lastTimeHrSent = currTime
                     runBlocking {
@@ -294,7 +298,7 @@ class HeartrateService: Service() {
                         requestPhysioStatusAndAlertingComplicationUpdate(context)
 //                        RestingHrManager.onHeartRateSample(localHr.toDouble()) // push all raw hr to manager for auto calculation of resting heart rate.
                         Log.e("HR_STORE", "VALID HR storing heartRate=$hr")
-                        sharedRepository.storeLatestHeartRate(hr)  // <---- use sharedRepository
+                        sharedRepository.storeLatestHeartRate(hr, measuredAt)
                     }
                 }
             }

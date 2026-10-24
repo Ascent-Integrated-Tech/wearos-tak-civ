@@ -153,7 +153,8 @@ class CompanionAppRepository(private val context: Context) {
 
     fun buildPliEnvelopeFromSnapshot(
         snapshot: DataRepository.PliSnapshot,
-        repIntSeconds: Int
+        repIntSeconds: Int,
+        includeLegacyHeartRate: Boolean = true
     ): Envelope<PliPayload> {
 
         val loc = requireNotNull(snapshot.loc?.takeIf(
@@ -176,7 +177,7 @@ class CompanionAppRepository(private val context: Context) {
             tStale = timeSnap.staleCot,
 
             cs        = sys.callsign,
-            hr      = phys.data.heartRateBpm,
+            hr      = phys.data.heartRateBpm.takeIf { includeLegacyHeartRate },
             skt             = phys.data.skinTempF?.toInt() ?: 0,
             bat = sys.batteryPercent,
 

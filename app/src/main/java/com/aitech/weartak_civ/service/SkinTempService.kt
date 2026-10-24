@@ -353,8 +353,9 @@ class SkinTempService : Service() {
                     skinTempLiveData.postValue("N/A")
                 }
 
+                val sampledTempF = tempF
                 CoroutineScope(Dispatchers.IO).launch {
-                    sharedRepo.storeLatestSkinTemp(tempF)
+                    sharedRepo.storeLatestSkinTemp(sampledTempF, dp.timestamp)
 
                 }
             }
