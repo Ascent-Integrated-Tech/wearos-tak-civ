@@ -16,6 +16,8 @@ class LoadProfileHandlerTest {
     private val added = mutableListOf<String>()
     private var networkLocked = false
     private var identityLocked = false
+    private val unitUpdates = mutableListOf<Map<String, String>>()
+    private val mergedAlerts = mutableListOf<String>()
 
     private val store = object : ProfileStore {
         override suspend fun setCallsign(value: String) { profileCalls += "callsign=$value" }
@@ -51,7 +53,9 @@ class LoadProfileHandlerTest {
             source = { json },
             profileHandler = profileHandler,
             serverSink = { name, _, _, _, _ -> (name !in existing).also { if (it) added += name } },
-            networkLocked = { networkLocked }
+            networkLocked = { networkLocked },
+            unitPrefsSink = { unitUpdates += it },
+            customAlertsSink = { alerts -> alerts.filter { it !in mergedAlerts }.also { mergedAlerts += it }.size }
         )
         handler.execute(ChatCommand("loadprofile", args), ChatCommandRequest("u", "me", "", "m", 0, 0, "s"))
     }
@@ -97,6 +101,25 @@ class LoadProfileHandlerTest {
         networkLocked = true
         assertFalse(run(mapOf("name" to "odin")).ok)
         assertTrue(added.isEmpty() && profileCalls.isEmpty())
+    }
+
+    @Test
+    fun appliesUnitPrefsAndMergesCustomAlerts() {
+        val json = """{"unitPrefs":{"rab_rng_units_pref":"0"},"customAlerts":[" Pick me up ","Help"]}"""
+        val r = run(mapOf("name" to "odin"), json = json)
+        assertTrue(r.message, r.ok)
+        assertEquals(listOf(mapOf("rab_rng_units_pref" to "0")), unitUpdates)
+        assertEquals(listOf("Pick me up", "Help"), mergedAlerts)
+        assertTrue(r.message.contains("units applied") && r.message.contains("2 custom alerts added"))
+    }
+
+    @Test
+    fun invalidUnitsOrAlertsChangeNothing() {
+        val badUnits = """{"profile":{"team":"Dark Green"},"unitPrefs":{"rab_rng_units_pref":"7"},"customAlerts":["Help"]}"""
+        assertFalse(run(mapOf("name" to "odin"), json = badUnits).ok)
+        val badAlert = """{"profile":{"team":"Dark Green"},"unitPrefs":{"rab_rng_units_pref":"0"},"customAlerts":["  "]}"""
+        assertFalse(run(mapOf("name" to "odin"), json = badAlert).ok)
+        assertTrue(profileCalls.isEmpty() && unitUpdates.isEmpty() && mergedAlerts.isEmpty())
     }
 
     @Test

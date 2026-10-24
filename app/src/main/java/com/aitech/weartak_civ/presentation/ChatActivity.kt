@@ -112,7 +112,6 @@ import com.aitech.weartak_civ.presentation.ChatActivity.Companion.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.reply
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.device_uid
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.quickReplyOptions
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
@@ -714,6 +713,7 @@ fun ChatMessageItem(
     context: Context
 ) {
     val clipboardManager = LocalClipboard.current
+    val toastContext = LocalContext.current
 
     Chip(
         onClick = {
@@ -726,7 +726,7 @@ fun ChatMessageItem(
                 clipData
             )
             Toast.makeText(
-                mainActivity,
+                toastContext,
                 "Copied: $message",
                 Toast.LENGTH_LONG
             ).show()

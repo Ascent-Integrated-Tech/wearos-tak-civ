@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.command.ProfileOptions
 import com.aitech.weartak_civ.command.ProfileStore
 import com.aitech.weartak_civ.command.ServerEnrollment
 import com.aitech.weartak_civ.command.SetCallsignHandler
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerId
 import com.aitech.weartak_civ.data.takserver.TakServerRegistration
@@ -83,7 +84,13 @@ object ChatCommandRuntime {
                     source = { name -> readPreset(appContext, name) },
                     profileHandler = profileHandlers.getValue("setprofile"),
                     serverSink = serverSink(repo),
-                    networkLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() }
+                    networkLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() },
+                    unitPrefsSink = { repo.storeUnitPrefs(it) },
+                    customAlertsSink = { alerts ->
+                        val store = (appContext as WearTakApplication).savedCustomAlerts
+                        val before = store.alerts.first().size
+                        if (store.merge(alerts)) store.alerts.first().size - before else 0
+                    }
                 ),
                 "setcallsign" to SetCallsignHandler(
                     isLocked = { repo.phoneManagedSettingsLocked.first() },

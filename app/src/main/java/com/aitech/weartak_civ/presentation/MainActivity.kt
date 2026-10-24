@@ -286,7 +286,7 @@ import com.aitech.weartak_civ.data.model.PressureReading
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.enableMulticastOnWifi
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.takServerList
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
-import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
+import com.aitech.weartak_civ.ui.formatter.UnitPrefs
 import java.io.File
 import com.aitech.weartak_civ.service.SitxTakService
 import com.aitech.weartak_civ.service.TAKConnectService.Companion.takServerDetails
@@ -1935,6 +1935,13 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeHighAtmPressureAlertThreshold(highAtmPressureAlertThresholdConfigUpdate)
             dataRepository.storeEnableBloodhoundProximityVibration(enableBloodhoundProximityVibrationConfigUpdate)
             dataRepository.storeBloodhoundProximityRadiusMeters(bloodhoundProximityRadiusMetersConfigUpdate)
+            if (appRestrictions.containsKey(UnitPrefs.KEY_RANGE_UNITS)) {
+                runCatching {
+                    dataRepository.storeUnitPrefs(
+                        mapOf(UnitPrefs.KEY_RANGE_UNITS to appRestrictions.getString(UnitPrefs.KEY_RANGE_UNITS))
+                    )
+                }.onFailure { Log.w(TAG, "Ignoring invalid managed ${UnitPrefs.KEY_RANGE_UNITS}") }
+            }
             dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensityConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
             dataRepository.storeEnableSitxService(enableSitxServiceConfigUpdate)
@@ -3284,12 +3291,9 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
     val activeTarget = activeItem?.target ?: ""
-    val activeDistanceText = DistanceFormatter
-        .format(activeItem?.distance)
-        .text(
-            metersLabel = stringResource(R.string.m),
-            kilometersLabel = stringResource(R.string.km)
-        )
+    val activeDistanceText = com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(
+        activeItem?.distance, currentUnitPrefs(), separator = ""
+    )
     val hasUnreadBloodhound by dataRepository.hasUnreadBloodhounds.collectAsState() // monitor the number of unread messages
     val activeType = activeItem?.targetKind
 

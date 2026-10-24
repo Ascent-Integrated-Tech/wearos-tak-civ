@@ -29,13 +29,17 @@ class CotEndpointDispatcher(
     private val sendPlugin: (xml: String) -> Unit = {},
 ) {
     private val emergencyMutex = Mutex()
-    private data class DeliveryKey(val uid: String, val state: DataRepository.AlertState, val route: CotRoute)
-    private data class EmergencyVersion(
-        val time: Long?, val lat: Double?, val lon: Double?,
-        val category: String, val description: String, val priority: Int,
+    /**
+     * An emergency is delivered once per uid, state and route. Newer fixes do not resend it:
+     * receivers (TAK Server bridges, ATAK) treat every copy as a new alert notification.
+     * The no-fix GeoChat notice and the positional alert are tracked separately so the
+     * positional alert still goes out once GPS becomes available.
+     */
+    private data class DeliveryKey(
+        val uid: String, val state: DataRepository.AlertState, val route: CotRoute, val positional: Boolean,
     )
-    private val emergencyDeliveries = object : LinkedHashMap<DeliveryKey, EmergencyVersion>(128, 0.75f, true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<DeliveryKey, EmergencyVersion>?) = size > 1024
+    private val emergencyDeliveries = object : LinkedHashMap<DeliveryKey, Unit>(128, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<DeliveryKey, Unit>?) = size > 1024
     }
 
     private suspend fun deliver(message: CotOutboundMessage, route: CotRoute, send: suspend () -> Boolean): Boolean {
@@ -43,15 +47,10 @@ class CotEndpointDispatcher(
             ?: (message.companionPayload as? CotCompanionPayload.Emergency)?.snapshot
             ?: return send()
         return emergencyMutex.withLock {
-            val key = DeliveryKey(snapshot.uid, snapshot.alertState, route)
-            val version = EmergencyVersion(
-                snapshot.location?.timeMillis, snapshot.location?.lat, snapshot.location?.lon,
-                snapshot.category, snapshot.description, snapshot.priority,
-            )
-            val previous = emergencyDeliveries[key]
-            if (previous == version ||
-                (previous?.time != null && (version.time == null || previous.time > version.time))) return@withLock true
-            send().also { accepted -> if (accepted) emergencyDeliveries[key] = version }
+            val positional = message.kind == CotMessageKind.EMERGENCY && snapshot.location != null
+            val key = DeliveryKey(snapshot.uid, snapshot.alertState, route, positional)
+            if (key in emergencyDeliveries) return@withLock true
+            send().also { accepted -> if (accepted) emergencyDeliveries[key] = Unit }
         }
     }
 

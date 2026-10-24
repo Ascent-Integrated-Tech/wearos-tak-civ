@@ -20,7 +20,6 @@ import androidx.wear.watchface.complications.datasource.SuspendingComplicationDa
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.WearTakApplication
-import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.callsign
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivityIsInit
 import com.aitech.weartak_civ.presentation.bloodhoundActiveComplication
@@ -48,12 +47,11 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
         val bhRepo = app.bhRepo
         val active = bhRepo.activeBhItemUi.value
         val northBearing = app.repo.azimuthTrueDegSmoothed.value
-        val activeDistanceText = DistanceFormatter
-            .format(active?.distance)
-            .text(
-                metersLabel = getString(R.string.m),
-                kilometersLabel = getString(R.string.km)
-            )
+        val activeDistanceText = com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(
+            active?.distance,
+            com.aitech.weartak_civ.ui.formatter.UnitPrefsState.prefs.value,
+            separator = ""
+        )
         val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
         val needleOrientation = active?.orientation ?: properNorthBearing
 

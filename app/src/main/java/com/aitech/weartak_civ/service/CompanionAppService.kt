@@ -1802,6 +1802,7 @@ class CompanionAppService : Service() {
         require(payload.reportIntSecs == null || payload.reportIntSecs > 0) {
             "Reporting interval must be positive"
         }
+        payload.unitPrefs?.let { com.aitech.weartak_civ.ui.formatter.UnitPrefs.DEFAULT.withUpdates(it) }
         val sendingPeerAddress = connectedDevice?.address
 
         if (!payload.phoneManagedSettings) {
@@ -1871,6 +1872,8 @@ class CompanionAppService : Service() {
         } else {
             applyProvisionedSettings(payload)
         }
+        // Display-only preference: applied in both configure and phone-managed modes, never restored.
+        payload.unitPrefs?.let { repo.storeUnitPrefs(it) }
         synchronized(phoneManagementLease) {
             if (managedPeerAddress != null && currentPeer(managedPeerAddress, expectedGeneration) &&
                 phoneManagementReleaseGeneration.get() != expectedGeneration
@@ -2153,6 +2156,27 @@ class CompanionAppService : Service() {
                         } catch (error: Exception) {
                             Log.w(TAG, "${base.type}: failed to parse/apply", error)
                             capRepo.buildSettingsAck(ok = false, error = error.message ?: "parse/apply error")
+                        }
+                        sendJsonForPeer(capRepo.envelopeToJson(ack), address, generation)
+                    }
+                }
+
+                "unit_prefs" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    if (!isCurrentSingleWatch(address, generation)) return
+                    serviceScope.launch {
+                        val ack = try {
+                            val payload = org.json.JSONObject(json).getJSONObject("payload")
+                            val updates = payload.keys().asSequence().associateWith { payload.get(it) }
+                            phoneManagementSettingsMutex.withLock {
+                                check(currentPeer(address, generation)) { "Unit prefs belong to an ended companion connection" }
+                                repo.storeUnitPrefs(updates)
+                            }
+                            capRepo.buildUnitPrefsAck(ok = true)
+                        } catch (t: Throwable) {
+                            Log.w(TAG, "unit_prefs: failed to apply", t)
+                            capRepo.buildUnitPrefsAck(ok = false, error = t.message ?: "parse/apply error")
                         }
                         sendJsonForPeer(capRepo.envelopeToJson(ack), address, generation)
                     }

@@ -1395,8 +1395,8 @@ fun MarkerBearingDistance(
     orientation: Float
 ) {
     val distanceText = distance?.let {
-        String.format("%.2f", it) + stringResource(R.string.km) + " away"
-    } ?: "--" + stringResource(R.string.km) + " away"
+        com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(it, currentUnitPrefs()) + " away"
+    } ?: "-- away"
     val orientationText = "${orientation.roundToInt()}° ${bearingToCardinal(orientation)}"
     Row(
         verticalAlignment = Alignment.CenterVertically,

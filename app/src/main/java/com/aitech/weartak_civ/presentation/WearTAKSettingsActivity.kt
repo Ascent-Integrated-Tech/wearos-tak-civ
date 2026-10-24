@@ -1,5 +1,8 @@
 package com.aitech.weartak_civ.presentation
 
+import kotlin.math.roundToInt
+import com.aitech.weartak_civ.ui.formatter.UnitFormatter
+import com.aitech.weartak_civ.ui.formatter.UnitPrefs
 import android.content.Context
 import android.os.Bundle
 import android.os.Handler
@@ -2794,9 +2797,60 @@ fun WearTAKSettingsNav(
                     }
                     item {
                         WearTAKTitleChip(
+                            route = "display_preferences",
+                            title = stringResource(R.string.display_preferences),
+                            navController = navController
+                        )
+                    }
+                    item {
+                        WearTAKTitleChip(
                             route = "plugins",
                             title = stringResource(R.string.plugins),
                             navController = navController
+                        )
+                    }
+                },
+                navController,
+            )
+        }
+        composable("display_preferences") {
+            val unitPrefs = currentUnitPrefs()
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.display_preferences),
+                columnContent = {
+                    item {
+                        WearTAKTitleChipWithState(
+                            route = "display_units",
+                            title = stringResource(R.string.units),
+                            state = unitPrefs.isImperial,
+                            formatState = { imperial ->
+                                stringResource(if (imperial == true) R.string.units_imperial else R.string.units_metric)
+                            },
+                            navController = navController
+                        )
+                    }
+                },
+                navController,
+            )
+        }
+        composable("display_units") {
+            val unitPrefs = currentUnitPrefs()
+            val options = listOf(
+                Triple(UnitPrefs.RANGE_METRIC, R.string.units_metric, R.string.units_metric_desc),
+                Triple(UnitPrefs.RANGE_IMPERIAL, R.string.units_imperial, R.string.units_imperial_desc),
+            )
+            val titles = options.map { stringResource(it.second) }
+            WearTAKPageWithBackArrow(
+                stringResource(R.string.units),
+                {
+                    itemsIndexed(options) { index, option ->
+                        WearTAKSelectableChip(
+                            selected = unitPrefs.rangeUnits == option.first,
+                            onClick = { settingsVm.storeRangeUnits(option.first) },
+                            title = titles[index],
+                            secondaryTitle = stringResource(option.third),
+                            combined = true,
+                            list = titles
                         )
                     }
                 },
@@ -2820,7 +2874,9 @@ fun WearTAKSettingsNav(
                             route = "bloodhound_proximity_radius",
                             title = stringResource(R.string.bloodhound_proximity_radius),
                             state = bloodhoundProximityRadius,
-                            formatState = { value -> "${value ?: 0} meters" },
+                            formatState = { value ->
+                                UnitFormatter.shortDistance((value ?: 0).toDouble(), currentUnitPrefs())
+                            },
                             navController = navController
                         )
                     }
@@ -2844,14 +2900,20 @@ fun WearTAKSettingsNav(
             )
         }
         composable("bloodhound_proximity_radius"){
+            // Stored in meters; imperial users enter feet.
+            val imperial = currentUnitPrefs().isImperial
             WearTAKIntEntryPage(
                 navController = navController,
-                item = bloodhoundProximityRadius,
-                label = stringResource(R.string.bloodhound_proximity_radius),
-                maximum = 100,
+                item = if (imperial) (bloodhoundProximityRadius / UnitFormatter.METERS_PER_FOOT).roundToInt() else bloodhoundProximityRadius,
+                label = stringResource(R.string.bloodhound_proximity_radius) + if (imperial) " (ft)" else " (m)",
+                maximum = if (imperial) (100 / UnitFormatter.METERS_PER_FOOT).toInt() else 100,
                 minimum = 0,
                 context = context,
-                confirmFunction = { settingsVm.storeBloodhoundProximityRadiusMeters(it)}
+                confirmFunction = {
+                    settingsVm.storeBloodhoundProximityRadiusMeters(
+                        if (imperial) (it * UnitFormatter.METERS_PER_FOOT).roundToInt().coerceIn(0, 100) else it
+                    )
+                }
             )
         }
         composable("bloodhound_proximity_intensity"){

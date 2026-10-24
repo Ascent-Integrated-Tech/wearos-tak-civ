@@ -34,7 +34,7 @@ class BloodhoundPickerActionsTest {
                 onStartTarget = { started++; active.value = true },
                 onStopTarget = { stopped++; active.value = false })
         }
-        compose.onNodeWithText("Marker · 1.2 km").assertExists()
+        compose.onNodeWithText("Marker · 1200 m").assertExists()
         compose.onNodeWithContentDescription("Show Rally Point on map").performClick()
         compose.runOnIdle { assertEquals(1, mapped); assertEquals(0, started); assertEquals(0, opened) }
         compose.onNodeWithContentDescription("Start Bloodhound to Rally Point").performClick()

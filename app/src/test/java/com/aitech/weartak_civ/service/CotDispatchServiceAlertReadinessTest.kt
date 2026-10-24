@@ -126,7 +126,7 @@ class CotDispatchServiceAlertReadinessTest {
         assertTrue(fixture.chats.single().snapshot.message.contains("location unavailable, acquiring GPS"))
     }
 
-    @Test fun noFixSendsChatImmediatelyThenFirstRealFixSendsPositionalAlertAndUpdates() = runTest {
+    @Test fun noFixSendsChatImmediatelyThenFirstRealFixSendsPositionalAlertOnce() = runTest {
         val fixture = Fixture(this)
         fixture.multicast.value = true
         val alert = fixture.alert("no-fix")
@@ -147,12 +147,11 @@ class CotDispatchServiceAlertReadinessTest {
         assertEquals(2, fixture.sent.size)
         fixture.snapshotLocation = fixture.snapshotLocation!!.copy(timeMillis = System.currentTimeMillis() + 1, lat = 42.0)
         fixture.drain(false)
-        assertEquals(3, fixture.sent.size)
-        assertTrue(fixture.sent.last().contains("lat='42.0'"))
+        assertEquals(2, fixture.sent.size)
         fixture.clear(false, alert.uuid)
         fixture.snapshotLocation = fixture.snapshotLocation!!.copy(lat = 43.0)
         fixture.drain(false)
-        assertEquals(4, fixture.sent.size)
+        assertEquals(3, fixture.sent.size)
         assertTrue(fixture.sent.last().contains("type='b-a-o-can'"))
     }
 

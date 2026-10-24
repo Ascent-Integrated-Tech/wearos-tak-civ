@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="manual_alert_add_hint">输入自定义警报</string>
     <string name="hello_world">来自 WearTAK-CIV 的信息：你好 %1$s</string>
     <string name="callsign_settings">呼号设置</string>
     <string name="team">团队</string>

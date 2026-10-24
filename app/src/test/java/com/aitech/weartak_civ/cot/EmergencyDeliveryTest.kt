@@ -23,25 +23,43 @@ class EmergencyDeliveryTest {
         return CotOutboundMessage("xml", CotMessageKind.EMERGENCY, CotCompanionPayload.Emergency(snapshot))
     }
 
-    @Test fun eighteenConcurrentRetriesSendOncePerRouteButNewFixAndCancelStillSend() = runTest {
+    @Test fun eighteenConcurrentRetriesAndNewerFixesSendOncePerRouteButCancelStillSends() = runTest {
         val sent = mutableListOf<CotRoute>()
         val dispatcher = dispatcher(sent)
         val standalone = CotEndpointAvailability(true, true, true, true, false, plugin = true)
         (1..18).map { async { dispatcher.dispatch(message(), standalone) } }.awaitAll()
         assertEquals(5, sent.size)
         assertEquals(5, sent.toSet().size)
+        // A refined fix ~1 s later must not produce a duplicate alert at receivers.
         dispatcher.dispatch(message(locationTime = 2000), standalone)
-        assertEquals(10, sent.size)
+        assertEquals(5, sent.size)
         dispatcher.dispatch(message(locationTime = 1000), standalone)
-        assertEquals(10, sent.size)
+        assertEquals(5, sent.size)
         dispatcher.dispatch(message(state = DataRepository.AlertState.CANCEL, locationTime = 2000), standalone)
-        assertEquals(15, sent.size)
+        assertEquals(10, sent.size)
+        dispatcher.dispatch(message(state = DataRepository.AlertState.CANCEL, locationTime = 3000), standalone)
+        assertEquals(10, sent.size)
         dispatcher.dispatch(message(uid = "second"), standalone)
-        assertEquals(20, sent.size)
+        assertEquals(15, sent.size)
         dispatcher.dispatch(message(), standalone.copy(companion = true))
         assertEquals(1, sent.count { it == CotRoute.COMPANION })
-        dispatcher.dispatch(message(), standalone.copy(companion = true))
+        dispatcher.dispatch(message(locationTime = 5000), standalone.copy(companion = true))
         assertEquals(1, sent.count { it == CotRoute.COMPANION })
+    }
+
+    @Test fun noFixNoticeDoesNotSuppressLaterPositionalAlert() = runTest {
+        val sent = mutableListOf<CotRoute>()
+        val dispatcher = dispatcher(sent)
+        val routes = CotEndpointAvailability(true, false, false, false, false)
+        val positional = message()
+        val snapshot = (positional.companionPayload as CotCompanionPayload.Emergency).snapshot.copy(location = null)
+        val notice = CotOutboundMessage("chat", CotMessageKind.CHAT, mockk(relaxed = true), emergencyDelivery = snapshot)
+        dispatcher.dispatch(notice, routes)
+        dispatcher.dispatch(notice, routes)
+        assertEquals(1, sent.size)
+        dispatcher.dispatch(positional, routes)
+        dispatcher.dispatch(message(locationTime = 2000), routes)
+        assertEquals(2, sent.size)
     }
 
     @Test fun partiallyFailedFanoutDoesNotReplayRoutesAlreadyAccepted() = runTest {
