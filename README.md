@@ -214,7 +214,7 @@ to phone-only routing. Standalone route selection and configured service
 preferences are unchanged; this does not unpair or rename any device.
 
 Commands uses original WearTAK megaphone artwork (`ic_commands_megaphone.xml`), not a vendor mark.
-Commands and Data Sync display **Unfunded Request** in the plugin menu; their navigation and Commands toggle behavior are unchanged.
+Commands retains **Unfunded Request** in the plugin menu; Data Sync shows its real enabled/paused state.
 Opening Commands shows informational, wrapping command examples beneath Allowed Callsigns in the scrollable settings list.
 The six integration rows use the artwork below, fitted proportionally into 24 dp without theme tint.
 The user confirmed permission to use these identified assets on 2026-10-21; this is user-confirmed
@@ -233,6 +233,12 @@ Sensor Manager displays **Unfunded Request** and has a saved enable/disable pref
 configuration showing **Unfunded Request**, **Button is Placeholder**, and a single inert **Scan** button.
 The future workflow will list discovered sensors with per-sensor Pair controls and change the main action
 to Unpair once paired. Enabling Sensor Manager does not start scanning or connect hardware yet.
+Its row uses an original neutral sensor/radio-wave glyph (`ic_sensor_manager.xml`).
+CRM uses an original neutral gauge (`ic_plugin_gauge.xml`); neither is a vendor logo
+or a claim of working hardware. Every built-in plugin now has an explicit icon
+mapping; the existing Companion mark, Commands megaphone, integration artwork,
+MOPP mask and independent Data Sync icon are retained. Icons do not enable an
+integration or change its saved state, navigation or placeholder status.
 
 ## What it does
 
@@ -1476,6 +1482,14 @@ saving adds that alert to the list for future use. Presets and custom alerts sor
 alphabetically together. Tap a custom alert's right-side trash button to open its
 delete confirmation. Alerts without an available route continue to use the existing
 pending-alert queue.
+
+New saved manual alerts allow up to 60 UTF-16 code units after trimming and
+collapsing whitespace, with at most 20 saved entries. ISO control characters
+(including newline and tab), case-insensitive duplicates and built-in names are
+rejected without truncation. Existing persisted entries are retained verbatim,
+including legacy longer entries; they remain individually deletable. The limits
+are validated on additions, not applied as destructive load-time migration.
+This rule does not change chat presets.
 
 Alert kinds: the four ATAK standard types above use their own CoT types; every other built-in
 (Gate Runner, Gunshot, Injury, UAS, Vehicle) and every typed or saved custom

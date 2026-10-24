@@ -40,8 +40,11 @@ object SavedCustomAlerts {
     }
 
     fun remove(existing: List<String>, text: String): List<String> {
-        val normalized = normalize(text) ?: return existing
-        return existing.filterNot { it.equals(normalized, ignoreCase = true) }
+        val normalized = normalize(text)
+        return existing.filterNot {
+            it.equals(text, ignoreCase = true) ||
+                (normalized != null && (normalize(it) ?: it).equals(normalized, ignoreCase = true))
+        }
     }
 
     fun merge(existing: List<String>, incoming: List<String>): List<String>? {
@@ -64,7 +67,7 @@ object SavedCustomAlerts {
         ManualAlertTypes.options.any { it.displayName.equals(text, ignoreCase = true) }
 
     private fun List<String>.containsIgnoreCase(text: String): Boolean =
-        any { it.equals(text, ignoreCase = true) }
+        any { (normalize(it) ?: it).equals(text, ignoreCase = true) }
 }
 
 class SavedCustomAlertsStore(context: Context) {
@@ -105,9 +108,8 @@ class SavedCustomAlertsStore(context: Context) {
         return merged
     }
 
-    private fun decode(json: String?): List<String> = runCatching {
+    internal fun decode(json: String?): List<String> = runCatching {
         gson.fromJson<List<String>>(json ?: "[]", listType)
             .orEmpty()
-            .mapNotNull(SavedCustomAlerts::normalize)
     }.getOrDefault(emptyList())
 }
