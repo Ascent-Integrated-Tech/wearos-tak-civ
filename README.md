@@ -54,6 +54,12 @@ initialization logs `Invalid PDL` with `Ditto Community license is missing`, sho
 an `Invalid PDL` toast, and stops the service before sync starts. Selecting Custom
 with an empty PDL does not fall back to Community. Do not commit private identities.
 
+Ditto also syncs direct, group, and All Chat Rooms GeoChat using the `chat`
+collection. Received messages use the normal chat inbox and deduplicate against
+CoT transports by sender/message ID. Expired mesh messages are ignored and
+locally evicted without deleting inbox history. See [the chat wire schema](DITTO_CHAT.md)
+for the shared WearOS/iOS document contract and addressing rules.
+
 Plugins are listed alphabetically, including installed plugins. Everywhere, GoTenna and Somewear Labs are
 unfunded placeholders: each displays **Unfunded Request**, and their switches remain off without activating any integration.
 Installed plugins use split chips: tap the row to open the plugin's launcher activity, or use the switch

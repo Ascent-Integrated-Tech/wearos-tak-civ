@@ -99,13 +99,22 @@ internal class DittoCotReceiver(
                     }
                 }
                 if (raw["_r"] == true || raw["visible"] == false || raw["f"] == false) continue
-                val doc = DittoCotDocument.decode(raw)
+                val doc = if (collection == "chat") {
+                    val members = repository.chatRoomsFlow.value.firstOrNull {
+                        it.uid == raw["roomId"] && it.isGroup
+                    }?.participantUids.orEmpty()
+                    DittoChatDocument.decode(raw, members)
+                } else DittoCotDocument.decode(raw)
                 if (repository.dittoPointIngress.deleted(doc)) continue
                 require(collection != "track" || CotMessageParser.isUserPositionType(doc.type)) {
                     "Non-PLI document in Ditto track"
                 }
                 require(collection != "alert" || CotMessageParser.isEmergencyType(doc.type)) {
                     "Non-emergency document in Ditto alert"
+                }
+                require(collection != "chat" ||
+                    (doc.type == "b-t-f" && CotMessageParser.isValidGatewayChat(doc.xml))) {
+                    "Invalid GeoChat document in Ditto chat"
                 }
                 if (doc.peer == localPeer() || doc.author == deviceUid() || doc.uid == deviceUid()) continue
                 val currentTime = now()

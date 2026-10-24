@@ -56,7 +56,8 @@ internal class DittoStoreObservers(
                         }
                     }.also { docs ->
                         require(docs.sumOf { doc ->
-                            (doc["r"] as? String)?.length?.toLong() ?: 0L
+                            ((doc["r"] as? String)?.length?.toLong() ?: 0L) +
+                                ((doc["msg"] as? String)?.length?.toLong() ?: 0L)
                         } <= MAX_SNAPSHOT_CHARACTERS) { "Oversized Ditto snapshot detail" }
                     }
                 }

@@ -26,6 +26,7 @@ import android.widget.Toast
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cot.CotDetailBuilder
+import com.aitech.weartak_civ.cot.DittoChatDocument
 import com.aitech.weartak_civ.cot.DittoCotReceiver
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.data.DataRepository
@@ -45,6 +46,8 @@ import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
 import live.ditto.DittoSyncSubscription
+import live.ditto.DittoStore
+import live.ditto.DittoCounter
 import live.ditto.android.DefaultAndroidDittoDependencies
 import live.ditto.transports.DittoTransportConfig
 import java.util.concurrent.atomic.AtomicBoolean
@@ -68,6 +71,7 @@ class DittoService : Service() {
     private var subscriptionTrack: DittoSyncSubscription? = null
     private var subscriptionAlert: DittoSyncSubscription? = null
     private var subscriptionMapItem: DittoSyncSubscription? = null
+    private var subscriptionChat: DittoSyncSubscription? = null
     private var storeObservers: DittoStoreObservers? = null
     private var changeCounterTrackDocument: Int = 1
 
@@ -107,6 +111,7 @@ class DittoService : Service() {
         try {
             configureDitto()
             subscribeToCollections()
+            evictExpiredChatDocuments()
             storeObservers = DittoStoreObservers(
                 ditto.store, ioScope, DittoCotReceiver(
                     repository = dataRepository,
@@ -121,6 +126,7 @@ class DittoService : Service() {
             ioScope.launch {
                 while (isActive) {
                     retryPointPublications()
+                    evictExpiredChatDocuments()
                     delay(10_000)
                 }
             }
@@ -139,10 +145,11 @@ class DittoService : Service() {
     }
 
     private fun subscribeToCollections() {
-        Log.d(TAG, "DittoService subscribeToCollections(): [ track, alert, mapitem ]")
+        Log.d(TAG, "DittoService subscribeToCollections(): [ track, alert, mapitem, chat ]")
         subscriptionTrack = ditto.sync.registerSubscription("SELECT * FROM track")
         subscriptionMapItem = ditto.sync.registerSubscription("SELECT * FROM mapitem")
         subscriptionAlert = ditto.sync.registerSubscription("SELECT * FROM alert")
+        subscriptionChat = ditto.sync.registerSubscription("SELECT * FROM chat")
 
     }
 
@@ -151,10 +158,12 @@ class DittoService : Service() {
         subscriptionTrack?.close()
         subscriptionAlert?.close()
         subscriptionMapItem?.close()
+        subscriptionChat?.close()
 
         subscriptionTrack = null
         subscriptionAlert = null
         subscriptionMapItem = null
+        subscriptionChat = null
     }
 
     private fun configureDitto() {
@@ -207,6 +216,10 @@ class DittoService : Service() {
             try {
                 val raw = evt.cotXml
                 Log.v(TAG, "raw value is: $raw")
+                if (evt.collection == "chat") {
+                    publishDocument("chat", DittoChatDocument.encode(raw, localPeerKeyString))
+                    return@launch
+                }
 
                 // 1) Core CoT parsing using XmlPullParser
                 val parser = XmlPullParserFactory.newInstance()
@@ -363,6 +376,19 @@ class DittoService : Service() {
         )
     }
 
+    internal fun evictExpiredChatDocuments(
+        store: DittoStore = ditto.store,
+        nowMillis: Long = System.currentTimeMillis()
+    ) {
+        try {
+            // Local eviction, not replicated deletion: expiry never removes inbox history.
+            store.collection("chat").find("o <= $nowMillis").evict()
+            store.collection("chat").find("b <= ${nowMillis - DittoChatDocument.TTL_MILLIS}").evict()
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not evict expired Ditto chat; retrying later", error)
+        }
+    }
+
     internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {
         if (dataRepository.isCompanionConnected.value) {
             Log.d(TAG, "Suppressing direct Ditto publication while bonded companion is connected")
@@ -381,7 +407,8 @@ class DittoService : Service() {
     }
 
     internal fun writeDocument(collection: String, document: Map<String, Any?>) {
-        ditto.store.write { tx -> tx.scoped(collection).upsert(document) }
+        val properties = if (collection == "chat") document + ("_c" to DittoCounter()) else document
+        ditto.store.write { tx -> tx.scoped(collection).upsert(properties) }
     }
 
     private fun writeOwnedPointDocument(document: Map<String, Any?>) {
