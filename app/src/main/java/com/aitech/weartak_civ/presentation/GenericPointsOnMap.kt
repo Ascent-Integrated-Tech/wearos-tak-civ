@@ -72,7 +72,8 @@ internal fun GenericPointsOnMap(
     markers: List<MapMarkerItem>,
     collection: MarkerLayerCollection,
     camera: CameraState,
-    onClick: (String, String) -> Unit
+    onClick: (String, String) -> Unit,
+    onSelectionKey: ((String) -> Unit)? = null
 ) {
     val groups = remember(markers) {
         markers.filter { CotMessageParser.isGenericMapType(it.markerType) }
@@ -84,7 +85,8 @@ internal fun GenericPointsOnMap(
                 FeatureCollection(points.mapNotNull {
                     val position = validMapPositionOrNull(it.lat, it.lon) ?: return@mapNotNull null
                     Feature(Point(position), JsonObject(mapOf(
-                        "id" to JsonPrimitive(it.uid), "title" to JsonPrimitive(it.title)
+                        "id" to JsonPrimitive(it.uid), "title" to JsonPrimitive(it.mapLabel ?: it.title),
+                        "selectionKey" to JsonPrimitive(it.selectionKey.orEmpty())
                     )))
                 })
             }
@@ -94,14 +96,20 @@ internal fun GenericPointsOnMap(
             CircleLayer(
                 id = "$id-dot", source = source, radius = const(4.dp), color = const(color),
                 onClick = { hits ->
-                    hits.firstOrNull()?.let {
-                        onClick(it.getStringProperty("id").orEmpty(), it.getStringProperty("title").orEmpty())
-                    }
-                    ClickResult.Pass
+                    val hit = hits.firstOrNull() ?: return@CircleLayer ClickResult.Pass
+                    if (onSelectionKey != null) onSelectionKey(hit.getStringProperty("selectionKey").orEmpty())
+                    else onClick(hit.getStringProperty("id").orEmpty(), hit.getStringProperty("title").orEmpty())
+                    ClickResult.Consume
                 }
             )
             SymbolLayer(
                 id = "$id-label", source = source,
+                onClick = { hits ->
+                    val hit = hits.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
+                    if (onSelectionKey != null) onSelectionKey(hit.getStringProperty("selectionKey").orEmpty())
+                    else onClick(hit.getStringProperty("id").orEmpty(), hit.getStringProperty("title").orEmpty())
+                    ClickResult.Consume
+                },
                 textField = if (camera.position.zoom > 10) get("title").asString() else const(""),
                 textSize = const(0.35.em), textColor = const(Color.White),
                 textHaloColor = const(Color.Black), textHaloWidth = const(2.dp),

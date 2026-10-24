@@ -422,7 +422,8 @@ fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
-                            "title" to JsonPrimitive(m.title.ifBlank { markerTextFromString(m.markerType) }.ellipsizeMarkerTitle()),
+                            "selectionKey" to JsonPrimitive(m.selectionKey.orEmpty()),
+                            "title" to JsonPrimitive(m.mapLabel ?: m.title.ifBlank { markerTextFromString(m.markerType) }.ellipsizeMarkerTitle()),
                             "markerType" to JsonPrimitive(m.markerType),
                             "enQueuedToBeSent" to JsonPrimitive(m.enQueuedToBeSent),
                             "cotType" to JsonPrimitive(m.cotType.name),
@@ -452,7 +453,9 @@ data class MapMarkerItem(
     val enQueuedToBeSent: Boolean,
     val cotType: DataRepository.MarkerCotType,
     val sourceServerId: String? = null,
-    val circleRadiusMeters: Double? = null
+    val circleRadiusMeters: Double? = null,
+    val mapLabel: String? = null,
+    val selectionKey: String? = null
 )
 
 // Selects the gray icon used for cleared markers
@@ -468,6 +471,7 @@ internal fun MarkersOnMap(
     collection: MarkerLayerCollection,
     onMarkerClick: (id: String, title: String) -> Unit = { _, _ -> },
     camera: CameraState,
+    onSelectionKey: ((String) -> Unit)? = null,
 ) {
 
     // Skip marker layer creation when there are no markers
@@ -486,7 +490,7 @@ internal fun MarkersOnMap(
     )
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
-    GenericPointsOnMap(markers, collection, camera, onMarkerClick)
+    GenericPointsOnMap(markers, collection, camera, onMarkerClick, onSelectionKey)
     // Create one symbol layer for each marker type
     typeGroups.keys.forEach { markerType ->
         androidx.compose.runtime.key(collection, markerType) {
@@ -515,13 +519,14 @@ internal fun MarkersOnMap(
             ),
             iconAllowOverlap = const(true),
             iconIgnorePlacement = const(true),
-            textAllowOverlap = const(true),
-            textIgnorePlacement = const(true),
+            textAllowOverlap = const(false),
+            textIgnorePlacement = const(false),
             textOptional = const(true),
             onClick = { features ->
                 val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
-                onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
-                ClickResult.Pass
+                if (onSelectionKey != null) onSelectionKey(f.getStringProperty("selectionKey").orEmpty())
+                else onMarkerClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
+                ClickResult.Consume
             },
             iconSize = const(1),
             textField = if (camera.position.zoom > 10.0) {
@@ -702,7 +707,8 @@ fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
-                            "title" to JsonPrimitive(m.title),
+                            "selectionKey" to JsonPrimitive(m.selectionKey.orEmpty()),
+                            "title" to JsonPrimitive(m.mapLabel ?: m.title),
                             "type" to JsonPrimitive(m.type),
                             "team" to JsonPrimitive(m.team),
                             "sourceServerId" to JsonPrimitive(m.sourceServerId ?: "unattributed")),
@@ -721,7 +727,9 @@ data class MapUserItem(
     val lat: Double?,
     val lon: Double?,
     val role: String?,
-    val sourceServerId: String? = null
+    val sourceServerId: String? = null,
+    val mapLabel: String? = null,
+    val selectionKey: String? = null
 )
 
 // Creates MapLibre symbol layers for connected users
@@ -730,6 +738,7 @@ fun UsersOnMap(
     users: List<MapUserItem>,
     onUserClick: (id: String, title: String) -> Unit = { _, _ -> },
     camera: CameraState,
+    onSelectionKey: ((String) -> Unit)? = null,
 ) {
     // Skip user layer creation when there are no users
     if (users.isEmpty()) return
@@ -745,9 +754,10 @@ fun UsersOnMap(
     val genericUsers = remember(users) {
         users.filter { CotMessageParser.isGenericMapType(it.type) && it.lat != null && it.lon != null }
             .map { MapMarkerItem(it.uid, it.type, it.title.ifBlank { it.uid }, it.lat, it.lon,
-                false, DataRepository.MarkerCotType.DROP, it.sourceServerId) }
+                false, DataRepository.MarkerCotType.DROP, it.sourceServerId, mapLabel = it.mapLabel,
+                selectionKey = it.selectionKey) }
     }
-    GenericPointsOnMap(genericUsers, MarkerLayerCollection.USERS, camera, onUserClick)
+    GenericPointsOnMap(genericUsers, MarkerLayerCollection.USERS, camera, onUserClick, onSelectionKey)
     val source = rememberGeoJsonSource(
         data = fc.toSafeGeoJsonData()
     )
@@ -781,12 +791,14 @@ fun UsersOnMap(
             iconAllowOverlap = const(true),
             iconIgnorePlacement = const(true),
             iconHaloColor = const(Color.Black),
-            textAllowOverlap = const(true),
-            textIgnorePlacement = const(true),
+            textAllowOverlap = const(false),
+            textIgnorePlacement = const(false),
+            textOptional = const(true),
             onClick = { features ->
                 val f = features.firstOrNull() ?: return@SymbolLayer ClickResult.Pass
-                onUserClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
-                ClickResult.Pass
+                if (onSelectionKey != null) onSelectionKey(f.getStringProperty("selectionKey").orEmpty())
+                else onUserClick(f.getStringProperty("id").orEmpty(), f.getStringProperty("title").orEmpty())
+                ClickResult.Consume
             },
             iconSize = const(1),
             textField = if (camera.position.zoom > 10.0) {
@@ -2390,6 +2402,87 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
         }
     }
 
+    val visibleMapUsers = if (showUsers || selectingChatContact) receivedMapUsers.filter {
+        if (selectingChatContact) {
+            it.uid.isNotBlank() && it.uid != MainActivity.device_uid &&
+                it.uid != ChatDestinations.ALL_CHAT_ROOMS && it.title.isNotBlank() &&
+                receivedUserListSetting.any { user -> user.uid == it.uid && !user.chatEndpoint.isNullOrBlank() }
+        } else {
+            CotMessageParser.isGenericMapType(it.type) || (it.team in visibleUserTeams &&
+                (it.role in visibleUserRoles || it.role in visibleUserRolesLEO))
+        }
+    } else emptyList()
+    val visibleDropped = if (showMarkers) droppedMapMarkers else emptyList()
+    val visibleReceived = if (showMarkers) receivedMapMarkers else emptyList()
+    val selectableMapTargets = remember(visibleMapUsers, visibleDropped, visibleReceived) {
+        buildList {
+            visibleMapUsers.forEach {
+                validMapPositionOrNull(it.lat, it.lon)?.let { point ->
+                    add(MapSelectionTarget(it.uid, it.title, MapTargetKind.CONTACT, point.latitude, point.longitude,
+                        it.sourceServerId))
+                }
+            }
+            fun addMarkers(markers: List<MapMarkerItem>, kind: MapTargetKind) {
+                markers.filter { kind != MapTargetKind.DROPPED || it.cotType != DataRepository.MarkerCotType.CLEAR }.forEach {
+                    validMapPositionOrNull(it.lat, it.lon)?.let { point ->
+                        add(MapSelectionTarget(it.uid, it.title.ifBlank { markerTextFromString(it.markerType) },
+                            kind, point.latitude, point.longitude, it.sourceServerId))
+                    }
+                }
+            }
+            addMarkers(visibleDropped, MapTargetKind.DROPPED)
+            addMarkers(visibleReceived, MapTargetKind.RECEIVED)
+        }
+    }
+    val targetGroups = remember(selectableMapTargets, projection, cameraState.position) {
+        groupMapTargets(selectableMapTargets) { latitude, longitude ->
+            projection?.screenLocationFromPosition(Position(longitude, latitude))?.let {
+                MapTargetScreenPoint(it.x.value.toDouble(), it.y.value.toDouble())
+            }
+        }
+    }
+    val groupsByTarget = targetGroups.flatMap { group -> group.map { it.key to group } }.toMap()
+    val targetLabels = buildMap {
+        targetGroups.filter { it.size > 1 }.forEach { group ->
+            group.forEachIndexed { index, target ->
+                put(target.key, if (index == 0)
+                    context.resources.getQuantityString(R.plurals.map_target_count, group.size, group.size) else "")
+            }
+        }
+    }
+    var selectedMapTargetKeys by remember { mutableStateOf<Set<String>?>(null) }
+    fun openMapTarget(target: MapSelectionTarget) {
+        if (target.kind == MapTargetKind.CONTACT) {
+            onUserClick(target.uid)
+            return
+        }
+        val dropped = target.kind == MapTargetKind.DROPPED
+        val index = if (dropped) droppedMarkerListSetting.indexOfFirst {
+            it.uid == target.uid && it.cotType != DataRepository.MarkerCotType.CLEAR
+        } else receivedMarkerListSetting.indexOfFirst {
+            it.uid == target.uid && it.sourceServerId == target.sourceServerId
+        }
+        if (index < 0) {
+            Log.w(TAG, "Selected map target is no longer available")
+            return
+        }
+        context.startActivity(Intent(context, MarkerActivity::class.java).apply {
+            putExtra("marker_index", index)
+            putExtra("start_route", if (dropped) "edit_marker_screen/$index" else "received_marker_detail/$index")
+            putExtra("from_maps", true)
+        })
+    }
+    fun selectMapTarget(key: String) {
+        val target = selectableMapTargets.firstOrNull { it.key == key }
+        if (target == null) {
+            Log.w(TAG, "Clicked map target is no longer available")
+            return
+        }
+        val group = groupsByTarget[target.key].orEmpty()
+        if (group.size > 1) selectedMapTargetKeys = group.map { it.key }.toSet()
+        else openMapTarget(target)
+    }
+
 // MAP RENDERING
 // Draws the map and all map content
     Box(Modifier.fillMaxSize()) {
@@ -2554,77 +2647,24 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                 // Displays markers dropped by the current user
                 MarkersOnMap(
                     collection = MarkerLayerCollection.DROPPED,
-                    markers = droppedMapMarkers.filter {
-                        it.lat != null && it.lon != null
+                    markers = visibleDropped.map {
+                        val key = mapSelectionKey(MapTargetKind.DROPPED, it.uid, it.sourceServerId)
+                        it.copy(mapLabel = targetLabels[key], selectionKey = key)
                     },
 
-                    // Opens the selected dropped marker
-                    onMarkerClick = { id, _ ->
-
-                        // Finds the selected marker in the repository list
-                        val index = droppedMarkerListSetting.indexOfFirst {
-                            it.uid == id
-                        }
-
-                        // Opens markers that still exist and have not been cleared
-                        if (
-                            index != -1 &&
-                            droppedMapMarkers[index].cotType !=
-                            DataRepository.MarkerCotType.CLEAR
-                        ) {
-                            Log.d(TAG, "Index from map: $index")
-
-                            // Opens the marker edit screen
-                            val intent = Intent(
-                                context,
-                                MarkerActivity::class.java
-                            ).apply {
-                                putExtra("marker_index", index)
-                                putExtra(
-                                    "start_route",
-                                    "edit_marker_screen/$index"
-                                )
-                                putExtra("from_maps", true)
-                            }
-
-                            context.startActivity(intent)
-                        }
-                    },
+                    onSelectionKey = ::selectMapTarget,
                     camera = cameraState
                 )
 
                 // Displays markers received from other users
                 MarkersOnMap(
                     collection = MarkerLayerCollection.RECEIVED,
-                    markers = receivedMapMarkers,
-
-                    // Opens the selected received marker
-                    onMarkerClick = { id, _ ->
-
-                        // Finds the selected marker in the repository list
-                        val index = receivedMarkerListSetting.indexOfFirst {
-                            it.uid == id
-                        }
-
-                        // Makes sure the marker was found
-                        if (index != -1) {
-
-                            // Opens the received marker detail screen
-                            val intent = Intent(
-                                context,
-                                MarkerActivity::class.java
-                            ).apply {
-                                putExtra("marker_index", index)
-                                putExtra(
-                                    "start_route",
-                                    "received_marker_detail/$index"
-                                )
-                                putExtra("from_maps", true)
-                            }
-
-                            context.startActivity(intent)
-                        }
+                    markers = visibleReceived.map {
+                        val key = mapSelectionKey(MapTargetKind.RECEIVED, it.uid, it.sourceServerId)
+                        it.copy(mapLabel = targetLabels[key], selectionKey = key)
                     },
+
+                    onSelectionKey = ::selectMapTarget,
                     camera = cameraState
                 )
             }
@@ -2642,20 +2682,11 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                 UsersOnMap(
 
                     // Filters users by team and role
-                    users = receivedMapUsers.filter {
-                        if (selectingChatContact) {
-                            it.uid.isNotBlank() && it.uid != MainActivity.device_uid &&
-                                it.uid != ChatDestinations.ALL_CHAT_ROOMS && it.title.isNotBlank() &&
-                                receivedUserListSetting.any { user -> user.uid == it.uid && !user.chatEndpoint.isNullOrBlank() }
-                        } else {
-                            CotMessageParser.isGenericMapType(it.type) || (it.team in visibleUserTeams &&
-                                (it.role in visibleUserRoles || it.role in visibleUserRolesLEO)
-                            )
-                        }
+                    users = visibleMapUsers.map {
+                        val key = mapSelectionKey(MapTargetKind.CONTACT, it.uid, it.sourceServerId)
+                        it.copy(mapLabel = targetLabels[key], selectionKey = key)
                     },
-                    onUserClick = { id, _ ->
-                        onUserClick(id)
-                    },
+                    onSelectionKey = ::selectMapTarget,
                     camera = cameraState
                 )
             }
@@ -2931,6 +2962,14 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                 mapVm,
                 takServers = takChannels
             )
+        }
+        selectedMapTargetKeys?.let { keys ->
+            MapTargetPicker(selectableMapTargets.filter { it.key in keys },
+                onSelect = { target ->
+                    selectedMapTargetKeys = null
+                    openMapTarget(target)
+                },
+                onBack = { selectedMapTargetKeys = null })
         }
         selectedRoute?.let { (serverId, routeUid) ->
             val route = takRoutes.firstOrNull { it.serverId == serverId && it.uid == routeUid }

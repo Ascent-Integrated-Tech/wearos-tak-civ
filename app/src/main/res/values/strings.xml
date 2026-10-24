@@ -11,7 +11,7 @@
     <string name="mopp_2">MOPP 2</string>
     <string name="mopp_3">MOPP 3</string>
     <string name="mopp_4">MOPP 4</string>
-    <string name="mopp_manual_local">Manual status, saved on this watch only. Not sensed or assessed protection.</string>
+    <string name="mopp_manual_local">Manual status, saved on this watch. When enabled, a compatible connected Companion can relay it. Not sensed or assessed protection.</string>
     <string name="mopp_unset_help">None means no status is set, not MOPP 0.</string>
     <string name="mopp_save">Save</string>
     <string name="mopp_saving">Saving…</string>
@@ -151,6 +151,17 @@
     <string name="confirm">Confirm</string>
     <string name="dismiss">Dismiss</string>
     <string name="sos_alert_prompt">Do you want to trigger an SOS alert at your location?</string>
+    <string name="clear_dropped_markers">Clear Dropped Markers</string>
+    <string name="map_select_target">Select Target</string>
+    <string name="map_no_targets">No Targets Available</string>
+    <string name="map_target_contact">Contact</string>
+    <string name="map_target_dropped">Dropped Marker</string>
+    <string name="map_target_received">Received Marker</string>
+    <plurals name="map_target_count">
+        <item quantity="one">%d target</item>
+        <item quantity="other">%d targets</item>
+    </plurals>
+    <string name="no_dropped_markers">No Dropped Markers</string>
     <string name="marker_drop_prompt">Drop marker at current location?</string>
     <string name="success">Success!</string>
     <string name="error">Error</string>
