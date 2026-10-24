@@ -449,7 +449,9 @@ local tests does not establish phone consumption or server/ATAK receipt.
 ### WEARTAK-121: Bloodhound to a map user
 
 From Home, tap the compass/Bloodhound target to open the picker, including while
-guidance is active. The picker row's red square stops guidance without deleting
+guidance is active. Only the decorative target glyph beside the active target title
+is omitted; the rotating compass, target/distance, unread marker, picker shortcut,
+Map button and clock remain. The picker row's red square stops guidance without deleting
 the target; **Remove** removes that row. **nPos** means **In Position**: it completes
 the ordinary assignment, removes its Bloodhound row and stops its guidance. A chat
 reply is sent only when the assignment has an identified issuer; local pins do not

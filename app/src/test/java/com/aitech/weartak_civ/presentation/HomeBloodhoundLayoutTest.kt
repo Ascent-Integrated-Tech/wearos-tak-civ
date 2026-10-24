@@ -35,7 +35,11 @@ class HomeBloodhoundLayoutTest {
     @get:Rule val compose = createComposeRule()
 
     @Test fun activeContactAndPinAt480Font13() = verifyHome(480, 1.3f)
+    @Test fun activeContactAndPinAt480Font10() = verifyHome(480, 1f)
+    @Test fun activeContactAndPinAt480Font11() = verifyHome(480, 1.1f)
+    @Test fun activeContactAndPinAt498Font10() = verifyHome(498, 1f)
     @Test fun activeContactAndPinAt498Font11() = verifyHome(498, 1.1f)
+    @Test fun activeContactAndPinAt498Font13() = verifyHome(498, 1.3f)
     @Test fun pickerBackAt480Font13() = verifyHeader(480, 1.3f)
     @Test fun pickerBackAt498Font11() = verifyHeader(498, 1.1f)
 
@@ -72,12 +76,25 @@ class HomeBloodhoundLayoutTest {
             val map = compose.onNodeWithContentDescription("Map")
             picker.assertIsDisplayed().performClick()
             map.assertIsDisplayed().performClick()
+            val compass = compose.onNodeWithContentDescription("Compass", useUnmergedTree = true)
+            compass.assertIsDisplayed()
+            val c = compass.fetchSemanticsNode().boundsInRoot
             val p = picker.fetchSemanticsNode().boundsInRoot
             val m = map.fetchSemanticsNode().boundsInRoot
             assertTrue("Picker/map overlap", p.right <= m.left)
             assertTrue("Picker too short", p.height >= 48 * density - 1)
             assertTrue("Map too narrow", m.width >= 48 * density - 1)
             assertTrue("Navigation overlaps reserved clock area", m.bottom <= pixels - 24 * density)
+            assertTrue("Compass lost its visual size", c.width >= 28 * density - 1 && c.height >= 28 * density - 1)
+            assertTrue("Compass detached from picker", p.contains(c.center))
+            assertTrue("Compass overlaps Map or clock", c.right <= m.left && c.bottom <= pixels - 24 * density)
+            val radius = pixels / 2f
+            for (corner in listOf(c.topLeft, c.topRight, c.bottomLeft, c.bottomRight)) {
+                val dx = corner.x - radius
+                val dy = corner.y - radius
+                assertTrue("Compass outside round safe area: compass=$c picker=$p map=$m pixels=$pixels",
+                    dx * dx + dy * dy <= radius * radius)
+            }
             return m
         }
         compose.waitUntil { repository.activeBhItemUi.value?.targetKind == Utils.BloodhoundTargetKind.CONTACT }
