@@ -19,6 +19,8 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class RouteRemovalTest {
+    @org.junit.Before fun initializeDevice() { MainActivity.device_uid = "watch" }
+
     @Test fun pickerRemovalRemovesAllVersionedCopiesAndStopsMatchingNavigation() {
         val app = RuntimeEnvironment.getApplication()
         val repo = DataRepository(app)

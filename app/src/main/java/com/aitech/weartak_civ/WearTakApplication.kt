@@ -102,6 +102,7 @@ class WearTakApplication : Application() {
             repo.unitPrefs.collect(com.aitech.weartak_civ.ui.formatter.UnitPrefsState::update)
         }
         bhRepo = BloodhoundRepository(applicationContext)
+        bhRepo.restoreRouteSession(repo.visibleTakRoutes, repo.routePersistence)
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             repo.takRoutes.collect { routes -> bhRepo.reconcileRoutes(routes) }
         }

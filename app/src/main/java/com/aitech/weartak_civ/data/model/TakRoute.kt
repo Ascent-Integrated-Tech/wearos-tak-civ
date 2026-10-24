@@ -29,7 +29,8 @@ data class TakRoute(
     val sender: String? = null,
 
     val eventTime: Long? = null,
-    val method: String = "Walking"
+    val method: String = "Walking",
+    val staleTime: Long? = null
 
 )
 

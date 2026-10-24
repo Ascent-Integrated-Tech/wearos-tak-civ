@@ -52,6 +52,20 @@ class CompanionRouteSyncTest {
         assertNull(active!!.phoneSessionId)
     }
 
+    @Test fun recoveredStandaloneRouteNeverStartsPhoneNavigationOnReconnect() {
+        active = RouteFollowSession(route, RouteFollow.start(route.points, RouteFollow.StartMode.BEGINNING),
+            null, recoveredLocally = true)
+        sync.connectionChanged(true)
+        sync.localRouteChanged()
+        sync.connectionChanged(false)
+        sync.connectionChanged(true)
+        sync.localRouteChanged()
+        assertTrue(sent.isEmpty())
+        assertNull(active!!.phoneSessionId)
+        start()
+        assertEquals("start", lastPayload().getString("action"))
+    }
+
     @Test fun rejectionResumesLocalOnceWithoutRetryLoop() {
         sync.connectionChanged(true)
         start()

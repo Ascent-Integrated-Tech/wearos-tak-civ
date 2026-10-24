@@ -192,6 +192,8 @@ import com.aitech.weartak_civ.manager.NetworkManager
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import org.greenrobot.eventbus.EventBus
 import com.aitech.weartak_civ.events.InteractionPliRefresh
 import com.aitech.weartak_civ.events.PliRefreshReason
@@ -305,30 +307,61 @@ class DataRepository(private val context: Context) {
         _takMissions.asStateFlow()
 
     // Keep source ownership for mission bookkeeping and fallback; project versioned CoT by UID.
-    private val _takRoutes = MutableStateFlow<Map<Pair<String, String>, TakRoute>>(emptyMap())
+    internal val routePersistence = RoutePersistence(
+        context.getSharedPreferences("received-routes-v1", Context.MODE_PRIVATE)
+    )
+    private val restoredRoutes = routePersistence.load(System.currentTimeMillis())
+    private val _takRoutes = MutableStateFlow(restoredRoutes.routes.associateBy { it.serverId to it.uid })
     private val routeRemovals = object : LinkedHashMap<Pair<String, String>, Long>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Pair<String, String>, Long>?) = size > 2048
-    }
+    }.apply { putAll(restoredRoutes.removals) }
+    private var routeExpiryJob: Job? = null
     internal val takRouteCopies: List<TakRoute> get() = _takRoutes.value.values.toList()
+    internal val visibleTakRoutes: List<TakRoute> get() = projectRoutes(takRouteCopies)
 
     val takRoutes: StateFlow<List<TakRoute>> =
         _takRoutes
-            .map { routes ->
-                val versioned = routes.values.filter { it.eventTime != null }.groupBy { it.uid }
-                    .mapValues { (_, copies) -> copies.maxBy { requireNotNull(it.eventTime) } }
-                routes.values.filter { route ->
-                    route.eventTime == null || versioned[route.uid] == route
-                }
-            }
+            .map { routes -> projectRoutes(routes.values.toList()) }
             .stateIn(
                 scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
                 started = SharingStarted.Eagerly,
-                initialValue = emptyList()
+                initialValue = projectRoutes(restoredRoutes.routes)
             )
+
+    private fun projectRoutes(routes: List<TakRoute>): List<TakRoute> {
+        val versioned = routes.filter { it.eventTime != null }.groupBy { it.uid }
+            .mapValues { (_, copies) -> copies.maxBy { requireNotNull(it.eventTime) } }
+        return routes.filter { it.eventTime == null || versioned[it.uid] == it }
+    }
+
+    init {
+        synchronized(routeRemovals) { scheduleRouteExpiry() }
+    }
+
+    private fun publishRoutes(routes: Map<Pair<String, String>, TakRoute>) {
+        // Commit first: a process death after publishing must not restore a deleted copy.
+        routePersistence.save(routes.values, routeRemovals)
+        _takRoutes.value = routes
+        scheduleRouteExpiry()
+    }
+
+    private fun scheduleRouteExpiry() {
+        routeExpiryJob?.cancel()
+        val stale = _takRoutes.value.values.mapNotNull { it.staleTime }.minOrNull() ?: return
+        routeExpiryJob = repoScope.launch {
+            delay((stale - System.currentTimeMillis()).coerceAtLeast(0))
+            pruneTakRoutes()
+        }
+    }
+
+    internal fun pruneTakRoutes(now: Long = System.currentTimeMillis()) = synchronized(routeRemovals) {
+        publishRoutes(_takRoutes.value.filterValues { it.staleTime == null || it.staleTime > now })
+    }
 
     // Add a new route or update an existing route
     // A route is identified by its server ID and UID
     fun upsertTakRoute(route: TakRoute) = synchronized(routeRemovals) {
+        if (route.staleTime?.let { it <= System.currentTimeMillis() } == true) return@synchronized
         if (route.eventTime == null) {
             Log.d(TAG, "Route has no event version; cannot replace versioned state uid=${route.uid}")
         }
@@ -340,12 +373,10 @@ class DataRepository(private val context: Context) {
         // Update the route map with the latest route data
         // An existing route with the same key will be replaced
         // Other stored routes will remain unchanged
-        _takRoutes.update { current ->
-            val previous = current[key]
-            if (previous?.eventTime != null &&
-                (route.eventTime == null || route.eventTime < previous.eventTime)) current
-            else current + (key to route)
-        }
+        val previous = _takRoutes.value[key]
+        if (previous?.eventTime != null &&
+            (route.eventTime == null || route.eventTime < previous.eventTime)) return@synchronized
+        publishRoutes(_takRoutes.value + (key to route))
 
         // Log the stored route information for debugging
         Log.d(
@@ -355,24 +386,24 @@ class DataRepository(private val context: Context) {
         )
     }
 
-    fun removeTakRoute(serverId: String, routeUid: String) {
-        _takRoutes.update { it - (serverId to routeUid) }
+    fun removeTakRoute(serverId: String, routeUid: String) = synchronized(routeRemovals) {
+        publishRoutes(_takRoutes.value - (serverId to routeUid))
     }
 
     fun removeRouteFromWatch(route: TakRoute, bloodhoundRepository: BloodhoundRepository) {
         if (bloodhoundRepository.routeFollow.value?.matches(route) == true) bloodhoundRepository.stopRoute()
-        _takRoutes.update { routes ->
-            routes.filterValues { candidate ->
+        synchronized(routeRemovals) {
+            publishRoutes(_takRoutes.value.filterValues { candidate ->
                 !(candidate.uid == route.uid && (candidate.serverId == route.serverId ||
                     (route.eventTime != null && candidate.eventTime != null)))
-            }
+            })
         }
         bloodhoundRepository.reconcileRoutes(takRouteCopies)
     }
 
     fun clearRoutesFromWatch(bloodhoundRepository: BloodhoundRepository) {
         bloodhoundRepository.stopRoute()
-        _takRoutes.value = emptyMap()
+        synchronized(routeRemovals) { publishRoutes(emptyMap()) }
     }
 
     // Remove routes that belong to a specific mission on a specific server
@@ -380,12 +411,12 @@ class DataRepository(private val context: Context) {
     fun removeTakRoutesForMission(serverId: String, missionName: String) {
 
         // Filter the route map to remove matching mission routes
-        _takRoutes.update { routes ->
-            routes.filterValues { route ->
+        synchronized(routeRemovals) {
+            publishRoutes(_takRoutes.value.filterValues { route ->
 
                 // Remove only routes matching both the server ID and mission name
                 !(route.serverId == serverId && route.missionName == missionName)
-            }
+            })
         }
     }
 
@@ -2622,6 +2653,7 @@ class DataRepository(private val context: Context) {
             routeRemovals[key] = maxOf(routeRemovals[key] ?: Long.MIN_VALUE, deletion.time)
             takRouteCopies.firstOrNull { it.uid == deletion.uid && it.serverId == source &&
                 (it.eventTime ?: 0) <= deletion.time }?.let { removeTakRoute(source, it.uid) }
+            routePersistence.save(_takRoutes.value.values, routeRemovals)
         }
     }
 
