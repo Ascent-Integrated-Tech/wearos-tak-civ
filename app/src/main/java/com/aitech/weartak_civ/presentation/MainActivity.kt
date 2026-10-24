@@ -3275,7 +3275,6 @@ internal fun BloodhoundButton(
     val activeDistanceText = com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(
         activeItem?.distance, currentUnitPrefs(), separator = ""
     )
-    val activeType = activeItem?.targetKind
     val openDescription = stringResource(R.string.home_open_bloodhound)
     Row(
         modifier = modifier.heightIn(min = 48.dp)
@@ -3283,21 +3282,13 @@ internal fun BloodhoundButton(
             .semantics { contentDescription = openDescription },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(Modifier.size(32.dp)) {
+        Box(Modifier.padding(start = 20.dp).size(32.dp)) {
             Image(
                 painter = painterResource(if (activeItem != null) R.drawable.compass_1 else R.drawable.compass_needle),
-                contentDescription = null,
+                contentDescription = stringResource(R.string.compass),
                 modifier = Modifier.align(Alignment.Center).size(28.dp)
                     .graphicsLayer { rotationZ = needleOrientation.toFloat() }
             )
-            if (activeItem != null) {
-                Image(
-                    painter = painterResource(if (activeType == Utils.BloodhoundTargetKind.POINT)
-                        R.drawable.atak_nav_routes else R.drawable.bloodhound),
-                    contentDescription = null,
-                    modifier = Modifier.align(Alignment.BottomEnd).size(12.dp)
-                )
-            }
             if (hasUnreadBloodhound) {
                 Image(
                     painter = painterResource(R.drawable.new_item_indicator),
