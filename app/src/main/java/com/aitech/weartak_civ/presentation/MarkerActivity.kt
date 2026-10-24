@@ -1976,7 +1976,8 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                                         markerType = marker.markerType,
                                         lat = loc.lat,
                                         lon = loc.lon,
-                                        time = marker.timeReceived
+                                        time = marker.timeReceived,
+                                        isCamera = marker.isCamera
                                     )
                                     bhRepo.requestActivateBloodhound(marker.uid)
                                     requestBloodhoundComplicationUpdate(context)

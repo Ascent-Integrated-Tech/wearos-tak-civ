@@ -487,6 +487,7 @@ class BloodhoundRepository(
             isRemoteAlert = bhEvent.remoteAlert != null,
             isStale = bhEvent.remoteAlert?.isStale == true,
             hasLocation = bhEvent.remoteAlert?.hasLocation != false,
+            isCamera = bhEvent.mapItem.cotEvent.detail.isCamera || target.type == "b-i-v",
             targetKind = when {
                 bhEvent.remoteAlert != null -> Utils.BloodhoundTargetKind.ALERT
                 uid.startsWith("route-point-") -> Utils.BloodhoundTargetKind.POINT
@@ -501,7 +502,8 @@ class BloodhoundRepository(
         markerType: String,
         lat: Double,
         lon: Double,
-        time: Long
+        time: Long,
+        isCamera: Boolean = false
     ) {
         val point = CotPoint(
             lat = lat,
@@ -517,7 +519,8 @@ class BloodhoundRepository(
             creator = null,
             usericon = null,
             remarks = null,
-            contact = null
+            contact = null,
+            isCamera = isCamera
         )
 
         val cotEvent = CotMarkerEvent(
@@ -564,7 +567,7 @@ class BloodhoundRepository(
                     location.ce?.toDouble() ?: 999999.0,
                     location.le?.toDouble() ?: 999999.0
                 ),
-                detail = CotMarkerDetail(user.title, null, null, null, null, null)
+                detail = CotMarkerDetail(user.title, null, null, null, null, null, isCamera = user.isCamera)
             )
             val event = BloodhoundEvent(
                 mapItem = CotMarkerMapItem(marker), server = user.source,
@@ -582,7 +585,8 @@ class BloodhoundRepository(
             upsertFromEvent(
                 existing?.bhEvent?.copy(
                     mapItem = CotMarkerMapItem(marker.copy(
-                        detail = existing.bhEvent.mapItem.cotEvent.detail.copy(markerCallsign = user.title)
+                        detail = existing.bhEvent.mapItem.cotEvent.detail.copy(
+                            markerCallsign = user.title, isCamera = user.isCamera)
                     )),
                     receivedAt = event.receivedAt,
                     tracksUserPosition = true

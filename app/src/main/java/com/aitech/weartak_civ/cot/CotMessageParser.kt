@@ -190,7 +190,23 @@ object CotMessageParser {
 
     fun isMarkerType(type: String): Boolean =
         (CotAffiliation.isAtomType(type) && !isUserPositionType(type)) ||
-            type in setOf("b-m-p-s-p-i", "b-m-p-s-m", "u-d-c-c")
+            type in setOf("b-m-p-s-p-i", "b-m-p-s-m", "u-d-c-c", "b-i-v")
+
+    internal fun isCamera(rawXml: String): Boolean {
+        val root = parseDocumentOrNull(rawXml)?.documentElement ?: return false
+        if (root.tagName != "event") return false
+        if (root.getAttribute("type") == "b-i-v") return true
+        val children = root.childNodes
+        for (index in 0 until children.length) {
+            val detail = children.item(index) as? Element ?: continue
+            if (detail.tagName != "detail") continue
+            val fields = detail.childNodes
+            for (field in 0 until fields.length) {
+                if ((fields.item(field) as? Element)?.tagName == "__video") return true
+            }
+        }
+        return false
+    }
 
     fun isGenericMapType(type: String): Boolean =
         isMarkerType(type) && type !in setOf("a-f-G", "a-h-G", "a-n-G", "a-u-G", "b-m-p-s-p-i",
@@ -345,6 +361,7 @@ object CotMessageParser {
         remarks = extractElementText(rawXml, "remarks"),
         contact = extractAttribute(rawXml, "contact", "endpoint")?.takeIf(String::isNotBlank),
         circleRadiusMeters = if (eventTypeOrNull(rawXml) == "u-d-c-c") circleRadius(rawXml) else null,
+        isCamera = isCamera(rawXml),
     )
 
     private fun circleRadius(rawXml: String): Double? {

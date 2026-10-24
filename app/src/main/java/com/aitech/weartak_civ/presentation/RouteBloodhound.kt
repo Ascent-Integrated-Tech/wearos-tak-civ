@@ -71,13 +71,14 @@ fun BloodhoundPickerList(
                 { onMapRoute(route) }, { onChooseRoute(route) }, onStopRoute, { onRemoveRoute(route) })
         }
         items(bloodhounds, key = { "target:${it.uid}" }) { item ->
-            val kind = when (item.targetKind) {
+            val camera = item.isCamera && item.targetKind != Utils.BloodhoundTargetKind.ALERT
+            val kind = if (camera) stringResource(R.string.bloodhound_picker_camera) else when (item.targetKind) {
                 Utils.BloodhoundTargetKind.CONTACT -> stringResource(R.string.bloodhound_picker_contact)
                 Utils.BloodhoundTargetKind.POINT -> stringResource(R.string.bloodhound_picker_point)
                 Utils.BloodhoundTargetKind.ALERT -> item.alertCategory ?: stringResource(R.string.remote_emergency_alert)
                 Utils.BloodhoundTargetKind.MARKER -> stringResource(R.string.bloodhound_picker_marker)
             }
-            val typeIcon = when (item.targetKind) {
+            val typeIcon = if (camera) R.drawable.ic_camera else when (item.targetKind) {
                 Utils.BloodhoundTargetKind.ALERT -> R.drawable.atak_nav_alert
                 Utils.BloodhoundTargetKind.CONTACT, Utils.BloodhoundTargetKind.POINT,
                 Utils.BloodhoundTargetKind.MARKER -> R.drawable.atak_nav_marker
@@ -146,7 +147,9 @@ fun BloodhoundPickerRow(
     ) {
         Row(Modifier.weight(1f).clickable(onClick = onBody).padding(start = 4.dp, end = 2.dp, top = 8.dp, bottom = 8.dp)
             .testTag("$tag-body"), verticalAlignment = Alignment.CenterVertically) {
-            Icon(painterResource(typeIcon), contentDescription = null, tint = Color.White,
+            Icon(painterResource(typeIcon),
+                contentDescription = if (typeIcon == R.drawable.ic_camera) stringResource(R.string.bloodhound_picker_camera) else null,
+                tint = Color.White,
                 modifier = Modifier.padding(end = 6.dp).size(20.dp))
             Column {
                 Text(title, color = Color.White, maxLines = 2, overflow = TextOverflow.Ellipsis,

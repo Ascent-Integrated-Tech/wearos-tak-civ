@@ -1,4 +1,5 @@
 <resources>
+    <string name="bloodhound_picker_camera">Camera</string>
     <string name="mopp">MOPP</string>
     <string name="mopp_ppe_status">PPE Status</string>
     <string name="mopp_none">None</string>

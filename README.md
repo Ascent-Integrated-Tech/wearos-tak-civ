@@ -1130,6 +1130,17 @@ Companion gateway/legacy BLE, and the independent Ditto `track` publisher.
 The CoT/legacy Companion builders also reject no-fix PLI rather than creating a
 zero-coordinate point. A real timestamped fix at `0,0` remains a valid position.
 
+### Camera identity in Bloodhound
+
+The Bloodhound picker shows a camera icon for an exact `b-i-v` CoT event or
+an otherwise supported entity with a direct `event/detail/__video` element.
+This is presence-only classification: names, URL strings, generic sensors and
+SPI points alone do not imply a camera. Marker/user projections retain this
+identity through existing TAK, raw companion and Ditto ingress paths and into
+the existing detail-to-Bloodhound action. Names, distances, selection and
+navigation controls are unchanged. No media URL is loaded or validated, and
+no snapshot, stream or historical SRT/KLV ingestion is added by this icon.
+
 ### MOPP and Data Sync plugins
 
 **Plugins > MOPP** uses an original protective-mask icon and a manual **PPE
