@@ -571,6 +571,42 @@ class DittoReceiveIntegrationTest {
         } finally { f.close() }
     }
 
+    @Test fun officialSixFieldGeoPointAndUnknownAltitudeReachInbox() = runTest {
+        val f = Fixture(this)
+        val fields = setOf("_id", "_v", "_r", "a", "b", "d", "e", "msg",
+            "room", "roomId", "parent", "authorType", "authorLoc")
+        fun native(id: String, location: String) =
+            f.nativeChat(id).filterKeys { it in fields } + ("authorLoc" to location)
+        val exact = native("six-fields", "41.879815,-87.642469,156.933,HAE,19.4,9999999.0")
+        val unknown = native("nan-alt", " 41.879815 , -87.642469 , NaN , HAE , NaN , NaN ")
+        try {
+            fun point(doc: Map<String, Any?>) =
+                CotMessageParser.parseDocumentOrNull(DittoChatDocument.decode(doc).xml)!!
+                    .getElementsByTagName("point").item(0) as org.w3c.dom.Element
+            val known = point(exact)
+            assertEquals("156.933", known.getAttribute("hae"))
+            assertEquals("19.4", known.getAttribute("ce"))
+            assertEquals("9999999.0", known.getAttribute("le"))
+            val missing = point(unknown)
+            assertEquals("9999999.0", missing.getAttribute("hae"))
+            assertEquals("999999.0", missing.getAttribute("ce"))
+            assertEquals("999999.0", missing.getAttribute("le"))
+            for (alt in listOf("Infinity", "-Infinity", "", "NaN")) {
+                assertEquals("9999999.0", point(native("optional", "41,-87,$alt,HAE")).getAttribute("hae"))
+            }
+            assertEquals("9999999.0", point(native("agl", "41,-87,100,AGL")).getAttribute("hae"))
+            point(native("two", "41,-87"))
+            point(native("extra", "41,-87,100,HAE,5,6,ignored"))
+            assertThrows(IllegalArgumentException::class.java) {
+                point(native("bad-lat", "NaN,-87,100,HAE,5,6"))
+            }
+            f.emit("chat", exact, unknown)
+            f.drain()
+            assertEquals(setOf("six-fields", "nan-alt"),
+                f.repo.chatRoomsFlow.value.flatMap { it.messageList }.map { it.messageId }.toSet())
+        } finally { f.close() }
+    }
+
     @Test fun outgoingChatCallbackPreservesGeoChatIdentityAndAllDestinationTypes() = runTest {
         val f = Fixture(this)
         val writes = java.util.Collections.synchronizedList(mutableListOf<Map<String, Any?>>())

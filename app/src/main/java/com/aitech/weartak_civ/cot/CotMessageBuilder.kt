@@ -20,16 +20,18 @@ object CotMessageBuilder {
     )
 
     fun pli(snapshot: DataRepository.PliSnapshot, options: PliOptions): String {
-        val location = snapshot.loc
+        val location = requireNotNull(snapshot.loc?.takeIf(EmergencyLocationPolicy::usable)) {
+            "Position PLI requires a valid location fix"
+        }
         val physio = snapshot.physioData.data
         val time = snapshot.time
-        val lat = location?.lat ?: 0.0
-        val lon = location?.lon ?: 0.0
-        val hae = location?.hae ?: 0.0
-        val ce = location?.ce?.takeIf { !it.isNaN() }?.toInt() ?: 9999
-        val le = location?.le?.takeIf { !it.isNaN() }?.toInt() ?: 9999
-        val course = location?.course?.toInt() ?: 0
-        val speed = location?.speed?.toInt() ?: 0
+        val lat = location.lat
+        val lon = location.lon
+        val hae = location.hae?.takeIf { it.isFinite() } ?: 0.0
+        val ce = location.ce?.takeIf { it.isFinite() }?.toInt() ?: 9999
+        val le = location.le?.takeIf { it.isFinite() }?.toInt() ?: 9999
+        val course = location.course?.toInt() ?: 0
+        val speed = location.speed?.toInt() ?: 0
         val uid = snapshot.systemData.deviceId
         val heartRate = rectifiedInt(physio.heartRateBpm)
         val skinTemp = rectifiedNumber(physio.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)
@@ -51,7 +53,7 @@ object CotMessageBuilder {
         )
         val detail =
             CotDetailBuilder.takv() + status +
-                    (location?.takeIf { time.time - it.timeMillis > 3_000L }?.let {
+                    (location.takeIf { time.time - it.timeMillis > 3_000L }?.let {
                         CotXml.element("weartak_location", listOf("timeMillis" to it.timeMillis))
                     } ?: "") +
                     "<remarks>$remarks</remarks>$batdok$biometrics" +

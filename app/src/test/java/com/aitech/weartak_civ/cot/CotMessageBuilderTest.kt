@@ -179,7 +179,20 @@ class CotMessageBuilderTest {
                 assertEquals("2026-10-21T14:18:18.469Z", rootAttribute(xml, "time"))
                 assertEquals("2026-10-22T14:18:18.469Z", rootAttribute(xml, "stale"))
             }
-    private fun pliSnapshot() = DataRepository.PliSnapshot(location(), time(), physio(), system())
+    @Test fun pliNeverInventsPositionFromMissingOrInvalidFix() {
+        val options = CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", false, "")
+        val valid = pliSnapshot()
+        for (location in listOf(null, valid.loc!!.copy(timeMillis = 0),
+            valid.loc.copy(lat = Double.NaN), valid.loc.copy(lon = 181.0))) {
+            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+                CotMessageBuilder.pli(valid.copy(loc = location), options)
+            }
+        }
+        val zeroFix = valid.copy(loc = valid.loc.copy(lat = 0.0, lon = 0.0))
+        assertTrue(CotMessageBuilder.pli(zeroFix, options).contains("lat='0.000000'"))
+    }
+
+    private fun pliSnapshot() = DataRepository.PliSnapshot(location().copy(timeMillis = 1), time(), physio(), system())
     private fun markerSnapshot(time: CotEventTime) = DataRepository.MarkerSnapshot(DataRepository.MarkerCotType.DROP, "marker-1", DataRepository.MarkerType.FRIENDLY, "Title", "Remark", DataRepository.MarkerType.FRIENDLY.icon, false, false, location(), time, physio(), system())
     private fun emergencySnapshot(state: DataRepository.AlertState) = DataRepository.EmergencyEventSnapshot("alert-1", state, "Alert", "Help", 1, false, time(), location(), physio(), system())
     private fun chatSnapshot() = DataRepository.ChatEventSnapshot("ignored", "room-1", "Room", "Hello", time(), location(), physio(), system())

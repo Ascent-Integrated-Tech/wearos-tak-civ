@@ -29,6 +29,7 @@ import com.aitech.weartak_civ.cot.CotDetailBuilder
 import com.aitech.weartak_civ.cot.DittoChatDocument
 import com.aitech.weartak_civ.cot.DittoCotReceiver
 import com.aitech.weartak_civ.cot.CotMessageParser
+import com.aitech.weartak_civ.cot.CotXml
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -197,14 +198,9 @@ class DittoService : Service() {
         override fun run() {
             ioScope.launch {
 
-                val location = dataRepository.latestLocation.value
-                var heartRate = dataRepository.latestHeartRate.value
                 val battery = dataRepository.latestBatteryPercentage.value
 
-                if (location != null && battery != null) {
-                    if (heartRate == null) {
-                        heartRate = -1
-                    }
+                if (battery != null) {
                     updateTrackDocument()
 //                    logAllDevices()
                 } else {
@@ -440,18 +436,22 @@ class DittoService : Service() {
             val timeMs = System.currentTimeMillis()
             val staleMsOffset = 3000 * CotDispatchService.actualReportingIntervalSecs
             val staleTimeMs = timeMs + staleMsOffset
-            val location = dataRepository.latestLocation.value
+            val location = dataRepository.snapshotPliLocation()
+            if (location == null) {
+                Log.i(TAG, "Skipping Ditto track: awaiting first valid location fix")
+                return@launch
+            }
             val heartRate = dataRepository.latestHeartRate.value ?: -1
             val battery = dataRepository.latestBatteryPercentage.value ?: -1
-            val latActual = location?.latitude ?: 0.0
-            val lonActual = location?.longitude ?: 0.0
-            val haeActual = location?.altitude ?: 0.0
-            var ceActual = location?.accuracy ?: 9999999.0F
+            val latActual = location.lat
+            val lonActual = location.lon
+            val haeActual = location.hae ?: 0.0
+            var ceActual = location.ce ?: 9999999.0F
             if (ceActual.isNaN()) ceActual = 9999999.0F
-            var leActual: Float = location?.verticalAccuracyMeters ?: 9999999.0F
+            var leActual: Float = location.le ?: 9999999.0F
             if (leActual.isNaN()) leActual = 9999999.0F
-            val bearingActual = location?.bearing ?: 0.0F
-            val speedActual = location?.speed ?: 0.0F
+            val bearingActual = location.course ?: 0.0F
+            val speedActual = location.speed ?: 0.0F
             val typeString = "a-f-G-U-C"
             val access = "Undefined"
             val how = "m-g"
@@ -474,8 +474,13 @@ class DittoService : Service() {
                 dittoA = localPeerKeyString,                     // "a-f-G-U-C"
                 dittoIp = "0.0.0.0",                         // "Undefined"
                 dittoVersion = dittoVersion,                            // "m-g"
-                dittoDeviceName = ditto.deviceName                    // same as above, or override
-            )
+                dittoDeviceName = callsign
+            ).let { detail ->
+                if (timeMs - location.timeMillis > 3_000) {
+                    detail.replace("</detail>", CotXml.element("weartak_location",
+                        listOf("timeMillis" to location.timeMillis)) + "</detail>")
+                } else detail
+            }
 
             val trackDocument = mapOf<String, Any?>(
                 // — common properties —
@@ -523,10 +528,8 @@ class DittoService : Service() {
 
             try {
                 if (dataRepository.isCompanionConnected.value) return@launch
-                ditto.store.write { tx ->
-                    tx.scoped("track").upsert(trackDocument)
-                    changeCounterTrackDocument++
-                }
+                writeDocument("track", trackDocument)
+                changeCounterTrackDocument++
                 Log.v(TAG, "Wrote to track: $trackDocument")
             } catch (t: Throwable) {
                 Log.e(TAG, "Ditto write failed", t)

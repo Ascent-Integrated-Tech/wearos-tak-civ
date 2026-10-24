@@ -76,13 +76,18 @@ internal object DittoChatDocument {
         require(time.isFinite() && time > 0 && time <= 253402214399999.0 &&
             time == time.toLong().toDouble()) { "Invalid Ditto chat timestamp" }
         val expiry = time.toLong() + TTL_MILLIS
-        val location = text("authorLoc", 128).split(',')
-        require(location.size in 2..3) { "Invalid Ditto chat author location" }
-        val latitude = location[0].toDouble()
-        val longitude = location[1].toDouble()
-        val altitude = if (location.size == 3) location[2].toDouble() else 0.0
+        val location = text("authorLoc", 512).split(',').map(String::trim)
+        require(location.size >= 2) { "Invalid Ditto chat author location" }
+        val latitude = location[0].toDoubleOrNull() ?: Double.NaN
+        val longitude = location[1].toDoubleOrNull() ?: Double.NaN
+        fun optionalNumber(index: Int) = location.getOrNull(index)?.toDoubleOrNull()?.takeIf { it.isFinite() }
+        // GeoPoint.toString(6) appends ALTREF, CE and LE. AGL is not an HAE measurement.
+        val altitude = optionalNumber(2)?.takeIf {
+            location.getOrNull(3).isNullOrBlank() || location[3] == "HAE"
+        } ?: 9_999_999.0
+        fun error(index: Int) = optionalNumber(index)?.takeIf { it >= 0.0 } ?: 999999.0
         require(latitude.isFinite() && latitude in -90.0..90.0 &&
-            longitude.isFinite() && longitude in -180.0..180.0 && altitude.isFinite()) {
+            longitude.isFinite() && longitude in -180.0..180.0) {
             "Invalid Ditto chat author location"
         }
         val authorType = text("authorType")
@@ -112,8 +117,8 @@ internal object DittoChatDocument {
             "g" to (raw["g"] ?: "2.0"), "p" to (raw["p"] ?: "h-g-i-g-o"),
             "q" to (raw["q"] ?: "Undefined"), "r" to detail,
             "j" to (raw["j"] ?: latitude), "l" to (raw["l"] ?: longitude),
-            "i" to (raw["i"] ?: altitude), "h" to (raw["h"] ?: 999999.0),
-            "k" to (raw["k"] ?: 999999.0)
+            "i" to (raw["i"] ?: altitude), "h" to (raw["h"] ?: error(4)),
+            "k" to (raw["k"] ?: error(5))
         ))
         require(document.stale <= expiry) { "Ditto chat exceeds 24-hour TTL" }
         require(CotMessageParser.isValidGatewayChat(document.xml)) { "Invalid GeoChat document in Ditto chat" }

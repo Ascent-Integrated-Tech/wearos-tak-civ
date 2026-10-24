@@ -156,16 +156,9 @@ class CompanionAppRepository(private val context: Context) {
         repIntSeconds: Int
     ): Envelope<PliPayload> {
 
-        val loc = snapshot.loc ?: DataRepository.LocationSnapshot(
-            timeMillis = System.currentTimeMillis(),
-            lat = 0.0,
-            lon = 0.0,
-            hae = 0.0,
-            ce = 0F,
-            le = 0F,
-            course = 0F,
-            speed = 0F
-        )
+        val loc = requireNotNull(snapshot.loc?.takeIf(
+            com.aitech.weartak_civ.cot.EmergencyLocationPolicy::usable
+        )) { "Companion position PLI requires a valid location fix" }
 
         val timeSnap = snapshot.time
         val sys      = snapshot.systemData

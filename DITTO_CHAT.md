@@ -23,7 +23,7 @@ credentials are included here. Inspected APK SHA256:
 | `roomId` | string | Conversation/recipient UID, from `chatgrp.id` |
 | `parent` | string | Parent contact group, normally `RootContactGroup` |
 | `authorType` | string | Sender platform CoT type, e.g. `a-f-G-U-C` |
-| `authorLoc` | string | GeoPoint string `latitude,longitude,hae`; two coordinates are also accepted |
+| `authorLoc` | string | Outgoing `latitude,longitude,hae`. Incoming accepts ATAK GeoPoint `latitude,longitude,altitude,ALTREF,ce,le` and any form with at least two comma-separated fields (trimmed). Latitude/longitude must be finite/in range; missing/non-finite altitude is unknown (`9999999` in synthesized CoT). Only HAE altitude is used; AGL/other references are not treated as HAE. Optional nonnegative finite CE/LE are preserved, otherwise unknown (`999999`). |
 
 WearOS writes `_c` using SDK 4's `DittoCounter()`. DQL clients must omit `_c`
 from the initial document, then use
