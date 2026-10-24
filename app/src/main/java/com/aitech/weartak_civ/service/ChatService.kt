@@ -72,7 +72,7 @@ class ChatService : Service() {
     private fun startSendChatReplyCollector() {
         serviceScope.launch {
             dataRepository.chatRequestFromUI.collect { req ->
-                Log.i(TAG, "Received chat request to be sent: $req")
+                Log.i(TAG, "Received outgoing chat request")
                 handleOutgoingChatRequest(req, seedRoomIfMissing = false)
             }
         }
@@ -81,7 +81,7 @@ class ChatService : Service() {
     private fun startAutomatedChatCollector() {
         serviceScope.launch {
             dataRepository.automatedChatRequest.collect { req ->
-                Log.i(TAG, "Received automated chat request to be sent: $req")
+                Log.i(TAG, "Received automated chat request")
                 handleOutgoingChatRequest(req, seedRoomIfMissing = true)
             }
         }
@@ -200,7 +200,7 @@ class ChatService : Service() {
             sourceServerId = event.sourceServerId,
             receivedAt = event.receivedAt,
         )
-        Log.v(TAG, "Received TakChatEvent: ${event.rawXml}")
+        Log.v(TAG, "Received TakChatEvent")
 
         // 2) Merge into in-memory inbox
         incomingRooms.forEach { incoming ->
@@ -243,7 +243,7 @@ class ChatService : Service() {
             room.messageList.forEachIndexed { msgIdx, msg ->
                 val timeStr = DateFormat.format("yyyy-MM-dd HH:mm:ss", msg.timeReceived)
                 Log.d(TAG, "    ${msgIdx + 1}. [$timeStr] ${msg.callsign} → ${msg.uid}")
-                Log.d(TAG, "        “${msg.message}”")
+                Log.d(TAG, "        message length=${msg.message.length}")
             }
             Log.d(TAG, "----------------------------------")
         }

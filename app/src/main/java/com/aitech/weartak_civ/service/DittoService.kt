@@ -42,6 +42,15 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -74,6 +83,7 @@ class DittoService : Service() {
     private var subscriptionChat: DittoSyncSubscription? = null
     private var storeObservers: DittoStoreObservers? = null
     private var changeCounterTrackDocument: Int = 1
+    private var ownsDitto = false
 
     private val model = Build.MODEL
     private val manufacturer = Build.MANUFACTURER
@@ -89,6 +99,11 @@ class DittoService : Service() {
         )
         val application = applicationContext as WearTakApplication
         dataRepository = application.repo
+        activeService.value = this
+        if (reconfiguring.value) {
+            stopSelf()
+            return
+        }
 
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
@@ -101,11 +116,13 @@ class DittoService : Service() {
             )
 
             if (!initialized) {
+                startupResult.value = false
                 stopSelf()
                 return
             }
         }
 
+        ownsDitto = true
         localPeerKeyString = ditto.presence.graph.localPeer.peerKeyString
 
         try {
@@ -132,9 +149,11 @@ class DittoService : Service() {
             }
             startDispatchScheduler()
             dataRepository.setEndpointConnected(DataRepository.Endpoint.DITTO)
+            startupResult.value = true
             Log.i(TAG, "DittoService startSync()")
         } catch (e: Exception) {
-            Log.e(TAG, "DittoService failed to start", e)
+            Log.e(TAG, "DittoService failed to start")
+            startupResult.value = false
             storeObservers?.close()
             storeObservers = null
             unSubscribeToCollections()
@@ -215,7 +234,7 @@ class DittoService : Service() {
         ioScope.launch {
             try {
                 val raw = evt.cotXml
-                Log.v(TAG, "raw value is: $raw")
+                Log.v(TAG, "Publishing Ditto document collection=${evt.collection}")
                 if (evt.collection == "chat") {
                     publishDocument("chat", DittoChatDocument.encode(raw, localPeerKeyString))
                     return@launch
@@ -530,15 +549,14 @@ class DittoService : Service() {
 
         val initializedDitto = getDittoInstance()
 
-        if (initializedDitto != null) {
+        if (ownsDitto && initializedDitto != null) {
             try {
                 initializedDitto.stopSync()
                 Log.d(TAG, "Sync stopped")
             } catch (error: DittoError) {
                 Log.e(
                     TAG,
-                    "Error stopping sync: ${error.message}",
-                    error
+                    "Error stopping sync"
                 )
             }
         } else {
@@ -551,7 +569,7 @@ class DittoService : Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
-
+        if (activeService.value === this) activeService.value = null
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -587,10 +605,67 @@ class DittoService : Service() {
         val isRunning: AtomicBoolean = AtomicBoolean(false)
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds
         lateinit var localPeerKeyString: String
-        private lateinit var ditto: Ditto
+        private var dittoInstance: Ditto? = null
+        private val ditto: Ditto get() = requireNotNull(dittoInstance)
+        private val activeService = MutableStateFlow<DittoService?>(null)
+        private val startupResult = MutableStateFlow<Boolean?>(null)
+        private val reconfiguring = MutableStateFlow(false)
+        val isReconfiguring = reconfiguring.asStateFlow()
+        private val identityMutex = Mutex()
 
-        fun getDittoInstance(): Ditto? =
-            if (::ditto.isInitialized) ditto else null
+        fun getDittoInstance(): Ditto? = dittoInstance
+
+        suspend fun applySelectedIdentity(context: Context, repo: DataRepository): Boolean =
+            identityMutex.withLock {
+                reconfiguring.value = true
+                try {
+                    val previous = activeService.value
+                    val thread = previous?.dittoUpdateThread
+                    withContext(Dispatchers.Main) {
+                        context.stopService(Intent(context, DittoService::class.java))
+                    }
+                    withTimeout(15_000) {
+                        activeService.first { it == null }
+                        // Cancellation is not completion: wait for store writes/observers before closing JNI.
+                        previous?.ioScope?.coroutineContext?.get(Job)?.join()
+                        if (thread != null) withContext(Dispatchers.IO) { thread.join(10_000) }
+                        check(thread?.isAlive != true) { "Ditto worker did not stop" }
+                    }
+                    withContext(Dispatchers.Main) {
+                        dittoInstance?.close()
+                        dittoInstance = null
+                        check(initializeDitto(context, repo)) { "Ditto identity could not be applied" }
+                    }
+                    startupResult.value = null
+                } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+                    Log.e(TAG, "Ditto identity apply timed out")
+                    return@withLock false
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.e(TAG, "Ditto identity apply failed: ${error.javaClass.simpleName}")
+                    return@withLock false
+                } finally {
+                    reconfiguring.value = false
+                }
+                val app = context.applicationContext as WearTakApplication
+                val config = ServiceConfiguration(context, repo, app.audioRepo)
+                if (!config.getServiceEnabledFlow(ReactiveServiceManager.ServiceType.DITTO).first() ||
+                    !config.isServiceAvailable(ReactiveServiceManager.ServiceType.DITTO)) {
+                    // The identity is applied, but the normal companion/license/permission gates still win.
+                    return@withLock true
+                }
+                if (!ReactiveServiceManager.isRunning.get()) {
+                    Log.e(TAG, "Ditto identity applied but service manager is unavailable")
+                    return@withLock false
+                }
+                try {
+                    withTimeout(20_000) { startupResult.filterNotNull().first() }
+                } catch (error: kotlinx.coroutines.TimeoutCancellationException) {
+                    Log.e(TAG, "Ditto identity applied but service startup timed out")
+                    false
+                }
+            }
 
         private fun initializeDitto(
             applicationContext: Context,
@@ -599,7 +674,7 @@ class DittoService : Service() {
             Log.d(TAG, "Initializing Ditto")
 
             // Ditto has already been initialized
-            if (::ditto.isInitialized) {
+            if (dittoInstance != null) {
                 return true
             }
 
@@ -619,31 +694,20 @@ class DittoService : Service() {
             val license = try {
                 DittoCommunityLicenseHelper.parse(encodedPdl)
             } catch (error: Exception) {
-                Log.e(TAG, "Invalid PDL", error)
-
-                Toast.makeText(
-                    applicationContext,
-                    "Invalid PDL",
-                    Toast.LENGTH_LONG
-                ).show()
-
+                Log.e(TAG, "Invalid PDL")
+                Toast.makeText(applicationContext, "Invalid PDL", Toast.LENGTH_LONG).show()
                 return false
             }
 
             // Stop if the PDL has expired
             if (license.isExpired) {
                 Log.e(TAG, "Expired PDL")
-
-                Toast.makeText(
-                    applicationContext,
-                    "Expired PDL",
-                    Toast.LENGTH_LONG
-                ).show()
-
+                Toast.makeText(applicationContext, "Expired PDL", Toast.LENGTH_LONG).show()
                 return false
             }
 
             // Initialize Ditto using the identity contained in the PDL
+            var candidate: Ditto? = null
             return try {
                 val androidDependencies =
                     DefaultAndroidDittoDependencies(applicationContext)
@@ -654,45 +718,23 @@ class DittoService : Service() {
                     sharedKey = license.sharedKey
                 )
 
-                ditto = Ditto(
+                candidate = Ditto(
                     androidDependencies,
                     identity
                 )
 
                 // Apply the PDL's offline license token
-                ditto.setOfflineOnlyLicenseToken(
+                candidate.setOfflineOnlyLicenseToken(
                     license.licenseToken
                 )
 
+                dittoInstance = candidate
                 Log.i(TAG, "Ditto initialized successfully")
                 true
-            } catch (error: DittoError) {
-                Log.e(
-                    TAG,
-                    "Ditto rejected the selected license",
-                    error
-                )
-
-                Toast.makeText(
-                    applicationContext,
-                    "Invalid PDL",
-                    Toast.LENGTH_LONG
-                ).show()
-
-                false
             } catch (error: Exception) {
-                Log.e(
-                    TAG,
-                    "Failed to initialize Ditto",
-                    error
-                )
-
-                Toast.makeText(
-                    applicationContext,
-                    "Ditto failed to start",
-                    Toast.LENGTH_LONG
-                ).show()
-
+                candidate?.close()
+                Log.e(TAG, "Failed to initialize Ditto")
+                Toast.makeText(applicationContext, "Ditto failed to start", Toast.LENGTH_LONG).show()
                 false
             }
         }

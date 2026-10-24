@@ -7,6 +7,7 @@ import com.aitech.weartak_civ.WifiMulticastReceiver
 import com.aitech.weartak_civ.command.PendingServerEnrollment
 import com.aitech.weartak_civ.cot.TakServerCotIngestor
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.DittoPdlSource
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.*
@@ -40,6 +41,7 @@ class MulticastChatCommandsTest {
     private lateinit var chat: ChatService
     private lateinit var delivery: ChatDelivery
     private val replies = mutableListOf<String>()
+    private val groupReplyUids = mutableListOf<String>()
     private val now = System.currentTimeMillis() - 1000
     private var caseId = 0
 
@@ -61,6 +63,12 @@ class MulticastChatCommandsTest {
         coEvery { repo.sendChatMessage(any(), any(), any(), any()) } coAnswers {
             replies += thirdArg<String>()
         }
+        coEvery { repo.sendGroupChatReply(any(), any(), any(), any(), any()) } coAnswers {
+            groupReplyUids += firstArg<String>()
+            replies += thirdArg<String>()
+        }
+        mockkObject(DittoService.Companion)
+        coEvery { DittoService.applySelectedIdentity(any(), any()) } returns true
         // Re-run the production lazy initializer against this repository, not another fixture's
         // retained process singleton. Do not duplicate its runtime/handler wiring in the test.
         mockkObject(TAKConnectService.Companion, recordPrivateCalls = true)
@@ -80,6 +88,7 @@ class MulticastChatCommandsTest {
         every { repo.phoneManagedSettingsLocked } answers { callOriginal() }
         MainActivity.callsign = "TEST-WATCH"
         replies.clear()
+        groupReplyUids.clear()
         clearMocks(repo, answers = false)
         chat = Robolectric.buildService(ChatService::class.java).get()
         ChatService::class.java.getDeclaredField("dataRepository").apply {
@@ -95,6 +104,7 @@ class MulticastChatCommandsTest {
         EventBus.getDefault().unregister(delivery)
         PendingServerEnrollment.clear()
         unmockkObject(TAKConnectService.Companion)
+        unmockkObject(DittoService.Companion)
     }
 
     @Test fun productionMulticastCommandPolicyAndCrossTransportMatrix() = runBlocking {
@@ -104,7 +114,8 @@ class MulticastChatCommandsTest {
             ::allowlistedDirectMulticastUsesExistingRuntimeAndDoesNotRenderOrRelayCommand,
             ::disabledCommandsStayOrdinaryChatAndNeverExecute,
             ::emptyAllowlistAndNonAllowedSenderAreConsumedWithoutReplyOrExecution,
-            ::groupAndBroadcastCommandsStayChatEvenWithWatchAmongMembers,
+            ::allCommandsAcceptAllowedGroupAndBroadcastAndRejectUnlistedSenders,
+            ::pdlCommandAcceptsAllowedGroupAndBroadcastAndRepliesToOriginalRoom,
             ::anotherRecipientAndSelfEchoNeverExecuteOrRender,
             ::watchUidMembershipSupportsDirectChatWithoutRemarksToButNotMissingRecipient,
             ::staleAndInvalidCommandsCannotMutateProfile,
@@ -132,10 +143,11 @@ class MulticastChatCommandsTest {
 
     private fun disabledCommandsStayOrdinaryChatAndNeverExecute() = runBlocking {
         repo.storeEnableChatCommands(false)
-        multicast(xml())
+        multicast(xml(), xml(id = "disabled-group", room = "synthetic-group"),
+            xml(id = "disabled-all", room = "All Chat Rooms"))
         coVerify(exactly = 0) { repo.storeCallsign(any()) }
         assertTrue(replies.isEmpty())
-        assertEquals(1, chat.getInbox().single().messageList.size)
+        assertEquals(3, chat.getInbox().sumOf { it.messageList.size })
     }
 
     private fun emptyAllowlistAndNonAllowedSenderAreConsumedWithoutReplyOrExecution() = runBlocking {
@@ -148,15 +160,17 @@ class MulticastChatCommandsTest {
         assertTrue(delivery.events.isEmpty())
     }
 
-    private fun groupAndBroadcastCommandsStayChatEvenWithWatchAmongMembers() = runBlocking {
+    private fun allCommandsAcceptAllowedGroupAndBroadcastAndRejectUnlistedSenders() = runBlocking {
         multicast(
             xml(room = "synthetic-group"),
-            xml(id = "broadcast", room = "All Chat Rooms")
+            xml(id = "broadcast", room = "All Chat Rooms"),
+            xml(id = "denied-group", room = "synthetic-group", sender = "OTHER-TEST"),
+            xml(id = "denied-broadcast", room = "All Chat Rooms", sender = "OTHER-TEST")
         )
-        coVerify(exactly = 0) { repo.storeCallsign(any()) }
-        assertTrue(replies.isEmpty())
-        assertEquals(2, chat.getInbox().size)
-        assertTrue(chat.getInbox().all { it.isGroup })
+        coVerify(exactly = 2) { repo.storeCallsign("TEST-CHANGED") }
+        assertEquals(listOf("Callsign set to TEST-CHANGED", "Callsign set to TEST-CHANGED"), replies)
+        assertEquals(listOf("synthetic-group", "All Chat Rooms"), groupReplyUids)
+        assertTrue(delivery.events.isEmpty())
     }
 
     private fun anotherRecipientAndSelfEchoNeverExecuteOrRender() = runBlocking {
@@ -167,6 +181,38 @@ class MulticastChatCommandsTest {
         coVerify(exactly = 0) { repo.storeCallsign(any()) }
         assertTrue(replies.isEmpty())
         assertTrue(delivery.events.isEmpty())
+    }
+
+    private fun pdlCommandAcceptsAllowedGroupAndBroadcastAndRepliesToOriginalRoom() = runBlocking {
+        val json = """{"v":2,"it":"SK","a":"12345678-1234-1234-1234-123456789abc","s":"synthetic-key","t":"synthetic-token","e":4102444800000}"""
+        val buffer = java.io.ByteArrayOutputStream()
+        java.util.zip.DeflaterOutputStream(buffer).use { it.write(json.toByteArray()) }
+        val pdl = java.util.Base64.getUrlEncoder().encodeToString(buffer.toByteArray())
+        val text = "#weartakcommandsetpdl $pdl"
+        multicast(
+            xml(id = "allowed-direct", text = text),
+            xml(id = "allowed-group", text = text, room = "synthetic-group"),
+            xml(id = "allowed-all", text = text, room = "All Chat Rooms"),
+            xml(id = "denied-direct", text = text, sender = "OTHER-TEST"),
+            xml(id = "denied-group", text = text, room = "synthetic-group", sender = "OTHER-TEST"),
+            xml(id = "denied-all", text = text, room = "All Chat Rooms", sender = "OTHER-TEST"),
+            xml(id = "non-member", text = text, room = "synthetic-group", participant = "other-watch"),
+            xml(id = "self", text = text, senderUid = "test-watch")
+        )
+        coVerify(exactly = 3) { repo.storeDittoCommandSettings(DittoPdlSource.CUSTOM, pdl) }
+        coVerify(exactly = 3) { DittoService.applySelectedIdentity(any(), repo) }
+        coVerify(exactly = 1) {
+            repo.sendGroupChatReply("synthetic-group", "Synthetic chat", any(), any(),
+                listOf("synthetic-sender", "test-watch"))
+        }
+        assertEquals(listOf("synthetic-group", "All Chat Rooms"), groupReplyUids)
+        assertEquals(3, replies.size)
+        assertTrue(replies.all { it.startsWith("Ditto updated: source=custom app=12345678") })
+        assertTrue(delivery.events.isEmpty())
+        val logs = org.robolectric.shadows.ShadowLog.getLogs().joinToString { it.msg }
+        assertFalse(logs.contains(pdl))
+        assertFalse(logs.contains("synthetic-key"))
+        assertFalse(logs.contains("synthetic-token"))
     }
 
     private fun watchUidMembershipSupportsDirectChatWithoutRemarksToButNotMissingRecipient() = runBlocking {

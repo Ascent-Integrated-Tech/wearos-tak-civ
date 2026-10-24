@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.command.ProfileOptions
 import com.aitech.weartak_civ.command.ProfileStore
 import com.aitech.weartak_civ.command.ServerEnrollment
 import com.aitech.weartak_civ.command.SetCallsignHandler
+import com.aitech.weartak_civ.command.SetDittoPdlHandler
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerId
@@ -80,6 +81,12 @@ object ChatCommandRuntime {
             isEnabled = { repo.getEnableChatCommands.first() },
             allowedCallsigns = { repo.getChatCommandCallsigns.first() },
             handlers = profileHandlers + mapOf(
+                "setpdl" to SetDittoPdlHandler(
+                    isLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() },
+                    communityPdl = repo::communityDittoPdl,
+                    save = repo::storeDittoCommandSettings,
+                    apply = { DittoService.applySelectedIdentity(appContext, repo) }
+                ),
                 "loadprofile" to LoadProfileHandler(
                     source = { name -> readPreset(appContext, name) },
                     profileHandler = profileHandlers.getValue("setprofile"),
@@ -104,7 +111,14 @@ object ChatCommandRuntime {
                 )
             ),
             reply = { request, text ->
-                repo.sendChatMessage(request.senderUid, request.senderCallsign, text, System.currentTimeMillis())
+                if (request.replyIsGroup) {
+                    repo.sendGroupChatReply(
+                        requireNotNull(request.replyRoomUid), requireNotNull(request.replyRoomTitle),
+                        text, System.currentTimeMillis(), request.replyParticipantUids
+                    )
+                } else {
+                    repo.sendChatMessage(request.senderUid, request.senderCallsign, text, System.currentTimeMillis())
+                }
             },
             audit = { Log.i(TAG, it) }
         )

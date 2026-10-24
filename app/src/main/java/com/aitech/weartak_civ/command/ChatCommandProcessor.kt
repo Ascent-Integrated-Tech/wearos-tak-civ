@@ -15,8 +15,14 @@ data class ChatCommandRequest(
     val messageId: String?,
     val sentAtMs: Long,
     val receivedAtMs: Long,
-    val sourceServerId: String
-)
+    val sourceServerId: String,
+    val replyRoomUid: String? = null,
+    val replyRoomTitle: String? = null,
+    val replyIsGroup: Boolean = false,
+    val replyParticipantUids: List<String> = emptyList()
+) {
+    override fun toString() = "ChatCommandRequest(senderUid=$senderUid, messageId=$messageId)"
+}
 
 data class ChatCommandResult(val ok: Boolean, val message: String)
 
@@ -25,8 +31,9 @@ fun interface ChatCommandHandler {
 }
 
 /**
- * Runs `#weartakcommand...` chat messages. Only direct messages from allow-listed callsigns are
- * acted on, and only when the Commands setting is on. Messages from other senders are swallowed
+ * Runs `#weartakcommand...` chat messages. Only messages from allow-listed callsigns are
+ * acted on, and only when the Commands setting is on. Direct, group and broadcast
+ * replies retain the originating conversation. Messages from other senders are swallowed
  * silently so the feature cannot be probed. Argument values are never logged or echoed.
  */
 class ChatCommandProcessor(

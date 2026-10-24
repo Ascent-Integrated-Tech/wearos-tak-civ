@@ -43,6 +43,23 @@ class ChatCommandTest {
     }
 
     @Test
+    fun onlyPdlCommandValueHasLargerBoundedLimit() {
+        val value = "a".repeat(ChatCommandParser.MAX_PDL_LENGTH)
+        assertEquals(value, parsed("#weartakcommandsetpdl $value").args["pdl"])
+        assertEquals(mapOf("source" to "community"), parsed("#weartakcommandsetpdl community").args)
+        assertTrue(malformed("#weartakcommandsetpdl ${value}a"))
+        assertTrue(malformed("#weartakcommandsetpdl"))
+        assertTrue(malformed("#weartakcommandsetpdl community enabled=true"))
+        assertTrue(malformed("#weartakcommandsetpdl source=community"))
+        assertTrue(malformed("#weartakcommandsetpdl pdl=abc"))
+        assertTrue(malformed("#weartakcommandsetpdl \"abc\""))
+        assertTrue(malformed("#weartakcommandsetcallsign pdl=$value"))
+        assertTrue(malformed("#weartakcommandsetpdl x y"))
+        assertTrue(malformed("#weartakcommandsetpdl $value ${"a".repeat(1100)}"))
+        assertTrue(malformed("#weartakcommandsetdittopdl pdl=$value"))
+    }
+
+    @Test
     fun rejectsMalformedInput() {
         assertTrue(malformed("#weartakcommand"))
         assertTrue(malformed("#weartakcommand9 a=b"))
