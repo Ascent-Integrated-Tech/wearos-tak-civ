@@ -7,6 +7,25 @@ import org.junit.Test
 
 class SavedCustomAlertsTest {
     @Test
+    fun sharedLimitCountsUtf16AfterWhitespaceNormalization() {
+        assertEquals(60, SavedCustomAlerts.normalize(" \u2002" + "\uD83D\uDE00".repeat(30) + "  ")!!.length)
+        assertNull(SavedCustomAlerts.normalize("\uD83D\uDE00".repeat(31)))
+        assertEquals("North perimeter", SavedCustomAlerts.normalize("  North\u00a0\u2002perimeter  "))
+        for (control in listOf('\n', '\r', '\t', '\u0085', '\u0000')) {
+            assertNull(SavedCustomAlerts.normalize("North${control}perimeter"))
+        }
+    }
+
+    @Test
+    fun newAdditionsPreserveLegacyStringsAndRejectNormalizedDuplicates() {
+        val legacy = listOf("x".repeat(80), "  North  perimeter ", "Old\nrecord")
+        assertEquals(legacy + "New alert", SavedCustomAlerts.add(legacy, " New alert "))
+        assertNull(SavedCustomAlerts.add(legacy, "north perimeter"))
+        assertEquals(legacy.drop(1), SavedCustomAlerts.remove(legacy, legacy.first()))
+        assertEquals(legacy.take(2), SavedCustomAlerts.remove(legacy, legacy.last()))
+    }
+
+    @Test
     fun normalizeTrimsAndCollapsesWhitespaceAndRejectsInvalidText() {
         assertEquals("North perimeter", SavedCustomAlerts.normalize("  North   perimeter  "))
         assertNull(SavedCustomAlerts.normalize(" \t "))

@@ -5,9 +5,9 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.integration.plugin.PluginUI
 
 internal enum class BuiltInPlugin(@DrawableRes val brandIconRes: Int? = null) {
-    COMMANDS,
-    COMPANION,
-    CRM,
+    COMMANDS(R.drawable.ic_commands_megaphone),
+    COMPANION(R.drawable.weartak_companion_plugin),
+    CRM(R.drawable.ic_plugin_gauge),
     DART(R.drawable.ic_integration_certus),
     DATA_SYNC(R.drawable.ic_data_sync),
     DITTO(R.drawable.ic_integration_ditto),
@@ -15,7 +15,7 @@ internal enum class BuiltInPlugin(@DrawableRes val brandIconRes: Int? = null) {
     FALCON(R.drawable.ic_integration_certus),
     GOTENNA(R.drawable.ic_integration_gotenna),
     MOPP(R.drawable.ic_mopp),
-    SENSOR_MANAGER,
+    SENSOR_MANAGER(R.drawable.ic_sensor_manager),
     SOMEWEAR_LABS(R.drawable.ic_integration_somewear),
 }
 

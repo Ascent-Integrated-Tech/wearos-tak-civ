@@ -3061,13 +3061,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.COMMANDS -> {
                                     WearTAKSplitToggleChip(
-                                        appIcon = {
-                                            Icon(
-                                                painter = painterResource(R.drawable.ic_commands_megaphone),
-                                                contentDescription = null,
-                                                modifier = Modifier.padding(end = 4.dp).size(24.dp),
-                                            )
-                                        },
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableChatCommands,
@@ -3092,6 +3086,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.SENSOR_MANAGER -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableSensorManager,
@@ -3121,6 +3116,7 @@ fun WearTAKSettingsNav(
                                 }
                                 BuiltInPlugin.CRM -> {
                                     WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableCrm,
