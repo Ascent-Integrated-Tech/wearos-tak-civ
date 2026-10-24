@@ -104,6 +104,7 @@ import androidx.wear.compose.foundation.curvedRow
 import androidx.wear.compose.foundation.padding
 import androidx.wear.compose.foundation.rememberSwipeToDismissBoxState
 import androidx.wear.compose.material.Icon
+import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.SwipeToDismissBox
 import androidx.wear.compose.material.Text
@@ -2810,6 +2811,29 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
         alerts.any { it.alertState == DataRepository.AlertState.ALERT }
     val value = selectedMetricValueFromKey(metricKey)
 
+    HomeTopMetricCard(
+        title = selectedMetricTitleFromKey(metricKey),
+        value = value,
+        metric = metric,
+        iconRes = if (physioAlertsCheckedLive && containsAlert) R.drawable.warning
+            else selectedMetricIconFromKey(metricKey),
+        chipState = chipState,
+        alert = if (containsAlert) alertText(alerts) else null,
+        onClick = { context.startActivity(Intent(context, PhysioAlertsActivity::class.java)) }
+    )
+}
+
+@Composable
+internal fun HomeTopMetricCard(
+    title: String,
+    value: String,
+    metric: com.aitech.weartak_civ.data.TopDisplayMetric,
+    iconRes: Int,
+    chipState: Utils.AlertChipState,
+    alert: String?,
+    onClick: () -> Unit
+) {
+    val containsAlert = alert != null
     Column(
         modifier = Modifier
             .fillMaxWidth(),
@@ -2818,15 +2842,14 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
         ) {
         if (!containsAlert) {
             Text(
-                text = selectedMetricTitleFromKey(metricKey),
+                text = title,
                 fontSize = 11.sp
             )
         }
         Chip(
             border = ChipDefaults.outlinedChipBorder(alertChipColors(chipState), borderWidth = 2.dp),
-            onClick = {
-                context.startActivity(Intent(context, PhysioAlertsActivity::class.java))
-            },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+            onClick = onClick,
             colors =  ChipDefaults.chipColors(
             backgroundColor = Color.Transparent,
             contentColor = Color.White,
@@ -2834,9 +2857,7 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
             enabled = true,
             icon = {
                 Icon(
-                    painter = if (physioAlertsCheckedLive == true) {
-                        if (alerts.isNotEmpty() && containsAlert) painterResource(R.drawable.warning) else painterResource(selectedMetricIconFromKey(metricKey))
-                    } else painterResource(selectedMetricIconFromKey(metricKey)),
+                    painter = painterResource(iconRes),
                     contentDescription = stringResource(R.string.top_display_metric),
                     tint = alertChipColors(chipState),
                     modifier = Modifier.size(19.dp),
@@ -2846,12 +2867,14 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
                 Row(modifier = Modifier
                     .fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceEvenly,
-                verticalAlignment = Alignment.Bottom
+                verticalAlignment = Alignment.CenterVertically
                 ) {
-                    if (!containsAlert && !metric.physiological) {
-                        FittedTopMetricText(value)
+                    if (!containsAlert) {
+                        FittedTopMetricText(value, style = MaterialTheme.typography.body1.copy(
+                            fontSize = if (metric.physiological) 16.sp else 14.sp,
+                            fontWeight = FontWeight.SemiBold, color = Color.White))
                     } else Text(
-                        text = if (containsAlert) alertText(alerts) else value,
+                        text = alert ?: value,
                         textAlign = TextAlign.Start,
                         fontSize = if (containsAlert) 12.sp else if (!metric.physiological) 14.sp else 16.sp,
                         fontWeight = FontWeight.SemiBold,

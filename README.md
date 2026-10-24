@@ -1170,8 +1170,12 @@ Tap the top metric to open a simple scrollable list: **Exertion, Heart Rate,
 Lat/Long, MGRS, Skin Temp, Steps**, sorted by the localized displayed labels.
 Picker rows show the name and live value/status together on one line, alongside
 the selection indicator. Lat/Long uses `latitude/longitude` on one line.
-Picker and home coordinate text shrink to fit the available width without
+Picker and all home metric values use intrinsic-safe native text auto-sizing to
+fit the available width and height, including enlarged system fonts, without
 removing signs, grid fields, or precision (five decimal places and 1 m MGRS).
+The home chip reserves compact vertical padding for the value instead of
+clipping heart-rate glyphs inside its equal-height dashboard row. Fitting does
+not use `BoxWithConstraints`/subcomposition inside intrinsic-measuring chips.
 Underlying and transmitted location values are unchanged.
 Existing Steps and retained selections persist; removed selector choices
 (CRM, calories, floors, SpO2/tier) resolve to Exertion. This only limits the top

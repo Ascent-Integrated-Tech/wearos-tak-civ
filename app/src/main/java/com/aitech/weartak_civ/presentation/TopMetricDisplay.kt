@@ -2,21 +2,21 @@ package com.aitech.weartak_civ.presentation
 
 import android.location.Location
 import android.content.Context
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.TextAutoSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.material.MaterialTheme
-import androidx.wear.compose.material.Text
+import androidx.wear.compose.material.LocalContentColor
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.data.DataRepository
@@ -71,22 +71,19 @@ internal fun FittedTopMetricText(
     style: TextStyle = MaterialTheme.typography.body1.copy(
         fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
 ) {
-    val measurer = rememberTextMeasurer()
-    BoxWithConstraints(modifier.fillMaxWidth()) {
-        val fontSize = remember(value, style, constraints.maxWidth, measurer) {
-            val width = measurer.measure(value, style, softWrap = false).size.width
-            val scale = if (width > 0) (constraints.maxWidth.toFloat() / width).coerceAtMost(1f) else 1f
-            var size = (style.fontSize.value * scale).coerceAtLeast(0.25f)
-            while (size > 0.25f && measurer.measure(
-                    value, style.copy(fontSize = size.sp), softWrap = false
-                ).size.width > constraints.maxWidth) {
-                size = (size - 0.25f).coerceAtLeast(0.25f)
-            }
-            size.sp
-        }
-        Text(value, style = style.copy(fontSize = fontSize),
-            maxLines = 1, softWrap = false)
-    }
+    BasicText(
+        text = value,
+        modifier = modifier.fillMaxWidth(),
+        style = style.copy(
+            color = if (style.color == Color.Unspecified) LocalContentColor.current else style.color,
+            lineHeight = TextUnit.Unspecified
+        ),
+        maxLines = 1,
+        softWrap = false,
+        autoSize = TextAutoSize.StepBased(
+            minFontSize = 0.25.sp, maxFontSize = style.fontSize, stepSize = 0.25.sp
+        )
+    )
 }
 
 @Composable
