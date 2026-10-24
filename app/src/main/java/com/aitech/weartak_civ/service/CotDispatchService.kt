@@ -327,14 +327,14 @@ class CotDispatchService : Service() {
         outboundAnnouncementMutex.withLock {
             if (!outboundAnnouncementGate.canDispatch(location, android.os.SystemClock.elapsedRealtimeNanos()))
                 return@withLock false
-            if (!locationAnnouncementAllowed()) {
+            if (!locationAnnouncementAllowed() || !dataRepository.isCurrentLocationInput(location)) {
                 Log.i(TAG, "Outbound PLI announcement awaits permitted location input")
                 return@withLock false
             }
             val snapshot = dataRepository.snapshotOutboundAnnouncement(location)
             val message = CotOutboundMessage(buildPliCot(snapshot), CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot))
             if (!outboundAnnouncementGate.canDispatch(location, android.os.SystemClock.elapsedRealtimeNanos()) ||
-                !locationAnnouncementAllowed())
+                !locationAnnouncementAllowed() || !dataRepository.isCurrentLocationInput(location))
                 return@withLock false
             val available = readyPliAnnouncementAvailability()
             val accepted = if (available.companion && capRepo.gateway.session != null) {
@@ -1209,6 +1209,12 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun dispatch(message: CotOutboundMessage): Boolean {
+        val position = (message.companionPayload as? CotCompanionPayload.Pli)?.snapshot?.loc
+        if (message.kind == CotMessageKind.PLI && position?.provider != null &&
+            !dataRepository.isCurrentLocationSnapshot(position)) {
+            Log.i(TAG, "Skipping PLI built before a location input change")
+            return false
+        }
         if (capRepo.gateway.session != null && companionAppAvailable() &&
             message.kind in listOf(
                 CotMessageKind.PLI, CotMessageKind.MARKER,
@@ -1386,6 +1392,10 @@ class CotDispatchService : Service() {
                 return@launch
             }
             val location = event.location
+            if (!dataRepository.isCurrentLocationInput(location)) {
+                Log.i(TAG, "Ignoring interaction fix from previous location input")
+                return@launch
+            }
             val ageNanos = android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
             if (ageNanos < 0 || ageNanos > InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L ||
                 !InteractionPliRefreshGate.usable(location.latitude, location.longitude, location.accuracy, location.hasAccuracy())) {

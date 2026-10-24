@@ -1428,6 +1428,45 @@ class DataRepository(private val context: Context) {
 
     private val _latestLocation = MutableStateFlow<Location?>(null)
     val latestLocation: StateFlow<Location?> = _latestLocation
+    val locationInputStatus = MutableStateFlow(LocationInputStatus.OFF)
+    val getLocationInput: Flow<LocationInput?> = context.dataStore.data.map {
+        LocationInput.fromKey(it[LOCATION_INPUT])
+    }
+    val hasConfiguredLocationInput: Flow<Boolean> = context.dataStore.data.map { it.contains(LOCATION_INPUT) }
+    private val locationInputWriteMutex = Mutex()
+    @Volatile private var currentLocationInput: LocationInput? = LocationInput.INTERNAL_GNSS
+    @Volatile private var locationInputChanging = false
+    @Volatile private var locationInputChangedNanos = 0L
+
+    suspend fun storeLocationInput(input: LocationInput) = locationInputWriteMutex.withLock {
+        if (phoneManagedSettingsLocked.first()) {
+            Log.w(TAG, "Location Input change rejected while Reporting is phone-managed")
+            return@withLock false
+        }
+        synchronized(_latestLocation) {
+            locationInputChanging = true
+            locationInputChangedNanos = android.os.SystemClock.elapsedRealtimeNanos()
+            lastValidLocation = null
+            _latestLocation.value = null
+            if (locationInputStatus.value != LocationInputStatus.OFF)
+                locationInputStatus.value = LocationInputStatus.ACQUIRING
+        }
+        try {
+            context.dataStore.edit { it[LOCATION_INPUT] = input.provider }
+            currentLocationInput = input
+        } finally {
+            locationInputChanging = false
+        }
+        true
+    }
+
+    fun isCurrentLocationInput(location: Location): Boolean =
+        !locationInputChanging && location.provider == currentLocationInput?.provider &&
+            location.elapsedRealtimeNanos >= locationInputChangedNanos
+
+    fun isCurrentLocationSnapshot(location: LocationSnapshot): Boolean =
+        !locationInputChanging && location.provider == currentLocationInput?.provider &&
+            (location.elapsedRealtimeNanos ?: 0L) >= locationInputChangedNanos
 
     private val _useGpsCogAsHeading = MutableStateFlow(false)
     val useGpsCogAsHeading: StateFlow<Boolean> = _useGpsCogAsHeading
@@ -1729,6 +1768,7 @@ class DataRepository(private val context: Context) {
         var haeActual   = baseLoc.altitude
         var ceActual    = if (baseLoc.hasAccuracy()) baseLoc.accuracy else 9_999_999f
         var leActual    = if (baseLoc.hasVerticalAccuracy()) baseLoc.verticalAccuracyMeters else 9_999_999f
+        var coordinateSource = baseLoc.provider
 
         // TODO Senni: Do we need 2 lines below as it is checked in buildPliCot
         if (ceActual.isNaN()) ceActual = 9999999.0f
@@ -1738,6 +1778,8 @@ class DataRepository(private val context: Context) {
         // Apply BLE-beacon override if enabled
         if (getEnableBleBeaconService.first()) {
             val bleOutput = Utils.LocationUtils.mapLocationAgainstClosestBleBeacon(baseLoc)
+            if (bleOutput.lat != latActual || bleOutput.lon != lonActual ||
+                bleOutput.hae != haeActual || bleOutput.ce != ceActual) coordinateSource = "ble"
             latActual = bleOutput.lat
             lonActual = bleOutput.lon
             haeActual = bleOutput.hae
@@ -1752,7 +1794,10 @@ class DataRepository(private val context: Context) {
             ce = ceActual,
             le = leActual,
             course = baseLoc.bearing.takeIf { !it.isNaN() },
-            speed = baseLoc.speed.takeIf { !it.isNaN() }
+            speed = baseLoc.speed.takeIf { !it.isNaN() },
+            provider = baseLoc.provider,
+            elapsedRealtimeNanos = baseLoc.elapsedRealtimeNanos,
+            coordinateSource = coordinateSource,
         )
     }
 
@@ -1764,7 +1809,10 @@ class DataRepository(private val context: Context) {
         val ce: Float?,    // circular error (horizontal)
         val le: Float?,    // linear error (vertical)
         val course: Float?, // optional: bearing
-        val speed: Float?   // optional: m/s
+        val speed: Float?,   // optional: m/s
+        val provider: String? = null,
+        val elapsedRealtimeNanos: Long? = null,
+        val coordinateSource: String? = provider,
     )
 
     data class PhysioData(
@@ -3142,19 +3190,27 @@ class DataRepository(private val context: Context) {
 
     fun bestKnownLocation(): Location? =
         listOfNotNull(latestLocation.value?.takeIf { validLocationFix(it) }, lastValidLocation)
+            .filter(::isCurrentLocationInput)
             .maxByOrNull { it.time }?.let { Location(it) }
 
     private fun validLocationFix(location: Location): Boolean =
         location.time > 0 && location.latitude.isFinite() && location.latitude in -90.0..90.0 &&
             location.longitude.isFinite() && location.longitude in -180.0..180.0
 
-    suspend fun storeLatestLocation(location: Location) {
+    suspend fun storeLatestLocation(location: Location) = locationInputWriteMutex.withLock {
+        val selected = getLocationInput.first()
         synchronized(_latestLocation) {
+            if (locationInputChanging || location.provider != selected?.provider ||
+                location.elapsedRealtimeNanos < locationInputChangedNanos) {
+                Log.i(TAG, "Ignoring location from previous or unselected input: ${location.provider}")
+                return@withLock
+            }
+            currentLocationInput = selected
             if (validLocationFix(location) && location.time >= (lastValidLocation?.time ?: 0)) {
                 lastValidLocation = Location(location)
             }
+            _latestLocation.value = Location(location)
         }
-        _latestLocation.emit(location)
     }
 
     suspend fun storeLatestBatteryPercentage(batteryPercentage: Int) {
@@ -5673,6 +5729,7 @@ class DataRepository(private val context: Context) {
 
 
     companion object {
+        private val LOCATION_INPUT = stringPreferencesKey("location_input")
         private val ENABLE_MOPP = booleanPreferencesKey("enable_mopp")
         private val MOPP_STATUS = stringPreferencesKey("mopp_status")
         private val MOPP_SAVED_AT = longPreferencesKey("mopp_saved_at")

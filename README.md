@@ -846,7 +846,35 @@ Settings saved together coalesce over 150
 milliseconds. PLI contains the latest persisted callsign, role and team. Without any fix,
 identity PLI waits for the first usable position rather than inventing coordinates.
 
-Overlapping interactions share a high-accuracy acquisition bounded to 5 seconds. The fix
+### Reporting and Location Input
+
+The former Reporting Strategy page is now **Reporting**. Both the main location icon
+and a non-alert coordinate readout open it; physiological metrics and active alerts keep
+their existing dashboard shortcuts.
+
+**Location Input** selects only Android's `GPS_PROVIDER` (**Internal GNSS**) or
+`NETWORK_PROVIDER` (**LTE/WiFi Derived**) for periodic, scheduled one-shot and
+interaction/current-PLI acquisition. A missing or disabled provider, missing permission,
+or failed fresh-fix acquisition is reported explicitly; neither provider silently falls
+back to fused positioning or the other provider. Network-provider availability and
+network-derived positioning depend on the watch and Android services; this is not a
+guarantee that every LTE or Wi-Fi watch can obtain such a fix.
+
+Existing fused users deliberately migrate to Internal GNSS. Historical fused samples
+are not relabeled or reused. Changing the input clears current/best-known acquisition
+caches and rejects callbacks and pending PLI snapshots from the previous input, including
+switch-away/back races. A fresh actual sample is required; no synthetic `0,0` is created.
+GPS requires fine location permission; network acquisition accepts coarse or fine.
+Phone-managed Reporting remains locked, and location opt-out remains authoritative.
+Existing reporting intervals and accuracy/freshness/privacy policies are unchanged.
+Scheduled one-shot acquisition is now explicitly cancelled after its existing six-second
+wake-lock window; interaction acquisition remains bounded to five seconds.
+
+The separately enabled, existing BLE-beacon refinement remains a post-acquisition
+feature, not a fallback provider. When it adjusts a fix, outgoing coordinate provenance
+is `BLE`, not falsely `GPS` or `NETWORK`; acquisition-provider metadata remains distinct.
+
+Overlapping interactions share a selected-provider acquisition bounded to 5 seconds. The fix
 must be usable and measured after the latest interaction; cached coordinates are not
 re-stamped as a fresh fix. PLI uses persisted identity and is sent as soon as a qualifying
 fix arrives, not literally instantly. Missing permission, provider failure, or no fix ends
