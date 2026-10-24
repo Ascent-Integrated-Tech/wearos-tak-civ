@@ -1462,6 +1462,20 @@ fun displaySitxGroupDialog(
         }
     }
 
+    val savedEnableMopp: StateFlow<Boolean> = dataRepository.getEnableMopp.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    fun storeEnableMopp(enabled: Boolean) {
+        viewModelScope.launch { dataRepository.storeEnableMopp(enabled) }
+    }
+
+    val savedEnableDataSync: StateFlow<Boolean> = dataRepository.getEnableDataSync.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    fun storeEnableDataSync(enabled: Boolean) {
+        viewModelScope.launch { dataRepository.storeEnableDataSync(enabled) }
+    }
+
     val savedEnableCrmService: StateFlow<Boolean> =
         dataRepository.getEnableCrmService.stateIn(
             scope = viewModelScope,

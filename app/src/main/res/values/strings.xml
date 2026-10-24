@@ -1,4 +1,20 @@
 <resources>
+    <string name="mopp">MOPP</string>
+    <string name="mopp_ppe_status">PPE Status</string>
+    <string name="mopp_none">None</string>
+    <string name="mopp_0">MOPP 0</string>
+    <string name="mopp_1">MOPP 1</string>
+    <string name="mopp_2">MOPP 2</string>
+    <string name="mopp_3">MOPP 3</string>
+    <string name="mopp_4">MOPP 4</string>
+    <string name="mopp_manual_local">Manual status, saved on this watch only. Not sensed or assessed protection.</string>
+    <string name="mopp_unset_help">None means no status is set, not MOPP 0.</string>
+    <string name="mopp_save">Save</string>
+    <string name="mopp_saving">Saving…</string>
+    <string name="mopp_save_error">Could not save PPE status. Try again.</string>
+    <string name="mopp_enable_to_edit">Enable MOPP in Plugins to change status.</string>
+    <string name="data_sync">Data Sync</string>
+    <string name="data_sync_paused">Paused; subscriptions and content retained</string>
     <string name="manual_alert_add_hint">Type Custom Alert</string>
     <string name="chat_preset_add_hint">Type Custom Message</string>
     <string name="chat_preset_save">Save message</string>

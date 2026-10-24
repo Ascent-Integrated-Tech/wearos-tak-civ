@@ -1294,6 +1294,24 @@ class DataRepository(private val context: Context) {
         prefs[ENABLE_CRM_SERVICE] ?: DEFAULT_ENABLE_CRM_SERVICE
     }
 
+    val getEnableMopp: Flow<Boolean> = context.dataStore.data.map { it[ENABLE_MOPP] ?: false }
+    val getMoppStatus: Flow<MoppStatus> = context.dataStore.data.map {
+        MoppStatus.fromKey(it[MOPP_STATUS])
+    }
+    val getEnableDataSync: Flow<Boolean> = context.dataStore.data.map { it[ENABLE_DATA_SYNC] ?: true }
+
+    suspend fun storeEnableMopp(enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_MOPP] = enabled }
+    }
+
+    suspend fun storeMoppStatus(status: MoppStatus) {
+        context.dataStore.edit { it[MOPP_STATUS] = status.key }
+    }
+
+    suspend fun storeEnableDataSync(enabled: Boolean) {
+        context.dataStore.edit { it[ENABLE_DATA_SYNC] = enabled }
+    }
+
     suspend fun storeEnableCrmService(enableCrmService: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_CRM_SERVICE] = enableCrmService
@@ -5595,6 +5613,9 @@ class DataRepository(private val context: Context) {
 
 
     companion object {
+        private val ENABLE_MOPP = booleanPreferencesKey("enable_mopp")
+        private val MOPP_STATUS = stringPreferencesKey("mopp_status")
+        private val ENABLE_DATA_SYNC = booleanPreferencesKey("enable_data_sync")
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
         // private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")
         private val CALLSIGN = stringPreferencesKey("callsign")

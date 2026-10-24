@@ -2980,17 +2980,21 @@ fun WearTAKSettingsNav(
 
         composable("plugins") {
             val companionStatus = companionPluginStatus(enableCompanionAppService)
+            val enableMopp by settingsVm.savedEnableMopp.collectAsState()
+            val enableDataSync by settingsVm.savedEnableDataSync.collectAsState()
+            val moppStatus by dataRepository.getMoppStatus.collectAsState(initial = null)
             val menuEntries = (
                 listOf(
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.COMMANDS, stringResource(R.string.chat_commands)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.COMPANION, stringResource(R.string.companion_app)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.CRM, "CRM"),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DART, stringResource(R.string.gunshot_detection)),
-                    PluginMenuEntry.BuiltIn(BuiltInPlugin.DATA_SYNC, "Data Sync"),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.DATA_SYNC, stringResource(R.string.data_sync)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.DITTO, stringResource(R.string.ditto)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.EVERYWHERE_COMMS, stringResource(R.string.everywhere_comms)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.FALCON, stringResource(R.string.uas_detection)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.GOTENNA, stringResource(R.string.gotenna)),
+                    PluginMenuEntry.BuiltIn(BuiltInPlugin.MOPP, stringResource(R.string.mopp)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.SENSOR_MANAGER, stringResource(R.string.sensor_manager)),
                     PluginMenuEntry.BuiltIn(BuiltInPlugin.SOMEWEAR_LABS, stringResource(R.string.somewear_labs)),
                 ) + pluginList.map { PluginMenuEntry.Installed(it) }
@@ -3036,11 +3040,23 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.DATA_SYNC -> {
-                                    WearTAKTitleChipWithState(
-                                        route = "data_sync",
+                                    WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
-                                        state = stringResource(R.string.unfunded_request),
-                                        navController = navController
+                                        label = stringResource(if (enableDataSync) R.string.enabled else R.string.data_sync_paused),
+                                        checked = enableDataSync,
+                                        onCheckedChange = settingsVm::storeEnableDataSync,
+                                        onClick = { navController.navigate("data_sync") }
+                                    )
+                                }
+                                BuiltInPlugin.MOPP -> {
+                                    WearTAKSplitToggleChip(
+                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                        title = entry.title,
+                                        label = moppStatus?.let { stringResource(it.label) } ?: "",
+                                        checked = enableMopp,
+                                        onCheckedChange = settingsVm::storeEnableMopp,
+                                        onClick = { navController.navigate("mopp") }
                                     )
                                 }
                                 BuiltInPlugin.COMMANDS -> {
@@ -3258,12 +3274,23 @@ fun WearTAKSettingsNav(
 //                )
             }
         }
+        composable("mopp") {
+            val status by dataRepository.getMoppStatus.collectAsState(initial = null)
+            val enabled by settingsVm.savedEnableMopp.collectAsState()
+            status?.let {
+                MoppSettingsPage(it, enabled, navController, dataRepository::storeMoppStatus)
+            }
+        }
         composable("data_sync") {
             val serverMissions by dataRepository.takMissions.collectAsState()
+            val enableDataSync by settingsVm.savedEnableDataSync.collectAsState()
 
             WearTAKPageWithBackArrow(
-                "Data Sync",
+                stringResource(R.string.data_sync),
                 columnContent = {
+                    if (!enableDataSync) {
+                        item { Text(stringResource(R.string.data_sync_paused)) }
+                    }
                     if (serverMissions.isEmpty()) {
                         item {
                             Text("No TAK Server missions available")
@@ -3299,6 +3326,7 @@ fun WearTAKSettingsNav(
                                     "Not subscribed"
                                 },
                                 checked = missionState.subscribed,
+                                enabled = enableDataSync,
                                 onCheckedChange = { subscribed ->
                                     if (subscribed) {
                                         TAKConnectService.subscribeToTakMission(
@@ -3766,6 +3794,7 @@ fun WearTAKSplitToggleChip(
     checked: Boolean, //Whether toggle is enabled or not
     onCheckedChange: (Boolean) -> Unit, //What function/behavior happens when chip is toggled
     onClick: () -> Unit, //What happens when selectable side of chip is clicked
+    enabled: Boolean = true,
     ){
     SplitToggleChip(
         label = {
@@ -3781,12 +3810,12 @@ fun WearTAKSplitToggleChip(
             Switch(
                 checked = checked,
                 onCheckedChange = null,
-                enabled = true,
+                enabled = enabled,
                 modifier = Modifier.size(25.dp)
             )
         },
         onCheckedChange = onCheckedChange,
-        enabled = true,
+        enabled = enabled,
         onClick = { onClick() } ,
         modifier = Modifier
             .fillMaxWidth()
