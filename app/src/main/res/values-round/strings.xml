@@ -1,4 +1,5 @@
 <resources>
     <string name="manual_alert_add_hint">Type Custom Alert</string>
+    <string name="chat_preset_add_hint">Type Custom Message</string>
     <string name="hello_world">From WearTAK-CIV,\nHello, %1$s!</string>
 </resources>

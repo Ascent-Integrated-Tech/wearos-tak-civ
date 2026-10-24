@@ -3057,7 +3057,11 @@ class DataRepository(private val context: Context) {
         _latestBatteryPercentage.emit(batteryPercentage)
     }
 
-    suspend fun storeLatestIsDeviceWorn(isDeviceWorn: Boolean) {
+    suspend fun storeLatestIsDeviceWorn(isDeviceWorn: Boolean, source: String = "unknown") {
+        val previous = _latestIsDeviceWorn.value
+        if (previous != isDeviceWorn) {
+            Log.i("WearTAK-DeviceWorn", "worn $previous -> $isDeviceWorn (source=$source)")
+        }
         _latestIsDeviceWorn.emit(isDeviceWorn)
     }
 

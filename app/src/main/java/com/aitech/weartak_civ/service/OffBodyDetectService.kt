@@ -51,7 +51,8 @@ class OffBodyDetectService: Service() {
         )
 
         runBlocking {
-            dataRepository.storeLatestIsDeviceWorn(false)
+            dataRepository.storeLatestIsDeviceWorn(false, source = "offbody-service-start")
+            Log.i(TAG, "Worn state reset to not worn until the first off-body sensor event")
             // Device is not worn at service start
             CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 0)))
         }
@@ -88,7 +89,7 @@ class OffBodyDetectService: Service() {
             Log.d(TAG, "OffBody Sensor callback registered")
             sensorManager.registerListener(sensorEventListener, offBodySensor, SensorManager.SENSOR_DELAY_NORMAL)
         } else {
-            Log.e(TAG, "OffBody Sensor is null. CANNOT read off body status")
+            Log.e(TAG, "OffBody Sensor is null. CANNOT read off body status; worn state stays not worn")
         }
     }
 
@@ -113,14 +114,14 @@ class OffBodyDetectService: Service() {
                 Log.d(TAG, "OffBodyDetectService onSensorChanged(): accuracy= $accuracyVal, offbody= $offBodyDataFloat")
                 if (Math.abs(offBodyDataFloat - 1.0) > TOLERANCE) {
                     runBlocking {
-                        dataRepository.storeLatestIsDeviceWorn(false)
+                        dataRepository.storeLatestIsDeviceWorn(false, source = "offbody-sensor")
                         Log.i(TAG, "OffBodyDetectService Device is not worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_NOT_WORN))
                         CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 0)))
                     }
                 } else {
                     runBlocking {
-                        dataRepository.storeLatestIsDeviceWorn(true)
+                        dataRepository.storeLatestIsDeviceWorn(true, source = "offbody-sensor")
                         Log.i(TAG, "OffBodyDetectService Device is worn")
                         EventBus.getDefault().post(IsDeviceWornEvent(IS_WORN))
                         CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 1)))

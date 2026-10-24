@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="manual_alert_add_hint">Özel uyarı yaz</string>
+    <string name="chat_preset_add_hint">Özel mesaj yaz</string>
     <string name="hello_world">WearTAK-CIV\'den, Merhaba %1$s</string>
     <string name="callsign_settings">Çağrı Kodu Ayarları</string>
     <string name="team">Ekip</string>

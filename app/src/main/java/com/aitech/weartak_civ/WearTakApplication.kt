@@ -72,6 +72,7 @@ class WearTakApplication : Application() {
     lateinit var uasOnnxRepo: UasOnnxRepository; private set
     val crmCsvLogger: CrmSessionCsvLogger by lazy { CrmSessionCsvLogger(applicationContext) }
     val savedCustomAlerts: SavedCustomAlertsStore by lazy { SavedCustomAlertsStore(applicationContext) }
+    val savedChatPresets: com.aitech.weartak_civ.data.SavedChatPresetsStore by lazy { com.aitech.weartak_civ.data.SavedChatPresetsStore(applicationContext) }
 
     lateinit var pluginIngress: PluginIngressPort
         private set

@@ -1342,7 +1342,7 @@ Units. It applies to Contacts and marker distances, Bloodhound distances and the
 picker, routes, the Bloodhound complication and the map scale bar. Values are stored in
 meters; the setting only changes display. Metric shows `m` below 2000 m and `km` above; Imperial
 shows `ft` below 5280 ft and `mi` above (ATAK's default `rng_meters_display_pref` and
-`rng_feet_display_pref` thresholds). Bearings are labelled true (`?T`).
+`rng_feet_display_pref` thresholds). Bearings are labelled true (`°T`).
 
 The value is stored under ATAK's key `rab_rng_units_pref`: `"1"` Metric, `"0"` Imperial.
 ATAK's `"2"` (Nautical Miles) is shown as Imperial. It can be set from presets (`unitPrefs`),
@@ -1358,6 +1358,19 @@ wins.
 Chat presets in the reply picker submit the selected text immediately to that conversation.
 Typed chat text still uses the existing compose-and-Send flow. The picker keeps the
 conversation UID so incoming list changes cannot redirect a preset to another recipient.
+
+Saved chat presets follow the Manual Alert pattern in both the New chat and in-room preset
+lists: one-line rows, built-in presets first, then saved ones. The `+` row opens **Type Custom
+Message**; **Save message** stores it without sending. Saved presets are de-duplicated against
+built-ins (case-insensitive), limited to 20 entries of 60 characters, and deleted by holding the
+row and confirming.
+
+PLI remarks report exertion as a whole percent (`Exert:45%`), matching the watch display. The
+`<exert>` detail stays a 0..1 fraction for the ATAK physiology plugin.
+
+The main-screen physio chip is always tappable. With Physiological Services off it shows
+**Physio off** and opens settings; while the watch reports not worn, values show **Not worn**.
+Worn-state transitions and their source are logged under the `WearTAK-DeviceWorn` tag.
 
 When the companion phone BLE session is ready, outbound PLI, chat, markers, and alerts
 use the phone uplink only; the phone handles onward TAK, SITX, and multicast delivery.

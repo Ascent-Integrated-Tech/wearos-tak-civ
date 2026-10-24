@@ -884,30 +884,97 @@ internal fun TextPresetButtons(
     options: List<Utils.TextSelectionButton>,
     onSelected: (String) -> Unit
 ) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = Modifier.fillMaxWidth().height(100.dp),
-        verticalArrangement = Arrangement.spacedBy(5.dp),
-        horizontalArrangement = Arrangement.spacedBy(7.dp)
-    ) {
-        items(options) { option ->
-            Button(
-                onClick = { onSelected(option.longText) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.DarkGray,
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(size = 10.dp)
-            ) {
-                Text(
-                    text = option.longText,
-                    color = Color.White,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 10.sp,
-                    textAlign = TextAlign.Center,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+    val store = (LocalContext.current.applicationContext as? com.aitech.weartak_civ.WearTakApplication)?.savedChatPresets
+    val saved by (store?.presets ?: kotlinx.coroutines.flow.flowOf(emptyList())).collectAsState(initial = emptyList())
+    val builtIns = options.map { it.longText }
+    ChatPresetRows(
+        builtIns = builtIns,
+        saved = saved,
+        onSelected = onSelected,
+        onAdd = { store?.add(it, builtIns) ?: false },
+        onDelete = { store?.remove(it) },
+    )
+}
+
+private enum class ChatPresetMode { LIST, ADD, DELETE }
+
+/** One-line preset rows; saved presets follow the built-ins, `+` saves a new one without sending. */
+@Composable
+internal fun ChatPresetRows(
+    builtIns: List<String>,
+    saved: List<String>,
+    onSelected: (String) -> Unit,
+    onAdd: suspend (String) -> Boolean,
+    onDelete: suspend (String) -> Unit,
+) {
+    var mode by rememberSaveable { mutableStateOf(ChatPresetMode.LIST) }
+    var draft by rememberSaveable { mutableStateOf("") }
+    var toDelete by rememberSaveable { mutableStateOf("") }
+    var saveError by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val addHint = stringResource(R.string.chat_preset_add_hint)
+    val back = stringResource(R.string.route_back)
+
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
+        when (mode) {
+            ChatPresetMode.LIST -> {
+                builtIns.forEach { text -> ManualAlertActionRow(text = text, onClick = { onSelected(text) }) }
+                saved.forEach { text ->
+                    ManualAlertActionRow(
+                        text = text,
+                        onClick = { onSelected(text) },
+                        onLongClick = { toDelete = text; mode = ChatPresetMode.DELETE },
+                        allowLongLabel = true,
+                    )
+                }
+                ManualAlertActionRow(
+                    text = "+",
+                    contentDescription = addHint,
+                    onClick = { saveError = false; draft = ""; mode = ChatPresetMode.ADD },
                 )
+            }
+            ChatPresetMode.ADD -> {
+                TextField(
+                    value = draft,
+                    onValueChange = { draft = it; saveError = false },
+                    placeholder = { Text(addHint, maxLines = 1) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = TextFieldDefaults.colors(
+                        focusedContainerColor = Color.DarkGray,
+                        unfocusedContainerColor = Color.DarkGray,
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                    ),
+                )
+                if (saveError) {
+                    Text(
+                        text = stringResource(R.string.chat_preset_save_error),
+                        color = Color.Red,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                ManualAlertActionRow(text = stringResource(R.string.chat_preset_save), onClick = {
+                    scope.launch {
+                        if (onAdd(draft)) { draft = ""; mode = ChatPresetMode.LIST } else saveError = true
+                    }
+                })
+                ManualAlertActionRow(text = back, onClick = { mode = ChatPresetMode.LIST })
+            }
+            ChatPresetMode.DELETE -> {
+                Text(
+                    text = stringResource(R.string.chat_preset_delete_title),
+                    fontWeight = FontWeight.SemiBold,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(text = toDelete, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp))
+                ManualAlertActionRow(text = stringResource(R.string.delete), onClick = {
+                    scope.launch { onDelete(toDelete); toDelete = ""; mode = ChatPresetMode.LIST }
+                })
+                ManualAlertActionRow(text = back, onClick = { toDelete = ""; mode = ChatPresetMode.LIST })
             }
         }
     }

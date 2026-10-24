@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="manual_alert_add_hint">カスタムアラートを入力</string>
+    <string name="chat_preset_add_hint">カスタムメッセージを入力</string>
     <string name="hello_world">WearTAK-CIVより、こんにちは、%1$s</string>
     <string name="callsign_settings">コールサイン設定</string>
     <string name="team">チーム</string>

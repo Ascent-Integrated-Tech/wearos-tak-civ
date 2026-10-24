@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="manual_alert_add_hint">Nhập cảnh báo tùy chỉnh</string>
+    <string name="chat_preset_add_hint">Nhập tin nhắn tùy chỉnh</string>
     <string name="hello_world">WearTAK-CIV xin chào %1$s</string>
     <string name="callsign_settings">Cài đặt biệt hiệu</string>
     <string name="team">Nhóm</string>
