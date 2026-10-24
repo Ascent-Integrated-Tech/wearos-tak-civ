@@ -1,11 +1,11 @@
 package com.aitech.weartak_civ.presentation
 
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -14,6 +14,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,12 +44,17 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.rememberScalingLazyListState
-import androidx.wear.compose.material.MaterialTheme.colors
 import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cot.ManualAlertTypes
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import kotlinx.coroutines.launch
+
+internal data class PresetRow(val text: String, val custom: Boolean)
+
+internal fun sortedPresetRows(builtIns: List<String>, saved: List<String>): List<PresetRow> =
+    (builtIns.map { PresetRow(it, false) } + saved.map { PresetRow(it, true) })
+        .sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.text })
 
 private enum class ManualAlertScreenMode {
     LIST,
@@ -98,34 +107,22 @@ fun ManualAlertListScreen(
                     )
                 }
                 item {
-                    Text(
-                        text = "Tap an alert to send. Hold a saved alert to delete. Tap + to add.",
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-                item {
                     ManualAlertActionRow(
                         text = stringResource(R.string.route_back),
                         onClick = onCancel,
                     )
                 }
-                builtInAlerts.forEachIndexed { index, alert ->
-                    item(key = "built-in-$index-$alert") {
-                        ManualAlertActionRow(text = alert, onClick = { onAlertSelected(alert) })
-                    }
-                }
-                savedAlerts.forEachIndexed { index, alert ->
-                    item(key = "saved-$index-$alert") {
+                sortedPresetRows(builtInAlerts, savedAlerts).forEach { entry ->
+                    val alert = entry.text
+                    item(key = "${entry.custom}-$alert") {
                         ManualAlertActionRow(
                             text = alert,
                             onClick = { onAlertSelected(alert) },
-                            onLongClick = {
+                            onDelete = if (entry.custom) ({
                                 alertToDelete = alert
                                 mode = ManualAlertScreenMode.DELETE
-                            },
-                            allowLongLabel = true,
+                            }) else null,
+                            allowLongLabel = entry.custom,
                         )
                     }
                 }
@@ -231,17 +228,16 @@ fun ManualAlertListScreen(
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ManualAlertActionRow(
     text: String,
     onClick: () -> Unit,
     contentDescription: String? = null,
-    onLongClick: (() -> Unit)? = null,
+    onDelete: (() -> Unit)? = null,
     allowLongLabel: Boolean = false,
 ) {
     val rowContentDescription = contentDescription
-    Box(
+    Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
@@ -249,15 +245,16 @@ internal fun ManualAlertActionRow(
             .clip(RoundedCornerShape(24.dp))
             .background(Color.DarkGray)
             .semantics { rowContentDescription?.let { this.contentDescription = it } }
-            .combinedClickable(
-                role = Role.Button,
-                onClick = onClick,
-                onLongClick = onLongClick,
-            )
-            .padding(horizontal = 10.dp, vertical = 8.dp),
-        contentAlignment = Alignment.Center,
+            .padding(horizontal = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+        BoxWithConstraints(
+            modifier = Modifier.weight(1f)
+                .clickable(role = Role.Button, onClick = onClick)
+                .heightIn(min = 48.dp)
+                .padding(horizontal = 8.dp, vertical = 8.dp),
+            contentAlignment = Alignment.Center,
+        ) {
             val measurer = androidx.compose.ui.text.rememberTextMeasurer()
             val density = LocalDensity.current
             val availableWidthPx = with(density) { maxWidth.roundToPx() }
@@ -283,6 +280,16 @@ internal fun ManualAlertActionRow(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.fillMaxWidth(),
             )
+        }
+        if (onDelete != null) {
+            IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    imageVector = Icons.Outlined.Delete,
+                    contentDescription = stringResource(R.string.preset_delete, text),
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 }

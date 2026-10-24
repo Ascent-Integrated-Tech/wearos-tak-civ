@@ -31,7 +31,6 @@ object ManualAlertTypes {
         ManualAlertOption("GATERU", "Gate Runner"),
         ManualAlertOption("GEOFENCE", StandardEmergencyType.GEOFENCE_BREACHED.displayName, StandardEmergencyType.GEOFENCE_BREACHED),
         ManualAlertOption("GNSHOT", "Gunshot"),
-        ManualAlertOption("GSINJ", "Gunshot Injury"),
         ManualAlertOption("CONTACT", StandardEmergencyType.IN_CONTACT.displayName, StandardEmergencyType.IN_CONTACT),
         ManualAlertOption("INJURY", "Injury"),
         ManualAlertOption("RING", StandardEmergencyType.RING_THE_BELL.displayName, StandardEmergencyType.RING_THE_BELL),

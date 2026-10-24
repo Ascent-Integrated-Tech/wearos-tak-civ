@@ -898,7 +898,7 @@ internal fun TextPresetButtons(
 
 private enum class ChatPresetMode { LIST, ADD, DELETE }
 
-/** One-line preset rows; saved presets follow the built-ins, `+` saves a new one without sending. */
+/** Alphabetical preset rows; `+` saves a new one without sending. */
 @Composable
 internal fun ChatPresetRows(
     builtIns: List<String>,
@@ -918,13 +918,16 @@ internal fun ChatPresetRows(
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 6.dp)) {
         when (mode) {
             ChatPresetMode.LIST -> {
-                builtIns.forEach { text -> ManualAlertActionRow(text = text, onClick = { onSelected(text) }) }
-                saved.forEach { text ->
+                sortedPresetRows(builtIns, saved).forEach { entry ->
+                    val text = entry.text
                     ManualAlertActionRow(
                         text = text,
                         onClick = { onSelected(text) },
-                        onLongClick = { toDelete = text; mode = ChatPresetMode.DELETE },
-                        allowLongLabel = true,
+                        onDelete = if (entry.custom) ({
+                            toDelete = text
+                            mode = ChatPresetMode.DELETE
+                        }) else null,
+                        allowLongLabel = entry.custom,
                     )
                 }
                 ManualAlertActionRow(

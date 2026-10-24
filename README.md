@@ -1373,12 +1373,13 @@ on the remote-emergency reception and display work pending in gov MR!327.
 
 Manual alerts appear in a scrollable, single-column list with one-line labels. Tap a
 built-in or saved alert to send it immediately. The `+` row opens **Type Custom Alert**;
-saving adds that alert to the list for future use. Hold a saved custom alert to open its
+saving adds that alert to the list for future use. Presets and custom alerts sort
+alphabetically together. Tap a custom alert's right-side trash button to open its
 delete confirmation. Alerts without an available route continue to use the existing
 pending-alert queue.
 
 Alert kinds: the four ATAK standard types above use their own CoT types; every other built-in
-(Gate Runner, Gunshot, Gunshot Injury, Injury, UAS, Vehicle) and every typed or saved custom
+(Gate Runner, Gunshot, Injury, UAS, Vehicle) and every typed or saved custom
 alert is sent as `b-a-o` (shown by TAK Server as kind `sos`), with `alertCategory` "Manual
 Alert" and `alertPriority` 1. Cancels are `b-a-o-can` for every kind, reusing the alert UID.
 Each alert UID is delivered once per route and state, even when later GPS fixes arrive.
@@ -1409,10 +1410,11 @@ Typed chat text still uses the existing compose-and-Send flow. The picker keeps 
 conversation UID so incoming list changes cannot redirect a preset to another recipient.
 
 Saved chat presets follow the Manual Alert pattern in both the New chat and in-room preset
-lists: one-line rows, built-in presets first, then saved ones. The `+` row opens **Type Custom
+lists: one-line rows, with built-in and saved presets sorted alphabetically together.
+The `+` row opens **Type Custom
 Message**; **Save message** stores it without sending. Saved presets are de-duplicated against
-built-ins (case-insensitive), limited to 20 entries of 60 characters, and deleted by holding the
-row and confirming.
+built-ins (case-insensitive), limited to 20 entries of 60 characters, and deleted by tapping
+the right-side trash button and confirming. Built-in entries have no delete button.
 
 PLI remarks report exertion as a whole percent (`Exert:45%`), matching the watch display. The
 `<exert>` detail stays a 0..1 fraction for the ATAK physiology plugin.
