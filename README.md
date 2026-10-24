@@ -1326,10 +1326,21 @@ uses the same recognizable filled-heart vector as the physiology dashboard.
 When monitoring is off, Exertion, Heart Rate, Skin Temp **and Steps** show
 **Disabled**, ahead of old readings or wear state. This Steps display rule does
 not stop an independently running step collector. With monitoring enabled,
-wear-dependent values show **Off-Wrist** when unworn. Lat/Long and MGRS remain
+wear-dependent values show **Off-Wrist** only after an actual off-body sensor
+observation. Startup, missing-sensor and restarted-sensor uncertainty shows
+`---`, not an inferred off-wrist state. Lat/Long and MGRS remain
 location-driven regardless of monitoring. Missing/invalid/disabled location
 shows **No fix**, never invented coordinates; a real timestamped `0,0` is valid.
 Lat/Long uses five decimal places; MGRS reuses the map's one-meter formatter.
+
+Heart-rate listener registration is owned by the service lifecycle and follows
+Monitoring, the individual heart-rate setting, body-sensor permission and the
+repository's observed worn state. Repeated starts/complication wakes do not
+duplicate or stop registration, and removing the activity task does not stop
+these manager-owned sensors. Refused registration and returned permission are
+reconciled every five seconds only while collection is allowed; missing heart
+rate is not treated as off-wrist and does not trigger a synthetic reading or
+silence-based restart. Destroyed and pre-registration callbacks are rejected.
 
 The home location-status icon opens existing reporting-rate settings without
 toggling location. Stay awake retains its label and real on/off control without

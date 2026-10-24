@@ -44,10 +44,21 @@ class TopMetricDisplayTest {
         TopDisplayMetric.entries.filter { it.physiological }.forEach {
             assertEquals("Disabled", value(it, monitoring = false, worn = false))
         }
+
         listOf(TopDisplayMetric.EXERTION, TopDisplayMetric.HEART_RATE, TopDisplayMetric.SKIN_TEMP).forEach {
             assertEquals("Off-Wrist", value(it, worn = false))
         }
         assertEquals("123", value(TopDisplayMetric.STEPS, worn = false))
+    }
+
+    @Test fun missingWornObservationOrMissingHrNeverClaimsAConfirmedOffWristState() {
+        fun hr(worn: Boolean, known: Boolean, enabled: Boolean = true) =
+            topMetricValue(TopDisplayMetric.HEART_RATE, enabled, worn, null, -1f, null, null,
+                false, null, "Disabled", "Off-Wrist", "No fix", wornKnown = known)
+        assertEquals("---", hr(false, false))
+        assertEquals("---", hr(true, true))
+        assertEquals("Off-Wrist", hr(false, true))
+        assertEquals("Disabled", hr(false, false, false))
     }
 
     @Test fun coordinatesIgnorePhysioStateAndNeverInventZeroForMissingFix() {

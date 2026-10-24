@@ -42,10 +42,12 @@ internal fun topMetricValue(
     location: Location?,
     disabled: String,
     offWrist: String,
-    noFix: String
+    noFix: String,
+    wornKnown: Boolean = true,
 ): String {
     if (metric.physiological && !monitoring) return disabled
-    if (metric.physiological && metric != TopDisplayMetric.STEPS && !worn) return offWrist
+    if (metric.physiological && metric != TopDisplayMetric.STEPS && !worn)
+        return if (wornKnown) offWrist else "---"
     return when (metric) {
         TopDisplayMetric.EXERTION -> if (exertion.isFinite() && exertion >= 0) "${(exertion * 100).toInt()}%" else "---"
         TopDisplayMetric.HEART_RATE -> heartRate?.takeIf { it > 0 }?.toString() ?: "---"
@@ -89,7 +91,8 @@ internal fun FittedTopMetricText(
 @Composable
 internal fun topMetricValue(metric: TopDisplayMetric, repo: DataRepository): String {
     val monitoring by repo.getEnablePhysiologicalServices.collectAsState(initial = MainActivity.enablePhysiologicalServices)
-    val worn by repo.latestIsDeviceWorn.collectAsState()
+    val wornObservation by repo.latestDeviceWornObservation.collectAsState()
+    val worn = wornObservation == true
     val heartRate by repo.latestHeartRate.collectAsState()
     val exertion by repo.latestExertion.collectAsState()
     val skinTemp by repo.latestSkinTemp.collectAsState()
@@ -99,7 +102,7 @@ internal fun topMetricValue(metric: TopDisplayMetric, repo: DataRepository): Str
     val value = topMetricValue(metric, monitoring, worn, heartRate, exertion.toFloat(),
         skinTemp?.toFloat(), daily?.steps?.toLong(), locationEnabled, location,
         stringResource(R.string.disabled), stringResource(R.string.physio_not_worn),
-        stringResource(R.string.metric_no_fix))
+        stringResource(R.string.metric_no_fix), wornKnown = wornObservation != null)
     return if (metric == TopDisplayMetric.HEART_RATE && monitoring && worn && heartRate?.let { it > 0 } == true) {
         value + stringResource(R.string.bpm)
     } else value

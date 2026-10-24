@@ -37,6 +37,9 @@ class OffBodyDetectService: Service() {
     private lateinit var sensorManager: SensorManager
     private var offBodySensor: Sensor? = null
     var permission: Boolean = false
+    private var active = false
+    private var sensorRegistered = false
+    private var registrationStartedAtNanos = 0L
 
     private val dataRepository : DataRepository
         get() = MainActivity.dataRepository
@@ -45,16 +48,14 @@ class OffBodyDetectService: Service() {
         super.onCreate()
         Log.d(TAG, "OffBodyDetectService onCreate()")
         isRunning.set(true)
+        active = true
         startForegroundServiceCompat(
             notificationId = OFFBODY_DETECT_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
         )
 
         runBlocking {
-            dataRepository.storeLatestIsDeviceWorn(false, source = "offbody-service-start")
-            Log.i(TAG, "Worn state reset to not worn until the first off-body sensor event")
-            // Device is not worn at service start
-            CepBus.emit(CepEvent(Topics.OFFBODY, OffBodyPayload(on_wrist = 0)))
+            dataRepository.invalidateDeviceWornObservation()
         }
         startOffBodySensor()
     }
@@ -65,16 +66,13 @@ class OffBodyDetectService: Service() {
     }
 
     override fun onDestroy() {
+        active = false
+        runBlocking { dataRepository.invalidateDeviceWornObservation() }
         super.onDestroy()
         Log.d(TAG, "OffBodyDetectService onDestroy()")
         isRunning.set(false)
         stopOffBodySensor()
         stopForeground(STOP_FOREGROUND_DETACH)
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
@@ -86,16 +84,19 @@ class OffBodyDetectService: Service() {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         offBodySensor = sensorManager.getDefaultSensor(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT)
         if (null != offBodySensor) {
-            Log.d(TAG, "OffBody Sensor callback registered")
-            sensorManager.registerListener(sensorEventListener, offBodySensor, SensorManager.SENSOR_DELAY_NORMAL)
+            registrationStartedAtNanos = android.os.SystemClock.elapsedRealtimeNanos()
+            sensorRegistered = sensorManager.registerListener(sensorEventListener, offBodySensor, SensorManager.SENSOR_DELAY_NORMAL)
+            if (sensorRegistered) Log.d(TAG, "OffBody Sensor callback registered")
+            else Log.e(TAG, "OffBody listener registration refused; worn state unknown")
         } else {
-            Log.e(TAG, "OffBody Sensor is null. CANNOT read off body status; worn state stays not worn")
+            Log.e(TAG, "OffBody Sensor is null. CANNOT read off body status; worn state unknown")
         }
     }
 
     fun stopOffBodySensor() {
-        if (sensorManager != null) {
+        if (sensorRegistered) {
             sensorManager.unregisterListener(sensorEventListener)
+            sensorRegistered = false
         }
     }
 
@@ -109,9 +110,16 @@ class OffBodyDetectService: Service() {
         }
 
         override fun onSensorChanged(event: SensorEvent) {
+            if (!active || !sensorRegistered || event.timestamp < registrationStartedAtNanos) return
             if (event.sensor.type == Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT) {
                 offBodyDataFloat = event.values[0]
                 Log.d(TAG, "OffBodyDetectService onSensorChanged(): accuracy= $accuracyVal, offbody= $offBodyDataFloat")
+                if (!offBodyDataFloat.isFinite() ||
+                    (Math.abs(offBodyDataFloat.toDouble()) > TOLERANCE &&
+                        Math.abs(offBodyDataFloat - 1.0) > TOLERANCE)) {
+                    Log.w(TAG, "Ignoring invalid off-body sensor value")
+                    return
+                }
                 if (Math.abs(offBodyDataFloat - 1.0) > TOLERANCE) {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(false, source = "offbody-sensor")

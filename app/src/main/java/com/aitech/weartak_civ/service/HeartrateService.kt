@@ -12,7 +12,6 @@ package com.aitech.weartak_civ.service
 import android.app.NotificationManager
 import android.app.Service
 import android.content.ComponentName
-import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
@@ -33,12 +32,10 @@ import com.aitech.weartak_civ.cep.model.payloads.HeartRatePayload
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.CAT_PHYSIOLOGICAL_ALERT
 import com.aitech.weartak_civ.DESC_HIGH_HEART_RATE_ALERT
-import com.aitech.weartak_civ.events.IsDeviceWornEvent
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.HR_ALERT_THRESHOLDS_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.PHYSIOLOGICAL_ALERTS_ENABLED_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.mainActivity
 import com.aitech.weartak_civ.presentation.requestPhysioStatusAndAlertingComplicationUpdate
 import com.google.common.collect.EvictingQueue
 import kotlinx.coroutines.CoroutineScope
@@ -54,19 +51,19 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
-import org.greenrobot.eventbus.EventBus
-import org.greenrobot.eventbus.Subscribe
-import org.greenrobot.eventbus.ThreadMode
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
 class HeartrateService: Service() {
     // TODO: Change to https://developer.android.com/reference/android/hardware/Sensor
     private lateinit var sensorManager: SensorManager
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var heartRateSensor: Sensor? = null
     var permission: Boolean = false
-    private var deviceWorn = false
+    private var monitoringEnabled = false
+    private var sensorRegistered = false
+    private var active = false
+    private var registrationStartedAtNanos = 0L
 
     private var offWristHrClearJob: Job? = null
 
@@ -93,6 +90,7 @@ class HeartrateService: Service() {
         super.onCreate()
         Log.d(TAG, "HeartrateService onCreate()")
         isRunning.set(true)
+        active = true
         startForegroundServiceCompat(
             notificationId = HEARTRATE_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
@@ -101,73 +99,63 @@ class HeartrateService: Service() {
         observeMetrics()
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
-        deviceWorn = sharedRepository.latestIsDeviceWorn.value
-
-        CoroutineScope(Dispatchers.Main).launch {
-            if (deviceWorn) {
-                startSensors()
+        scope.launch {
+            combine(sharedRepository.getEnablePhysiologicalServices,
+                sharedRepository.getEnableHeartRateService,
+                sharedRepository.latestIsDeviceWorn) { monitoring, heartRate, worn ->
+                Triple(monitoring, heartRate, worn)
+            }.collect { (monitoring, heartRate, worn) ->
+                monitoringEnabled = monitoring && heartRate
+                reconcileSensors()
+                if (!worn) {
+                    hr = -1
+                    hrStringLiveData.postValue("N/A")
+                    sharedRepository.storeLatestHeartRate(-1)
+                    requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
+                }
             }
         }
-
-        if (!EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().register(this)
+        scope.launch {
+            while (active) {
+                delay(5_000L)
+                reconcileSensors()
+            }
         }
-
+        scope.launch {
+            sharedRepository.latestExertion.collect { Log.d(TAG, "Exertion updated: $it") }
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(TAG, "HeartrateService onStartCommand()")
+        reconcileSensors()
         return START_NOT_STICKY
     }
 
     override fun onDestroy() {
         //RestingHrManager.stop()
         //cancelOffWristHrClearJob()
+        active = false
         scope.cancel()
         super.onDestroy()
         Log.d(TAG, "HeartrateService onDestroy()")
         isRunning.set(false)
-        deviceWorn = false
-        if (EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().unregister(this)
-        }
         stopSensors()
         stopForeground(STOP_FOREGROUND_DETACH)
-    }
-
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        super.onTaskRemoved(rootIntent)
-        stopSelf()
     }
 
     override fun onBind(intent: Intent?): IBinder? {
         return null
     }
 
-    @Subscribe(threadMode = ThreadMode.MAIN)
-    public fun onIsDeviceWornEvent(event: IsDeviceWornEvent) {
-        val currDeviceWorn = event.isDeviceWorn
-        Log.d(TAG, "HeartrateService IsDeviceWornEvent(): isDeviceWorn=$currDeviceWorn & Previous isDeviceWorn=$deviceWorn")
-        if (deviceWorn != currDeviceWorn) {
-            if (currDeviceWorn) {
-                //cancelOffWristHrClearJob()
-                startSensors()
-            } else {
-                //scheduleOffWristHrAlertClear()
-                stopSensors()
-                hr = -1
-                runBlocking {
-                    hrStringLiveData.postValue("N/A")
-                    requestPhysioStatusAndAlertingComplicationUpdate(context)
-                    Log.e(
-                        "HR_STORE",
-                        "OFF WRIST storing heartRate=$hr"
-                    )
-                    sharedRepository.storeLatestHeartRate(hr)
-                }
-            }
-            deviceWorn = currDeviceWorn
+    private fun reconcileSensors() {
+        val worn = sharedRepository.latestIsDeviceWorn.value
+        permission = checkPermissions()
+        if (!active || !monitoringEnabled || !worn || !permission) {
+            stopSensors()
+            return
         }
+        if (!sensorRegistered) startSensors()
     }
 
     private fun cancelOffWristHrClearJob() {
@@ -197,31 +185,29 @@ class HeartrateService: Service() {
         }
     }
 
-    init {
-        scope.launch {
-            sharedRepository.latestExertion
-                .collect { exertion ->
-                    val logString = "Exertion updated: $exertion"
-                    Log.d(TAG, logString)
-                }
-        }
-    }
-
-    fun startSensors() {
+    private fun startSensors() {
         Log.d(TAG, "HeartrateService startSensors()")
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
-        permission = checkPermissions()
         if (null != heartRateSensor) {
-            Log.i(TAG, "HeartrateService heartRateSensor callback registered")
-            sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
+            try {
+                registrationStartedAtNanos = android.os.SystemClock.elapsedRealtimeNanos()
+                sensorRegistered = sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
+                if (sensorRegistered) Log.i(TAG, "HeartrateService heartRateSensor callback registered")
+                else Log.w(TAG, "Heart-rate listener registration refused; will reconcile while permitted")
+            } catch (error: SecurityException) {
+                sensorRegistered = false
+                Log.w(TAG, "Heart-rate permission revoked during registration", error)
+            }
         } else {
             Log.e(TAG, "HeartrateService heartRateSensor is null. CANNOT read heartrate")
         }
     }
 
-    fun stopSensors() {
-        Log.d(TAG, "HeartrateService stopSensors()")
+    private fun stopSensors() {
+        if (!sensorRegistered) return
+        Log.d(TAG, "HeartrateService stopSensors(): active=$active monitoring=$monitoringEnabled worn=${sharedRepository.latestIsDeviceWorn.value} permission=$permission")
         sensorManager.unregisterListener(sensorEventListener)
+        sensorRegistered = false
     }
 
     private val sensorEventListener = object : SensorEventListener {
@@ -235,6 +221,9 @@ class HeartrateService: Service() {
         }
 
         override fun onSensorChanged(event: SensorEvent) {
+            if (!active || !sensorRegistered || !monitoringEnabled || !checkPermissions() ||
+                !sharedRepository.latestIsDeviceWorn.value) return
+            if (event.timestamp < registrationStartedAtNanos) return
             if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
                 localHr = event.values[0].toInt()
                 //Log.i(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
@@ -244,19 +233,6 @@ class HeartrateService: Service() {
                 )
                 if ((accuracyVal != 3)) {
                     //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
-                    return
-                }
-
-                if (!deviceWorn) {
-                    if (hr != -1) {
-                        hr = -1
-
-                        runBlocking {
-                            hrStringLiveData.postValue("N/A")
-                            requestPhysioStatusAndAlertingComplicationUpdate(context)
-                            sharedRepository.storeLatestHeartRate(hr)
-                        }
-                    }
                     return
                 }
 
@@ -295,7 +271,7 @@ class HeartrateService: Service() {
                     lastTimeHrSent = currTime
                     runBlocking {
                         hrStringLiveData.postValue(hr.toString())
-                        requestPhysioStatusAndAlertingComplicationUpdate(context)
+                        requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
 //                        RestingHrManager.onHeartRateSample(localHr.toDouble()) // push all raw hr to manager for auto calculation of resting heart rate.
                         Log.e("HR_STORE", "VALID HR storing heartRate=$hr")
                         sharedRepository.storeLatestHeartRate(hr, measuredAt)
@@ -306,7 +282,7 @@ class HeartrateService: Service() {
     }
 
     private fun checkPermissions(): Boolean {
-        return ContextCompat.checkSelfPermission(MainActivity.getActivity(), "android.permission.BODY_SENSORS") == PackageManager.PERMISSION_GRANTED
+        return ContextCompat.checkSelfPermission(this, "android.permission.BODY_SENSORS") == PackageManager.PERMISSION_GRANTED
     }
 
     companion object {
@@ -324,6 +300,5 @@ class HeartrateService: Service() {
         var hr: Int = -1
         val hrStringLiveData = MutableLiveData("N/A")
         val isRunning = AtomicBoolean(false)
-        val context: Context = mainActivity.applicationContext
     }
 }

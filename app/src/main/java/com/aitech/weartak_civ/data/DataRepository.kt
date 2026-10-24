@@ -3223,6 +3223,16 @@ class DataRepository(private val context: Context) {
             Log.i("WearTAK-DeviceWorn", "worn $previous -> $isDeviceWorn (source=$source)")
         }
         _latestIsDeviceWorn.emit(isDeviceWorn)
+        _latestDeviceWornObservation.value = isDeviceWorn
+    }
+
+    private val _latestDeviceWornObservation = MutableStateFlow<Boolean?>(null)
+    val latestDeviceWornObservation: StateFlow<Boolean?> = _latestDeviceWornObservation
+
+    suspend fun invalidateDeviceWornObservation() {
+        Log.i("WearTAK-DeviceWorn", "Awaiting an actual off-body sensor observation")
+        _latestDeviceWornObservation.value = null
+        _latestIsDeviceWorn.emit(false)
     }
 
     val getCallsign: Flow<String> = context.dataStore.data.map { prefs ->
