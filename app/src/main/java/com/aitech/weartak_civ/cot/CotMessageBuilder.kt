@@ -53,6 +53,11 @@ object CotMessageBuilder {
         )
         val detail =
             CotDetailBuilder.takv() + status +
+                    (location.coordinateSource?.let { provider ->
+                        CotXml.element("precisionlocation", listOf(
+                            "geopointsrc" to if (provider == android.location.LocationManager.NETWORK_PROVIDER) "NETWORK" else provider.uppercase(),
+                        ))
+                    } ?: "") +
                     (location.takeIf { time.time - it.timeMillis > 3_000L }?.let {
                         CotXml.element("weartak_location", listOf("timeMillis" to it.timeMillis))
                     } ?: "") +

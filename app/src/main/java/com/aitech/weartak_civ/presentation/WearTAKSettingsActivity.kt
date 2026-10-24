@@ -343,6 +343,9 @@ fun WearTAKSettingsNav(
     val savedTeam by settingsVm.savedTeam.collectAsState()
     val savedRole by settingsVm.savedRole.collectAsState()
     val phoneManagedSettings by settingsVm.savedPhoneManagedSettings.collectAsState()
+    val selectedLocationInput by dataRepository.getLocationInput.collectAsState(initial = null)
+    val locationInputStatus by dataRepository.locationInputStatus.collectAsState()
+    val locationInputConfigured by dataRepository.hasConfiguredLocationInput.collectAsState(initial = true)
 
     val savedBirthYear by settingsVm.savedBirthYear.collectAsState()
     val savedHeightFeet by settingsVm.savedHeightFeet.collectAsState()
@@ -1122,6 +1125,26 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.reporting_strategy),
                 columnContent = {
+                    item {
+                        if (phoneManagedSettings) {
+                            WearTAKLockedTitleChip(
+                                title = stringResource(R.string.location_input),
+                                lockedState = stringResource(R.string.phone_managed),
+                                onClick = showPhoneManagedNotice
+                            )
+                        } else {
+                            WearTAKTitleChipWithState(
+                                route = "location_input",
+                                title = stringResource(R.string.location_input),
+                                navController = navController,
+                                state = selectedLocationInput,
+                                formatState = {
+                                    selectedLocationInput?.let { stringResource(it.label) }
+                                        ?: stringResource(R.string.location_input_unavailable)
+                                }
+                            )
+                        }
+                    }
                     if (phoneManagedSettings) {
                         item {
                             WearTAKLockedTitleChip(
@@ -1181,6 +1204,20 @@ fun WearTAKSettingsNav(
                 },
                 navController,
             )
+        }
+        composable("location_input") {
+            if (phoneManagedSettings) {
+                WearTAKPageWithBackArrow(stringResource(R.string.location_input), columnContent = {
+                    item { WearTAKLockedTitleChip(
+                        title = stringResource(R.string.location_input),
+                        lockedState = stringResource(R.string.phone_managed),
+                        onClick = showPhoneManagedNotice
+                    ) }
+                }, navController)
+            } else {
+                LocationInputSettingsPage(selectedLocationInput, locationInputStatus,
+                    locationInputConfigured, navController) { dataRepository.storeLocationInput(it) }
+            }
         }
         composable("reporting_strategy_select") {
             val reportingStrategyList = reportingStrategyOptions.map { stringResource(id = it) }

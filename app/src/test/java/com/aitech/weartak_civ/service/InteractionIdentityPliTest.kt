@@ -29,6 +29,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowSystemClock
+import java.time.Duration
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 import java.io.StringReader
@@ -40,6 +42,7 @@ import org.xml.sax.InputSource
 @Config(application = Application::class, sdk = [34])
 class InteractionIdentityPliTest {
     @Test fun identityBurstPublishesLatestIdentityWithoutWaitingForNewFixAndPreservesFixTime() = runBlocking {
+        ShadowSystemClock.advanceBy(Duration.ofSeconds(5))
         MainActivity.device_uid = "test-watch"
         MainActivity.versionNumber = "test"
         val app = RuntimeEnvironment.getApplication()
@@ -62,6 +65,8 @@ class InteractionIdentityPliTest {
         val repo = mockk<DataRepository>()
         val currentLocation = MutableStateFlow<Location?>(fix)
         every { repo.latestLocation } returns currentLocation
+        every { repo.isCurrentLocationInput(any()) } answers { realRepo.isCurrentLocationInput(firstArg()) }
+        every { repo.isCurrentLocationSnapshot(any()) } answers { realRepo.isCurrentLocationSnapshot(firstArg()) }
         every { repo.buildHailDetail } returns MutableStateFlow(false)
         every { repo.getEnableCompanionAppService } returns flowOf(false)
         val companionConnected = MutableStateFlow(false)
@@ -99,6 +104,7 @@ class InteractionIdentityPliTest {
         inject("dataRepository", repo)
         inject("endpointDispatcher\$delegate", lazyOf(dispatcher))
         inject("capRepo\$delegate", lazyOf(companion))
+        fix.time = System.currentTimeMillis()
         service.onIdentityPliRefresh(InteractionPliRefresh(PliRefreshReason.CALLSIGN_CHANGED))
         realRepo.storeCallsign("Latest")
         service.onIdentityPliRefresh(InteractionPliRefresh(PliRefreshReason.ROLE_CHANGED))

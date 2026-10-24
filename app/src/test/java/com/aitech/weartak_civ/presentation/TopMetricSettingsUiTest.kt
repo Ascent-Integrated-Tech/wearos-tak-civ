@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
+import com.aitech.weartak_civ.data.TopDisplayMetric
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -89,11 +90,27 @@ class TopMetricSettingsUiTest {
     @Test fun locationStatusIconOpensExistingReportingRatePageWithoutTogglingLocation() {
         val app = RuntimeEnvironment.getApplication()
         compose.setContent { WearTAKCIVTheme { ReportingRateLocationIcon(false) } }
-        compose.onNodeWithContentDescription("Open reporting-rate settings").performClick()
+        compose.onNodeWithContentDescription("Open Reporting").performClick()
         val intent = shadowOf(app).nextStartedActivity
         assertEquals(WearTAKSettingsActivity::class.java.name, intent.component!!.className)
         assertEquals("reporting_strategy", settingsShortcutRoute(intent))
         assertNull(shadowOf(app).nextStartedActivity)
         assertEquals("physiological_alerts", settingsShortcutRoute(settingsShortcutIntent(app, "physiological_alerts")))
+    }
+
+    @Test fun onlyNonAlertCoordinateMetricsOpenReporting() {
+        val app = RuntimeEnvironment.getApplication()
+        for (metric in TopDisplayMetric.entries) {
+            for (alert in listOf(false, true)) {
+                val intent = homeMetricIntent(app, metric, alert)
+                if (!alert && metric in listOf(TopDisplayMetric.MGRS, TopDisplayMetric.LAT_LONG)) {
+                    assertEquals(WearTAKSettingsActivity::class.java.name, intent.component!!.className)
+                    assertEquals("reporting_strategy", settingsShortcutRoute(intent))
+                } else {
+                    assertEquals(PhysioAlertsActivity::class.java.name, intent.component!!.className)
+                    assertNull(settingsShortcutRoute(intent))
+                }
+            }
+        }
     }
 }

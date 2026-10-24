@@ -2797,7 +2797,7 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
             else selectedMetricIconFromKey(metricKey),
         chipState = chipState,
         alert = if (containsAlert) alertText(alerts) else null,
-        onClick = { context.startActivity(Intent(context, PhysioAlertsActivity::class.java)) }
+        onClick = { context.startActivity(homeMetricIntent(context, metric, containsAlert)) }
     )
 }
 

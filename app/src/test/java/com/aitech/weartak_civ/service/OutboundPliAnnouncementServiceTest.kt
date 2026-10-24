@@ -60,6 +60,8 @@ class OutboundPliAnnouncementServiceTest {
         every { activity.applicationContext } returns app
         MainActivity.mainActivity = activity
         val realRepo = DataRepository(app)
+        every { repo.isCurrentLocationInput(any()) } answers { realRepo.isCurrentLocationInput(firstArg()) }
+        every { repo.isCurrentLocationSnapshot(any()) } answers { realRepo.isCurrentLocationSnapshot(firstArg()) }
         every { repo.getEnableLocationService } returns locationEnabled
         every { repo.getEnableDittoService } returns dittoEnabled
         every { repo.getEnableSitxService } returns MutableStateFlow(false)

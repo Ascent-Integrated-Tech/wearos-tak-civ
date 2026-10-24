@@ -16,6 +16,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Icon
 import com.aitech.weartak_civ.R
+import com.aitech.weartak_civ.data.TopDisplayMetric
 
 private val settingsShortcutPages = setOf("reporting_strategy", "physiological_alerts")
 
@@ -27,6 +28,11 @@ internal fun settingsShortcutIntent(context: Context, route: String): Intent {
 
 internal fun settingsShortcutRoute(intent: Intent): String? =
     intent.getStringExtra(WearTAKSettingsActivity.EXTRA_OPEN_SETTINGS_PAGE)?.takeIf { it in settingsShortcutPages }
+
+internal fun homeMetricIntent(context: Context, metric: TopDisplayMetric, alert: Boolean): Intent =
+    if (!alert && (metric == TopDisplayMetric.MGRS || metric == TopDisplayMetric.LAT_LONG))
+        settingsShortcutIntent(context, "reporting_strategy")
+    else Intent(context, PhysioAlertsActivity::class.java)
 
 @Composable
 internal fun ReportingRateLocationIcon(enabled: Boolean, modifier: Modifier = Modifier) {

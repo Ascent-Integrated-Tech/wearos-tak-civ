@@ -14,6 +14,24 @@ import org.xml.sax.InputSource
 
 class CotMessageBuilderTest {
     @Test
+    fun pliUsesActualCoordinateSourceWithoutRelabelingBleRefinementAsItsAcquisitionProvider() {
+        for ((provider, source) in listOf("gps" to "gps", "network" to "network", "gps" to "ble")) {
+            val base = pliSnapshot()
+            val snapshot = base.copy(loc = base.loc!!.copy(provider = provider, coordinateSource = source))
+            val xml = CotMessageBuilder.pli(snapshot,
+                CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", false, ""))
+            val event = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(InputSource(StringReader(xml))).documentElement
+            val precision = event.getElementsByTagName("precisionlocation").item(0) as Element
+            assertEquals(source.uppercase(), precision.getAttribute("geopointsrc"))
+            assertEquals(base.time.startCot, event.getAttribute("time"))
+            val point = event.getElementsByTagName("point").item(0) as Element
+            assertEquals(base.loc!!.lat, point.getAttribute("lat").toDouble(), 0.000001)
+            assertEquals(base.loc!!.lon, point.getAttribute("lon").toDouble(), 0.000001)
+        }
+    }
+
+    @Test
     fun pliMatchesLegacyStructureWithStatus() {
         val actual = CotMessageBuilder.pli(pliSnapshot(), CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", false, "<hail/>"))
         val legacy = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='watch-1' type='a-f-G-U-C' time='$START' start='$START' stale='$STALE' how='m-g'><point lat='41.000000' lon='-87.000000' hae='100.0' ce='4' le='5'/><detail><status readiness='true' battery='80'/><remarks>Exert:25%;HR:72;SkinTemp:98.6</remarks><contact endpoint='*:-1:stcp' callsign='EAGLE'/><__group role='Team Member' name='Cyan'/><track course='45' speed='3'/><hail/></detail></event>"

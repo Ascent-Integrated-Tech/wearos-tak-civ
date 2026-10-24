@@ -443,6 +443,7 @@ class DittoService : Service() {
             dataRepository.getEnableDittoService.first() &&
             dataRepository.getEnableLocationService.first() &&
             !dataRepository.isCompanionConnected.value &&
+            dataRepository.isCurrentLocationInput(location) &&
             (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED ||
             androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
@@ -499,6 +500,8 @@ class DittoService : Service() {
                 uid = uuid,
                 course = bearingActual,
                 speed = speedActual,
+                altitudeSource = location.coordinateSource?.uppercase() ?: "UNKNOWN",
+                geopointSource = location.coordinateSource?.uppercase() ?: "UNKNOWN",
                 // if you need a custom endpoint/phone (these also have defaults):
                 endpoint = "*:-1:stcp",
                 // ditto payload:
@@ -559,6 +562,10 @@ class DittoService : Service() {
 
             try {
                 if (dataRepository.isCompanionConnected.value) return@launch
+                if (location.provider != null && !dataRepository.isCurrentLocationSnapshot(location)) {
+                    Log.i(TAG, "Skipping Ditto track built before a location input change")
+                    return@launch
+                }
                 if (freshLocation != null && !outboundTrackRefreshAllowed(freshLocation)) {
                     Log.i(TAG, "Skipping outbound Ditto track refresh: eligibility changed while building")
                     return@launch
