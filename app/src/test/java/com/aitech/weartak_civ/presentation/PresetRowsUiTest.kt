@@ -2,6 +2,14 @@ package com.aitech.weartak_civ.presentation
 
 import android.app.Application
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -91,6 +99,7 @@ class PresetRowsUiTest {
                 ManualAlertListScreen(listOf("Bravo"), listOf("alpha"), selected::add,
                     onAddAlert = { true }, onDeleteAlert = { deleted += it }, onCancel = {})
             }
+
         }
         compose.onNodeWithText("Hold a saved alert", substring = true).assertDoesNotExist()
         compose.onAllNodes(hasScrollAction()).onFirst()
@@ -103,5 +112,48 @@ class PresetRowsUiTest {
             assertEquals(listOf("alpha"), deleted)
             assertEquals(emptyList<String>(), selected)
         }
+    }
+
+    @Test fun scrolledRoomPickerRevealsNewSaveAndDeleteDestinations() = verifyScrolledEditors(false)
+
+    @Test fun scrolledNewChatPickerRevealsNewSaveAndDeleteDestinations() = verifyScrolledEditors(true)
+
+    private fun verifyScrolledEditors(scaling: Boolean) {
+        var sent = 0
+        var removed = 0
+        compose.setContent {
+            WearTAKCIVTheme {
+                val rows: @Composable () -> Unit = {
+                    ChatPresetRows((1..20).map { "Reply %02d".format(it) }, listOf("Zulu custom"),
+                        { sent++ }, onAdd = { true }, onDelete = { removed++ })
+                }
+                if (scaling) {
+                    ScalingLazyColumn(Modifier.fillMaxSize()) {
+                        item { Spacer(Modifier.height(60.dp)) }
+                        item { rows() }
+                        item { Spacer(Modifier.height(120.dp)) }
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize()) {
+                        item { Spacer(Modifier.height(60.dp)) }
+                        item { rows() }
+                        item { Spacer(Modifier.height(120.dp)) }
+                    }
+                }
+            }
+        }
+        val list = compose.onAllNodes(hasScrollAction()).onFirst()
+        list.performScrollToNode(hasContentDescription("Type Custom Message"))
+        compose.onNodeWithContentDescription("Type Custom Message").performClick()
+        compose.onNode(hasSetTextAction()).assertIsDisplayed()
+        assertTrue(compose.onNode(hasSetTextAction()).fetchSemanticsNode().boundsInRoot.top >= 0)
+        compose.onNodeWithText("Save message").assertIsDisplayed()
+        compose.onNodeWithText("Back").performClick()
+        list.performScrollToNode(hasContentDescription("Delete Zulu custom"))
+        compose.onNodeWithContentDescription("Delete Zulu custom").performClick()
+        compose.onNodeWithText("Delete saved message?").assertIsDisplayed()
+        assertTrue(compose.onNodeWithText("Delete saved message?").fetchSemanticsNode().boundsInRoot.top >= 0)
+        compose.onNodeWithText("Delete").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, sent); assertEquals(0, removed) }
     }
 }
