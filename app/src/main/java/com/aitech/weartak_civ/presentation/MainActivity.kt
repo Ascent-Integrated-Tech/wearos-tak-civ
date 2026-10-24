@@ -2803,7 +2803,9 @@ fun selectedMetricValueFromKey(key: String?): String {
     val latestSpo2 = dataRepository.latestSpo2.collectAsState()
     val latestSpo2TierEvent = dataRepository.latestSpo2TierEvent.collectAsState()
 
-    val string: String = when (key) {
+    val notWorn = stringResource(R.string.physio_not_worn)
+    val wornMetric = key == "key_heart_rate" || key == "key_skin_temp" || key == "key_exertion"
+    val string: String = if (wornMetric && !deviceWorn.value) notWorn else when (key) {
         "key_heart_rate" -> if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
         "key_steps" -> if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"
         "key_skin_temp" -> if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"
@@ -2863,13 +2865,15 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
         Chip(
             border = ChipDefaults.outlinedChipBorder(alertChipColors(chipState), borderWidth = 2.dp),
             onClick = {
-                context.startActivity(Intent(context, PhysioAlertsActivity::class.java))
+                // When physio is off, open Settings so the user can turn it on.
+                val target = if (physioCheckedLive == true) PhysioAlertsActivity::class.java else WearTAKSettingsActivity::class.java
+                context.startActivity(Intent(context, target))
             },
             colors =  ChipDefaults.chipColors(
             backgroundColor = Color.Transparent,
             contentColor = Color.White,
         ),
-            enabled = if (physioCheckedLive == true) true else false,
+            enabled = true,
             icon = {
                 Icon(
                     painter = if (physioAlertsCheckedLive == true) {
@@ -2900,9 +2904,10 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
                         )
                     } else {
                         Text(
-                            text = " --- ",
+                            text = stringResource(R.string.physio_off),
                             textAlign = TextAlign.Start,
-                            fontSize = 20.sp,
+                            fontSize = 14.sp,
+                            maxLines = 1,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White
                         )

@@ -75,7 +75,7 @@ class PliMetadataCompatibilityTest {
                 }
             }
             assertEquals("true", child(direct, "status").getAttribute("readiness"))
-            assertEquals("Exert:0.25%;HR:65;SkinTemp:97", child(direct, "remarks").textContent)
+            assertEquals("Exert:25%;HR:65;SkinTemp:97", child(direct, "remarks").textContent)
             assertEquals("HR: 65 bpm; Batt: ${battery ?: -1}%", child(ditto, "remarks").textContent)
         }
     }

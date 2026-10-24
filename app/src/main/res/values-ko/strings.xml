@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="manual_alert_add_hint">사용자 지정 경보 입력</string>
+    <string name="chat_preset_add_hint">사용자 지정 메시지 입력</string>
     <string name="hello_world">WearTAK-CIV 전송, 안녕하세요, %1$s</string>
     <string name="callsign_settings">호출 부호 설정</string>
     <string name="team">팀</string>

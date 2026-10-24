@@ -233,7 +233,7 @@ fun ManualAlertListScreen(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun ManualAlertActionRow(
+internal fun ManualAlertActionRow(
     text: String,
     onClick: () -> Unit,
     contentDescription: String? = null,
