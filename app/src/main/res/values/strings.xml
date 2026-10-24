@@ -4,6 +4,7 @@
     <string name="chat_preset_save">Save message</string>
     <string name="chat_preset_save_error">Message must be unique, 1–60 characters; up to 20 saved.</string>
     <string name="chat_preset_delete_title">Delete saved message?</string>
+    <string name="preset_delete">Delete %1$s</string>
     <string name="route_package_imported">Imported %1$d route(s). Open the map to view.</string>
     <string name="route_package_failed">Route package import failed. Check the server connection and package, then resend.</string>
     <string name="multicast_receive_failed">Multicast receive unavailable. Check Wi-Fi and multicast settings.</string>

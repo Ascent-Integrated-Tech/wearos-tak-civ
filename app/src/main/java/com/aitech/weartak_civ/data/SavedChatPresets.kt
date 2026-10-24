@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.map
 
 private val Context.savedChatPresetsDataStore by preferencesDataStore(name = "saved_chat_presets")
 
-/** User-saved chat quick replies, shown after the built-in presets. Same rules as saved Manual Alerts. */
+/** User-saved chat quick replies. Same rules as saved Manual Alerts. */
 object SavedChatPresets {
     const val MAX_COUNT = SavedCustomAlerts.MAX_COUNT
     const val MAX_LENGTH = SavedCustomAlerts.MAX_LENGTH

@@ -5,6 +5,14 @@ import org.junit.Test
 
 class ManualAlertListScreenTest {
     @Test
+    fun presetsAndCustomEntriesSortTogetherWithoutChangingTheirTextOrDeletability() {
+        val rows = sortedPresetRows(listOf("Zulu", "Bravo"), listOf("charlie", "alpha"))
+        assertEquals(listOf("alpha", "Bravo", "charlie", "Zulu"), rows.map { it.text })
+        assertEquals(listOf(true, false, true, false), rows.map { it.custom })
+        assertEquals(emptyList<PresetRow>(), sortedPresetRows(emptyList(), emptyList()))
+    }
+
+    @Test
     fun labelFontShrinksUntilTheWholeLabelFits() {
         val size = chooseAlertFontSize("abcdef", availableWidthPx = 75) { fontSize -> fontSize * 6 }
 

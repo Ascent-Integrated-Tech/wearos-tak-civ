@@ -13,7 +13,6 @@ class ManualAlertTypesTest {
                 "Gate Runner",
                 "Geofence Breached",
                 "Gunshot",
-                "Gunshot Injury",
                 "In Contact",
                 "Injury",
                 "Ring The Bell",
@@ -22,6 +21,6 @@ class ManualAlertTypesTest {
             ),
             ManualAlertTypes.options.map(ManualAlertOption::displayName),
         )
-        assertTrue(ManualAlertTypes.options.map(ManualAlertOption::displayName).toSet().size == 10)
+        assertTrue(ManualAlertTypes.options.map(ManualAlertOption::displayName).toSet().size == 9)
     }
 }
