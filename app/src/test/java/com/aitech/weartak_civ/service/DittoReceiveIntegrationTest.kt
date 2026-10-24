@@ -14,8 +14,10 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.emptyPreferences
 import com.aitech.weartak_civ.cot.DittoCotDocument
+import com.aitech.weartak_civ.cot.DittoChatDocument
 import com.aitech.weartak_civ.cot.DittoCotReceiver
 import com.aitech.weartak_civ.cot.CotMessageParser
+import com.aitech.weartak_civ.cot.CotMessageBuilder
 import com.aitech.weartak_civ.command.ChatCommandParser
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
@@ -261,9 +263,18 @@ class DittoReceiveIntegrationTest {
 
         fun chat(uid: String = "chat", recipient: String = "watch", sender: String = "alice",
                  text: String = "Hello") = doc(uid, "b-t-f", detail =
-            """<detail><__chat id='$recipient' chatroom='$recipient' senderCallsign='$sender'
+            """<detail><__chat parent='RootContactGroup' id='$recipient' chatroom='$recipient' senderCallsign='$sender'
                 messageId='$uid'><chatgrp id='$recipient' uid0='$sender' uid1='$recipient'/></__chat>
                 <remarks to='$recipient'>$text</remarks></detail>""")
+
+        fun nativeChat(uid: String = "chat", recipient: String = "watch", sender: String = "alice",
+                       text: String = "Hello", members: String? = null): Map<String, Any?> {
+            val raw = chat(uid, recipient, sender, text).let {
+                if (members == null) it else it + ("r" to (it.getValue("r") as String)
+                    .replace("uid1='$recipient'", members))
+            }
+            return DittoChatDocument.encode(DittoCotDocument.decode(raw).xml, "remote-peer")
+        }
 
         fun route(at: Long = time) = doc("route", "b-m-r", at, detail =
             "<detail><contact callsign='Patrol'/><link point='38,-77,50' callsign='Start'/>" +
@@ -462,6 +473,176 @@ class DittoReceiveIntegrationTest {
         } finally { f.close() }
     }
 
+    @Test fun chatCollectionUsesNormalInboxAndDeduplicatesOtherTransportsInEitherOrder() = runTest {
+        val f = Fixture(this)
+        try {
+            f.prepareTransportAdapters()
+            f.tcp(f.chat("tcp-first"))
+            f.emit("chat", f.nativeChat("tcp-first"), f.nativeChat("ditto-first"))
+            f.drain()
+            f.multicast(f.chat("ditto-first"))
+            f.emit("mapitem", f.chat("ditto-first"))
+            f.emit("chat", f.nativeChat("tcp-first"), f.nativeChat("ditto-first"))
+            f.drain()
+            val messages = f.repo.chatRoomsFlow.value.single().messageList
+            assertEquals(listOf("tcp-first", "ditto-first"), messages.map { it.messageId })
+            assertTrue(f.repo.chatRoomsFlow.value.single().newMessagesPresent)
+            f.observers.close()
+            f.observers = f.start()
+            f.emit("chat", f.nativeChat("tcp-first"), f.nativeChat("ditto-first"))
+            f.drain()
+            assertEquals(messages, f.repo.chatRoomsFlow.value.single().messageList)
+            assertTrue(f.delivery.outboundDitto.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun chatCollectionFiltersAddressingEchoesExpiryAndInvalidDocuments() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("chat",
+                f.nativeChat("direct"), f.nativeChat("other", "bob"),
+                f.nativeChat("own-sender", recipient = "bob", sender = "watch"),
+                f.nativeChat("own-peer") + ("a" to "local-peer"),
+                f.nativeChat("expired") + ("o" to f.time),
+                f.nativeChat("future") + mapOf("b" to f.time + 600_000, "o" to f.time + 900_000),
+                f.doc(), f.nativeChat("missing-id").let {
+                    it + ("r" to (it.getValue("r") as String).replace("messageId=\"missing-id\"", ""))
+                },
+                f.nativeChat("all", "All Chat Rooms"),
+                f.nativeChat("group", "team", members = "uid1='watch' uid2='bob'"),
+                f.nativeChat("not-in-group", "team", members = "uid1='bob' uid2='charlie'"))
+            f.drain()
+            assertEquals(setOf("direct", "all", "group"),
+                f.chats.flatMap { it.parsedRooms.orEmpty() }.flatMap { it.messageList }
+                    .map { it.messageId }.toSet())
+            assertTrue(f.logs.any { it.contains("Invalid GeoChat") || it.contains("Missing Ditto chat") })
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun chatCollectionRespectsChatSettingAndBondedCompanionSuppression() = runTest {
+        val f = Fixture(this)
+        try {
+            f.repo.storeEnableChatService(false)
+            f.emit("chat", f.nativeChat())
+            f.drain()
+            assertTrue(f.chats.isEmpty())
+            f.repo.storeEnableChatService(true)
+            f.emit("chat", f.nativeChat())
+            f.drain()
+            assertEquals(1, f.chats.size)
+            f.repo.setCompanionAppConnected()
+            f.emit("chat", f.nativeChat("suppressed"))
+            f.drain()
+            assertEquals(1, f.chats.size)
+            val writes = mutableListOf<Map<String, Any?>>()
+            val publisher = f.publisher(writes)
+            assertFalse(publisher.publishDocument("chat", f.nativeChat("outgoing")))
+            assertTrue(writes.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun officialPluginChatWithoutWearTakExtensionsReachesAddressedInboxOnly() = runTest {
+        val f = Fixture(this)
+        val nativeFields = setOf("_id", "_v", "_r", "a", "b", "d", "e", "msg",
+            "room", "roomId", "parent", "authorType", "authorLoc")
+        fun native(id: String, room: String = "watch") =
+            f.nativeChat(id, room).filterKeys { it in nativeFields }
+        try {
+            f.emit("chat", native("native-direct"), native("native-broadcast", "All Chat Rooms"),
+                native("private", "bob"), native("unknown-group", "team"),
+                native("expired") + ("b" to f.time - DittoChatDocument.TTL_MILLIS))
+            f.drain()
+            assertEquals(setOf("native-direct", "native-broadcast"),
+                f.repo.chatRoomsFlow.value.flatMap { it.messageList }.map { it.messageId }.toSet())
+            assertEquals("alice", f.repo.chatRoomsFlow.value.first { !it.isGroup }.uid)
+            val knownGroup = CotMessageParser.parseChatRooms(DittoCotDocument.decode(f.chat("seed", "team").let {
+                it + ("r" to (it.getValue("r") as String).replace(
+                    "uid1='team'", "uid1='watch' uid2='bob'"))
+            }).xml, "watch", "WATCH").single()
+            f.delivery.chat(TakChatEvent("", parsedRooms = listOf(knownGroup)))
+            f.emit("chat", native("known-group", "team"))
+            f.drain()
+            assertEquals(listOf("seed", "known-group"),
+                f.repo.chatRoomsFlow.value.first { it.uid == "team" }.messageList.map { it.messageId })
+            f.emit("chat", native("mismatch") + ("r" to f.nativeChat("other").getValue("r")))
+            f.drain()
+            assertTrue(f.logs.any { it.contains("envelope/detail mismatch") })
+        } finally { f.close() }
+    }
+
+    @Test fun outgoingChatCallbackPreservesGeoChatIdentityAndAllDestinationTypes() = runTest {
+        val f = Fixture(this)
+        val writes = java.util.Collections.synchronizedList(mutableListOf<Map<String, Any?>>())
+        val publisher = f.publisher(writes)
+        val completed = CompletableDeferred<Unit>()
+        every { publisher.writeDocument(any(), any()) } answers {
+            assertEquals("chat", firstArg<String>())
+            writes += secondArg<Map<String, Any?>>()
+            if (writes.size == 3) completed.complete(Unit)
+            Unit
+        }
+        try {
+            MainActivity.Constants.callsign = "WATCH"
+            val destinations = listOf(
+                Triple("bob", "Bob", false),
+                Triple("team", "Team & Friends", true),
+                Triple("All Chat Rooms", "All Chat Rooms", true)
+            )
+            val xmlByRoom = destinations.associate { (uid, title, group) ->
+                val snapshot = f.repo.snapshotChatEvent(uid, title, "Hello <team> & friends",
+                    isGroup = group, participantUids = if (group) listOf("watch", "bob", "charlie") else emptyList())
+                uid to CotMessageBuilder.chat(snapshot, "WATCH", "watch", "message-$uid", f.time)
+            }
+            xmlByRoom.values.forEach {
+                publisher.onDittoDoc(DittoDocumentEvent("chat", it))
+            }
+            withContext(Dispatchers.Default) { withTimeout(10_000) { completed.await() } }
+            val documents = writes.associateBy { it["_id"] }
+            xmlByRoom.forEach { (room, original) ->
+                val document = documents.getValue("message-$room")
+                val decoded = DittoChatDocument.decode(document)
+                assertEquals(CotMessageParser.parseChatRooms(original, "bob", "BOB", receivedAt = f.time),
+                    CotMessageParser.parseChatRooms(decoded.xml, "bob", "BOB", receivedAt = f.time))
+                assertEquals("local-peer", decoded.peer)
+                assertEquals("watch", decoded.author)
+                assertEquals("WATCH", document["e"])
+                assertEquals(f.time, document["b"])
+                assertEquals(f.time + 86_400_000, document["o"])
+                val remote = CotMessageParser.parseChatRooms(decoded.xml, "bob", "BOB").single()
+                assertEquals("message-$room", remote.messageList.single().messageId)
+                assertEquals("Hello <team> & friends", remote.messageList.single().message)
+                assertTrue(CotMessageParser.parseChatRooms(decoded.xml, "watch", "WATCH").isEmpty())
+                if (room == "team") assertEquals(listOf("watch", "bob", "charlie"), remote.participantUids)
+            }
+        } finally {
+            (DittoService::class.java.getDeclaredField("ioScope").apply { isAccessible = true }
+                .get(publisher) as kotlinx.coroutines.CoroutineScope).coroutineContext[Job]?.cancel()
+            f.close()
+        }
+    }
+
+    @Test fun chatRetentionEvictsOnlyExpiredLocalDocumentsAndReportsFailures() = runTest {
+        val f = Fixture(this)
+        try {
+            val publisher = f.publisher(mutableListOf())
+            val collection = mockk<live.ditto.DittoCollection>()
+            val operation = mockk<live.ditto.DittoPendingCursorOperation>()
+            every { f.store.collection("chat") } returns collection
+            every { collection.find("o <= ${f.time}") } returns operation
+            every { collection.find("b <= ${f.time - DittoChatDocument.TTL_MILLIS}") } returns operation
+            every { operation.evict() } returns emptyList()
+            publisher.evictExpiredChatDocuments(f.store, f.time)
+            verify(exactly = 2) { operation.evict() }
+            every { operation.evict() } throws IllegalStateException("synthetic eviction failure")
+            publisher.evictExpiredChatDocuments(f.store, f.time)
+            assertTrue(ShadowLog.getLogsForTag("WearTAK-DittoService").any {
+                it.msg == "Could not evict expired Ditto chat; retrying later"
+            })
+            assertTrue(f.delivery.outboundDitto.isEmpty())
+        } finally { f.close() }
+    }
+
     @Test fun expiredFutureMalformedOversizedAndControlDocumentsCannotReachApplication() = runTest {
         val f = Fixture(this)
         try {
@@ -548,14 +729,14 @@ class DittoReceiveIntegrationTest {
             f.emit("mapitem", f.doc("late"))
             runCurrent()
             assertTrue(f.repo.receivedMarkerList.value.isEmpty())
-            assertEquals(3, f.handles.size)
+            assertEquals(4, f.handles.size)
             f.handles.forEach { verify(exactly = 1) { it.close() } }
             f.pending.clear()
             f.observers = f.start()
             f.emit("mapitem", f.doc("after-restart"))
             f.drain()
             assertEquals("after-restart", f.repo.receivedMarkerList.value.single().uid)
-            assertEquals(6, f.handles.size)
+            assertEquals(8, f.handles.size)
         } finally { f.close() }
     }
 
@@ -607,7 +788,7 @@ class DittoReceiveIntegrationTest {
                     any<(DittoQueryResult, () -> Unit) -> Unit>())
             } throws IllegalStateException("synthetic registration failure")
             assertThrows(IllegalStateException::class.java) { f.start() }
-            assertEquals(4, f.handles.size)
+            assertEquals(5, f.handles.size)
             f.handles.forEach { verify(exactly = 1) { it.close() } }
         } finally { f.close() }
     }

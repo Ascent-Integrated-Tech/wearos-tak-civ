@@ -64,7 +64,10 @@ class CotEndpointDispatcher(
                 when (route) {
                     CotRoute.TAK -> sendTak(message.xml, message.kind != CotMessageKind.PLI)
                     CotRoute.SITX -> sendSitx(message.xml)
-                    CotRoute.DITTO -> sendDitto("mapitem", message.xml)
+                    CotRoute.DITTO -> sendDitto(
+                        if (message.kind == CotMessageKind.CHAT) "chat" else "mapitem",
+                        message.xml
+                    )
                     CotRoute.MULTICAST -> if (message.kind == CotMessageKind.PLI) {
                         sendPliMulticast(message.xml)
                     } else {

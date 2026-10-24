@@ -19,7 +19,7 @@ internal data class DittoCotDocument(
 
     companion object {
         const val MAX_PAYLOAD_BYTES = 256 * 1024
-        val COLLECTIONS = listOf("track", "mapitem", "alert")
+        val COLLECTIONS = listOf("track", "mapitem", "alert", "chat")
 
         fun decode(doc: Map<String, Any?>): DittoCotDocument {
             require((doc["_v"] as? Number)?.toDouble() == 2.0) { "Unsupported Ditto schema version" }

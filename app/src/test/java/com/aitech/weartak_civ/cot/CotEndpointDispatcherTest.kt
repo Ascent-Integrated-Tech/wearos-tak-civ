@@ -56,7 +56,7 @@ class CotEndpointDispatcherTest {
             allAvailable.copy(companion = false),
         )
         assertEquals(
-            listOf("multicast:<chat/>", "ditto:mapitem:<chat/>", "tak:true:<chat/>", "sitx:<chat/>"),
+            listOf("multicast:<chat/>", "ditto:chat:<chat/>", "tak:true:<chat/>", "sitx:<chat/>"),
             calls,
         )
     }
