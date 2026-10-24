@@ -502,7 +502,8 @@ object Utils {
         val isRemoteAlert: Boolean = false,
         val isStale: Boolean = false,
         val hasLocation: Boolean = true,
-        val targetKind: BloodhoundTargetKind = BloodhoundTargetKind.MARKER
+        val targetKind: BloodhoundTargetKind = BloodhoundTargetKind.MARKER,
+        val isCamera: Boolean = false
     )
 
     fun normalize0to360(deg: Double): Double =

@@ -100,6 +100,7 @@ data class CotMarkerDetail(
     val remarks: String?,
     val contact: String?,
     val circleRadiusMeters: Double? = null,
+    val isCamera: Boolean = false,
 )
 
 data class CotDeletion(val uid: String, val time: Long)

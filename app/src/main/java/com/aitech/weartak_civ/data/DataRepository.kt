@@ -2226,7 +2226,8 @@ class DataRepository(private val context: Context) {
         val source: String,
         val sourceServerId: String? = null,
         val receivedAt: Long = timeReceived,
-        val chatEndpoint: String? = null
+        val chatEndpoint: String? = null,
+        val isCamera: Boolean = false
     )
 
     private val receivedUserStore = SourceAwareCotStore(
@@ -2333,7 +2334,8 @@ class DataRepository(private val context: Context) {
             source = source,
             sourceServerId = sourceServerId,
             receivedAt = receivedAt,
-            chatEndpoint = event.detail.contact
+            chatEndpoint = event.detail.contact,
+            isCamera = event.detail.isCamera
         )
         val result = receivedUserStore.upsertWithResult(item)
         Log.d(
@@ -2373,7 +2375,8 @@ class DataRepository(private val context: Context) {
         val source: String,
         val sourceServerId: String? = null,
         val receivedAt: Long = timeReceived,
-        val circleRadiusMeters: Double? = null
+        val circleRadiusMeters: Double? = null,
+        val isCamera: Boolean = false
     )
 
     private val _droppedMarkerList = MutableStateFlow<List<DroppedMarker>>(emptyList())
@@ -2615,7 +2618,8 @@ class DataRepository(private val context: Context) {
             source = source,
             sourceServerId = sourceServerId,
             receivedAt = receivedAt,
-            circleRadiusMeters = event.detail.circleRadiusMeters
+            circleRadiusMeters = event.detail.circleRadiusMeters,
+            isCamera = event.detail.isCamera
         )
         val result = upsertReceivedMarker(item)
         if (com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(event.type)) {
