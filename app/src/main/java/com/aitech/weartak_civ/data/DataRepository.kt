@@ -2051,6 +2051,18 @@ class DataRepository(private val context: Context) {
             )
         )
 
+    suspend fun snapshotOutboundAnnouncement(location: Location): PliSnapshot {
+        val snapshot = snapshotInteractionPli(location)
+        val current = selfStatusSnapshot(selfStatusInputs().first(), System.currentTimeMillis()).physio
+        return snapshot.copy(physioData = snapshot.physioData.copy(data = snapshot.physioData.data.copy(
+            heartRateBpm = current?.hr,
+            skinTempF = current?.sktF,
+            exertion = current?.exert,
+            exertionClass = current?.exert?.let(Utils.PhysioUtils::classifyExertion),
+            dailyMetrics = null,
+        )))
+    }
+
     private fun pliStaleOffset(): CotTimeOffset =
         CotTimeOffset(seconds = 2 * almightyReportingIntervalSecs.value + 15)
 
@@ -4047,21 +4059,35 @@ class DataRepository(private val context: Context) {
 
     private val _endpointConnected = MutableStateFlow<Set<Endpoint>>(emptySet())
     val endpointConnected: StateFlow<Set<Endpoint>> = _endpointConnected
+    data class OutboundReadyRoute(val endpoint: Endpoint, val generation: Long)
+    private val outboundReadinessLock = Any()
+    private var outboundReadyGeneration = 0L
+    private val _outboundReadyRoutes = MutableStateFlow<Map<String, OutboundReadyRoute>>(emptyMap())
+    val outboundReadyRoutes: StateFlow<Map<String, OutboundReadyRoute>> = _outboundReadyRoutes
 
     val anyEndpointConnected: StateFlow<Boolean> =
         endpointConnected.map { it.isNotEmpty() }
             .stateIn( scope = repoScope , SharingStarted.Eagerly, false)
 
-    fun setEndpointConnected(endpoint: Endpoint) {
+    fun setEndpointConnected(endpoint: Endpoint, readyKeys: Set<String> = setOf(endpoint.name)) =
+      synchronized(outboundReadinessLock) {
         _endpointConnected.update { set ->
             if (endpoint in set) set else set + endpoint
         }
+        val keys = readyKeys.map { "${endpoint.name}:$it" }.toSet()
+        _outboundReadyRoutes.update { current ->
+            current.filter { (key, value) -> value.endpoint != endpoint || key in keys } +
+                keys.associateWith { key ->
+                    current[key] ?: OutboundReadyRoute(endpoint, ++outboundReadyGeneration)
+                }
+        }
     }
 
-    fun setEndpointDisconnected(endpoint: Endpoint) {
+    fun setEndpointDisconnected(endpoint: Endpoint) = synchronized(outboundReadinessLock) {
         _endpointConnected.update { set ->
             if (endpoint !in set) set else set - endpoint
         }
+        _outboundReadyRoutes.update { current -> current.filterValues { it.endpoint != endpoint } }
     }
 
     fun setCompanionAppConnected() {

@@ -75,6 +75,40 @@ class CotEndpointDispatcherTest {
         assertEquals(listOf("companion:Pli"), calls)
     }
 
+    @Test
+    fun routeReadyPliNeverCallsUnavailableLegacyRoutesOrDittoMapitem() = runBlocking {
+        val calls = mutableListOf<String>()
+        val dispatcher = dispatcher(calls)
+        val message = CotOutboundMessage("<pli/>", CotMessageKind.PLI, CotCompanionPayload.Pli(pliSnapshot()))
+        assertEquals(false, dispatcher.dispatch(message,
+            CotEndpointAvailability(false, false, true, false, false), readyPliOnly = true))
+        assertTrue(calls.isEmpty())
+        assertTrue(dispatcher.dispatch(message,
+            CotEndpointAvailability(false, false, false, true, false), readyPliOnly = true))
+        assertEquals(listOf("pliMulticast:<pli/>"), calls)
+    }
+
+    @Test
+    fun routeReadyPliRetainsExclusiveCompanionAndDoesNotQueueTak() = runBlocking {
+        val calls = mutableListOf<String>()
+        val dispatcher = dispatcher(calls)
+        val message = CotOutboundMessage("<pli/>", CotMessageKind.PLI, CotCompanionPayload.Pli(pliSnapshot()))
+        dispatcher.dispatch(message, allAvailable, readyPliOnly = true)
+        assertEquals(listOf("companion:Pli"), calls)
+        calls.clear()
+        dispatcher.dispatch(message, allAvailable.copy(companion = false), readyPliOnly = true)
+        assertEquals(listOf("tak:false:<pli/>", "sitx:<pli/>", "pliMulticast:<pli/>"), calls)
+    }
+
+    @Test
+    fun normalPeriodicPliPolicyIsUnchanged() = runBlocking {
+        val calls = mutableListOf<String>()
+        dispatcher(calls).dispatch(
+            CotOutboundMessage("<pli/>", CotMessageKind.PLI, CotCompanionPayload.Pli(pliSnapshot())),
+            CotEndpointAvailability(false, false, false, false, false))
+        assertEquals(listOf("sitx:<pli/>", "pliMulticast:<pli/>"), calls)
+    }
+
     private fun dispatcher(calls: MutableList<String>) = CotEndpointDispatcher(
         sendTak = { xml, queue -> calls += "tak:$queue:$xml" },
         sendSitx = { xml -> calls += "sitx:$xml" },

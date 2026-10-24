@@ -172,6 +172,36 @@ class PluginSettingsCoordinatorTest {
     }
 
     @Test
+    fun outboundReadinessVersionsReconnectsAndSecondPluginsWithoutUnchangedRepeats() {
+        val field = PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT
+        val schema = SettingsSchemaParcel(fields = listOf(
+            SettingsFieldParcel(fieldId = field, label = "Forward CoT", fieldType = SettingsFieldTypes.TOGGLE)
+        ))
+        fakePlugin.setSettingsSchemaForTest(schema)
+        coordinator.onPluginConnected("com.plugin.settings", fakePlugin)
+        assertTrue(coordinator.outboundCotReadyRoutes.value.isEmpty())
+        val on = Bundle().apply { putBoolean(field, true) }
+        assertTrue(coordinator.applyPluginSettings("com.plugin.settings", on).success)
+        val first = coordinator.outboundCotReadyRoutes.value
+        assertEquals(setOf("com.plugin.settings"), first.keys)
+        coordinator.applyPluginSettings("com.plugin.settings", on)
+        assertEquals(first, coordinator.outboundCotReadyRoutes.value)
+        val other = FakeWearTakPlugin("com.plugin.other")
+        other.pluginCapabilities = PluginCapabilitiesParcel(hostedSettingsUi = true)
+        other.setSettingsSchemaForTest(schema)
+        coordinator.onPluginConnected("com.plugin.other", other)
+        assertTrue(coordinator.applyPluginSettings("com.plugin.other", on).success)
+        assertEquals(first["com.plugin.settings"], coordinator.outboundCotReadyRoutes.value["com.plugin.settings"])
+        assertEquals(2, coordinator.outboundCotReadyRoutes.value.size)
+        coordinator.unregisterPlugin("com.plugin.settings")
+        assertFalse(coordinator.outboundCotReadyRoutes.value.containsKey("com.plugin.settings"))
+        coordinator.onPluginConnected("com.plugin.settings", fakePlugin)
+        coordinator.applyPluginSettings("com.plugin.settings", on)
+        assertTrue(coordinator.outboundCotReadyRoutes.value.getValue("com.plugin.settings") >
+            first.getValue("com.plugin.settings"))
+    }
+
+    @Test
     fun onPluginConnected_cachesSchemaAndPushesHostSettings() = runBlocking {
         coordinator.onPluginConnected("com.plugin.settings", fakePlugin)
 

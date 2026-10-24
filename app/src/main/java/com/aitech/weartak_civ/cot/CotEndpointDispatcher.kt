@@ -57,8 +57,21 @@ class CotEndpointDispatcher(
     suspend fun dispatchGateway(message: CotOutboundMessage, send: suspend () -> Boolean): Boolean =
         deliver(message, CotRoute.COMPANION, send)
 
-    suspend fun dispatch(message: CotOutboundMessage, availability: CotEndpointAvailability): Boolean {
-        val routes = CotDispatchPolicy.routesFor(message.kind, availability)
+    suspend fun dispatch(
+        message: CotOutboundMessage,
+        availability: CotEndpointAvailability,
+        readyPliOnly: Boolean = false
+    ): Boolean {
+        val routes = CotDispatchPolicy.routesFor(message.kind, availability).filter { route ->
+            if (!readyPliOnly || message.kind != CotMessageKind.PLI) true else when (route) {
+                CotRoute.TAK -> availability.tak
+                CotRoute.SITX -> availability.sitx
+                CotRoute.MULTICAST -> availability.multicast
+                CotRoute.COMPANION -> availability.companion
+                CotRoute.PLUGIN -> availability.plugin
+                CotRoute.DITTO -> false
+            }
+        }
         routes.forEach { route ->
             deliver(message, route) {
                 when (route) {

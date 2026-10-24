@@ -42,6 +42,7 @@ import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.InteractionLocationRcvd
 import com.aitech.weartak_civ.events.InteractionPliRefresh
 import com.aitech.weartak_civ.events.PliRefreshReason
+import com.aitech.weartak_civ.events.OutboundDittoTrackRefresh
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CALLSIGN_TEAM_ROLE_CHANGED
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -76,6 +77,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -98,6 +100,9 @@ class CotDispatchService : Service() {
     private val alertDispatchMutex = Mutex()
     private val markerDispatchMutex = Mutex()
     private var identityPliJob: kotlinx.coroutines.Job? = null
+    private val outboundAnnouncementGate = OutboundPliAnnouncementGate()
+    private val outboundAnnouncementMutex = Mutex()
+    private var outboundAnnouncementJob: kotlinx.coroutines.Job? = null
 
     private lateinit var dataRepository: DataRepository
     private var lastLocationUpdateRcvd: Long = 0L
@@ -204,6 +209,7 @@ class CotDispatchService : Service() {
         startSendChatMessageCollector()
 
         startAnyEndpointConnectedCollector()
+        startOutboundPliAnnouncements()
     }
 
     private fun startAnyEndpointConnectedCollector() {
@@ -211,7 +217,6 @@ class CotDispatchService : Service() {
             (applicationContext as WearTakApplication).pluginManager.settingsCoordinator
                 .outboundCotAvailable.collect { available ->
                     if (available) {
-                        EventBus.getDefault().post(LocationUpdateRequired())
                         sendAllManualAlerts(null)
                         sendAllPhysioAndAutoGenAlerts(null)
                         sendPendingChatMessages()
@@ -222,7 +227,6 @@ class CotDispatchService : Service() {
         serviceScope.launch {
             dataRepository.anyEndpointConnected.collect { connected ->
                 if (connected) {
-                    EventBus.getDefault().post(LocationUpdateRequired())
                     sendPendingChatMessages()
                     sendPendingMarkerCots()
                 }
@@ -248,6 +252,112 @@ class CotDispatchService : Service() {
                 }
         }
     }
+
+    internal fun outboundReadyRouteFlow(): Flow<Set<String>> {
+        val enabled = combine(
+            dataRepository.getEnableDittoService, dataRepository.getEnableSitxService,
+            dataRepository.getEnableCompanionAppService, dataRepository.getEnableMulticast,
+            dataRepository.getEnableTakEndpoint
+        ) { ditto, sitx, companion, multicast, tak ->
+            buildSet {
+                if (tak) add(DataRepository.Endpoint.TAK_SERVER)
+                if (ditto) add(DataRepository.Endpoint.DITTO)
+                if (sitx) add(DataRepository.Endpoint.SITX)
+                if (companion) add(DataRepository.Endpoint.COMPANION_APP)
+                if (multicast) add(DataRepository.Endpoint.MULTICAST)
+            }
+        }
+        val policy = combine(dataRepository.getEnableLocationService,
+            (applicationContext as WearTakApplication).pluginManager.settingsCoordinator.outboundCotReadyRoutes
+        ) { location, plugin -> location to plugin }
+        return combine(dataRepository.outboundReadyRoutes, enabled, dataRepository.isCompanionConnected,
+            dataRepository.sitxStatus, policy
+        ) { routes, allowed, companionConnected, sitx, (locationEnabled, pluginReady) ->
+            val companion = companionConnected && DataRepository.Endpoint.COMPANION_APP in allowed
+            if (!locationEnabled) emptySet() else buildSet {
+                routes.forEach { (key, ready) ->
+                    if (ready.endpoint !in allowed) return@forEach
+                    if (companion != (ready.endpoint == DataRepository.Endpoint.COMPANION_APP)) return@forEach
+                    if (ready.endpoint == DataRepository.Endpoint.TAK_SERVER && !isLicenseValid()) return@forEach
+                    if (ready.endpoint == DataRepository.Endpoint.SITX && sitx != SitxServerStatus.CONNECTED) return@forEach
+                    add("$key:${ready.generation}")
+                }
+                if (!companion) pluginReady.forEach { (id, generation) -> add("plugin:$id:$generation") }
+            }
+        }.distinctUntilChanged()
+    }
+
+    private fun startOutboundPliAnnouncements() {
+        collectOutboundReadyRoutes(outboundReadyRouteFlow())
+    }
+
+    internal fun collectOutboundReadyRoutes(routes: Flow<Set<String>>) {
+        serviceScope.launch {
+            routes.collect { ready ->
+                val added = outboundAnnouncementMutex.withLock {
+                    outboundAnnouncementGate.updateReady(ready, android.os.SystemClock.elapsedRealtimeNanos())
+                }
+                if (added) {
+                    outboundAnnouncementJob?.cancel()
+                    outboundAnnouncementJob = serviceScope.launch {
+                        kotlinx.coroutines.delay(150)
+                        if (outboundAnnouncementGate.hasPending() &&
+                            dataRepository.getEnableLocationService.first()) {
+                            dataRepository.requestInteractionPliRefresh(PliRefreshReason.OUTBOUND_ROUTE_READY)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun readyPliAnnouncementAvailability(): CotEndpointAvailability {
+        val ready = dataRepository.endpointConnected.value
+        val available = endpointAvailability()
+        return available.copy(
+            tak = available.tak && DataRepository.Endpoint.TAK_SERVER in ready &&
+                dataRepository.getEnableTakEndpoint.first(),
+            sitx = available.sitx && DataRepository.Endpoint.SITX in ready,
+            ditto = DataRepository.Endpoint.DITTO in ready && dataRepository.getEnableDittoService.first(),
+            multicast = dataRepository.multicastPublisherRunning.value && dataRepository.getEnableMulticast.first()
+        )
+    }
+
+    private suspend fun announceOutboundPli(location: android.location.Location): Boolean =
+        outboundAnnouncementMutex.withLock {
+            if (!outboundAnnouncementGate.canDispatch(location, android.os.SystemClock.elapsedRealtimeNanos()))
+                return@withLock false
+            if (!locationAnnouncementAllowed()) {
+                Log.i(TAG, "Outbound PLI announcement awaits permitted location input")
+                return@withLock false
+            }
+            val snapshot = dataRepository.snapshotOutboundAnnouncement(location)
+            val message = CotOutboundMessage(buildPliCot(snapshot), CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot))
+            if (!outboundAnnouncementGate.canDispatch(location, android.os.SystemClock.elapsedRealtimeNanos()) ||
+                !locationAnnouncementAllowed())
+                return@withLock false
+            val available = readyPliAnnouncementAvailability()
+            val accepted = if (available.companion && capRepo.gateway.session != null) {
+                endpointDispatcher.dispatchGateway(message) { capRepo.offerGatewayCot(message.xml) }
+            } else endpointDispatcher.dispatch(message, available, readyPliOnly = true)
+            val ditto = available.ditto && !available.companion
+            if (ditto) EventBus.getDefault().post(OutboundDittoTrackRefresh(android.location.Location(location)))
+            if (accepted || ditto) {
+                outboundAnnouncementGate.complete()
+                Log.i(TAG, "Announced current self PLI after outbound route became usable")
+                true
+            } else {
+                Log.i(TAG, "Outbound PLI announcement remains pending; no ready route accepted it")
+                false
+            }
+        }
+
+    private suspend fun locationAnnouncementAllowed(): Boolean =
+        dataRepository.getEnableLocationService.first() &&
+            (androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED)
 
     private fun startReportingIntervalRepoBridge() {
         serviceScope.launch {
@@ -1205,6 +1315,10 @@ class CotDispatchService : Service() {
     fun buildAndSendPhysioLocationCotMsg() {
         // Preserve synchronous dispatch for scheduler and location-triggered calls.
         runBlocking(Dispatchers.IO) {
+            if (outboundAnnouncementGate.hasPending()) {
+                val fresh = dataRepository.latestLocation.value
+                if (fresh != null && announceOutboundPli(fresh)) return@runBlocking
+            }
             val snapshot = dataRepository.snapshotPli()
             val loc = snapshot.loc
             if (loc == null || !com.aitech.weartak_civ.cot.EmergencyLocationPolicy.usable(loc)) {
@@ -1267,6 +1381,10 @@ class CotDispatchService : Service() {
     @Subscribe(threadMode = ThreadMode.ASYNC)
     fun onInteractionLocationRcvd(event: InteractionLocationRcvd) {
         serviceScope.launch {
+            if (event.reasons == setOf(PliRefreshReason.OUTBOUND_ROUTE_READY)) {
+                announceOutboundPli(event.location)
+                return@launch
+            }
             val location = event.location
             val ageNanos = android.os.SystemClock.elapsedRealtimeNanos() - location.elapsedRealtimeNanos
             if (ageNanos < 0 || ageNanos > InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L ||
@@ -1298,6 +1416,8 @@ class CotDispatchService : Service() {
                 }
             }
             sendPendingMarkerCots()
+            if (PliRefreshReason.OUTBOUND_ROUTE_READY in event.reasons && announceOutboundPli(location))
+                return@launch
             // Use this request's fix, not a concurrently replaced repository location.
             val snapshot = dataRepository.snapshotInteractionPli(location)
             val xml = buildPliCot(snapshot)
