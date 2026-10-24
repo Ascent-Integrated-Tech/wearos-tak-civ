@@ -462,6 +462,19 @@ to inspect or delete saved pins. Moving a local pin that is being Bloodhounded
 updates its guidance destination without restarting tracking; unrelated pins do
 not change the selected target.
 
+Pin names and full one-meter MGRS fit on a single line. Pin details display
+latitude/longitude to five decimals without changing saved coordinate precision.
+The dropped-marker list has one scroll owner, a high-contrast heading and an
+explicit **No Dropped Markers** state; Back returns to the existing marker menu.
+The home callsign similarly fits its complete text rather than ellipsizing.
+
+Nearby visible contacts and pins (within 28 dp of a group anchor on the current
+map projection) share a target-count label. Tap any member icon or its label to
+open a native scrollable **Select Target** list and choose the contact, dropped
+pin or received marker. Zooming recalculates groups. All original icon coordinates,
+identities, visibility filters and stored precision remain unchanged; only labels
+are grouped. No target is offset, deleted or converted to historical copies.
+
 Tap a user on the map, then **Start Bloodhound** immediately below **Open Chat** to
 start the existing Bloodhound action and return to the map. The action uses the
 selected user's UID and location; subsequent PLI from that same source refreshes
@@ -1224,6 +1237,11 @@ unsubscribing or deleting content/progress; On resumes on the current direct
 TAK session. A request already in flight may finish. Mission settings remain
 viewable while paused, but subscription actions are disabled. Other TAK traffic
 and bonded-companion transport gating are unchanged.
+
+Mission discovery uses `GET /Marti/api/missions?defaultRole=true`, matching
+TAK's default-role listing for the current authenticated certificate. Named
+mission paths and subscription query encoding are unchanged; this does not
+change server permissions.
 
 ### Companion saved PPE and fresh physiology (SELF_STATUS v1)
 

@@ -2886,7 +2886,7 @@ class DataRepository(private val context: Context) {
         uid: String = "",
     ): Boolean {
         val parsed = MarkerType.parse(markerTypeRaw) ?: return false // caller can handle false
-        _markerDropRequests.emit(MarkerDropRequest(parsed, title, remark, timeMillis, uid = uid, lat = lat, lon = lon))
+        _markerDropRequests.emit(MarkerDropRequest(parsed, title.trimEnd { it <= ' ' }, remark, timeMillis, uid = uid, lat = lat, lon = lon))
         return true
     }
 

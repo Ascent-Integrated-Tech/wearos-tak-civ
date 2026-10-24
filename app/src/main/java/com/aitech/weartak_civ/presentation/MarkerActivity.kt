@@ -65,6 +65,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.GenericShape
@@ -433,11 +434,8 @@ fun LongPressScreen(navController: NavController, droppedMarkerListSetting: List
                     Button(
                         modifier = Modifier.padding(7.dp),
                         onClick = {
-                            navController.navigate("dropped_marker_screen") {
-                            popUpTo(("dropped_marker_screen")) {
-                                inclusive = true
-                            }
-                        } },
+                            navController.navigate("dropped_marker_screen") { launchSingleTop = true }
+                        },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.DarkGray,
                             contentColor = Color.White
@@ -530,10 +528,10 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
     Log.d(TAG, "DropMarkerSetting called")
 
     WearTAKCIVTheme {
-        val listState = rememberScalingLazyListState()
+        val listState = rememberLazyListState()
         Scaffold(
             positionIndicator = {
-                PositionIndicator(scalingLazyListState = listState)
+                PositionIndicator(lazyListState = listState)
             }
         ) {
             Box(
@@ -544,30 +542,35 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
                     .padding(horizontal = 16.dp),
                 contentAlignment = Alignment.Center
             ) {
-                Column(
+                LazyColumn(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.9f)
-                        .align(Alignment.TopCenter)
-                        .padding(bottom = 30.dp)
-                        .verticalScroll(rememberScrollState()),
-
+                        .fillMaxSize()
+                        .padding(bottom = 60.dp),
+                    state = listState,
+                    contentPadding = PaddingValues(top = 10.dp, bottom = 16.dp),
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
-                    Text(
-                        text = "Clear Dropped Markers",
-                        fontSize = 13.sp,
-                        textAlign = TextAlign.Center,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier
-                            .padding(vertical = 10.dp, horizontal = 20.dp)
-                            .align(Alignment.CenterHorizontally)
-                    )
-                    LazyColumn(modifier = Modifier
-                        .height(200.dp),
-//                reverseLayout = true,
-                        verticalArrangement = Arrangement.Top,
-                        horizontalAlignment = Alignment.CenterHorizontally){
+                    item {
+                        Text(
+                            text = stringResource(R.string.clear_dropped_markers),
+                            color = Color.White,
+                            fontSize = 13.sp,
+                            textAlign = TextAlign.Center,
+                            fontWeight = FontWeight.SemiBold,
+                            modifier = Modifier.padding(vertical = 10.dp, horizontal = 20.dp)
+                        )
+                    }
+                    if (droppedMarkerListSetting.isEmpty()) {
+                        item {
+                            Text(
+                                text = stringResource(R.string.no_dropped_markers),
+                                color = Color.LightGray,
+                                fontSize = 13.sp,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(vertical = 12.dp, horizontal = 20.dp)
+                            )
+                        }
+                    }
                         //TODO: Ideally have list in reverse order, but doing this causes UI to glitch right now
                         itemsIndexed(
                             items = droppedMarkerListSetting,
@@ -615,17 +618,12 @@ fun DroppedMarkerSetting(navController: NavController, viewModel: MarkerViewMode
                                 )
                             }
                         }
-                    }
-                    Spacer(modifier = Modifier.height(10.dp))
                 }
                 Row(modifier = Modifier.align(Alignment.BottomCenter)) {
                     WearTAKBackButton(
                         onClick = {
-                            navController.navigate("long_press_marker_screen") {
-                                popUpTo(("long_press_marker_screen")) {
-                                    inclusive = true
-                                }
-                            } },
+                            navController.popBackStack()
+                        },
                     )
                 }
             }
@@ -716,15 +714,12 @@ fun SwipeableMarkerChip(
                 },
                 label = {
                     Column {
-                        Text(
-                            text =
-                                markerTitle.ifBlank { markerTextFromString(markerType) },
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-//                    modifier = Modifier
-//                        .align(Alignment.CenterVertically),
-                            color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
-                            fontWeight = FontWeight.SemiBold
+                        FittedTopMetricText(
+                            value = markerTitle.ifBlank { markerTextFromString(markerType) },
+                            style = TextStyle(
+                                fontSize = 14.sp,
+                                color = if (enQueuedToBeSent) Color.White.copy(alpha = .5F) else Color.White,
+                                fontWeight = FontWeight.SemiBold)
                         )
                         if (markerTitle.isNotEmpty()) {
                             Text(
@@ -1189,12 +1184,10 @@ fun EditSelectedMarker(
                     tint = Color.Unspecified,
                     modifier = Modifier.size(25.dp),
                 )
-                Text(
-                    text = title.ellipsizeMarkerTitle(14),
-                    fontSize = if ("text".length!! < 20) 15.sp else 13.sp,
-                    textAlign = TextAlign.Center,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                FittedTopMetricText(
+                    value = title,
+                    style = TextStyle(fontSize = 15.sp, textAlign = TextAlign.Center,
+                        fontWeight = FontWeight.SemiBold, color = Color.White),
                     modifier = Modifier
                         .padding(horizontal = 20.dp)
                         .padding(top = 10.dp, bottom = 5.dp)
@@ -1400,6 +1393,7 @@ fun MarkerBearingDistance(
     } ?: "-- away"
     val orientationText = "${orientation.roundToInt()}° ${bearingToCardinal(orientation)}"
     Row(
+        modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
     ){
         Column(
@@ -1421,34 +1415,22 @@ fun MarkerBearingDistance(
             )
         }
         Spacer(modifier = Modifier.width(10.dp))
-        Column(){
-            androidx.wear.compose.material.Text(
-                text = distanceText,
-                fontSize = 16.sp,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.White,
-                fontWeight = FontWeight.SemiBold
+        Column(Modifier.weight(1f)) {
+            FittedTopMetricText(
+                value = distanceText,
+                style = TextStyle(fontSize = 16.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
             )
-            androidx.wear.compose.material.Text(
-                text = "$lat",
-                fontSize = 11.sp,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.LightGray,
-                fontWeight = FontWeight.Normal
+            FittedTopMetricText(
+                value = String.format(java.util.Locale.US, "%.5f", lat),
+                style = TextStyle(fontSize = 11.sp, color = Color.LightGray)
             )
-            androidx.wear.compose.material.Text(
-                text = "$lon",
-                fontSize = 11.sp,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.LightGray,
-                fontWeight = FontWeight.Normal
+            FittedTopMetricText(
+                value = String.format(java.util.Locale.US, "%.5f", lon),
+                style = TextStyle(fontSize = 11.sp, color = Color.LightGray)
             )
-            androidx.wear.compose.material.Text(
-                text = latLonToMgrs(lat, lon),
-                fontSize = 11.sp,
-                overflow = TextOverflow.Ellipsis,
-                color = Color.LightGray,
-                fontWeight = FontWeight.Normal
+            FittedTopMetricText(
+                value = latLonToMgrs(lat, lon),
+                style = TextStyle(fontSize = 11.sp, color = Color.LightGray)
             )
         }
     }

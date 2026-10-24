@@ -79,6 +79,7 @@ class TakMissionApi(
     // Points to the main Data Sync missions endpoint
     internal fun takMissionsURL(address: String): HttpUrl =
         takMissionsEndpoint(address, "Marti/api/missions")
+            .addQueryParameter("defaultRole", "true")
             .build()
 
 

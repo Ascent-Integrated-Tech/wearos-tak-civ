@@ -85,6 +85,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -3142,14 +3143,11 @@ fun Callsign(context: Context, callsignState: String) {
             contentDescription = "Settings Icon",
             modifier = Modifier.padding(all = 0.dp)
         )},
-        label = { Text(
-            "$callsignState",
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            fontSize = if (callsignState!!.length <= maxChar) 15.sp else 13.sp,
-            modifier = Modifier.padding(0.dp),
-
-        )},
+        label = {
+            FittedTopMetricText(callsignState, style = TextStyle(
+                fontSize = if (callsignState.length <= maxChar) 15.sp else 13.sp,
+                color = Color.White))
+        },
         shape = RoundedCornerShape(40.dp),
         )
 }
