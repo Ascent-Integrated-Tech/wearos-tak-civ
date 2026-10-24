@@ -1503,6 +1503,8 @@ The `+` row opens **Type Custom
 Message**; **Save message** stores it without sending. Saved presets are de-duplicated against
 built-ins (case-insensitive), limited to 20 entries of 60 characters, and deleted by tapping
 the right-side trash button and confirming. Built-in entries have no delete button.
+Opening either editor from a scrolled picker reveals its first field or
+confirmation heading, rather than carrying the old list offset into the form.
 
 PLI remarks report exertion as a whole percent (`Exert:45%`), matching the watch display. The
 `<exert>` detail stays a 0..1 fraction for the ATAK physiology plugin.
