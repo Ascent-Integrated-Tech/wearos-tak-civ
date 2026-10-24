@@ -27,11 +27,11 @@ class DebugStayAwakeSettingTest {
         app.getSharedPreferences("debug_stay_awake", Application.MODE_PRIVATE).edit().clear().commit()
     }
 
-    @Test fun smallRoundHasOneTopSplitChipWithReadOnlyDetails() = verifyTopSplitChip()
+    @Test fun smallRoundHasOneToggleWithoutHelperText() = verifyTopSplitChip()
 
     @Test
     @Config(qualifiers = "w227dp-h227dp-round")
-    fun largerRoundHasOneTopSplitChipWithReadOnlyDetails() = verifyTopSplitChip()
+    fun largerRoundHasOneToggleWithoutHelperText() = verifyTopSplitChip()
 
     private fun verifyTopSplitChip() {
         compose.setContent {
@@ -44,12 +44,10 @@ class DebugStayAwakeSettingTest {
         compose.onAllNodes(isToggleable()).assertCountEquals(1)
         compose.onNode(isToggleable()).assertIsOff()
         compose.onNodeWithText("Resume after update").assertDoesNotExist()
-        compose.onNodeWithText("Stay awake").performClick()
-        compose.runOnIdle { assertFalse(DebugStayAwakePreferences(app).enabled) }
         compose.onNode(isToggleable()).performClick()
         compose.waitUntil { DebugStayAwakePreferences(app).enabled }
         compose.onNode(isToggleable()).assertIsOn()
-        compose.onNodeWithText("Enabled, not running").assertExists()
+        compose.onNodeWithText("Enabled, not running").assertDoesNotExist()
         val start = shadowOf(app).nextStartedService
         assertEquals(DebugStayAwakeService::class.java.name, start?.component?.className)
         assertEquals(DebugStayAwakeService.ACTION_RESTORE, start?.action)
@@ -65,13 +63,12 @@ class DebugStayAwakeSettingTest {
         DebugStayAwakePreferences(app).recordSession(true)
         compose.setContent { DebugStayAwakeSetting() }
         compose.onNode(isToggleable()).assertIsOn()
-        compose.onNodeWithText("Enabled, not running").assertIsDisplayed()
-        compose.onNodeWithText("Stay awake").performClick()
+        compose.onNodeWithText("Enabled, not running").assertDoesNotExist()
         compose.onNodeWithText(
             "Keeps screen, CPU and Wi-Fi awake when Android allows. Your choice survives updates and restart until you turn it off. Cannot unlock the watch or keep it awake while powered off."
-        ).assertExists()
+        ).assertDoesNotExist()
         compose.runOnIdle { assertTrue(DebugStayAwakePreferences(app).enabled) }
-        compose.onNodeWithText("Extra battery use. May heat watch.").assertExists()
+        compose.onNodeWithText("Extra battery use. May heat watch.").assertDoesNotExist()
     }
 
     @Test fun externalStopUpdatesSwitchWithoutReopeningPage() {
@@ -81,6 +78,6 @@ class DebugStayAwakeSettingTest {
         compose.runOnIdle { DebugStayAwakeService.stop(app) }
         compose.waitForIdle()
         compose.onNode(isToggleable()).assertIsOff()
-        compose.onNodeWithText("Off").assertIsDisplayed()
+        compose.onNodeWithText("Off").assertDoesNotExist()
     }
 }

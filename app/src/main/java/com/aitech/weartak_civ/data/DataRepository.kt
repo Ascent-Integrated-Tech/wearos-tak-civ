@@ -4916,12 +4916,12 @@ class DataRepository(private val context: Context) {
     }
 
     val getSelectedPhysioMetric: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[SELECTED_PHYSIO_METRIC] ?: DEFAULT_SELECTED_PHYSIO_METRIC
+        TopDisplayMetric.fromKey(prefs[SELECTED_PHYSIO_METRIC]).key
     }
 
     suspend fun storeSelectedPhysioMetric(metric: String) {
         context.dataStore.edit { prefs ->
-            prefs[SELECTED_PHYSIO_METRIC] = metric
+            prefs[SELECTED_PHYSIO_METRIC] = TopDisplayMetric.fromKey(metric).key
         }
     }
 

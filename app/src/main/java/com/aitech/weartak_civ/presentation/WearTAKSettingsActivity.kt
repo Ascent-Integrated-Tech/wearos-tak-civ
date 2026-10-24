@@ -226,6 +226,7 @@ import kotlin.String
 class WearTAKSettingsActivity : ComponentActivity() {
     companion object Constants {
         const val EXTRA_OPEN_NETWORK_PREFERENCES = "extra_open_network_preferences"
+        const val EXTRA_OPEN_SETTINGS_PAGE = "extra_open_settings_page"
         const val EXTRA_ENROLLMENT_TOKEN = "extra_enrollment_token"
         val TAG = "WearTAK-" + WearTAKSettingsActivity::class.java.simpleName
         val callsignState = MutableLiveData<String>("")
@@ -280,17 +281,20 @@ class WearTAKSettingsActivity : ComponentActivity() {
 
     }
     private var enrollmentToken by mutableStateOf<String?>(null)
+    private var shortcutRoute by mutableStateOf<String?>(null)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         enrollmentToken = intent.getStringExtra(EXTRA_ENROLLMENT_TOKEN)
+        shortcutRoute = settingsShortcutRoute(intent)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Log.i(TAG, "WearTAKSettingsActivity onCreate()")
         enrollmentToken = intent.getStringExtra(EXTRA_ENROLLMENT_TOKEN)
+        shortcutRoute = settingsShortcutRoute(intent)
 //        WearTAKSettingsActivity.Constants.settingsActivity = this
         enableEdgeToEdge()
         setContent {
@@ -308,6 +312,7 @@ class WearTAKSettingsActivity : ComponentActivity() {
                             false
                         ),
                         enrollmentToken = enrollmentToken,
+                        openSettingsPage = shortcutRoute,
                         onEnrollmentHandled = { enrollmentToken = null },
                         onExit = { finish() }
                     )
@@ -323,13 +328,14 @@ fun WearTAKSettingsNav(
     sitxVm: SitxViewModel,
     pluginVm: PluginViewModel,
     openNetworkPreferences: Boolean = false,
+    openSettingsPage: String? = null,
     enrollmentToken: String? = null,
     onEnrollmentHandled: () -> Unit = {},
     onExit: () -> Unit
 ) {
     val navController = rememberSwipeDismissableNavController()
     val context = LocalContext.current
-    var networkShortcutHandled by rememberSaveable { mutableStateOf(false) }
+    var handledShortcut by rememberSaveable { mutableStateOf<String?>(null) }
 //    var selectedCategoryAndRoleIndex by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     // collect license from data repo so we can see if it changes.
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
@@ -487,17 +493,19 @@ fun WearTAKSettingsNav(
         }
     }
 
+    LaunchedEffect(openNetworkPreferences, openSettingsPage) {
+        val route = openSettingsPage ?: "network_preferences".takeIf { openNetworkPreferences }
+        if (route != null && route != handledShortcut) {
+            handledShortcut = route
+            navController.navigate(route)
+        }
+    }
+
     SwipeDismissableNavHost(
         navController = navController,
         startDestination = "settings_screen"
     ) {
         composable("settings_screen") {
-            LaunchedEffect(openNetworkPreferences) {
-                if (openNetworkPreferences && !networkShortcutHandled) {
-                    networkShortcutHandled = true
-                    navController.navigate("network_preferences")
-                }
-            }
             val rootSwipeState = rememberSwipeToDismissBoxState()
             LaunchedEffect(rootSwipeState.currentValue) {
                 if (rootSwipeState.currentValue == SwipeToDismissValue.Dismissed) {
@@ -3392,6 +3400,12 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 "CRM Thresholds",
                 columnContent = {
+                    item {
+                        Chip(
+                            modifier = Modifier.fillMaxWidth(),
+                            onClick = { context.startActivity(Intent(context, CrmReserveActivity::class.java)) },
+                            label = { Text(stringResource(R.string.crm_reserve)) })
+                    }
                     item {
                         WearTAKTitleChipWithState(
                             route = "poor_max_crm_threshold",
