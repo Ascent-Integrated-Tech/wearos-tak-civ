@@ -656,7 +656,15 @@
     <string name="m">m</string>
     <string name="km">km</string>
     <string name="physio_off">Physio off</string>
-    <string name="physio_not_worn">Not worn</string>
+    <string name="physio_not_worn">Off-Wrist</string>
+    <string name="metric_lat_long">Lat/Long</string>
+    <string name="metric_mgrs">MGRS</string>
+    <string name="metric_no_fix">No fix</string>
+    <string name="top_display_metric">Top display</string>
+    <string name="crm_reserve">CRM Reserve</string>
+    <string name="metric_alerts">Alerts</string>
+    <string name="metric_alert_thresholds">Change alert thresholds</string>
+    <string name="open_reporting_rate">Open reporting-rate settings</string>
     <string name="display_preferences">Display Preferences</string>
     <string name="units">Units</string>
     <string name="units_metric">Metric</string>

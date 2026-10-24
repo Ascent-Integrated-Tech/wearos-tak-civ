@@ -1130,6 +1130,33 @@ Companion gateway/legacy BLE, and the independent Ditto `track` publisher.
 The CoT/legacy Companion builders also reject no-fix PLI rather than creating a
 zero-coordinate point. A real timestamped fix at `0,0` remains a valid position.
 
+### Top display metrics and shortcuts
+
+Tap the top metric to open a simple scrollable list: **Exertion, Heart Rate,
+Lat/Long, MGRS, Skin Temp, Steps**, sorted by the localized displayed labels.
+Existing Steps and retained selections persist; removed selector choices
+(CRM, calories, floors, SpO2/tier) resolve to Exertion. This only limits the top
+selector, not those features or collectors. The existing CRM Reserve screen
+remains accessible from **Plugins > CRM** alongside its threshold settings.
+
+The same list exposes the real physiological-monitoring and physiological-alert
+switches. Merely opening it preserves both switches and all thresholds. The
+Alerts row has a separate threshold-navigation arrow, usable while alerts are
+off; changing the switch never navigates and opening thresholds never toggles it.
+Existing alert-threshold editors and managed-settings behavior are reused.
+
+When monitoring is off, Exertion, Heart Rate, Skin Temp **and Steps** show
+**Disabled**, ahead of old readings or wear state. This Steps display rule does
+not stop an independently running step collector. With monitoring enabled,
+wear-dependent values show **Off-Wrist** when unworn. Lat/Long and MGRS remain
+location-driven regardless of monitoring. Missing/invalid/disabled location
+shows **No fix**, never invented coordinates; a real timestamped `0,0` is valid.
+Lat/Long uses five decimal places; MGRS reuses the map's one-meter formatter.
+
+The home location-status icon opens existing reporting-rate settings without
+toggling location. Stay awake retains its label and real on/off control without
+row helper text; its service/notification behavior is unchanged.
+
 ### WEARTAK-130: chat commands
 
 Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change watch settings by sending chat commands. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. All commands accept direct messages, All Chat Rooms broadcasts, and groups containing the watch UID. Only messages from allowed callsigns are acted on. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.

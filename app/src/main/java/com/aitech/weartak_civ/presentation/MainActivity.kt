@@ -2777,60 +2777,21 @@ fun alertText(alerts: List<DataRepository.CustomEmergencyAlert>): String {
 
 @Composable
 fun selectedMetricIconFromKey(key: String?): Int {
-    val icon: Int = when (key) {
-        "key_heart_rate" -> (R.drawable.heart_rate)
-        "key_steps" -> (R.drawable.steps)
-        "key_skin_temp" -> (R.drawable.skin_temp)
-        "key_exertion" -> (R.drawable.exertion)
-        "key_spo2" -> (R.drawable.oxygen_saturation)
-        "key_spo2_tier" -> (R.drawable.oxygen_saturation)
-        "key_floors" -> (R.drawable.floors)
-        "key_calories" -> (R.drawable.calories)
-        else ->
-            (R.drawable.blank)
-    }
+    val icon = com.aitech.weartak_civ.data.TopDisplayMetric.fromKey(key).icon
     physioMetricIconComplication = icon
     return icon
 }
 
 @Composable
 fun selectedMetricValueFromKey(key: String?): String {
-    val heartRateFlow = dataRepository.latestHeartRate.collectAsState()
-    val exertionFlow = dataRepository.latestExertion.collectAsState()
-    val dailyMetricsFlow = dataRepository.latestDailyMetrics.collectAsState()
-    val skinTempFlow = dataRepository.latestSkinTemp.collectAsState()
-    val deviceWorn= dataRepository.latestIsDeviceWorn.collectAsState()
-    val latestSpo2 = dataRepository.latestSpo2.collectAsState()
-    val latestSpo2TierEvent = dataRepository.latestSpo2TierEvent.collectAsState()
-
-    val notWorn = stringResource(R.string.physio_not_worn)
-    val wornMetric = key == "key_heart_rate" || key == "key_skin_temp" || key == "key_exertion"
-    val string: String = if (wornMetric && !deviceWorn.value) notWorn else when (key) {
-        "key_heart_rate" -> if (deviceWorn.value && heartRateFlow.value != null) "${heartRateFlow.value}" + stringResource(R.string.bpm) else "---"
-        "key_steps" -> if (dailyMetricsFlow.value?.steps == null) "0" else "${dailyMetricsFlow.value?.steps}"
-        "key_skin_temp" -> if (deviceWorn.value && skinTempFlow.value != null) "${skinTempFlow.value?.formatDecimal(1)}°" else "---"
-        "key_exertion" -> if (deviceWorn.value && (exertionFlow.value.toFloat() >= 0.0)) "${exertionFlow.value.toFloat().times(100).toInt()}%" else "---"
-        "key_floors" -> if (dailyMetricsFlow.value?.floors == null) "0" else "${dailyMetricsFlow.value?.floors?.toInt()}"
-        "key_calories" -> if (dailyMetricsFlow.value?.calories == null) "0" else "${dailyMetricsFlow.value?.calories?.toInt()}"
-        "key_spo2" -> latestSpo2.value?.let{ "${it.formatDecimal(1)}%" } ?: "---"
-        "key_spo2_tier" ->                latestSpo2TierEvent.value?.tier?.name ?: "NONE"
-        else -> "ERROR"
-    }
+    val string = topMetricValue(com.aitech.weartak_civ.data.TopDisplayMetric.fromKey(key), dataRepository)
     physioMetricStringComplication = string
     return string
 }
 
 @Composable
 fun selectedMetricTitleFromKey(key: String?): String {
-    val physioString: String = when (key) {
-        "key_exertion" -> "Exertion"
-        "key_heart_rate" -> ""
-        "key_steps" -> ""
-        "key_skin_temp" -> ""
-        "key_floors" -> ""
-        "key_calories" -> ""
-        else -> ""
-    }
+    val physioString = stringResource(com.aitech.weartak_civ.data.TopDisplayMetric.fromKey(key).label)
     physioMetricTitleComplication = physioString
     return physioString
 }
@@ -2838,17 +2799,16 @@ fun selectedMetricTitleFromKey(key: String?): String {
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
-    val heartRateText by HeartrateService.hrStringLiveData.observeAsState()
     val physioCheckedLive by settingsVm.savedEnablePhysiologicalServices.collectAsState()
     val physioAlertsCheckedLive by settingsVm.savedEnablePhysiologicalAlerts.collectAsState()
     val alerts by dataRepository.physioAndAutoGenAlertList.collectAsState() // or collectAsStateWithLifecycle()
     val metricKey by settingsVm.savedSelectedPhysioMetric.collectAsState()
 
-    // Derive the chip state from the latest list
-    val chipState by remember(alerts) {
-        derivedStateOf { alerts.alertChipState(physioAlertsCheckedLive) }
-    }
-    val containsAlert = alerts.any { it.alertState == DataRepository.AlertState.ALERT }
+    val chipState = alerts.alertChipState(physioCheckedLive && physioAlertsCheckedLive)
+    val metric = com.aitech.weartak_civ.data.TopDisplayMetric.fromKey(metricKey)
+    val containsAlert = physioCheckedLive && physioAlertsCheckedLive &&
+        alerts.any { it.alertState == DataRepository.AlertState.ALERT }
+    val value = selectedMetricValueFromKey(metricKey)
 
     Column(
         modifier = Modifier
@@ -2856,7 +2816,7 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-        if ((alerts.isEmpty() && !containsAlert)) {
+        if (!containsAlert) {
             Text(
                 text = selectedMetricTitleFromKey(metricKey),
                 fontSize = 11.sp
@@ -2865,9 +2825,7 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
         Chip(
             border = ChipDefaults.outlinedChipBorder(alertChipColors(chipState), borderWidth = 2.dp),
             onClick = {
-                // When physio is off, open Settings so the user can turn it on.
-                val target = if (physioCheckedLive == true) PhysioAlertsActivity::class.java else WearTAKSettingsActivity::class.java
-                context.startActivity(Intent(context, target))
+                context.startActivity(Intent(context, PhysioAlertsActivity::class.java))
             },
             colors =  ChipDefaults.chipColors(
             backgroundColor = Color.Transparent,
@@ -2879,7 +2837,7 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
                     painter = if (physioAlertsCheckedLive == true) {
                         if (alerts.isNotEmpty() && containsAlert) painterResource(R.drawable.warning) else painterResource(selectedMetricIconFromKey(metricKey))
                     } else painterResource(selectedMetricIconFromKey(metricKey)),
-                    contentDescription = "Favorite icon",
+                    contentDescription = stringResource(R.string.top_display_metric),
                     tint = alertChipColors(chipState),
                     modifier = Modifier.size(19.dp),
                 )
@@ -2890,28 +2848,13 @@ fun HeartRate(context: Context, settingsVm: WearTAKSettingsViewModel) {
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.Bottom
                 ) {
-                    if (physioCheckedLive == true) {
-                        //TODO: In future - make these responsive to different alert types (ex. High HR, exertion, hypothermia)
-                        Text(
-                            text = if (containsAlert)
-                                alertText(alerts)
-                                else
-                                selectedMetricValueFromKey(metricKey),
-                            textAlign = TextAlign.Start,
-                            fontSize = if (containsAlert) 12.sp else 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
-                    } else {
-                        Text(
-                            text = stringResource(R.string.physio_off),
-                            textAlign = TextAlign.Start,
-                            fontSize = 14.sp,
-                            maxLines = 1,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
-                    }
+                    Text(
+                        text = if (containsAlert) alertText(alerts) else value,
+                        textAlign = TextAlign.Start,
+                        fontSize = if (containsAlert) 12.sp else if (!metric.physiological) 14.sp else 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White
+                    )
                 }
             },
         )
@@ -3142,17 +3085,14 @@ fun TroubleshootingIcons(sitxVm: SitxViewModel, settingsVm: WearTAKSettingsViewM
          */
 
         // Icon on the top right curve
-        Icon(
-            if (locationCheckedLive == true) painterResource(R.drawable.location_on) else painterResource(R.drawable.location_off),
-            contentDescription = "Top Right Icon",
+        ReportingRateLocationIcon(
+            enabled = locationCheckedLive == true,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .offset(
-                    x = (-40).dp, // Adjust this value
-                    y = (-10).dp // Adjust this value
-                )
-                .size(iconSizeSmall),
-            tint = if (locationCheckedLive == true) Color.White else Color.DarkGray
+                    x = (-26).dp,
+                    y = (-10).dp
+                ),
         )
 
 
