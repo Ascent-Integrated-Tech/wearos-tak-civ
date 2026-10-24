@@ -7,11 +7,19 @@ import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExecutorCoroutineDispatcher
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -42,6 +50,8 @@ class ReactiveServiceStartOrderTest {
         )
         ServiceType.entries.forEach { registry.setServiceRunning(it, false) }
         manager = Robolectric.buildService(ReactiveServiceManager::class.java).get()
+        // Reconcile synchronously without launching unrelated debug snapshot collectors.
+        (get("scope") as CoroutineScope).cancel()
         val repo = mockk<DataRepository>(relaxed = true)
         set("repo\$delegate", lazyOf(repo))
         set("registry", registry)
@@ -49,7 +59,11 @@ class ReactiveServiceStartOrderTest {
         set("runnableServicesList", registry.getAllServiceTypes())
     }
 
-    @After fun reset() = ServiceType.entries.forEach { registry.setServiceRunning(it, false) }
+    @After fun reset() {
+        (get("scope") as CoroutineScope).cancel()
+        (get("serviceLoop") as ExecutorCoroutineDispatcher).close()
+        ServiceType.entries.forEach { registry.setServiceRunning(it, false) }
+    }
 
     @Test fun companionStartsBeforeSlowerCoreServicesOnColdStart() {
         desire(ServiceType.TAK_CONNECT, ServiceType.COT_DISPATCH, ServiceType.LOCATION,
@@ -75,10 +89,74 @@ class ReactiveServiceStartOrderTest {
         )
     }
 
-    @Test fun companionStillPreemptsDesiredDitto() {
+    @Test fun disconnectedCompanionAndDittoCanBothStart() {
+        desire(ServiceType.DITTO, ServiceType.COMPANION_APP)
+
+        assertEquals(
+            listOf(CompanionAppService::class.java.name, DittoService::class.java.name),
+            reconcile()
+        )
+        assertEquals(emptyList<String>(), stopped())
+    }
+
+    @Test fun reconnectingCompanionDoesNotBlockDittoStartup() {
+        registry.setServiceRunning(ServiceType.COMPANION_APP, true)
+        desire(ServiceType.DITTO, ServiceType.COMPANION_APP)
+
+        assertEquals(listOf(DittoService::class.java.name), reconcile())
+        assertTrue(registry.isServiceRunning(ServiceType.COMPANION_APP))
+        assertEquals(emptyList<String>(), stopped())
+    }
+
+    @Test fun runningDittoDoesNotBlockOrGetStoppedByCompanionStartup() {
+        registry.setServiceRunning(ServiceType.DITTO, true)
         desire(ServiceType.DITTO, ServiceType.COMPANION_APP)
 
         assertEquals(listOf(CompanionAppService::class.java.name), reconcile())
+        assertTrue(registry.isServiceRunning(ServiceType.DITTO))
+        assertEquals(emptyList<String>(), stopped())
+    }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    @Test fun linkChangesStartAndStopOnlyDittoWhileCompanionKeepsReconnecting() = runTest {
+        val connected = MutableStateFlow(true)
+        val enabled = MutableStateFlow(true)
+        val companionEnabled = MutableStateFlow(true)
+        val repo = mockk<DataRepository>(relaxed = true)
+        every { repo.isCompanionConnected } returns connected
+        every { repo.getEnableDittoService } returns enabled
+        every { repo.getEnableCompanionAppService } returns companionEnabled
+        val config = ServiceConfiguration(app, repo, mockk(relaxed = true))
+        set("config", config)
+        desire(ServiceType.COMPANION_APP)
+        registry.setServiceRunning(ServiceType.COMPANION_APP, true)
+        @Suppress("UNCHECKED_CAST")
+        val desired = get("desiredServicesStateMap") as MutableMap<ServiceType, Boolean?>
+        for (type in listOf(ServiceType.DITTO, ServiceType.COMPANION_APP)) {
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+                config.getServiceEnabledFlow(type).collect { desired[type] = it }
+            }
+        }
+
+        assertEquals(emptyList<String>(), reconcile())
+        assertEquals(emptyList<String>(), stopped())
+        repeat(2) {
+            connected.value = false
+            assertEquals(listOf(DittoService::class.java.name), reconcile())
+            assertEquals(emptyList<String>(), stopped())
+            assertTrue(registry.isServiceRunning(ServiceType.COMPANION_APP))
+
+            connected.value = true
+            assertEquals(emptyList<String>(), reconcile())
+            assertEquals(listOf(DittoService::class.java.name), stopped())
+            assertTrue(registry.isServiceRunning(ServiceType.COMPANION_APP))
+            assertTrue(enabled.value)
+        }
+
+        enabled.value = false
+        connected.value = false
+        assertEquals(emptyList<String>(), reconcile())
+        assertEquals(emptyList<String>(), stopped())
     }
 
     @Test fun disabledCompanionIsNotStarted() {
@@ -93,9 +171,7 @@ class ReactiveServiceStartOrderTest {
         desire(ServiceType.BLE_BEACON)
 
         assertEquals(emptyList<String>(), reconcile())
-        val shadow = shadowOf(app)
-        val stopped = generateSequence { shadow.nextStoppedService }.map { it.component!!.className }.toList()
-        assertEquals(listOf(CompanionAppService::class.java.name), stopped)
+        assertEquals(listOf(CompanionAppService::class.java.name), stopped())
     }
 
     @Test fun savedCompanionToggleControlsItsOwnFlowIndependentlyOfBeacon() = runBlocking {
@@ -110,25 +186,25 @@ class ReactiveServiceStartOrderTest {
             assertEquals(value, config.getServiceEnabledFlow(ServiceType.COMPANION_APP).first())
             assertEquals(true, config.getServiceEnabledFlow(ServiceType.BLE_BEACON).first())
         }
+    }
 
-        @Test fun bondedReadyConnectionSuspendsDirectMeshAndSitxWithoutChangingSavedPreferences() = runBlocking {
-            val connected = MutableStateFlow(false)
-            val enabled = MutableStateFlow(true)
-            val repo = mockk<DataRepository>(relaxed = true)
-            every { repo.isCompanionConnected } returns connected
-            every { repo.getEnableDittoService } returns enabled
-            every { repo.getEnableSitxService } returns enabled
-            val config = ServiceConfiguration(app, repo, mockk(relaxed = true))
-            for (value in listOf(false, true, false, true, false)) {
-                connected.value = value
-                assertEquals(!value, config.getServiceEnabledFlow(ServiceType.DITTO).first())
-                assertEquals(!value, config.getServiceEnabledFlow(ServiceType.SITX_SERVICE).first())
-                assertEquals(true, enabled.value)
-            }
-            enabled.value = false
-            assertEquals(false, config.getServiceEnabledFlow(ServiceType.DITTO).first())
-            assertEquals(false, config.getServiceEnabledFlow(ServiceType.SITX_SERVICE).first())
+    @Test fun bondedReadyConnectionSuspendsDirectMeshAndSitxWithoutChangingSavedPreferences() = runBlocking {
+        val connected = MutableStateFlow(false)
+        val enabled = MutableStateFlow(true)
+        val repo = mockk<DataRepository>(relaxed = true)
+        every { repo.isCompanionConnected } returns connected
+        every { repo.getEnableDittoService } returns enabled
+        every { repo.getEnableSitxService } returns enabled
+        val config = ServiceConfiguration(app, repo, mockk(relaxed = true))
+        for (value in listOf(false, true, false, true, false)) {
+            connected.value = value
+            assertEquals(!value, config.getServiceEnabledFlow(ServiceType.DITTO).first())
+            assertEquals(!value, config.getServiceEnabledFlow(ServiceType.SITX_SERVICE).first())
+            assertEquals(true, enabled.value)
         }
+        enabled.value = false
+        assertEquals(false, config.getServiceEnabledFlow(ServiceType.DITTO).first())
+        assertEquals(false, config.getServiceEnabledFlow(ServiceType.SITX_SERVICE).first())
     }
 
     private fun desire(vararg types: ServiceType) {
@@ -147,6 +223,11 @@ class ReactiveServiceStartOrderTest {
             .invoke(manager, ReactiveServiceManager.RecType.INIT)
         val shadow = shadowOf(app)
         return generateSequence { shadow.nextStartedService }.map { it.component!!.className }.toList()
+    }
+
+    private fun stopped(): List<String> {
+        val shadow = shadowOf(app)
+        return generateSequence { shadow.nextStoppedService }.map { it.component!!.className }.toList()
     }
 
     private fun get(field: String): Any? =

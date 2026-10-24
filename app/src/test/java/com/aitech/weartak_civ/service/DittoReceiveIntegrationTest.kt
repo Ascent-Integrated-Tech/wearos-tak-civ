@@ -28,7 +28,6 @@ import com.aitech.weartak_civ.integration.plugin.PluginCotIngress
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.events.DittoDocumentEvent
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -769,28 +768,6 @@ class DittoReceiveIntegrationTest {
             assertTrue(f.logs.any { it.contains("journal full") })
             assertEquals(DittoCotReceiver.MAX_JOURNAL_ENTRIES, f.journal.all.size)
         } finally { f.close() }
-    }
-
-    @Test fun companionDesiredStateStillBlocksDittoButNotTheReverse() {
-        val service = Robolectric.buildService(ReactiveServiceManager::class.java).get()
-        val field = ReactiveServiceManager::class.java.getDeclaredField("desiredServicesStateMap")
-            .apply { isAccessible = true }
-        @Suppress("UNCHECKED_CAST")
-        val desired = field.get(service) as MutableMap<ServiceType, Boolean?>
-        val blocked = ReactiveServiceManager::class.java.getDeclaredMethod("conflictsBlockStart", ServiceType::class.java)
-            .apply { isAccessible = true }
-        try {
-            desired[ServiceType.COMPANION_APP] = true
-            desired[ServiceType.DITTO] = true
-            assertEquals(true, blocked.invoke(service, ServiceType.DITTO))
-            assertEquals(false, blocked.invoke(service, ServiceType.COMPANION_APP))
-            desired[ServiceType.COMPANION_APP] = false
-            assertEquals(false, blocked.invoke(service, ServiceType.DITTO))
-        } finally {
-            val loop = ReactiveServiceManager::class.java.getDeclaredField("serviceLoop")
-                .apply { isAccessible = true }.get(service) as kotlinx.coroutines.ExecutorCoroutineDispatcher
-            loop.close()
-        }
     }
 
     @Test fun sameUidPeersHaveIndependentRevisionsAndExpiryPreservesTheOtherPeer() = runTest {
