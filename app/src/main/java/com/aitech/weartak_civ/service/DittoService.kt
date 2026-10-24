@@ -432,18 +432,48 @@ class DittoService : Service() {
         writeDocument("mapitem", document)
     }
 
-    private fun updateTrackDocument() {
+    @Subscribe(threadMode = ThreadMode.ASYNC)
+    fun onOutboundTrackRefresh(event: com.aitech.weartak_civ.events.OutboundDittoTrackRefresh) {
+        updateTrackDocument(android.location.Location(event.location))
+    }
+
+    private suspend fun outboundTrackRefreshAllowed(location: android.location.Location): Boolean =
+        startupResult.value == true &&
+            dataRepository.isEndpointConnected(DataRepository.Endpoint.DITTO) &&
+            dataRepository.getEnableDittoService.first() &&
+            dataRepository.getEnableLocationService.first() &&
+            !dataRepository.isCompanionConnected.value &&
+            (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED ||
+            androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                android.content.pm.PackageManager.PERMISSION_GRANTED) &&
+            OutboundPliAnnouncementGate.fresh(location, android.os.SystemClock.elapsedRealtimeNanos())
+
+    private fun updateTrackDocument() = updateTrackDocument(null)
+
+    private fun updateTrackDocument(freshLocation: android.location.Location?) {
         ioScope.launch {
-            val timeMs = System.currentTimeMillis()
+            if (freshLocation != null && !outboundTrackRefreshAllowed(freshLocation)) {
+                Log.i(TAG, "Skipping outbound Ditto track refresh: route/input unavailable or fix expired")
+                return@launch
+            }
+            val freshSnapshot = freshLocation?.let { dataRepository.snapshotOutboundAnnouncement(it) }
+            val timeMs = freshLocation?.time ?: System.currentTimeMillis()
             val staleMsOffset = 3000 * CotDispatchService.actualReportingIntervalSecs
             val staleTimeMs = timeMs + staleMsOffset
-            val location = dataRepository.snapshotPliLocation()
+            val location = if (freshSnapshot != null) freshSnapshot.loc
+                else dataRepository.snapshotPliLocation()
             if (location == null) {
                 Log.i(TAG, "Skipping Ditto track: awaiting first valid location fix")
                 return@launch
             }
-            val heartRate = dataRepository.latestHeartRate.value ?: -1
-            val battery = dataRepository.latestBatteryPercentage.value ?: -1
+            val heartRate = if (freshSnapshot != null) freshSnapshot.physioData.data.heartRateBpm ?: -1
+                else dataRepository.latestHeartRate.value ?: -1
+            val battery = freshSnapshot?.systemData?.batteryPercent ?: dataRepository.latestBatteryPercentage.value ?: -1
+            val callsign = freshSnapshot?.systemData?.callsign ?: MainActivity.callsign
+            val role = freshSnapshot?.systemData?.role ?: MainActivity.role
+            val teamValue = freshSnapshot?.systemData?.team ?: MainActivity.teamValue
+            val uuid = freshSnapshot?.systemData?.deviceId ?: this@DittoService.uuid
             val latActual = location.lat
             val lonActual = location.lon
             val haeActual = location.hae ?: 0.0
@@ -529,6 +559,10 @@ class DittoService : Service() {
 
             try {
                 if (dataRepository.isCompanionConnected.value) return@launch
+                if (freshLocation != null && !outboundTrackRefreshAllowed(freshLocation)) {
+                    Log.i(TAG, "Skipping outbound Ditto track refresh: eligibility changed while building")
+                    return@launch
+                }
                 writeDocument("track", trackDocument)
                 changeCounterTrackDocument++
                 Log.v(TAG, "Wrote to track: $trackDocument")

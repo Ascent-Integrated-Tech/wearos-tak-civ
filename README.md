@@ -853,6 +853,23 @@ fix arrives, not literally instantly. Missing permission, provider failure, or n
 the refresh without sending an extra PLI. This does not change periodic reporting,
 reconnect behavior, or enable services/transports that are disabled.
 
+Enabling or changing an outbound connection requests a new current self PLI once the
+route is actually usable, without waiting for the reporting interval. Successful Ditto
+SDK startup, each connected TAK server, SITX, a multicast destination, and opted-in bound
+plugins have independent readiness identities. Unchanged status does not repeat the
+announcement; reconnects do. Changes within 150 milliseconds share one fresh-fix request.
+The fix must follow the readiness change and be at most five seconds old. A timed-out
+acquisition leaves the announcement pending for a later valid fix, unless its routes
+are disabled or removed. Location opt-out and revoked permissions suppress it.
+
+This path sends only current self PLI, with persisted identity and privacy/freshness-gated
+physiology; it does not replay chat, alerts, commands, marker queues, or history.
+Ditto receives its native `track` document, preserving the actual fix time in `b`/`n`.
+Connected Companion remains exclusive: direct routes, including Ditto, receive no copy.
+An ordinary location-triggered PLI can satisfy the pending announcement without an
+additional PLI from that trigger. Existing periodic policy and independently queued
+transport work otherwise remain unchanged.
+
 Manual and physiological emergencies send immediately with the newest available valid
 fix, even when it is older than the former 3-second cutoff. The last valid fix is retained
 in memory against invalid/out-of-order callbacks. The original fix time is exposed as

@@ -368,7 +368,8 @@ class TAKConnectService: Service() {
             false
         }
         dataRepository.setMulticastPublisherRunning(started)
-        if (started) dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST)
+        if (started) dataRepository.setEndpointConnected(DataRepository.Endpoint.MULTICAST,
+            setOf("${cfg.net}:${cfg.address}:${cfg.port}"))
         else dataRepository.setEndpointDisconnected(DataRepository.Endpoint.MULTICAST)
     }
 
@@ -3352,11 +3353,11 @@ class TAKConnectService: Service() {
                         TakSanHostnameVerifier(takServerDetail.address, trustManager)
                     isAnyTakConnected = true
                     isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
-                    dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
                     requestStatusIconsComplicationUpdate(context)
 
                     takServerDetail.connectionStatus.set(TAK_SERVER_CONNECTED_COT_PORT)
                     takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTED_STRING)
+                    setIsAnyNetworkConnected()
                     publishRegistrationResult(
                         takServerDetail, attempt, TakServerRegistration.Status.CONNECTED
                     )
@@ -3426,7 +3427,10 @@ class TAKConnectService: Service() {
             isAnyTakConnected = anyTakConnected
             isAnyTakConnectedLiveData.postValue(isAnyTakConnected)
             if (anyTakConnected) {
-                dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
+                dataRepository.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER,
+                    takServerDetails.filter {
+                        it.isEnabled && it.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT
+                    }.map { it.serverId }.toSet())
             } else {
                 dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
             }

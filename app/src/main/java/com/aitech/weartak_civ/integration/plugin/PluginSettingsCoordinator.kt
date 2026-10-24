@@ -40,6 +40,9 @@ class PluginSettingsCoordinator(
     private var hostWatcherStarted = false
     private val outboundCotAvailableState = MutableStateFlow(false)
     val outboundCotAvailable = outboundCotAvailableState.asStateFlow()
+    private val outboundCotReadyRoutesState = MutableStateFlow<Map<String, Long>>(emptyMap())
+    val outboundCotReadyRoutes = outboundCotReadyRoutesState.asStateFlow()
+    private var outboundCotGeneration = 0L
 
     fun registerPlugin(pluginId: String, plugin: IWearTakPlugin) {
         pluginRefs[pluginId] = plugin
@@ -425,9 +428,15 @@ class PluginSettingsCoordinator(
         updateOutboundCotAvailability()
     }
 
-    private fun updateOutboundCotAvailability() {
-        outboundCotAvailableState.value =
-            anyPluginHasSettingEnabled(PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT)
+    private fun updateOutboundCotAvailability() = synchronized(outboundCotReadyRoutesState) {
+        val ready = cache.entries.filter { (pluginId, state) ->
+            pluginRefs.containsKey(pluginId) &&
+                state.schema.fields.any { it.fieldId == PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT } &&
+                state.values.getBoolean(PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT, false)
+        }.map { it.key }
+        val previous = outboundCotReadyRoutesState.value
+        outboundCotReadyRoutesState.value = ready.associateWith { previous[it] ?: ++outboundCotGeneration }
+        outboundCotAvailableState.value = ready.isNotEmpty()
     }
 
     private data class HostWatchKey(
