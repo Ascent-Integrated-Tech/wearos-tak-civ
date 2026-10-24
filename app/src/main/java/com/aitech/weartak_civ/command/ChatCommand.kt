@@ -26,7 +26,7 @@ object ChatCommandParser {
     const val MAX_VALUE_LENGTH = 128
     const val MAX_PDL_LENGTH = 16_384
     const val MAX_PDL_COMMAND_LENGTH = 17_408
-    private val NAME = Regex("[a-z]{1,32}")
+    private val NAME = Regex("[a-z][a-z0-9]{0,31}")
     private val KEY = Regex("[a-z][a-z0-9]{0,15}")
 
     /** Anything not starting with the prefix is ordinary chat and is never inspected further. */
@@ -39,7 +39,8 @@ object ChatCommandParser {
         val name = rest.substring(0, nameEnd).lowercase()
         if (!NAME.matches(name)) return ChatCommandParse.Malformed("invalid command name")
         val isPdlCommand = name == "setpdl"
-        if (body.length > if (isPdlCommand) MAX_PDL_COMMAND_LENGTH else MAX_LENGTH) {
+        val isP12Command = name == "usep12"
+        if (body.length > if (isPdlCommand || isP12Command) MAX_PDL_COMMAND_LENGTH else MAX_LENGTH) {
             return ChatCommandParse.Malformed("too long")
         }
         if (isPdlCommand) {
@@ -49,6 +50,26 @@ object ChatCommandParser {
             }
             return ChatCommandParse.Parsed(ChatCommand(name,
                 if (value == "community") mapOf("source" to value) else mapOf("pdl" to value)))
+        }
+        if (name == "toggleditto") {
+            val value = rest.substring(nameEnd).trim()
+            if (value !in setOf("on", "off")) return ChatCommandParse.Malformed("toggleditto needs on or off")
+            return ChatCommandParse.Parsed(ChatCommand(name, mapOf("state" to value)))
+        }
+        if (isP12Command) {
+            val input = rest.substring(nameEnd).trim()
+            val value = input.takeWhile { !it.isWhitespace() }
+            if (value.isEmpty() || value.length > MAX_PDL_LENGTH ||
+                !Regex("[A-Za-z0-9+/=_-]+").matches(value)) {
+                return ChatCommandParse.Malformed("usep12 needs encoded P12 and server=<configured-id>")
+            }
+            val tail = input.substring(value.length)
+            val options = parse("${PREFIX}certoptions$tail")
+            if (options !is ChatCommandParse.Parsed ||
+                options.command.args.keys.any { it !in setOf("server", "password") }) {
+                return ChatCommandParse.Malformed("usep12 needs encoded P12 server=<configured-id> [password=\"...\"]")
+            }
+            return ChatCommandParse.Parsed(ChatCommand(name, options.command.args + ("p12" to value)))
         }
         val args = LinkedHashMap<String, String>()
         var i = nameEnd

@@ -1791,7 +1791,7 @@ class TAKConnectService: Service() {
                         )
 
                         // Log the extracted XML to help inspect the CoT structure
-                        Log.d("MISSION_TEST", "Extracted event XML=$eventXml")
+                        Log.d("MISSION_TEST", "Extracted mission CoT event")
 
                         // Pass the event to the existing CoT ingestor
                         // Route events are identified by their b-m-r event type
@@ -3703,15 +3703,25 @@ class TAKConnectService: Service() {
             }
         }
 
+        internal fun sendCommandReply(serverId: String, xml: String): Boolean {
+            if (dataRepository.isCompanionConnected.value || !isLicenseValid()) return false
+            val detail = takServerDetailsById[serverId] ?: return false
+            if (!detail.isEnabled || detail.duplicateEndpointSuppressed ||
+                detail.connectionStatus.get() != TAK_SERVER_CONNECTED_COT_PORT) return false
+            sendData(detail, xml, true, System.currentTimeMillis())
+            return true
+        }
+
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {
             if (dataRepository.isCompanionConnected.value) return
             if (isLicenseValid() && isNetworkConnected) {
                 val currTime = System.currentTimeMillis()
                 for (takServerDetail in takServerDetails) {
                     if (TAK_SERVER_OBTAINING_CLIENT_CERT == takServerDetail.connectionStatus.get()) {
-                        Log.i(TAG, "Connecting to TAK server ${takServerDetail.address}. Hence not sending this message: $msg")
+                        Log.i(TAG, "Connecting to TAK server; message not sent")
                         continue
                     }
+
                     if (takServerDetail.isEnabled && !takServerDetail.duplicateEndpointSuppressed) {
                         if (isNotPli) {
                             // Send immediately

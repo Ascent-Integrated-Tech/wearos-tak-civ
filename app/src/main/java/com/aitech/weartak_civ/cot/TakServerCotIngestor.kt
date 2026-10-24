@@ -102,7 +102,9 @@ class TakServerCotIngestor(
             return TakServerCotIngestResult.MALFORMED
         }
 
-        if (sink.onInboundCot(envelope)) return TakServerCotIngestResult.CONFIGURATION
+        if (!CotMessageParser.isChatMessage(rawXml) && sink.onInboundCot(envelope)) {
+            return TakServerCotIngestResult.CONFIGURATION
+        }
         if (CotMessageParser.eventTypeOrNull(rawXml) == "t-x-d-d") {
             val deletion = CotMessageParser.parseDeletionOrNull(rawXml) ?: return TakServerCotIngestResult.MALFORMED
             if (deletion.uid != deviceUid()) sink.onDelete(deletion, envelope)
@@ -122,7 +124,7 @@ class TakServerCotIngestor(
                 .asSequence()
                 .flatMap { room -> room.messageList.asSequence().map { room to it } }
                 .firstOrNull { (_, message) ->
-                    message.message.startsWith(ChatCommandParser.PREFIX, ignoreCase = true)
+                    message.message.trimStart().startsWith(ChatCommandParser.PREFIX, ignoreCase = true)
                 }
             if (candidate != null) {
                 val (room, message) = candidate
@@ -141,6 +143,10 @@ class TakServerCotIngestor(
                 )
                 if (chatCommandHandler(request)) return TakServerCotIngestResult.COMMAND
             }
+        }
+
+        if (CotMessageParser.isChatMessage(rawXml) && sink.onInboundCot(envelope)) {
+            return TakServerCotIngestResult.CONFIGURATION
         }
 
         // Check whether the incoming message is a chat

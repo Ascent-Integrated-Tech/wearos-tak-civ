@@ -55,4 +55,29 @@ class CompanionChatIngestorTest {
         assertEquals("alice", room.uid)
         assertEquals("event-message-id", room.messageList.single().messageId)
     }
+
+    @Test fun bridgeCommandNeedsOriginalSentAtAndSharesReplayIdentityWithOtherRoutes() = kotlinx.coroutines.runBlocking {
+        val now = 1_000_000L
+        var runs = 0
+        val processor = com.aitech.weartak_civ.command.ChatCommandProcessor(
+            { true }, { listOf("Alice") },
+            mapOf("setcallsign" to com.aitech.weartak_civ.command.ChatCommandHandler { _, _ ->
+                runs++
+                com.aitech.weartak_civ.command.ChatCommandResult(true, "Changed")
+            }), reply = { _, _ -> }, audit = {}, now = { now })
+        suspend fun receive(value: CompanionAppRepository.ChatReceivedPayload, source: String) =
+            com.aitech.weartak_civ.command.ChatCommandIngress.handle(
+                listOf(CompanionChatIngestor.room(value, now)), value.sentAt ?: 0L, now, source,
+                processor::handle)
+        val command = payload().copy(msg = "#weartakcommandsetcallsign callsign=UPDATED")
+        assertTrue(receive(command, "companion-phone"))
+        assertEquals(0, runs)
+        val fresh = command.copy(sentAt = now)
+        assertTrue(receive(fresh, "companion-phone"))
+        assertTrue(receive(fresh, "companion-gateway"))
+        assertTrue(receive(fresh, "sitx:flow"))
+        assertEquals(1, runs)
+        assertFalse(receive(fresh.copy(msg = "ordinary #weartakcommandsetcallsign callsign=WRONG"), "companion-phone"))
+        assertEquals(1, runs)
+    }
 }

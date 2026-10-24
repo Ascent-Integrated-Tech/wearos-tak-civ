@@ -197,8 +197,11 @@ class SitxTakService : Service() {
                     }
 
                     is SitxServiceCommand.SendCot -> {
-                        //Log.i(TAG, "Received SitxServiceCommand.SendCot: ${cmd.xml}")
-                        sendCotToAll(cmd.xml)
+                        if (cmd.flowTag == null) sendCotToAll(cmd.xml)
+                        else if (!dataRepo.isCompanionConnected.value &&
+                            sockets[cmd.flowTag]?.send(cmd.xml) != true) {
+                            Log.w(TAG, "Command acknowledgement SITX route unavailable")
+                        }
                     }
 
                     SitxServiceCommand.Stop -> {
@@ -964,6 +967,17 @@ class SitxTakService : Service() {
         if (dataRepo.isCompanionConnected.value) {
             Log.d(TAG, "Suppressing direct SITX CoT while bonded companion is connected")
             return
+        }
+        if (CotMessageParser.isChatMessage(rawXml)) {
+            val receivedAt = System.currentTimeMillis()
+            val rooms = CotMessageParser.parseChatRooms(rawXml, MainActivity.device_uid,
+                MainActivity.callsign, "sitx:$flowTag", receivedAt)
+            val handled = runBlocking {
+                com.aitech.weartak_civ.command.ChatCommandIngress.handle(
+                    rooms, CotMessageParser.eventTimeOrNull(rawXml) ?: 0L, receivedAt, "sitx:$flowTag",
+                    ChatCommandRuntime.create(applicationContext, dataRepo))
+            }
+            if (handled) return
         }
         if (PluginCotIngress.offer(
                 TakServerCotEnvelope(

@@ -87,7 +87,8 @@ class ChatCommandTest {
         assertEquals(ChatCommandDecision.STALE, auth.authorize("alpha-1", allowed, "zero", 0, 10_000))
         assertEquals(ChatCommandDecision.ALLOWED, auth.authorize("ALPHA-1", allowed, "m1", 10_000, 10_000))
         assertEquals(ChatCommandDecision.DUPLICATE, auth.authorize("alpha-1", allowed, "m1", 10_000, 10_100))
-        assertEquals(ChatCommandDecision.ALLOWED, auth.authorize("bravo", allowed, "m1", 10_000, 10_100))
+        assertEquals(ChatCommandDecision.DUPLICATE, auth.authorize("bravo", allowed, "m1", 10_000, 10_100))
+        assertEquals(ChatCommandDecision.ALLOWED, auth.authorize("bravo", allowed, "different-sender:m1", 10_000, 10_100))
     }
 
     @Test

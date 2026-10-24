@@ -214,6 +214,9 @@ private const val DEFAULT_COMMUNITY_PDL =
     BuildConfig.DITTO_COMMUNITY_IDENTITY
 
 class DataRepository(private val context: Context) {
+    internal val chatCommandHandler by lazy {
+        com.aitech.weartak_civ.service.ChatCommandRuntime.build(context, this)
+    }
     internal val dittoPointLedger by lazy {
         com.aitech.weartak_civ.cot.DittoPointLedger(
             context.getSharedPreferences("ditto-local-points-v1", Context.MODE_PRIVATE)
@@ -3934,7 +3937,9 @@ class DataRepository(private val context: Context) {
         val timeMillis: Long,
         val isGroup: Boolean = false,
         val participantUids: List<String> = emptyList()
-    )
+    ) {
+        override fun toString() = "SendChatRequest(group=$isGroup, characters=${message.length})"
+    }
 
     private val _chatRequestFromUI = MutableSharedFlow<SendChatRequest>(extraBufferCapacity = 64)
     val chatRequestFromUI: SharedFlow<SendChatRequest> = _chatRequestFromUI
@@ -4205,7 +4210,44 @@ class DataRepository(private val context: Context) {
         val p12Cert: String,
         val p12CertPassword: String,
         val serverId: String? = null
-    )
+    ) {
+        override fun toString() = "TakServerItem(serverId=$serverId, enabled=$isEnabled, p12=$isP12Cert)"
+    }
+
+    internal suspend fun installChatP12(
+        serverId: String,
+        p12: com.aitech.weartak_civ.command.ValidatedChatP12,
+        apply: suspend () -> Unit
+    ): Boolean {
+        awaitTakServerMigration()
+        return TakServerEndpointIdentity.mutationMutex.withLock {
+            if (phoneManagedSettingsLocked.first() || getNetworkPreferencesLocked.first()) return@withLock false
+            val before = readTakServerList()
+            val index = before.indexOfFirst { it.serverId == serverId }
+            if (index < 0) return@withLock false
+            val after = before.toMutableList().apply {
+                this[index] = this[index].copy(isP12Cert = true, p12Cert = p12.base64, p12CertPassword = p12.password)
+            }
+            try {
+                writeTakServerList(after, "installChatP12")
+                apply()
+                true
+            } catch (error: Exception) {
+                try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) {
+                        writeTakServerList(before, "rollbackChatP12")
+                        apply()
+                    }
+                } catch (_: Exception) {
+                    Log.e(TAG, "Chat P12 rollback failed; configuration requires attention")
+                    throw IllegalStateException("P12 recovery failed; configuration requires attention")
+                }
+                if (error is CancellationException) throw error
+                Log.e(TAG, "Chat P12 apply failed; previous credentials restored")
+                false
+            }
+        }
+    }
 
     enum class TakServerAddResult {
         ADDED,
@@ -4219,8 +4261,7 @@ class DataRepository(private val context: Context) {
     }
 
     private fun normalizeP12Password(password: String): String {
-        val trimmed = password.trim()
-        return if (trimmed.isEmpty()) "atakatak" else trimmed
+        return if (password.isEmpty()) "atakatak" else password
     }
 
     private fun normalizeP12Cert(cert: String): String =
