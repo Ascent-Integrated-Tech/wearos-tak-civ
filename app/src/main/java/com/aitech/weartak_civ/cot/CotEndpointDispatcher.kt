@@ -8,6 +8,7 @@ sealed interface CotCompanionPayload {
     data class Pli(val snapshot: DataRepository.PliSnapshot) : CotCompanionPayload
     data class Chat(val snapshot: DataRepository.ChatEventSnapshot) : CotCompanionPayload
     data class Marker(val snapshot: DataRepository.MarkerSnapshot) : CotCompanionPayload
+    data class OwnedPointDeletion(val uid: String) : CotCompanionPayload
     data class Emergency(val snapshot: DataRepository.EmergencyEventSnapshot) : CotCompanionPayload
 }
 

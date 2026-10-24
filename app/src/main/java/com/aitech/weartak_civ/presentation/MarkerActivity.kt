@@ -1778,7 +1778,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
                     shouldShowClearLastDialog,
                     "Clear Last Marker?\n\r${markerTextFromString(droppedMarkerListSetting.last().markerType.type)}: ${droppedMarkerListSetting.last().title}\n\r" + utcToHoursMinutesSeconds(
                         droppedMarkerListSetting.last().timeDropped
-                    ),
+                    ) + "\n" + stringResource(R.string.owned_pin_delete_help),
                     {
                         Icon(
                             markerIconFromString(droppedMarkerListSetting.last().markerType.type),
@@ -1834,7 +1834,7 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
 
             ClearMarkerConfirmationDialog(
                 shouldShowClearAllDialog,
-                "Clear All Dropped Markers?",
+                "Clear All Dropped Markers?\n" + stringResource(R.string.owned_pin_delete_help),
                 {Icon(
                     Icons.Outlined.Delete,
                     modifier = Modifier.size(25.dp),
@@ -2065,7 +2065,8 @@ fun NewMarkerCivApp(exitActivity: () -> Unit, context: Context, viewModel: Marke
             )
             ClearMarkerConfirmationDialog(
                 shouldShowClearMarkerDialog,
-                "Delete Marker?\n\r${markerTextFromString(markerType)}: ${markerTitle}\n\r",
+                "Delete Marker?\n\r${markerTextFromString(markerType)}: ${markerTitle}\n" +
+                    stringResource(R.string.owned_pin_delete_help),
                 {
                     Icon(
                         markerIconFromString(markerType),

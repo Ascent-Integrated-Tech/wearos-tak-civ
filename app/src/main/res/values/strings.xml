@@ -152,6 +152,7 @@
     <string name="dismiss">Dismiss</string>
     <string name="sos_alert_prompt">Do you want to trigger an SOS alert at your location?</string>
     <string name="clear_dropped_markers">Clear Dropped Markers</string>
+    <string name="owned_pin_delete_help">Removes here now. Requests removal on connected TAK clients; peers may ignore it.</string>
     <string name="map_select_target">Select Target</string>
     <string name="map_no_targets">No Targets Available</string>
     <string name="map_target_contact">Contact</string>

@@ -13,6 +13,31 @@ import javax.xml.parsers.DocumentBuilderFactory
 import org.xml.sax.InputSource
 
 class CotMessageBuilderTest {
+    @Test fun ownedDeletionMatchesAtakLinkedForcedDeleteContractWithoutChangingTargetIdentity() {
+        val uid = "original & ' \" < > pin"
+        val now = Instant.parse("2026-10-24T12:00:00Z").toEpochMilli()
+        for (location in listOf(location(), null)) {
+            val xml = CotMessageBuilder.ownedPointDeletion(uid, location, now, "independent-event")
+            val event = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(InputSource(StringReader(xml))).documentElement
+            assertEquals("independent-event", event.getAttribute("uid"))
+            assertEquals("t-x-d-d", event.getAttribute("type"))
+            assertEquals(now, Instant.parse(event.getAttribute("time")).toEpochMilli())
+            assertEquals(event.getAttribute("time"), event.getAttribute("start"))
+            assertEquals(now + 86_400_000, Instant.parse(event.getAttribute("stale")).toEpochMilli())
+            val link = event.getElementsByTagName("link").item(0) as Element
+            assertEquals(uid, link.getAttribute("uid"))
+            assertEquals("none", link.getAttribute("relation"))
+            assertEquals("none", link.getAttribute("type"))
+            assertEquals(1, event.getElementsByTagName("__forcedelete").length)
+            val point = event.getElementsByTagName("point").item(0) as Element
+            assertEquals(location?.lat ?: 0.0, point.getAttribute("lat").toDouble(), 0.0)
+            assertEquals(location?.lon ?: 0.0, point.getAttribute("lon").toDouble(), 0.0)
+            assertTrue(CompanionGatewaySession.supported(xml))
+            assertEquals(uid, CotMessageParser.parseDeletionOrNull(xml)!!.uid)
+        }
+    }
+
     @Test
     fun pliUsesActualCoordinateSourceWithoutRelabelingBleRefinementAsItsAcquisitionProvider() {
         for ((provider, source) in listOf("gps" to "gps", "network" to "network", "gps" to "ble")) {

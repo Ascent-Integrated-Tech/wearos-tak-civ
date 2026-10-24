@@ -17,6 +17,7 @@ import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DataRepository.MarkerCotType
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -41,6 +42,27 @@ class MarkerReadabilityTest {
 
     @Test fun completePinDetailsAndCallsignAt480Font13() = details(480, 1.3f)
     @Test fun completePinDetailsAndCallsignAt498Font11() = details(498, 1.1f)
+
+    @Test fun ownedDeleteWarningAndActionsRemainVisibleAtFont13() {
+        val app = org.robolectric.RuntimeEnvironment.getApplication()
+        val description = "Delete Marker?\nFriendly: $title\n" + app.getString(R.string.owned_pin_delete_help)
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(340f / 160, 1.3f)) {
+                val visible = remember { mutableStateOf(true) }
+                val confirmed = remember { mutableStateOf(false) }
+                WearTAKCIVTheme {
+                    ClearMarkerConfirmationDialog(visible, description, {}, confirmed, {})
+                }
+            }
+        }
+        compose.onNodeWithText(description).assertIsDisplayed()
+        compose.onNodeWithText(app.getString(R.string.confirm)).assertIsDisplayed()
+        compose.onNodeWithText(app.getString(R.string.cancel)).assertIsDisplayed()
+        val layouts = mutableListOf<TextLayoutResult>()
+        compose.onNodeWithText(description).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+        assertFalse(layouts.single().didOverflowHeight)
+        assertFalse(layouts.single().didOverflowWidth)
+    }
 
     private fun details(pixels: Int, fontScale: Float) {
         val density = 340f / 160
