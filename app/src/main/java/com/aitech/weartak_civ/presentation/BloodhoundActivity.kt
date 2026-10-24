@@ -448,17 +448,7 @@ fun BloodhoundScreen(
                 app.repo.removeRouteFromWatch(route, app.bhRepo)
             },
             header = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.bloodhound), color = colors.primary,
-                        modifier = Modifier.padding(bottom = 8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { showRemoveAllConfirmation.value = true }, enabled = canRemove) {
-                            Text(stringResource(R.string.bloodhound_remove_all))
-                        }
-                        WearTAKBackButton(onClick = goBack)
-                    }
-                }
+                BloodhoundPickerHeader(canRemove, { showRemoveAllConfirmation.value = true }, goBack)
             },
             footer = {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
@@ -466,6 +456,21 @@ fun BloodhoundScreen(
                 }
             }
         )
+    }
+}
+
+@Composable
+internal fun BloodhoundPickerHeader(canRemove: Boolean, onRemoveAll: () -> Unit, onBack: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+        Text(stringResource(R.string.bloodhound), color = colors.primary,
+            modifier = Modifier.padding(bottom = 8.dp))
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally) {
+            Button(onClick = onRemoveAll, enabled = canRemove) {
+                Text(stringResource(R.string.bloodhound_remove_all))
+            }
+            WearTAKBackButton(onClick = onBack)
+        }
     }
 }
 

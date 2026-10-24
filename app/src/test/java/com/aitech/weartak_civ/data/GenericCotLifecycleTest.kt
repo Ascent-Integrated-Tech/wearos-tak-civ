@@ -40,6 +40,24 @@ class GenericCotLifecycleTest {
         repo.clearReceivedMarkers()
     }
 
+    @Test fun aircraftRefreshesReplaceSourceUidInsteadOfGrowingAndOlderPacketsAreRejected() = runBlocking {
+        val navigation = BloodhoundRepository(RuntimeEnvironment.getApplication())
+        repeat(500) { index ->
+            val event = marker("ICAO-${index % 5}", time = now + index)
+            assertTrue(repo.receiveMarkerEvent(event, navigation, "skyoverLA", "aircraft",
+                receivedAt = now + index))
+        }
+        assertEquals(5, repo.receivedMarkerList.value.size)
+        assertEquals(5, navigation.bloodhoundMap.value.size)
+        assertEquals(5, repo.receivedMarkerList.value.map { it.uid }.toSet().size)
+        assertFalse(repo.receiveMarkerEvent(marker("ICAO-0", time = now - 1),
+            navigation, "skyoverLA", "aircraft", receivedAt = now + 1_000))
+        assertEquals(now + 495, repo.receivedMarkerList.value.single { it.uid == "ICAO-0" }.timeReceived)
+        repo.pruneGenericMarkers(now + 60_001)
+        assertTrue(repo.receivedMarkerList.value.isEmpty())
+        assertTrue(navigation.bloodhoundMap.value.isEmpty())
+    }
+
     @Test fun staleAndUnrefreshedGenericCopiesLeaveMapAndNavigation() = runBlocking {
         repo.receiveMarkerEvent(marker("short", stale = now + 1_000), bloodhounds, "TAK", "server", now)
         repo.receiveMarkerEvent(marker("long", stale = now + 3_600_000), bloodhounds, "TAK", "server", now)
