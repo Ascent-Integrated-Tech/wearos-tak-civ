@@ -2,6 +2,12 @@ package com.aitech.weartak_civ.presentation
 
 import android.app.Application
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -39,7 +45,7 @@ class TopMetricSettingsUiTest {
         compose.runOnIdle { assertEquals(1, navigation); assertTrue(enabled) }
     }
 
-    @Test fun selectedMetricRowRemainsRadioSelectableAndShowsDisabled() {
+    @Test fun selectedMetricRowsKeepNameAndLiveValueInlineAndRemainRadioSelectable() {
         var selections = 0
         compose.setContent {
             WearTAKCIVTheme {
@@ -49,10 +55,35 @@ class TopMetricSettingsUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Heart Rate").assertIsSelected()
-        compose.onNodeWithText("Disabled").assertIsDisplayed()
-        compose.onNodeWithText("Lat/Long").performClick()
+        compose.onNodeWithText("Heart Rate Disabled").assertIsSelected()
+        compose.onNodeWithText("Disabled").assertDoesNotExist()
+        compose.onNodeWithText("Off-Wrist").assertDoesNotExist()
+        compose.onNodeWithText("No fix").assertDoesNotExist()
+        compose.onNodeWithText("Lat/Long No fix").performClick()
         compose.runOnIdle { assertEquals(1, selections) }
+    }
+
+    @Test fun fullPrecisionCoordinatesFitNarrowReadoutOnOneLine() {
+        val values = listOf("-79.12345/-179.98765", "60XWU1234598765",
+            "Lat/Long -79.12345/-179.98765", "MGRS 60XWU1234598765", "Exertion 45%",
+            "Heart Rate Off-Wrist", "Skin Temp Disabled")
+        compose.setContent {
+            WearTAKCIVTheme {
+                Column {
+                    values.forEach { value ->
+                        Box(Modifier.width(96.dp)) { FittedTopMetricText(value) }
+                    }
+                }
+            }
+        }
+        values.forEach { value ->
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(value).assertIsDisplayed()
+                .performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertEquals(1, layouts.single().lineCount)
+            assertFalse(layouts.single().didOverflowWidth)
+            assertFalse(layouts.single().isLineEllipsized(0))
+        }
     }
 
     @Test fun locationStatusIconOpensExistingReportingRatePageWithoutTogglingLocation() {
