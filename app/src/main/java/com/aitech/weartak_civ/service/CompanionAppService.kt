@@ -110,9 +110,32 @@ class CompanionAppService : Service() {
     private val bloodhoundSyncMutex = Mutex()
     private val bloodhoundConnectionGeneration = java.util.concurrent.atomic.AtomicLong()
     private val companionUserLock = Any()
+    private var phoneRoutesReceived = false
+    private val routeSync by lazy {
+        CompanionRouteSync(
+            activeRoute = { bhRepo.routeFollow.value },
+            prepare = {
+                phoneRoutesReceived = true
+                bhRepo.preparePhoneRoute(it)
+            },
+            resumeLocal = bhRepo::resumeLocalRoute,
+            send = ::sendBloodhoundControl,
+            reportError = { error ->
+                Log.w(TAG, "Companion route: $error")
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    android.widget.Toast.makeText(this,
+                        getString(R.string.companion_route_sync_failed), android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        )
+    }
     private fun advanceCompanionGeneration() = synchronized(companionUserLock) {
         bloodhoundConnectionGeneration.incrementAndGet()
         repo.clearCompanionUsers()
+        if (phoneRoutesReceived) {
+            routeSync.connectionChanged(false)
+            bhRepo.disconnectPhoneRoute()
+        }
     }
     internal fun beginCompanionSubscription() {
         // Samsung can reopen a GATT client without disconnecting the shared physical link.
@@ -220,9 +243,13 @@ class CompanionAppService : Service() {
         val generation = bloodhoundConnectionGeneration.get()
         if (observedBloodhoundGeneration != generation) {
             bloodhoundSync.connectionChanged(false)
+            synchronized(companionUserLock) { routeSync.connectionChanged(false) }
             observedBloodhoundGeneration = generation
         }
         bloodhoundSync.connectionChanged(bloodhoundLinkReady() && capRepo.gateway.session == null)
+        synchronized(companionUserLock) {
+            routeSync.connectionChanged(bloodhoundLinkReady() && capRepo.gateway.session == null)
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -260,6 +287,14 @@ class CompanionAppService : Service() {
 
     @SuppressLint("MissingPermission")
     private fun startBloodhoundSync() {
+        serviceScope.launch {
+            bhRepo.routeFollow.collect {
+                synchronized(companionUserLock) {
+                    routeSync.connectionChanged(bloodhoundLinkReady() && capRepo.gateway.session == null)
+                    routeSync.localRouteChanged()
+                }
+            }
+        }
         serviceScope.launch {
             while (true) {
                 val frame = bloodhoundFrames.tryReceive().getOrNull()
@@ -323,6 +358,7 @@ class CompanionAppService : Service() {
                     refreshBloodhoundConnection()
                     if (capRepo.gateway.session != null) return@withLock
                     bloodhoundSync.checkTimeouts()
+                    synchronized(companionUserLock) { routeSync.checkTimeouts() }
                 }
             }
         }
@@ -1924,6 +1960,37 @@ class CompanionAppService : Service() {
             if (handleLocationDiagnosticsMessage(json, base.type)) return
 
             when (base.type) {
+                "route_navigation_ack" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    synchronized(companionUserLock) {
+                        if (!isCurrentSingleWatch(address, generation)) return
+                        routeSync.receiveAck(org.json.JSONObject(json).getJSONObject("payload"))
+                    }
+                }
+                "phone_route_navigation" -> {
+                    val address = connectedDevice?.address ?: return
+                    val generation = bloodhoundConnectionGeneration.get()
+                    if (!isCurrentSingleWatch(address, generation)) return
+                    val update = com.aitech.weartak_civ.data.CompanionRouteNavigation.parse(
+                        org.json.JSONObject(json).getJSONObject("payload"))
+                    synchronized(companionUserLock) {
+                        if (!isCurrentSingleWatch(address, generation)) return
+                        val location = repo.latestLocation.value?.let {
+                            com.aitech.weartak_civ.data.model.TakRoutePoint(it.latitude, it.longitude)
+                        }
+                        if (bhRepo.applyPhoneRoute(update, location)) {
+                            phoneRoutesReceived = true
+                            routeSync.connectionChanged(true)
+                            routeSync.phoneSnapshot(update)
+                            update.route?.let(repo::upsertTakRoute)
+                            Log.i(TAG, "Phone route ${update.action} uid=${update.routeUid} sequence=${update.sequence}")
+                        } else {
+                            Log.i(TAG, "Ignoring stale/dismissed phone route session=${update.sessionId}")
+                        }
+                    }
+                }
+
                 "phone_management_pong" -> {
                     val message = org.json.JSONObject(json)
                     val address = connectedDevice?.address ?: return

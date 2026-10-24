@@ -381,7 +381,8 @@ class BloodhoundService: Service() {
     private fun updateVectors() {
         scope.launch {
             val currentLoc = repo.latestLocation.value ?: return@launch
-            bhRepo.updateRouteLocation(TakRoutePoint(currentLoc.latitude, currentLoc.longitude))
+            bhRepo.updateRouteLocation(TakRoutePoint(currentLoc.latitude, currentLoc.longitude),
+                if (currentLoc.hasAccuracy()) currentLoc.accuracy.toDouble() else 0.0)
             val map = bhRepo.bloodhoundMap.value
             val currentAzimuth = repo.azimuthTrueDegSmoothed.value
 

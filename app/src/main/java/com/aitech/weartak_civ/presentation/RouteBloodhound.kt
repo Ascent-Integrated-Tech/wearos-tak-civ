@@ -8,6 +8,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -55,6 +57,8 @@ fun BloodhoundPickerList(
     onChooseRoute: (TakRoute) -> Unit = {},
     onStopTarget: (String) -> Unit = {},
     onStopRoute: () -> Unit = {},
+    onRemoveTarget: (String) -> Unit = {},
+    onRemoveRoute: (TakRoute) -> Unit = {},
     header: @Composable () -> Unit = {},
     footer: @Composable () -> Unit = {}
 ) {
@@ -63,7 +67,7 @@ fun BloodhoundPickerList(
         item { header() }
         items(routes, key = { "route:${it.serverId.length}:${it.serverId}:${it.uid}" }) { route ->
             RouteBloodhoundChip(route, location, { onRoute(route) }, session,
-                { onMapRoute(route) }, { onChooseRoute(route) }, onStopRoute)
+                { onMapRoute(route) }, { onChooseRoute(route) }, onStopRoute, { onRemoveRoute(route) })
         }
         items(bloodhounds, key = { "target:${it.uid}" }) { item ->
             val kind = when (item.targetKind) {
@@ -83,6 +87,7 @@ fun BloodhoundPickerList(
             BloodhoundPickerRow(item.target, subtitle, typeIcon, item.bloodhounding,
                 onBody = { onTarget(item.uid) }, onMap = { onMapTarget(item.uid) },
                 onHound = { if (item.bloodhounding) onStopTarget(item.uid) else onStartTarget(item.uid) },
+                onRemove = { onRemoveTarget(item.uid) },
                 actionsEnabled = item.hasLocation, tag = "bloodhound-target-${item.uid}")
         }
         item { footer() }
@@ -97,7 +102,8 @@ fun RouteBloodhoundChip(
     session: RouteFollowSession? = null,
     onMap: () -> Unit = {},
     onChoose: () -> Unit = {},
-    onStop: () -> Unit = {}
+    onStop: () -> Unit = {},
+    onRemove: () -> Unit = {}
 ) {
     val nearestMeters = remember(route.points, location) {
         location?.takeIf(RouteFollow::validLocation)?.let { current ->
@@ -110,6 +116,7 @@ fun RouteBloodhoundChip(
     else stringResource(R.string.bloodhound_picker_route_summary, route.points.size, routeDistanceText(nearestMeters))
     BloodhoundPickerRow(route.name.ifBlank { stringResource(R.string.route_unnamed) }, subtitle, R.drawable.atak_nav_routes,
         selected != null, onClick, onMap, { if (selected != null) onStop() else onChoose() },
+        onRemove = onRemove,
         actionsEnabled = route.points.isNotEmpty(), tag = "bloodhound-route")
 }
 
@@ -122,6 +129,7 @@ fun BloodhoundPickerRow(
     onBody: () -> Unit,
     onMap: () -> Unit,
     onHound: () -> Unit,
+    onRemove: () -> Unit = {},
     actionsEnabled: Boolean = true,
     tag: String = "bloodhound-row"
 ) {
@@ -146,24 +154,31 @@ fun BloodhoundPickerRow(
                     maxLines = 2, overflow = TextOverflow.Ellipsis, fontSize = 11.sp)
             }
         }
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Button(onClick = onMap, enabled = actionsEnabled, modifier = Modifier.size(40.dp).testTag("$tag-map"),
             colors = ButtonDefaults.buttonColors(backgroundColor = Color(0xFF35383C))) {
             Icon(painterResource(R.drawable.atak_ic_crosshair),
                 contentDescription = stringResource(R.string.bloodhound_picker_show_map, title),
-                tint = Color.White, modifier = Modifier.size(24.dp))
+                tint = Color.White, modifier = Modifier.size(18.dp))
         }
-        Spacer(Modifier.width(4.dp))
         Button(onClick = onHound, enabled = actionsEnabled || active,
             modifier = Modifier.size(40.dp).testTag("$tag-hound")
                 .semantics { contentDescription = houndDescription },
             colors = ButtonDefaults.buttonColors(backgroundColor = if (active) PickerRed else PickerGreen)) {
             if (active) {
-                Box(Modifier.size(12.dp).background(Color.White).testTag("$tag-stop-icon"))
+                Box(Modifier.size(10.dp).background(Color.White).testTag("$tag-stop-icon"))
             } else {
                 Icon(painterResource(R.drawable.atak_nav_bloodhound),
                     contentDescription = null,
-                    tint = Color.White, modifier = Modifier.size(26.dp))
+                    tint = Color.White, modifier = Modifier.size(18.dp))
             }
+        }
+        Button(onClick = onRemove, modifier = Modifier.size(40.dp).testTag("$tag-remove"),
+            colors = ButtonDefaults.buttonColors(backgroundColor = PickerRed)) {
+            Icon(Icons.Outlined.Delete,
+                contentDescription = stringResource(R.string.bloodhound_picker_remove, title),
+                tint = Color.White, modifier = Modifier.size(18.dp))
+        }
         }
     }
 }
@@ -177,7 +192,8 @@ fun RouteBloodhoundDetails(
     onStart: (RouteFollow.StartMode) -> Unit,
     onStop: () -> Unit,
     onBack: () -> Unit,
-    choosingStart: Boolean = false
+    choosingStart: Boolean = false,
+    onRemove: () -> Unit = {}
 ) {
     val selected = session?.takeIf { it.matches(route) }
     val following = selected != null && !selected.navigation.completed
@@ -243,6 +259,10 @@ fun RouteBloodhoundDetails(
                         label = { Text(stringResource(R.string.route_bloodhound_start_beginning)) },
                         modifier = Modifier.fillMaxWidth().testTag("route-follow-beginning"))
                 }
+            }
+            item {
+                Chip(onClick = onRemove, label = { Text(stringResource(R.string.route_remove)) },
+                    modifier = Modifier.fillMaxWidth().testTag("route-follow-remove"))
             }
             item {
                 Chip(onClick = onBack, label = { Text(stringResource(

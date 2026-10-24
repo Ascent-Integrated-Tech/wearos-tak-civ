@@ -867,4 +867,6 @@
     <string name="bloodhound_picker_start">Start Bloodhound to %1$s</string>
     <string name="bloodhound_picker_stop">Stop Bloodhound to %1$s</string>
     <string name="bloodhound_picker_start_title">Start Bloodhound</string>
+    <string name="bloodhound_picker_remove">Remove %1$s from watch</string>
+    <string name="companion_route_sync_failed">Route navigation could not synchronize with the phone.</string>
 </resources>
