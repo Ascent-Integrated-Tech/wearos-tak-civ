@@ -1130,6 +1130,23 @@ Companion gateway/legacy BLE, and the independent Ditto `track` publisher.
 The CoT/legacy Companion builders also reject no-fix PLI rather than creating a
 zero-coordinate point. A real timestamped fix at `0,0` remains a valid position.
 
+### MOPP and Data Sync plugins
+
+**Plugins > MOPP** uses an original protective-mask icon and a manual **PPE
+Status** selector: **None**, **MOPP 0**, **MOPP 1**, **MOPP 2**, **MOPP 3**,
+**MOPP 4**. None is the unset default, not level 0. MOPP defaults off; enable
+it to edit, choose a candidate, then **Save** locally. Back discards an unsaved
+candidate. Disabling retains the saved status. This does not send a report,
+detect PPE/CBRN, assess protection/compliance, set a commanded level or start
+a filter timer.
+
+**Data Sync** now has its own icon and split enable/navigation row. The default
+remains on. Off pauses new mission API requests and background polling without
+unsubscribing or deleting content/progress; On resumes on the current direct
+TAK session. A request already in flight may finish. Mission settings remain
+viewable while paused, but subscription actions are disabled. Other TAK traffic
+and bonded-companion transport gating are unchanged.
+
 ### Top display metrics and shortcuts
 
 Tap the top metric to open a simple scrollable list: **Exertion, Heart Rate,

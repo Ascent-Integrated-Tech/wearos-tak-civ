@@ -11,6 +11,8 @@ import okhttp3.RequestBody.Companion.toRequestBody
 import com.fasterxml.jackson.databind.ObjectMapper
 import android.util.Log
 import java.io.IOException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
@@ -52,6 +54,7 @@ class TakMissionApi(
         .readTimeout(15, TimeUnit.SECONDS)
 
         .build(),
+    private val requestsAllowed: suspend () -> Boolean = { true },
 ) {
 
     // Converts JSON responses into Kotlin data objects
@@ -105,7 +108,9 @@ class TakMissionApi(
 
         // Send the request and read the server response
         // Automatically close the response after processing
+        ensureRequestsAllowed()
         client.newCall(request).execute().use { response ->
+            currentCoroutineContext().ensureActive()
 
             // Check whether the server returned a successful response
             // Throw an error if the request failed
@@ -218,7 +223,9 @@ class TakMissionApi(
             .build()
 
         // Send the request and read the server response
+        ensureRequestsAllowed()
         client.newCall(request).execute().use { response ->
+            currentCoroutineContext().ensureActive()
 
             // Return null when the server reports that the mission does not exist
             if (response.code == 404) {
@@ -306,7 +313,9 @@ class TakMissionApi(
             .build()
 
         // Send the unsubscribe request to the TAK Server
+        ensureRequestsAllowed()
         client.newCall(request).execute().use { response ->
+            currentCoroutineContext().ensureActive()
 
             // Check whether the server accepted the unsubscribe request
             // Throw an error if the request failed
@@ -434,15 +443,17 @@ class TakMissionApi(
     // Sends the provided HTTP request to the TAK Server
     // Checks the HTTP response and returns the response body
     // Throws an exception when the server returns an unsuccessful status
-    private fun execute(
+    private suspend fun execute(
         request: Request,
         operation: String
     ): String {
+        ensureRequestsAllowed()
 
         try {
 
             // Send the request and automatically close the response afterward
             return client.newCall(request).execute().use { response ->
+                currentCoroutineContext().ensureActive()
 
                 // Read the response body as text
                 // Use an empty string when no response body is available
@@ -469,8 +480,14 @@ class TakMissionApi(
             throw error
         }
     }
+
+    private suspend fun ensureRequestsAllowed() {
+        currentCoroutineContext().ensureActive()
+        if (!requestsAllowed()) throw TakMissionPausedException()
+    }
 }
 
+internal class TakMissionPausedException : IOException("Data Sync is paused")
 
 // Base exception type for errors related to the mission API
 // Allows mission API errors to be identified separately from other errors

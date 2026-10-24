@@ -30,10 +30,12 @@ class IntegrationIconsTest {
         BuiltInPlugin.DART to R.drawable.ic_integration_certus,
         BuiltInPlugin.FALCON to R.drawable.ic_integration_certus,
         BuiltInPlugin.DITTO to R.drawable.ic_integration_ditto,
+        BuiltInPlugin.DATA_SYNC to R.drawable.ic_data_sync,
+        BuiltInPlugin.MOPP to R.drawable.ic_mopp,
     )
 
     @Test
-    fun allSixEntriesUseTheirApprovedArtwork() {
+    fun allIconEntriesUseTheirArtwork() {
         expected.forEach { (plugin, resource) -> assertEquals(resource, plugin.brandIconRes) }
         assertEquals(expected.keys, BuiltInPlugin.entries.filter { it.brandIconRes != null }.toSet())
     }

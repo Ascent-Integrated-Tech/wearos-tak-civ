@@ -22,10 +22,11 @@ class PluginMenuEntryTest {
             PluginMenuEntry.BuiltIn(BuiltInPlugin.DART, "DART"),
             PluginMenuEntry.BuiltIn(BuiltInPlugin.DATA_SYNC, "Data Sync"),
             PluginMenuEntry.BuiltIn(BuiltInPlugin.CRM, "CRM"),
+            PluginMenuEntry.BuiltIn(BuiltInPlugin.MOPP, "MOPP"),
         )
 
         assertEquals(
-            listOf("alpha", "Commands", "Companion Plugin", "CRM", "DART", "Data Sync", "Ditto", "Everywhere Comms", "FALCON", "GoTenna", "Sensor Manager", "Somewear Labs", "zulu"),
+            listOf("alpha", "Commands", "Companion Plugin", "CRM", "DART", "Data Sync", "Ditto", "Everywhere Comms", "FALCON", "GoTenna", "MOPP", "Sensor Manager", "Somewear Labs", "zulu"),
             entries.alphabetizedPluginEntries().map { it.title },
         )
         assertEquals("Somewear Labs", entries.first().title)

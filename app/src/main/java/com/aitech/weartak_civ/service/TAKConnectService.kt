@@ -142,6 +142,7 @@ import javax.net.ssl.SSLContext
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.TrustManagerFactory
 import com.aitech.weartak_civ.data.takserver.TakMissionApi
+import com.aitech.weartak_civ.data.takserver.TakMissionPausedException
 import javax.net.ssl.X509TrustManager
 import com.aitech.weartak_civ.data.model.TakMissionStatus
 import com.aitech.weartak_civ.data.model.TakMissionState
@@ -1379,6 +1380,10 @@ class TAKConnectService: Service() {
             } catch (error: Exception) {
                 if (!missionConnectionReady(detail, attempt)) return
                 // Log API or connection failures without stopping other server operations
+                if (error is TakMissionPausedException) {
+                    Log.i(TAG, "Data Sync paused for $serverId")
+                    return
+                }
                 Log.e(TAG, "Mission refresh failed for $serverId", error)
             }
         }
@@ -1450,6 +1455,10 @@ class TAKConnectService: Service() {
                 throw error
             } catch (error: Exception) {
                 if (!missionConnectionReady(detail, attempt)) return
+                if (error is TakMissionPausedException) {
+                    Log.i(TAG, "Data Sync paused for ${detail.serverId}")
+                    return
+                }
                 // Store the failure so the mission state can show what went wrong
                 dataRepository.updateTakMissionError(
                     serverId = detail.serverId,
@@ -1528,6 +1537,10 @@ class TAKConnectService: Service() {
                     // Allow cancellation to stop the coroutine
                     throw error
                 } catch (error: Exception) {
+                    if (error is TakMissionPausedException) {
+                        Log.i(TAG, "Data Sync subscription skipped while paused")
+                        return@launch
+                    }
                     // Save the error without marking a failed subscription as successful
                     dataRepository.setMissionSyncError(
                         serverId = serverId,
@@ -1597,6 +1610,10 @@ class TAKConnectService: Service() {
                     // Allow cancellation to stop the coroutine
                     throw error
                 } catch (error: Exception) {
+                    if (error is TakMissionPausedException) {
+                        Log.i(TAG, "Data Sync unsubscription skipped while paused")
+                        return@launch
+                    }
                     // Record the error if the server does not complete the unsubscribe request
                     dataRepository.setMissionSyncError(
                         serverId = serverId,
@@ -1625,6 +1642,7 @@ class TAKConnectService: Service() {
             // Continue syncing until the coroutine is cancelled
             // Replacing this connection attempt also stops this polling loop.
             while (currentCoroutineContext().isActive && missionConnectionReady(detail, attempt)) {
+                if (!dataRepository.getEnableDataSync.first()) return
 
                 // Refresh the available mission list from this TAK Server
                 // This allows newly created missions to appear in the repository
@@ -1878,6 +1896,10 @@ class TAKConnectService: Service() {
 
             } catch (error: Exception) {
                 if (!missionConnectionReady(detail, attempt)) return
+                if (error is TakMissionPausedException) {
+                    Log.i(TAG, "Data Sync content skipped while paused")
+                    return
+                }
                 // Record the failure so the repository knows this sync did not complete
                 // Keep the error associated with the correct server and mission
                 dataRepository.setMissionSyncError(
@@ -2084,7 +2106,10 @@ class TAKConnectService: Service() {
                 sslContext = sslContext,
                 trustManager = trustManager,
                 serverId = detail.serverId,
-                serverName = detail.name
+                serverName = detail.name,
+                requestsAllowed = {
+                    dataRepository.getEnableDataSync.first() && missionConnectionReady(detail)
+                }
             )
         }
 
@@ -2107,7 +2132,10 @@ class TAKConnectService: Service() {
         ) {
             // Run the mission loading process in the connection coroutine scope
             connectionScope.launch {
-                loadTakMissions(detail, attempt)
+                runDataSyncSession(dataRepository.getEnableDataSync,
+                    { missionConnectionReady(detail, attempt) }) {
+                    loadTakMissions(detail, attempt)
+                }
             }
         }
 
