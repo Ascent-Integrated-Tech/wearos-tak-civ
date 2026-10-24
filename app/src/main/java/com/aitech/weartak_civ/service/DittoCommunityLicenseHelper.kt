@@ -21,6 +21,7 @@ data class DittoCommunityLicense(
     val expiresAtMillis: Long,
     val identityType: String
 ) {
+    override fun toString() = "DittoCommunityLicense(redacted)"
     // Checks whether the license expiration date has already passed
     val isExpired: Boolean
         get() = expiresAtMillis > 0 &&
@@ -37,6 +38,7 @@ object DittoCommunityLicenseHelper {
         require(encodedPdl.isNotBlank()) {
             "Ditto Community license is missing"
         }
+        require(encodedPdl.length <= 16_384) { "Ditto Community license is too large" }
 
         // The license is stored as a Base64 string
         // Decode it back into compressed bytes first
@@ -58,8 +60,16 @@ object DittoCommunityLicenseHelper {
         val jsonText = try {
             InflaterInputStream(
                 ByteArrayInputStream(compressedBytes)
-            ).bufferedReader(Charsets.UTF_8).use { reader ->
-                reader.readText()
+            ).use { stream ->
+                val bytes = ByteArray(65_537)
+                var size = 0
+                while (size < bytes.size) {
+                    val read = stream.read(bytes, size, bytes.size - size)
+                    if (read < 0) break
+                    size += read
+                }
+                require(size <= 65_536) { "Ditto Community license payload is too large" }
+                String(bytes, 0, size, Charsets.UTF_8)
             }
         } catch (error: Exception) {
             // This usually means the decoded data was not compressed correctly
@@ -88,7 +98,7 @@ object DittoCommunityLicenseHelper {
 
         // This parser only knows how to handle version 2 licenses
         require(version == 2) {
-            "Unsupported Ditto Community license version: $version"
+            "Unsupported Ditto Community license version"
         }
 
         // Read the identity type from the license.
@@ -97,7 +107,7 @@ object DittoCommunityLicenseHelper {
 
         // This app expects a SharedKey license, so reject other identity types
         require(identityType == "SK") {
-            "Expected SharedKey Ditto identity but found: $identityType"
+            "Expected SharedKey Ditto identity"
         }
 
         // Pull the values we need out of the license JSON

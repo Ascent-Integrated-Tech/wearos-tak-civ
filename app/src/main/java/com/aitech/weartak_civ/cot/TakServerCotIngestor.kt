@@ -118,19 +118,26 @@ class TakServerCotIngestor(
         }
 
         if (chatCommandHandler != null && CotMessageParser.isChatMessage(rawXml)) {
-            val direct = CotMessageParser.parseChatRooms(rawXml, deviceUid(), deviceCallsign(), envelope.sourceServerId, envelope.receivedAt)
-                .filter { !it.isGroup }
-                .flatMap { it.messageList }
-                .firstOrNull { it.message.startsWith(ChatCommandParser.PREFIX, ignoreCase = true) }
-            if (direct != null) {
+            val candidate = CotMessageParser.parseChatRooms(rawXml, deviceUid(), deviceCallsign(), envelope.sourceServerId, envelope.receivedAt)
+                .asSequence()
+                .flatMap { room -> room.messageList.asSequence().map { room to it } }
+                .firstOrNull { (_, message) ->
+                    message.message.startsWith(ChatCommandParser.PREFIX, ignoreCase = true)
+                }
+            if (candidate != null) {
+                val (room, message) = candidate
                 val request = ChatCommandRequest(
-                    senderUid = direct.uid,
-                    senderCallsign = direct.callsign,
-                    text = direct.message,
-                    messageId = direct.messageId,
+                    senderUid = message.uid,
+                    senderCallsign = message.callsign,
+                    text = message.message,
+                    messageId = message.messageId,
                     sentAtMs = CotMessageParser.eventTimeOrNull(rawXml) ?: 0L,
                     receivedAtMs = envelope.receivedAt,
-                    sourceServerId = envelope.sourceServerId
+                    sourceServerId = envelope.sourceServerId,
+                    replyRoomUid = room.uid,
+                    replyRoomTitle = room.title,
+                    replyIsGroup = room.isGroup,
+                    replyParticipantUids = room.participantUids
                 )
                 if (chatCommandHandler(request)) return TakServerCotIngestResult.COMMAND
             }

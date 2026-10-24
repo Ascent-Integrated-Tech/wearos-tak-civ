@@ -694,7 +694,7 @@ class CotDispatchService : Service() {
     private fun startSendChatMessageCollector() {
         serviceScope.launch {
             dataRepository.chatRequestSend.collect { req ->
-                Log.i(TAG, "Received req to send chat message: $req")
+                Log.i(TAG, "Received request to send chat message")
                 if (hasConnectedEndpoint()) {
                     sendAllChatMessages(req)
                 } else {
@@ -737,9 +737,9 @@ class CotDispatchService : Service() {
         )
 
         if (sent) {
-            Log.i(TAG, "sendChatMessage: Sent chat message: $chatMsg")
+            Log.i(TAG, "sendChatMessage: Sent chat message")
         } else {
-            Log.i(TAG, "sendChatMessage: Could NOT send chat message: $chatMsg")
+            Log.i(TAG, "sendChatMessage: Could NOT send chat message")
         }
 
         return sent

@@ -1122,7 +1122,7 @@ Asynchronous repository failures are logged; cancellation is not treated as an e
 
 ### WEARTAK-130: chat commands
 
-Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change a few watch settings by sending a direct chat message. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. Only direct messages from allowed callsigns are acted on. Group and "All Chat Rooms" messages are ordinary chat. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
+Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change watch settings by sending chat commands. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. All commands accept direct messages, All Chat Rooms broadcasts, and groups containing the watch UID. Only messages from allowed callsigns are acted on. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
 
 TAK-server and Wi-Fi multicast receive already share the same command runtime and
 recipient checks. A server is not required for multicast commands. After a reset,
@@ -1136,7 +1136,8 @@ provisioning mode; use an appropriately scoped test network.
 
 The receiver listens on the configured group/port plus standard GeoChat
 `224.10.10.1:17012` and direct CoT `224.10.10.1:6969`. In the sender, choose the
-actual watch contact for a **direct** chat, not a group or All Chat Rooms. CoT must
+actual watch contact for a **direct** chat, a group containing the watch UID, or
+All Chat Rooms to provision multiple watches. Direct CoT must
 identify the watch as a recipient: normally `__chat.id`/`chatgrp.id` is the watch UID
 and `chatgrp.uid1` is that UID (`uid0` is the sender); `remarks.to` can name the watch
 UID/current callsign. Watch UID membership also supports direct chats without
@@ -1157,7 +1158,27 @@ Format: `#weartakcommand<name> key=value key2="value with spaces"`
 | Command | Arguments | Effect |
 | --- | --- | --- |
 | `setcallsign` | `callsign` (1-32 letters, digits, space, `.`, `_`, `-`) | Sets the callsign. Refused when settings are managed by the phone. |
+| `setpdl` | One positional argument: `community` or an encoded SharedKey v2 PDL | Validates the selected identity and expiry, atomically saves source/custom identity, then recreates Ditto with the new identity. Refused when network settings are locked or phone-managed. Does not change the Ditto enable toggle. |
 | `enrollserver` | `name`, `url` (host name or IP), `port` (default 8089) | Posts a notification on the watch. Tapping it opens the New Server screen pre-filled; the user enters the username and password there and they are stored like any other TAK server. Credentials are never accepted in chat. Refused when network settings are locked or phone-managed. |
+
+For example, `#weartakcommandsetpdl community` selects the unchanged built-in
+Community identity; `#weartakcommandsetpdl <PDL>` selects a validated Custom PDL.
+There is no key=value form or `enabled` argument. Custom PDL values may contain at most
+16,384 characters (17,408 characters for this command); other command limits stay
+unchanged. Replies contain only source, the first eight app-ID characters, UTC
+expiry: `Ditto updated: source=community app=12345678 expiry=2027-01-01T00:00:00Z`.
+`Ditto update failed` means saved settings could not be applied or the service
+failed to start, not that the previous settings were restored. Normal companion,
+permission and application-license gates still suppress sync when appropriate.
+PDLs are credentials: use a trusted encrypted direct-chat transport; the sender,
+TAK server and chat history on other clients may retain the original command.
+WearTAK does not log or echo PDL values. Invalid/expired identities change nothing.
+All commands also work in groups (with watch membership) and All Chat
+Rooms. Outcome replies go back to the originating conversation,
+including the verified original participant roster for named groups. Broadcast
+or group provisioning exposes the original PDL to every recipient; only send a
+custom identity this way when that entire audience is authorized to possess it.
+Ditto chat replay remains data-only and cannot execute this or any other command.
 
 Profile commands take the same values as the settings screens (case-insensitive) and validate everything before changing anything, so one bad value changes nothing:
 

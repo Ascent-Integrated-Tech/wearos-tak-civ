@@ -47,6 +47,17 @@ class DittoCommunityLicenseHelperTest {
         }
     }
 
+    @Test fun oversizedCompressedAndInflatedPayloadsAreRejected() {
+        assertThrows(IllegalArgumentException::class.java) {
+            DittoCommunityLicenseHelper.parse("a".repeat(16_385))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            DittoCommunityLicenseHelper.parse(encode(fixture().put("s", "a".repeat(100_000))))
+        }
+        assertEquals("DittoCommunityLicense(redacted)",
+            DittoCommunityLicenseHelper.parse(encode(fixture())).toString())
+    }
+
     @Test fun authorizedProvisioningArtifactPassesActualParserWithoutLoggingSecrets() {
         val path = System.getenv("WEARTAK_TEST_COMMUNITY_PDL_FILE")
         assumeTrue("Only runs during authorized local provisioning", !path.isNullOrBlank())

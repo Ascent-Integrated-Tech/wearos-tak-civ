@@ -8,8 +8,10 @@
  */
 package com.aitech.weartak_civ.command
 
-/** A remote command sent as a chat message: `#weartakcommand<name> key=value key2="quoted value"`. */
-data class ChatCommand(val name: String, val args: Map<String, String>)
+/** Remote chat command; setpdl takes one positional value, other commands use key=value. */
+data class ChatCommand(val name: String, val args: Map<String, String>) {
+    override fun toString() = "ChatCommand(name=$name, keys=${args.keys})"
+}
 
 sealed interface ChatCommandParse {
     object NotACommand : ChatCommandParse
@@ -22,6 +24,8 @@ object ChatCommandParser {
     const val MAX_LENGTH = 768
     const val MAX_ARGS = 12
     const val MAX_VALUE_LENGTH = 128
+    const val MAX_PDL_LENGTH = 16_384
+    const val MAX_PDL_COMMAND_LENGTH = 17_408
     private val NAME = Regex("[a-z]{1,32}")
     private val KEY = Regex("[a-z][a-z0-9]{0,15}")
 
@@ -29,11 +33,23 @@ object ChatCommandParser {
     fun parse(text: String): ChatCommandParse {
         val body = text.trim()
         if (!body.startsWith(PREFIX, ignoreCase = true)) return ChatCommandParse.NotACommand
-        if (body.length > MAX_LENGTH) return ChatCommandParse.Malformed("too long")
+        if (body.length > MAX_PDL_COMMAND_LENGTH) return ChatCommandParse.Malformed("too long")
         val rest = body.substring(PREFIX.length)
         val nameEnd = rest.indexOfFirst { it.isWhitespace() }.let { if (it < 0) rest.length else it }
         val name = rest.substring(0, nameEnd).lowercase()
         if (!NAME.matches(name)) return ChatCommandParse.Malformed("invalid command name")
+        val isPdlCommand = name == "setpdl"
+        if (body.length > if (isPdlCommand) MAX_PDL_COMMAND_LENGTH else MAX_LENGTH) {
+            return ChatCommandParse.Malformed("too long")
+        }
+        if (isPdlCommand) {
+            val value = rest.substring(nameEnd).trim()
+            if (value.isEmpty() || value.length > MAX_PDL_LENGTH || !Regex("[A-Za-z0-9_-]+={0,2}").matches(value)) {
+                return ChatCommandParse.Malformed("setpdl needs community or one encoded PDL")
+            }
+            return ChatCommandParse.Parsed(ChatCommand(name,
+                if (value == "community") mapOf("source" to value) else mapOf("pdl" to value)))
+        }
         val args = LinkedHashMap<String, String>()
         var i = nameEnd
         while (true) {

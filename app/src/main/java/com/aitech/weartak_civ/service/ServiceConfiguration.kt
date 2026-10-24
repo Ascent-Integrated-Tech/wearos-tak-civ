@@ -90,8 +90,10 @@ class ServiceConfiguration(
         }.distinctUntilChanged()
 
         // Companion stays running while reconnecting; only an active link suspends Ditto.
-        ServiceType.DITTO -> combine(dataRepository.getEnableDittoService, dataRepository.isCompanionConnected) {
-            enabled, connected -> enabled && !connected
+        ServiceType.DITTO -> combine(
+            dataRepository.getEnableDittoService, dataRepository.isCompanionConnected, DittoService.isReconfiguring
+        ) { enabled, connected, reconfiguring ->
+            enabled && !connected && !reconfiguring
         }.distinctUntilChanged()
         ServiceType.HAIL -> dataRepository.getEnableHailService.distinctUntilChanged()
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()

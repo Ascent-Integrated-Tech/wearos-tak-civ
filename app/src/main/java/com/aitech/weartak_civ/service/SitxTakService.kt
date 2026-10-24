@@ -974,7 +974,7 @@ class SitxTakService : Service() {
         if (runBlocking { dataRepo.getEnableChatService.first() }
             && CotMessageParser.isChatMessage(rawXml)
             && CotMessageParser.isChatForRecipient(rawXml, MainActivity.device_uid, MainActivity.callsign)) {
-            Log.i(TAG, "Received Chat for me:\n$rawXml")
+            Log.i(TAG, "Received addressed chat")
             EventBus.getDefault().post(TakChatEvent(rawXml))
         } else if (geofenceEnabled && isRadioSilenceRectangleGeofence(rawXml)) {
             Log.i(TAG, "Received Radio Silence Rectangle Geofence:\n$rawXml")

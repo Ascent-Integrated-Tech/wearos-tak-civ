@@ -3970,6 +3970,13 @@ class DataRepository(private val context: Context) {
         requestInteractionPliRefresh(PliRefreshReason.CHAT_SENT)
     }
 
+    suspend fun sendGroupChatReply(
+        dstUid: String, title: String, message: String, timeMillis: Long, participants: List<String>
+    ) {
+        _chatRequestSend.emit(SendChatRequest(dstUid, title, message, timeMillis, true, participants))
+        requestInteractionPliRefresh(PliRefreshReason.CHAT_SENT)
+    }
+
     fun requestInteractionPliRefresh(reason: PliRefreshReason) {
         EventBus.getDefault().post(InteractionPliRefresh(reason))
     }
@@ -4555,6 +4562,18 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    fun communityDittoPdl(): String = DEFAULT_COMMUNITY_PDL
+
+    suspend fun storeDittoCommandSettings(
+        source: DittoPdlSource,
+        customPdl: String?
+    ) {
+        context.dataStore.edit { preferences ->
+            preferences[DITTO_PDL_SOURCE] = source.name
+            if (customPdl != null) preferences[DITTO_CUSTOM_PDL] = customPdl
+        }
+    }
+
     // Loads the selected PDL option
     val getDittoPdlSource: Flow<DittoPdlSource> =
         context.dataStore.data.map { preferences ->
@@ -4574,16 +4593,11 @@ class DataRepository(private val context: Context) {
 
     // Returns the PDL Ditto should use
     val getEffectiveDittoPdl: Flow<String> =
-        combine(
-            getDittoPdlSource,
-            getDittoCustomPdl
-        ) { source, customPdl ->
+        context.dataStore.data.map { preferences ->
+            val source = preferences[DITTO_PDL_SOURCE]
             when (source) {
-                DittoPdlSource.COMMUNITY ->
-                    DEFAULT_COMMUNITY_PDL
-
-                DittoPdlSource.CUSTOM ->
-                    customPdl
+                DittoPdlSource.CUSTOM.name -> preferences[DITTO_CUSTOM_PDL] ?: ""
+                else -> DEFAULT_COMMUNITY_PDL
             }
         }
     val getEnableBleBeaconService: Flow<Boolean> = context.dataStore.data.map { prefs ->
