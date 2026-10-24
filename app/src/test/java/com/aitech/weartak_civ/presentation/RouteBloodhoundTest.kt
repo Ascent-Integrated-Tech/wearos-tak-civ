@@ -124,7 +124,7 @@ class RouteBloodhoundTest {
             BloodhoundPickerList(emptyList(), listOf(route), null, {}, {}, Modifier.fillMaxSize(), session,
                 onChooseRoute = { chosen++ }, onStopRoute = { stopped++ })
         }
-        compose.onNodeWithText("Pt 1 of 2469 · 1.4 km left").assertExists()
+        compose.onNodeWithText("Pt 1 of 2469 · 1400 m left").assertExists()
         compose.onNodeWithContentDescription("Stop Bloodhound to testroute01").assertExists()
         compose.onNodeWithTag("bloodhound-route-stop-icon", useUnmergedTree = true).assertExists()
         compose.onNodeWithTag("bloodhound-route-hound").performClick()

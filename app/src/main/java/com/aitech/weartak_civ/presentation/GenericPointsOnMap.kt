@@ -81,13 +81,14 @@ internal fun GenericPointsOnMap(
     groups.forEach { (affiliation, points) ->
         androidx.compose.runtime.key(collection, affiliation) {
             val features = remember(points) {
-                FeatureCollection(points.map {
-                    Feature(Point(Position(requireNotNull(it.lon), requireNotNull(it.lat))), JsonObject(mapOf(
+                FeatureCollection(points.mapNotNull {
+                    val position = validMapPositionOrNull(it.lat, it.lon) ?: return@mapNotNull null
+                    Feature(Point(position), JsonObject(mapOf(
                         "id" to JsonPrimitive(it.uid), "title" to JsonPrimitive(it.title)
                     )))
                 })
             }
-            val source = rememberGeoJsonSource(data = GeoJsonData.Features(features))
+            val source = rememberGeoJsonSource(data = features.toSafeGeoJsonData())
             val id = "generic-${collection.name}-${affiliation.name}"
             val color = Color(affiliation.argb)
             CircleLayer(
@@ -109,10 +110,11 @@ internal fun GenericPointsOnMap(
             )
             val circles = remember(points) {
                 FeatureCollection(points.mapNotNull { point ->
-                    point.circleRadiusMeters?.let { radius ->
+                    val center = validMapPositionOrNull(point.lat, point.lon) ?: return@mapNotNull null
+                    point.circleRadiusMeters?.takeIf { it.isFinite() && it > 0 && it <= 100_000 }?.let { radius ->
                         Feature(
                             MultiLineString(circleSegments(circleOutline(
-                                requireNotNull(point.lat), requireNotNull(point.lon), radius
+                                center.latitude, center.longitude, radius
                             ))),
                             JsonObject(emptyMap())
                         )
@@ -120,7 +122,7 @@ internal fun GenericPointsOnMap(
                 })
             }
             if (circles.features.isNotEmpty()) {
-                val outlineSource = rememberGeoJsonSource(data = GeoJsonData.Features(circles))
+                val outlineSource = rememberGeoJsonSource(data = circles.toSafeGeoJsonData())
                 LineLayer(id = "$id-circles", source = outlineSource, color = const(color), width = const(2.dp))
             }
         }

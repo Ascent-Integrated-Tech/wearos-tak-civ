@@ -71,6 +71,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.complication.SosComplicationService
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.CAT_MANUAL_ALERT
 import com.aitech.weartak_civ.DESC_SOS_ALERT
 import com.aitech.weartak_civ.cot.ManualAlertTypes
@@ -161,7 +162,14 @@ companion object Constants{
     fun PreviewAlertTypeScreen() {
         WearTAKCIVTheme {
             Surface {
-                TextSelectionScreen(rememberSwipeDismissableNavController(), manualAlertOptions, manualAlertType, "Manual Alert",{}, {})
+                ManualAlertListScreen(
+                    builtInAlerts = ManualAlertTypes.options.map { it.displayName },
+                    savedAlerts = emptyList(),
+                    onAlertSelected = {},
+                    onAddAlert = { true },
+                    onDeleteAlert = {},
+                    onCancel = {},
+                )
             }
         }
     }
@@ -395,6 +403,10 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
     val location = dataRepository.latestLocation.value
     var locationEnabled by remember { mutableStateOf(enableLocationService) }
     val navController = rememberSwipeDismissableNavController()
+    val savedAlertsStore = remember(context.applicationContext) {
+        (context.applicationContext as WearTakApplication).savedCustomAlerts
+    }
+    val savedAlerts by savedAlertsStore.alerts.collectAsStateWithLifecycle(initialValue = emptyList())
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
     LaunchedEffect(locationEnabled, anyEndpointConnected) {
         successBoolean.value = locationEnabled && anyEndpointConnected
@@ -437,19 +449,16 @@ fun SosCivApp(exitActivity: () -> Unit, context: Context) {
         }
     }
     if (isAlertingLiveData.value == false) {
-                TextSelectionScreen(
-                    navController,
-                    manualAlertOptions,
-                    manualAlertType,
-                    "Manual Alert",
-                    {
-                        sendManualAlert(manualAlertType.value.orEmpty())
-                    },
-                    {
+                ManualAlertListScreen(
+                    builtInAlerts = manualAlertOptions.map { it.longText },
+                    savedAlerts = savedAlerts,
+                    onAlertSelected = sendManualAlert,
+                    onAddAlert = savedAlertsStore::add,
+                    onDeleteAlert = savedAlertsStore::remove,
+                    onCancel = {
                         manualAlertType.value = ""
                         exitActivity()
                     },
-                    onOptionSelected = sendManualAlert
                 )
             } else {
                 shouldShowConfirm.value = true

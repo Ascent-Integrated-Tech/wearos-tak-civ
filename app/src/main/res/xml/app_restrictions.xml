@@ -158,6 +158,14 @@
         android:entries="@array/bloodhound_proximity_intensity_entries"
         android:entryValues="@array/bloodhound_proximity_intensity_entry_values"
         android:defaultValue="@string/bloodhound_proximity_intensity_default" />
+    <restriction
+        android:key="rab_rng_units_pref"
+        android:restrictionType="choice"
+        android:title="@string/rab_rng_units_title"
+        android:description="@string/rab_rng_units_description"
+        android:entries="@array/rab_rng_units_entries"
+        android:entryValues="@array/rab_rng_units_entry_values"
+        android:defaultValue="@string/rab_rng_units_default" />
 
     <restriction
         android:key="chat_service_enabled"

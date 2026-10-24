@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="manual_alert_add_hint">Benutzerdefinierten Alarm eingeben</string>
     <string name="hello_world">Von WearTAK-CIV, Hallo, %1$s</string>
     <string name="callsign_settings">Einstellungen für das Rufzeichen</string>
     <string name="team">Team</string>

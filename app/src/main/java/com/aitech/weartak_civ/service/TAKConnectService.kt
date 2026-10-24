@@ -164,6 +164,7 @@ class TAKConnectService: Service() {
         val sessionId: String = java.util.UUID.randomUUID().toString()
         var job: Job? = null
         var socket: SSLSocket? = null
+        var connectedAtMs: Long = 0L
     }
 
     class ConnectionRuntime {
@@ -174,6 +175,7 @@ class TAKConnectService: Service() {
         var connectJob: Job? = null
         var readerJob: Job? = null
         var terminated: Boolean = false
+        var shortSessionStreak: Int = 0
     }
 
     data class NameValueEntry(
@@ -3314,6 +3316,7 @@ class TAKConnectService: Service() {
                         takServerDetail.runtime.connectingSocket = null
                         takServerDetail.secureSocket = socket
                         attempt.socket = socket
+                        attempt.connectedAtMs = System.currentTimeMillis()
                     }
                     takServerDetail.channelSslContext = sslContext
                     takServerDetail.channelTrustManager = trustManager
@@ -3437,6 +3440,8 @@ class TAKConnectService: Service() {
         ) {
             Log.e(TAG, "Error sending COT message to server(${detail.address}): ${error.message}", error)
             var shouldReconnect = false
+            var reconnectDelayMs = 0L
+            var generation = 0L
             synchronized(detail.runtime.lock) {
                 if (detail.runtime.currentAttempt === attempt &&
                     detail.runtime.generation == attempt.generation &&
@@ -3445,10 +3450,46 @@ class TAKConnectService: Service() {
                     detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                     detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
                     shouldReconnect = !serviceStopping && detail.isEnabled && isNetworkConnected
+                    if (shouldReconnect) {
+                        reconnectDelayMs = recordSessionEnd(detail, attempt)
+                        generation = detail.runtime.generation
+                    }
                 }
             }
             runCatching { socket.close() }
-            if (shouldReconnect) getClientCertificateAndConnect(detail)
+            if (shouldReconnect) scheduleReconnect(detail, reconnectDelayMs, generation)
+        }
+
+        /** Must be called with [TakServerDetail.runtime] lock held. */
+        private fun recordSessionEnd(detail: TakServerDetail, attempt: ConnectionAttempt): Long {
+            val sessionMs = if (attempt.connectedAtMs > 0) {
+                System.currentTimeMillis() - attempt.connectedAtMs
+            } else 0L
+            detail.runtime.shortSessionStreak =
+                TakReconnectBackoff.nextStreak(sessionMs, detail.runtime.shortSessionStreak)
+            val delayMs = TakReconnectBackoff.delayMs(detail.runtime.shortSessionStreak)
+            Log.i(TAG, "TAK session ended serverId=${detail.serverId} sessionMs=$sessionMs " +
+                "shortStreak=${detail.runtime.shortSessionStreak} reconnectDelayMs=$delayMs")
+            return delayMs
+        }
+
+        private fun scheduleReconnect(detail: TakServerDetail, delayMs: Long, generation: Long) {
+            if (delayMs <= 0L) {
+                getClientCertificateAndConnect(detail)
+                return
+            }
+            connectionScope.launch {
+                delay(delayMs)
+                val stillIdle = synchronized(detail.runtime.lock) {
+                    // Any invalidate or new attempt (e.g. network change) owns reconnection now.
+                    detail.runtime.generation == generation && !detail.runtime.terminated &&
+                        detail.secureSocket == null &&
+                        !isConnectionActiveStatus(detail.connectionStatus.get())
+                }
+                if (stillIdle && !serviceStopping && detail.isEnabled && isNetworkConnected) {
+                    getClientCertificateAndConnect(detail)
+                }
+            }
         }
 
         private fun startCotReader(
@@ -3521,6 +3562,8 @@ class TAKConnectService: Service() {
                     keepaliveJob?.cancel()
                     runCatching { socket.close() }
                     var shouldReconnect = false
+                    var reconnectDelayMs = 0L
+                    var generation = 0L
                     synchronized(takServerDetail.runtime.lock) {
                         if (takServerDetail.runtime.currentAttempt === attempt &&
                             takServerDetail.runtime.generation == attempt.generation &&
@@ -3533,12 +3576,14 @@ class TAKConnectService: Service() {
                             takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
                             takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
                             shouldReconnect = true
+                            reconnectDelayMs = recordSessionEnd(takServerDetail, attempt)
+                            generation = takServerDetail.runtime.generation
                         }
                         if (takServerDetail.runtime.currentAttempt === attempt) {
                             takServerDetail.runtime.readerJob = null
                         }
                     }
-                    if (shouldReconnect) getClientCertificateAndConnect(takServerDetail)
+                    if (shouldReconnect) scheduleReconnect(takServerDetail, reconnectDelayMs, generation)
                 }
             }
             synchronized(takServerDetail.runtime.lock) {

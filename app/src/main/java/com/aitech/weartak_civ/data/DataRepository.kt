@@ -1578,6 +1578,26 @@ class DataRepository(private val context: Context) {
         }
     }
 
+    /** Display units, stored under ATAK's Range Units key (`rab_rng_units_pref`) and values. */
+    val unitPrefs: Flow<com.aitech.weartak_civ.ui.formatter.UnitPrefs> = context.dataStore.data.map { prefs ->
+        com.aitech.weartak_civ.ui.formatter.UnitPrefs.fromStored(prefs[UNIT_RANGE_UNITS])
+    }.distinctUntilChanged()
+
+    /**
+     * Applies ATAK unit preference updates. Only `rab_rng_units_pref` is used; other keys are
+     * ignored. An invalid range value throws and nothing is stored.
+     */
+    suspend fun storeUnitPrefs(updates: Map<String, Any?>): com.aitech.weartak_civ.ui.formatter.UnitPrefs {
+        lateinit var result: com.aitech.weartak_civ.ui.formatter.UnitPrefs
+        context.dataStore.edit { prefs ->
+            val current = com.aitech.weartak_civ.ui.formatter.UnitPrefs.fromStored(prefs[UNIT_RANGE_UNITS])
+            result = current.withUpdates(updates)
+            prefs[UNIT_RANGE_UNITS] = result.rangeUnits.toString()
+        }
+        com.aitech.weartak_civ.ui.formatter.UnitPrefsState.update(result)
+        return result
+    }
+
     val getBloodhoundProximityIntensity: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[BLOODHOUND_PROXIMITY_INTENSITY] ?: DEFAULT_BLOODHOUND_PROXIMITY_INTENSITY
     }
@@ -5517,6 +5537,7 @@ class DataRepository(private val context: Context) {
         private val ENABLE_BLOODHOUND_COMPASS_SERVICE = booleanPreferencesKey("enable_bloodhound_compass_service")
         private val ENABLE_BLOODHOUND_PROXIMITY_VIBRATION = booleanPreferencesKey("enable_bloodhound_proximity_vibration")
         private val BLOODHOUND_PROXIMITY_RADIUS_METERS = intPreferencesKey("bloodhound_proximity_radius_meters")
+        private val UNIT_RANGE_UNITS = stringPreferencesKey(com.aitech.weartak_civ.ui.formatter.UnitPrefs.KEY_RANGE_UNITS)
         private val BLOODHOUND_PROXIMITY_INTENSITY = stringPreferencesKey("bloodhound_proximity_intensity")
         private val LOCATION_UPDATE_INTERVAL = intPreferencesKey("location_update_interval")
         private val BIOMETRICS_SEND_INTERVAL = intPreferencesKey("biometrics_send_interval")

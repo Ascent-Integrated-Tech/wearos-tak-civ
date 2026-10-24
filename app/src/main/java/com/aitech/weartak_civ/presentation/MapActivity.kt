@@ -372,9 +372,10 @@ private fun EmergencyAlertsOnMap(
     if (alerts.isEmpty()) return
     val staleLabel = stringResource(R.string.remote_emergency_stale)
     val features = remember(alerts, staleLabel) {
-        FeatureCollection(alerts.map { alert ->
+        FeatureCollection(alerts.mapNotNull { alert ->
+            val position = validMapPositionOrNull(alert.point.lat, alert.point.lon) ?: return@mapNotNull null
             Feature(
-                geometry = Point(Position(alert.point.lon, alert.point.lat)),
+                geometry = Point(position),
                 properties = JsonObject(mapOf(
                     "uid" to JsonPrimitive(alert.uid),
                     "label" to JsonPrimitive(
@@ -385,7 +386,7 @@ private fun EmergencyAlertsOnMap(
             )
         })
     }
-    val source = rememberGeoJsonSource(data = GeoJsonData.Features(features))
+    val source = rememberGeoJsonSource(data = features.toSafeGeoJsonData())
     SymbolLayer(
         id = "remote-emergency-alerts",
         source = source,
@@ -414,9 +415,10 @@ private fun EmergencyAlertsOnMap(
 fun rememberMarkerFeatures(markers: List<MapMarkerItem>) =
     remember(markers) {
         FeatureCollection(
-            features = markers.map { m ->
+            features = markers.mapNotNull { m ->
+                val position = validMapPositionOrNull(m.lat, m.lon) ?: return@mapNotNull null
                 Feature(
-                    geometry = Point(coordinates = Position(m.lon ?: 0.0, m.lat ?: 0.0)),
+                    geometry = Point(coordinates = position),
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
@@ -480,7 +482,7 @@ internal fun MarkersOnMap(
     }.groupBy { it.markerType } }
 
     val source = rememberGeoJsonSource(
-        data = GeoJsonData.Features(fc)
+        data = fc.toSafeGeoJsonData()
     )
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
@@ -546,9 +548,10 @@ internal fun MarkersOnMap(
 fun rememberATOSFeatures(markers: List<ATOSItem>) =
     remember(markers) {
         FeatureCollection(
-            features = markers.map { m ->
+            features = markers.mapNotNull { m ->
+                val position = validMapPositionOrNull(m.lat, m.lon) ?: return@mapNotNull null
                 Feature(
-                    geometry = Point(coordinates = Position(m.lon ?: 0.0, m.lat ?: 0.0)),
+                    geometry = Point(coordinates = position),
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
@@ -594,7 +597,7 @@ fun ATOSTagsOnMap(
         }
     }
     val source = rememberGeoJsonSource(
-        data = GeoJsonData.Features(fc)
+        data = fc.toSafeGeoJsonData()
     )
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
@@ -692,9 +695,10 @@ fun tintedPainter(@DrawableRes id: Int, color: Color): Painter {
 fun rememberOtherUsersFeatures(users: List<MapUserItem>) =
     remember(users) {
         FeatureCollection(
-            features = users.map { m ->
+            features = users.mapNotNull { m ->
+                val position = validMapPositionOrNull(m.lat, m.lon) ?: return@mapNotNull null
                 Feature(
-                    geometry = Point(coordinates = Position(m.lon ?: 0.0, m.lat ?: 0.0)),
+                    geometry = Point(coordinates = position),
                     properties = JsonObject(
                         mapOf(
                             "id" to JsonPrimitive(m.uid),
@@ -745,7 +749,7 @@ fun UsersOnMap(
     }
     GenericPointsOnMap(genericUsers, MarkerLayerCollection.USERS, camera, onUserClick)
     val source = rememberGeoJsonSource(
-        data = GeoJsonData.Features(fc)
+        data = fc.toSafeGeoJsonData()
     )
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
 
@@ -839,21 +843,15 @@ fun rememberBhoundMapItem(
     userLat: Double?,
     userLon: Double?,
 ) = remember(bloodhound, userLat, userLon) {
-    if (
-        bloodhound.lat == null ||
-        bloodhound.lon == null ||
-        userLat == null ||
-        userLon == null
-    ) {
+    val user = validMapPositionOrNull(userLat, userLon)
+    val target = validMapPositionOrNull(bloodhound.lat, bloodhound.lon)
+    if (user == null || target == null) {
         FeatureCollection(emptyList())
     } else {
         FeatureCollection(
             Feature(
                 geometry = LineString(
-                    coordinates = listOf(
-                        Position(userLon, userLat),
-                        Position(bloodhound.lon, bloodhound.lat)
-                    )
+                    coordinates = listOf(user, target)
                 ),
                 properties = JsonObject(
                     mapOf(
@@ -873,24 +871,22 @@ fun rememberBhoundLabelItem(
     bloodhound: MapBhoundItem,
     userLat: Double?,
     userLon: Double?,
-) = remember(bloodhound, userLat, userLon) {
-    if (
-        bloodhound.lat == null ||
-        bloodhound.lon == null ||
-        userLat == null ||
-        userLon == null
-    ) {
+    unitPrefs: com.aitech.weartak_civ.ui.formatter.UnitPrefs = currentUnitPrefs(),
+) = remember(bloodhound, userLat, userLon, unitPrefs) {
+    val user = validMapPositionOrNull(userLat, userLon)
+    val target = validMapPositionOrNull(bloodhound.lat, bloodhound.lon)
+    if (user == null || target == null) {
         FeatureCollection(emptyList())
     } else {
-        val midLat = (userLat + bloodhound.lat) / 2.0
-        val midLon = (userLon + bloodhound.lon) / 2.0
+        val midLat = (user.latitude + target.latitude) / 2.0
+        val midLon = (user.longitude + target.longitude) / 2.0
 
         val distanceText = bloodhound.distance
-            ?.let { "%.2f km".format(it) }
+            ?.let { com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(it, unitPrefs) }
             ?: ""
 
         val orientationText = bloodhound.orientation
-            ?.let { "${it.toInt()}°M" }
+            ?.let { com.aitech.weartak_civ.ui.formatter.UnitFormatter.trueBearing(it) }
             ?: ""
         val orientationFloat = bloodhound.orientation?.toFloat()
 
@@ -933,10 +929,10 @@ fun BhoundMap(
     )
 
     val source = rememberGeoJsonSource(
-        data = GeoJsonData.Features(fc)
+        data = fc.toSafeGeoJsonData()
     )
     val labelSource = rememberGeoJsonSource(
-        data = GeoJsonData.Features(labelFc)
+        data = labelFc.toSafeGeoJsonData()
     )
 
     LineLayer(
@@ -991,11 +987,7 @@ fun RouteCollection.toLineString(): LineString? {
             val lat = point.lat
             val lon = point.lon
 
-            if (lat != null && lon != null) {
-                Position(lon, lat) // longitude FIRST
-            } else {
-                null
-            }
+            validMapPositionOrNull(lat, lon)
         }
 
     return if (positions.size >= 2) {
@@ -1069,7 +1061,7 @@ fun RoutesLayer(
         routes.toFeatureCollection()
     }
     val source = rememberGeoJsonSource(
-        data = GeoJsonData.Features(featureCollection)
+        data = featureCollection.toSafeGeoJsonData()
     )
 
     val pointFeatures = remember(routes) {
@@ -1082,7 +1074,7 @@ fun RoutesLayer(
     }
 
     val pointSource = rememberGeoJsonSource(
-        data = GeoJsonData.Features(pointFeatureCollection)
+        data = pointFeatureCollection.toSafeGeoJsonData()
     )
 
     val c = remember { collator(caseSensitive = true, diacriticSensitive = true, locale = "en") }
@@ -2501,7 +2493,9 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
             }
         ) {
             // Displays the location puck when a location is available
-            if (locationProvider.location.collectAsState().value != null) {
+            // Guard on the same state LocationPuck reads: it builds an empty FeatureCollection
+            // for a null location, which crashes GeoJSON serialization (no/invalid GPS indoors).
+            if (userLocationState.location != null) {
                 LocationPuck(
                     idPrefix = "me",
                     locationState = userLocationState,
@@ -3401,29 +3395,6 @@ private fun MapControlsOverlay(
                     fontWeight = FontWeight.Light
                 )
             }
-            val metersPerDp = cameraState.metersPerDpAtTarget
-            val zoom = cameraState.position.zoom
-
-            LaunchedEffect(metersPerDp, zoom) {
-                val fiftyMeterWidthDp = 50.0 / metersPerDp
-                val twoHundredFeetInMeters = 200.0 / METERS_TO_FEET
-                val twoHundredFeetWidthDp =
-                    twoHundredFeetInMeters / metersPerDp
-/*
-                Log.d(
-                    TAG,
-                    """
-        Scale verification:
-        zoom=$zoom
-        metersPerDp=$metersPerDp
-        50m width=${fiftyMeterWidthDp}dp
-        200ft meters=${twoHundredFeetInMeters}m
-        200ft width=${twoHundredFeetWidthDp}dp
-        """.trimIndent()
-                )
-                /
- */
-            }
             DynamicScaleBar(
                 metersPerDp = cameraState.metersPerDpAtTarget,
                 useDefaultDistances =
@@ -3570,35 +3541,44 @@ private fun DynamicScaleBar(
 ) {
     if (!metersPerDp.isFinite() || metersPerDp <= 0.0) return
 
+    val unitPrefs = currentUnitPrefs()
     BoxWithConstraints(modifier = modifier) {
         val maxDistanceMeters = metersPerDp * maxWidth.value
+        val (label, distanceMeters) = scaleBarFor(maxDistanceMeters, useDefaultDistances, unitPrefs)
+        ScaleLine(
+            label = label,
+            distanceMeters = distanceMeters,
+            metersPerDp = metersPerDp
+        )
+    }
+}
 
-        val meters = if (useDefaultDistances) {
-            50.0
-        } else {
-            niceScaleDistance(maxDistanceMeters)
+/** Picks a round scale length in the user's range units; returns its label and length in meters. */
+internal fun scaleBarFor(
+    maxDistanceMeters: Double,
+    useDefaultDistances: Boolean,
+    prefs: com.aitech.weartak_civ.ui.formatter.UnitPrefs,
+): Pair<String, Double> {
+    val units = com.aitech.weartak_civ.ui.formatter.UnitFormatter
+    return when {
+        prefs.isImperial -> {
+            val maxFeet = maxDistanceMeters / units.METERS_PER_FOOT
+            when {
+                useDefaultDistances -> "200 ft" to 200 * units.METERS_PER_FOOT
+                maxFeet >= 5280.0 -> {
+                    val miles = niceScaleDistance(maxDistanceMeters / units.METERS_PER_MILE)
+                    "${formatScaleDistance(miles)} mi" to miles * units.METERS_PER_MILE
+                }
+                else -> {
+                    val feet = niceScaleDistance(maxFeet)
+                    "${formatScaleDistance(feet)} ft" to feet * units.METERS_PER_FOOT
+                }
+            }
         }
-
-        val feet = if (useDefaultDistances) {
-            200.0
-        } else {
-            niceScaleDistance(
-                maxDistanceMeters * METERS_TO_FEET
-            )
-        }
-
-        Column {
-            ScaleLine(
-                label = "${formatScaleDistance(feet)} ft",
-                distanceMeters = feet / METERS_TO_FEET,
-                metersPerDp = metersPerDp
-            )
-
-            ScaleLine(
-                label = "${formatScaleDistance(meters)} m",
-                distanceMeters = meters,
-                metersPerDp = metersPerDp
-            )
+        else -> {
+            val meters = if (useDefaultDistances) 50.0 else niceScaleDistance(maxDistanceMeters)
+            if (meters >= 1000.0) "${formatScaleDistance(meters / 1000.0)} km" to meters
+            else "${formatScaleDistance(meters)} m" to meters
         }
     }
 }
@@ -3699,11 +3679,10 @@ private fun formatScaleDistance(
     return if (distance >= 1.0) {
         distance.roundToInt().toString()
     } else {
-        "%.1f".format(distance)
+        java.math.BigDecimal(distance).round(java.math.MathContext(2)).stripTrailingZeros().toPlainString()
     }
 }
 
-private const val METERS_TO_FEET = 3.280839895
 
 
 

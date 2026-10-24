@@ -1,4 +1,5 @@
 <resources>
+    <string name="manual_alert_add_hint">Type Custom Alert</string>
     <string name="route_package_imported">Imported %1$d route(s). Open the map to view.</string>
     <string name="route_package_failed">Route package import failed. Check the server connection and package, then resend.</string>
     <string name="multicast_receive_failed">Multicast receive unavailable. Check Wi-Fi and multicast settings.</string>
@@ -649,6 +650,12 @@
     <string name="npos">nPos</string>
     <string name="m">m</string>
     <string name="km">km</string>
+    <string name="display_preferences">Display Preferences</string>
+    <string name="units">Units</string>
+    <string name="units_metric">Metric</string>
+    <string name="units_metric_desc">Meters/Kilometers</string>
+    <string name="units_imperial">Imperial</string>
+    <string name="units_imperial_desc">Feet/Miles</string>
     <string name="bloodhounding">Bloodhounding</string>
     <string name="not_bloodhounding">Not Bloodhounding</string>
     <string name="sent">"Sent: "</string>
@@ -689,6 +696,9 @@
     <string name="bloodhound_proximity_intensity_title" translatable="false">Bloodhound Proximity Intensity</string>
     <string name="bloodhound_proximity_intensity_description" translatable="false">Controls how aggressively the watch vibrates when the active bloodhound target enters range</string>
     <string name="bloodhound_proximity_intensity_default" translatable="false">basic</string>
+    <string name="rab_rng_units_title" translatable="false">Units</string>
+    <string name="rab_rng_units_description" translatable="false">Display units for distances (ATAK rab_rng_units_pref): 1 = Metric (Meters/Kilometers), 0 = Imperial (Feet/Miles). ATAK Nautical (2) is shown as Imperial.</string>
+    <string name="rab_rng_units_default" translatable="false">1</string>
     <string name="enable_battery_alerts" translatable="false">Enable Battery Alerts</string>
     <string name="enable_battery_alerts_desc" translatable="false">Enables wearTAK to send battery alerts via chat</string>
     <string name="enable_battery_alerts_default" translatable="false">false</string>

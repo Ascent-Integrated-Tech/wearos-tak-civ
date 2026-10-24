@@ -94,7 +94,6 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.BloodhoundActivity.Constants.TAG
 import com.aitech.weartak_civ.presentation.ChatActivity.Companion.EXTRA_OPEN_ROOM_UID
 import com.aitech.weartak_civ.presentation.viewmodel.WearTAKSettingsViewModel
-import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -480,12 +479,9 @@ fun BloodhoundChip(
     isStale: Boolean = false,
     onClick: () -> Unit
 ) {
-    val distanceText = DistanceFormatter
-        .format(distance)
-        .text(
-            metersLabel = stringResource(R.string.m),
-            kilometersLabel = stringResource(R.string.km)
-        )
+    val distanceText = com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(
+        distance, currentUnitPrefs(), separator = ""
+    )
     val gradientColors = listOf(
         colors.surface
             .copy(alpha = 0f)
@@ -773,12 +769,9 @@ fun DetailedBloodhoundInfo(
     orientation: Float,
     showDirection: Boolean = true
 ) {
-    val distanceText = DistanceFormatter
-        .format(distance)
-        .text(
-            metersLabel = stringResource(R.string.m),
-            kilometersLabel = stringResource(R.string.km)
-        )
+    val distanceText = com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(
+        distance, currentUnitPrefs(), separator = ""
+    )
     Row(
         verticalAlignment = Alignment.CenterVertically
     ){

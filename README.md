@@ -833,13 +833,16 @@ the queued activation and sends a cancellation chat rather than replaying a canc
 alert later. GeoChat's standard non-positional point placeholder is not an emergency
 map location. SMS behavior remains independent.
 
-While an alert is active, new location fixes send same-UID emergency position updates;
-cleared alerts stop updating. A bounded in-memory receipt cache (1,024 uid/state/route
-entries) suppresses repeated submissions with the same fix to each configured route,
-including Companion/Gateway. A new fix, cancellation, or previously unused route is not
-suppressed. Receipts record local transport acceptance, not remote-server acknowledgement.
-Independent routes can still converge on the same downstream server; no watch-side
-dedupe can identify that topology. There is no special repeated-send loop for 911.
+Each alert activation and each cancellation is delivered once per route. Later location
+fixes do not resend an active alert (receivers such as TAK Server bridges treat every copy
+as a new notification); the user's position keeps updating through PLI. A bounded
+in-memory receipt cache (1,024 uid/state/route entries) suppresses repeated submissions to
+each configured route, including Companion/Gateway, while still sending the positional
+alert once GPS arrives after a no-fix GeoChat, a cancellation, or a route that had not yet
+accepted the alert. Receipts record local transport acceptance, not
+remote-server acknowledgement. Independent routes can still converge on the same
+downstream server; no watch-side dedupe can identify that topology. There is no special
+repeated-send loop for 911.
 
 Configure the TAK endpoint and identity/certificates in the app before attempting to connect. Service enablement is persisted in `DataRepository` and centrally evaluated by `ReactiveServiceManager` and `ServiceConfiguration`; a service will run only when its setting, permissions, and prerequisite conditions are satisfied.
 
@@ -1173,6 +1176,12 @@ entry page with an error. Cancel/back does not save.
 
 The profile is validated and applied, then each server is added through the normal add-server path (servers already present are skipped). Names are lowercase letters, digits and `-`. The reply says only how many servers were added. Refused when network settings are locked.
 
+Presets may also carry `"unitPrefs": {"rab_rng_units_pref": "0"}` (display units, see
+**Display units** below) and `"customAlerts": ["Pick me up", "Help"]` (saved Manual Alert
+labels, merged into the watch's list; duplicates and built-in names are skipped, at most 20
+labels of up to 60 characters). An invalid value in either field rejects the whole preset
+before anything is applied.
+
 **Settings > Tool Preferences > Plugins > Commands > Profiles** lists saved preset
 files and opens a read-only view of their profile fields and server names, hosts,
 and ports. Passwords, usernames, and unknown fields are omitted; opening a profile
@@ -1313,9 +1322,38 @@ map to `b-a-o-tbl`, `b-a-o-pan`, `b-a-g`, and `b-a-o-opn`, respectively, so stan
 alerts can be sent and received without changing custom alert behavior. This feature builds
 on the remote-emergency reception and display work pending in gov MR!327.
 
-Selecting a preset manual alert sends that exact alert immediately, without a separate
-Send tap. Custom text still uses Send. Alerts without an available route continue to use
-the existing pending-alert queue.
+Manual alerts appear in a scrollable, single-column list with one-line labels. Tap a
+built-in or saved alert to send it immediately. The `+` row opens **Type Custom Alert**;
+saving adds that alert to the list for future use. Hold a saved custom alert to open its
+delete confirmation. Alerts without an available route continue to use the existing
+pending-alert queue.
+
+Alert kinds: the four ATAK standard types above use their own CoT types; every other built-in
+(Gate Runner, Gunshot, Gunshot Injury, Injury, UAS, Vehicle) and every typed or saved custom
+alert is sent as `b-a-o` (shown by TAK Server as kind `sos`), with `alertCategory` "Manual
+Alert" and `alertPriority` 1. Cancels are `b-a-o-can` for every kind, reusing the alert UID.
+Each alert UID is delivered once per route and state, even when later GPS fixes arrive.
+
+### Display units
+
+**Settings > Tool Preferences > Display Preferences > Units** selects **Metric**
+(Meters/Kilometers, default) or **Imperial** (Feet/Miles), the labels ATAK uses for its Range
+Units. It applies to Contacts and marker distances, Bloodhound distances and the radius
+picker, routes, the Bloodhound complication and the map scale bar. Values are stored in
+meters; the setting only changes display. Metric shows `m` below 2000 m and `km` above; Imperial
+shows `ft` below 5280 ft and `mi` above (ATAK's default `rng_meters_display_pref` and
+`rng_feet_display_pref` thresholds). Bearings are labelled true (`?T`).
+
+The value is stored under ATAK's key `rab_rng_units_pref`: `"1"` Metric, `"0"` Imperial.
+ATAK's `"2"` (Nautical Miles) is shown as Imperial. It can be set from presets (`unitPrefs`),
+managed configuration (`rab_rng_units_pref` restriction), and the bonded Companion app: a full
+`set_settings` may include `payload.unitPrefs`, and a live
+`{"msg_type":"unit_prefs","payload":{...}}` message (also `msgType`) applies a change and is
+answered with `unit_prefs_ack` (`ok`, `error`). Companion sends ATAK's seven Unit Display
+Format keys as strings; the watch reads only `rab_rng_units_pref` and ignores the rest. The
+settings snapshot echoes `unitPrefs: {"rab_rng_units_pref": "0"|"1"}`. Live changes are
+accepted only from the current single-watch bond, not from gateway sessions; the last writer
+wins.
 
 Chat presets in the reply picker submit the selected text immediately to that conversation.
 Typed chat text still uses the existing compose-and-Send flow. The picker keeps the

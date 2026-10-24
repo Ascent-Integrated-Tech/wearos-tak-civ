@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="manual_alert_add_hint">Escribe una alerta personalizada</string>
     <string name="hello_world">Desde WearTAK-CIV, Hola, %1$s</string>
     <string name="callsign_settings">Configuración del identificador de llamadas</string>
     <string name="team">Equipo</string>

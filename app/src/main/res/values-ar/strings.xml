@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="manual_alert_add_hint">اكتب تنبيهًا مخصصًا</string>
     <string name="hello_world">من تطبيق WearTAK-CIV، مرحبًا، %1$s</string>
     <string name="callsign_settings">إعدادات إشارة النداء</string>
     <string name="team">الفريق</string>

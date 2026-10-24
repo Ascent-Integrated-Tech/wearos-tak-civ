@@ -464,12 +464,17 @@ class CompanionAppRepository(private val context: Context) {
         val team: String? = null,
         val role: String? = null,
         val phoneManagedSettings: Boolean = false,
+        /** ATAK Unit Display Format prefs; only `rab_rng_units_pref` is used. Absent = unchanged. */
+        val unitPrefs: Map<String, Any?>? = null,
     )
 
     data class SettingsAckPayload(
         val ok: Boolean,
         val error: String? = null
     )
+
+    fun buildUnitPrefsAck(ok: Boolean, error: String? = null): Envelope<SettingsAckPayload> =
+        buildSettingsAck(ok, error).copy(msgType = "unit_prefs_ack")
 
     fun buildSettingsAck(ok: Boolean, error: String? = null): Envelope<SettingsAckPayload> {
         val nowIso = Utils.timeNowIsoUtc()
@@ -512,6 +517,7 @@ class CompanionAppRepository(private val context: Context) {
         val role: String,
         val phoneManagedSettings: Boolean,
         val standaloneCallsign: String = "",
+        val unitPrefs: Map<String, String> = emptyMap(),
     )
 
     suspend fun snapshotWearTakSettings(): WearTakSettingsSnapshot {
@@ -524,6 +530,7 @@ class CompanionAppRepository(private val context: Context) {
             role          = repo.getRole.first(),
             phoneManagedSettings = repo.phoneManagedSettingsEnabled.first(),
             standaloneCallsign = repo.getStandaloneCallsign.first(),
+            unitPrefs = repo.unitPrefs.first().toAtakMap(),
         )
     }
 

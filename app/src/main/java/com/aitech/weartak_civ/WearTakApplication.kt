@@ -29,6 +29,7 @@ import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.SavedCustomAlertsStore
 import com.aitech.weartak_civ.data.GunshotOnnxRepository
 import com.aitech.weartak_civ.data.UasOnnxRepository
 import com.aitech.weartak_civ.data.secure.migration.TakServerMigration
@@ -70,6 +71,7 @@ class WearTakApplication : Application() {
     lateinit var gunshotOnnxRepo: GunshotOnnxRepository; private set
     lateinit var uasOnnxRepo: UasOnnxRepository; private set
     val crmCsvLogger: CrmSessionCsvLogger by lazy { CrmSessionCsvLogger(applicationContext) }
+    val savedCustomAlerts: SavedCustomAlertsStore by lazy { SavedCustomAlertsStore(applicationContext) }
 
     lateinit var pluginIngress: PluginIngressPort
         private set
@@ -95,6 +97,9 @@ class WearTakApplication : Application() {
         MainActivity.device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)
+        CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
+            repo.unitPrefs.collect(com.aitech.weartak_civ.ui.formatter.UnitPrefsState::update)
+        }
         bhRepo = BloodhoundRepository(applicationContext)
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             repo.takRoutes.collect { routes -> bhRepo.reconcileRoutes(routes) }

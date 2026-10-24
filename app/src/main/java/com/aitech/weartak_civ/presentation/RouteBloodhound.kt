@@ -30,13 +30,14 @@ import com.aitech.weartak_civ.data.RouteFollow
 import com.aitech.weartak_civ.data.RouteFollowSession
 import com.aitech.weartak_civ.data.model.TakRoute
 import com.aitech.weartak_civ.data.model.TakRoutePoint
-import com.aitech.weartak_civ.ui.formatter.DistanceFormatter
 
 @Composable
-internal fun routeDistanceText(meters: Double?): String = if (meters == null) {
-    stringResource(R.string.route_bloodhound_distance_unknown)
-} else DistanceFormatter.format(meters.div(1000.0))
-    .text(metersLabel = " " + stringResource(R.string.m), kilometersLabel = " " + stringResource(R.string.km))
+internal fun routeDistanceText(meters: Double?): String {
+    val prefs = currentUnitPrefs()
+    return if (meters == null) {
+        stringResource(R.string.route_bloodhound_distance_unknown)
+    } else com.aitech.weartak_civ.ui.formatter.UnitFormatter.distance(meters, prefs)
+}
 
 private val PickerGreen = Color(0xFF216C32)
 private val PickerRed = Color(0xFFB3261E)

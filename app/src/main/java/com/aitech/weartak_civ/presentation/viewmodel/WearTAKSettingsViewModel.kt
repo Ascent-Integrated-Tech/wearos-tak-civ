@@ -1382,6 +1382,14 @@ fun displaySitxGroupDialog(
             bloodhoundProximityRadiusMeters = radiusMeters
         }
     }
+
+    fun storeRangeUnits(rangeUnits: Int) {
+        viewModelScope.launch {
+            dataRepository.storeUnitPrefs(
+                mapOf(com.aitech.weartak_civ.ui.formatter.UnitPrefs.KEY_RANGE_UNITS to rangeUnits.toString())
+            )
+        }
+    }
     val savedBloodhoundProximityIntensity: StateFlow<String> =
         dataRepository.getBloodhoundProximityIntensity.stateIn(
             scope = viewModelScope,
