@@ -89,6 +89,7 @@ class ServiceConfiguration(
             if (!physioOn) { false } else { actOn }
         }.distinctUntilChanged()
 
+        // Companion stays running while reconnecting; only an active link suspends Ditto.
         ServiceType.DITTO -> combine(dataRepository.getEnableDittoService, dataRepository.isCompanionConnected) {
             enabled, connected -> enabled && !connected
         }.distinctUntilChanged()

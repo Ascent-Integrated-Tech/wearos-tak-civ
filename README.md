@@ -44,6 +44,16 @@ Configure Ditto Edge Sync under **Preferences > Tool Preferences > Plugins**. Th
 tap the Ditto Edge Sync row to select Community or configure a custom PDL in Ditto Edge Sync Identity. The row subtitle shows
 Community or the saved custom PDL, truncated to fit. Ditto is off by default on fresh installs, and saved
 enablement settings are preserved. PDL Help provides scrollable instructions for copying and pasting a custom identity.
+Ditto pauses only while Companion is actually connected. An enabled or reconnecting
+Companion service does not block Ditto, and Ditto never blocks Companion startup.
+On link loss, enabled Ditto resumes; reconnecting pauses it again without changing
+the saved toggle. Multicast fallback behavior is unchanged.
+Ditto also requires a valid, unexpired SharedKey PDL (Community identity bundled at
+build time via `dittoCommunityIdentity`, or the selected custom PDL). With no PDL,
+initialization logs `Invalid PDL` with `Ditto Community license is missing`, shows
+an `Invalid PDL` toast, and stops the service before sync starts. Selecting Custom
+with an empty PDL does not fall back to Community. Do not commit private identities.
+
 Plugins are listed alphabetically, including installed plugins. Everywhere, GoTenna and Somewear Labs are
 unfunded placeholders: each displays **Unfunded Request**, and their switches remain off without activating any integration.
 Installed plugins use split chips: tap the row to open the plugin's launcher activity, or use the switch
@@ -298,7 +308,8 @@ are suppressed. Receive callbacks do not dispatch or relay inbound CoT to TAK,
 companion, Ditto, multicast or plugins. This is intentionally **data-only**:
 command text can appear as ordinary addressed chat, but no command runtime,
 configuration/plugin control, geofence, channel-change or data-package handler is
-installed. Existing companion-over-Ditto service precedence is unchanged.
+installed. An active Companion connection pauses direct Ditto; a reconnecting
+Companion service alone does not.
 
 Across TAK server, multicast and Ditto ingress, PLI and point repositories retain
 each source-owned copy but expose one logical item per event UID. Newer event
