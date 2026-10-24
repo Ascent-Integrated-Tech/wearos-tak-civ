@@ -120,6 +120,12 @@ class InteractionIdentityPliTest {
         assertEquals("WearTAK", takv.getAttribute("platform"))
         assertEquals(BuildConfig.VERSION_NAME, takv.getAttribute("version"))
         assertNull(sent.poll(250, TimeUnit.MILLISECONDS))
+        coEvery { repo.snapshotPli() } returns snapshot.copy(loc = null)
+        service.buildAndSendPhysioLocationCotMsg()
+        assertNull(sent.poll(150, TimeUnit.MILLISECONDS))
+        coEvery { repo.snapshotPli() } returns snapshot.copy(loc = snapshot.loc!!.copy(timeMillis = 0))
+        service.buildAndSendPhysioLocationCotMsg()
+        assertNull(sent.poll(150, TimeUnit.MILLISECONDS))
         coEvery { repo.snapshotPli() } returns snapshot
         val gateway = companion.gateway
         gateway.negotiate(org.json.JSONObject().put("version", 1).put("session", "metadata-service-test"))
@@ -129,6 +135,10 @@ class InteractionIdentityPliTest {
         companionConnected.value = true
         val gatewaySent = mutableListOf<String>()
         every { companion.offerGatewayCot(any()) } answers { gatewaySent += firstArg<String>(); true }
+        coEvery { repo.snapshotPli() } returns snapshot.copy(loc = null)
+        service.buildAndSendPhysioLocationCotMsg()
+        assertTrue(gatewaySent.isEmpty())
+        coEvery { repo.snapshotPli() } returns snapshot
         service.buildAndSendPhysioLocationCotMsg()
         assertEquals(listOf(message.xml), gatewaySent)
         assertNull(sent.poll(150, TimeUnit.MILLISECONDS))

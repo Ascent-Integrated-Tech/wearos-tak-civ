@@ -1207,6 +1207,10 @@ class CotDispatchService : Service() {
         runBlocking(Dispatchers.IO) {
             val snapshot = dataRepository.snapshotPli()
             val loc = snapshot.loc
+            if (loc == null || !com.aitech.weartak_civ.cot.EmergencyLocationPolicy.usable(loc)) {
+                Log.i(TAG, "Skipping outbound PLI: awaiting first valid location fix")
+                return@runBlocking
+            }
 
             val xml = buildPliCot(snapshot)
 

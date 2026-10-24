@@ -16,14 +16,14 @@ credentials are included here. Inspected APK SHA256:
 | `_c` | Ditto PN counter | Native CRDT counter, not a numeric register; ignored by WearTAK receive |
 | `a` | string | Originating Ditto peer key string |
 | `b` | number | Event time, integer Unix milliseconds |
-| `d` | string | Sender device UID (**unlike mapitem/track, not event UID**) |
+| `d` | string | Publishing device UID, as in native mapitem/track/alert |
 | `e` | string | Sender callsign |
 | `msg` | string | Plain message text |
 | `room` | string | Conversation display title |
 | `roomId` | string | Conversation/recipient UID, from `chatgrp.id` |
 | `parent` | string | Parent contact group, normally `RootContactGroup` |
 | `authorType` | string | Sender platform CoT type, e.g. `a-f-G-U-C` |
-| `authorLoc` | string | GeoPoint string `latitude,longitude,hae`; two coordinates are also accepted |
+| `authorLoc` | string | Outgoing `latitude,longitude,hae`. Incoming accepts ATAK GeoPoint `latitude,longitude,altitude,ALTREF,ce,le` and any form with at least two comma-separated fields (trimmed). Latitude/longitude must be finite/in range; missing/non-finite altitude is unknown (`9999999` in synthesized CoT). Only HAE altitude is used; AGL/other references are not treated as HAE. Optional nonnegative finite CE/LE are preserved, otherwise unknown (`999999`). |
 
 WearOS writes `_c` using SDK 4's `DittoCounter()`. DQL clients must omit `_c`
 from the initial document, then use
@@ -130,3 +130,43 @@ arguments. The release job fails explicitly if that variable is missing.
 Custom PDL selection remains independent. Ditto Android is pinned to `4.14.6`,
 matching the inspected official plugin. Live peer interoperability still needs
 authorized device testing; no device actions are part of this change.
+
+## Native tactical identity (mapitem, alert, track)
+
+The same plugin's CoT serializer uses `_id` for the **CoT event UID**, not `d`.
+Its common metadata decorator sets `d` to the publishing device UID, `e` to
+the publisher callsign, `a` to its Ditto peer key, `_v` to `2`, and `_r` to
+the removal flag. Native documents do not require or emit `AuthorId`.
+Track IDs happen to coincide with the device UID; independently created
+markers and emergencies do not. Never collapse several events by one sender
+onto `d`, or require `_id == d`.
+
+WearTAK emits `d` and its optional `AuthorId` extension with the same publishing
+device UID. For backward compatibility, old WearTAK documents with `d == _id`
+still use `AuthorId` as their author. When `d != _id`, an `AuthorId` extension
+must agree with `d`. Echo suppression checks the resulting author and peer;
+ownership/deletion ledgers remain keyed by event UID and peer, not sender alone.
+
+Native CoT aliases are `w` type, `g` version, `h/i/j/k/l` CE/HAE/latitude/LE/
+longitude, `b/n/o` time/start/stale in Unix milliseconds, `p/q` how/access,
+`r` complete `<detail>` XML, and `s/t/u/v` opex/qos/caveat/releasableTo.
+The native serializer includes fields when the corresponding CoT value is
+non-null; WearTAK's tactical ingress requires the point, time/start/stale, type,
+version, how/access and detail fields to construct a validated event. Mapitems
+add `c` (parent/link UID) and `f` (visibility). Hidden/removed documents do not
+independently authorize deletion.
+
+Sanitized native mapitem example (no WearTAK `AuthorId` extension):
+
+```json
+{
+  "_id": "ff1f3217-fcfd-488f-b0fa-e95a24d05da3",
+  "_v": 2, "_r": false,
+  "a": "tablet-peer-key", "d": "tablet-device", "e": "TABLET",
+  "b": 1792800000000, "n": 1792800000000, "o": 1792800600000,
+  "g": "2.0", "w": "a-h-G", "p": "h-g-i-g-o", "q": "Undefined",
+  "h": 19.4, "i": 156.933, "j": 41.879815, "k": 9999999, "l": -87.642469,
+  "c": "tablet-device", "f": true,
+  "r": "<detail><contact callsign='Hostile marker'/><link uid='tablet-device' type='a-f-G-U-C' relation='p-p'/></detail>"
+}
+```

@@ -411,6 +411,73 @@ class DittoReceiveIntegrationTest {
         } finally { f.close() }
     }
 
+    @Test fun nativeTacticalSenderIsNotEventUidAndMarkersRemainDistinct() = runTest {
+        val f = Fixture(this)
+        try {
+            val uid = "ff1f3217-fcfd-488f-b0fa-e95a24d05da3"
+            val native = (f.doc(uid) - "AuthorId") + mapOf(
+                "d" to "ANDROID-2ded908bebdd29f7", "e" to "TABLET",
+                "j" to 41.879815, "l" to -87.642469, "i" to 156.933,
+                "h" to 19.4, "k" to 9999999.0, "f" to true
+            )
+            assertEquals(uid, DittoCotDocument.decode(native).uid)
+            assertEquals("ANDROID-2ded908bebdd29f7", DittoCotDocument.decode(native).author)
+            f.emit("mapitem", native, native + ("_id" to "second-marker"), f.doc("legacy"))
+            f.emit("alert", (f.alarm() - "AuthorId") + ("d" to "alice"))
+            f.drain()
+            assertEquals(setOf(uid, "second-marker", "legacy"),
+                f.repo.receivedMarkerList.value.map { it.uid }.toSet())
+            assertEquals(1, f.bh.remoteAlerts.value.size)
+            assertTrue(f.logs.toString(), f.logs.none { it.contains("Rejected") })
+            f.emit("alert", (f.alarm(f.time + 1, cancelled = true) - "AuthorId") + ("d" to "alice"))
+            f.drain()
+            assertTrue(f.bh.remoteAlerts.value.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun nativeTacticalAuthorAndPeerEchoesAreIgnoredAndAuthorConflictsRejected() = runTest {
+        val f = Fixture(this)
+        try {
+            val native = (f.doc("native") - "AuthorId") + ("d" to "alice")
+            f.emit("mapitem",
+                native + mapOf("_id" to "self-author", "d" to "watch"),
+                native + mapOf("_id" to "self-peer", "a" to "local-peer"),
+                native + mapOf("_id" to "conflicting-author", "AuthorId" to "bob"),
+                native + mapOf("_id" to "missing-sender") - "d",
+                native + mapOf("_id" to ""),
+                native + ("AuthorId" to "alice"))
+            f.drain()
+            assertEquals(listOf("native"), f.repo.receivedMarkerList.value.map { it.uid })
+            assertTrue(f.logs.any { it.contains("author mismatch") })
+            val prefs = f.app.getSharedPreferences("ditto-point-watermarks-v1", Context.MODE_PRIVATE)
+            val record = org.json.JSONObject(prefs.getString(DittoCotDocument.decode(native).key, null)!!)
+            assertEquals("alice", record.getString("owner"))
+            f.emit("mapitem", native + mapOf("d" to "bob", "b" to f.time + 1))
+            f.drain()
+            assertTrue(f.logs.any { it.contains("Cross-owner") })
+            assertEquals(f.time, f.repo.receivedMarkerList.value.single().timeReceived)
+        } finally { f.close() }
+    }
+
+    @Test fun nativeIdentityMigrationPreservesLegacyPointRevisionAndDeletionOwnership() = runTest {
+        val f = Fixture(this)
+        try {
+            val legacy = f.contracted()
+            f.emit("mapitem", legacy)
+            f.drain()
+            val native = f.contracted(f.doc(at = f.time + 1) + ("d" to "alice"))
+            f.emit("mapitem", native)
+            f.drain()
+            assertEquals(f.time + 1, f.repo.receivedMarkerList.value.single().timeReceived)
+            f.emit("mapitem", f.contracted(f.doc(at = f.time + 2) + ("d" to "alice"), deleted = true))
+            f.drain()
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
+            f.emit("mapitem", legacy, native)
+            f.drain()
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
+        } finally { f.close() }
+    }
+
     @Test fun recipientsGroupMembershipSelfOriginAndCommandTextAreFilteredWithoutExecution() = runTest {
         val f = Fixture(this)
         try {
@@ -568,6 +635,42 @@ class DittoReceiveIntegrationTest {
             f.emit("chat", native("mismatch") + ("r" to f.nativeChat("other").getValue("r")))
             f.drain()
             assertTrue(f.logs.any { it.contains("envelope/detail mismatch") })
+        } finally { f.close() }
+    }
+
+    @Test fun officialSixFieldGeoPointAndUnknownAltitudeReachInbox() = runTest {
+        val f = Fixture(this)
+        val fields = setOf("_id", "_v", "_r", "a", "b", "d", "e", "msg",
+            "room", "roomId", "parent", "authorType", "authorLoc")
+        fun native(id: String, location: String) =
+            f.nativeChat(id).filterKeys { it in fields } + ("authorLoc" to location)
+        val exact = native("six-fields", "41.879815,-87.642469,156.933,HAE,19.4,9999999.0")
+        val unknown = native("nan-alt", " 41.879815 , -87.642469 , NaN , HAE , NaN , NaN ")
+        try {
+            fun point(doc: Map<String, Any?>) =
+                CotMessageParser.parseDocumentOrNull(DittoChatDocument.decode(doc).xml)!!
+                    .getElementsByTagName("point").item(0) as org.w3c.dom.Element
+            val known = point(exact)
+            assertEquals("156.933", known.getAttribute("hae"))
+            assertEquals("19.4", known.getAttribute("ce"))
+            assertEquals("9999999.0", known.getAttribute("le"))
+            val missing = point(unknown)
+            assertEquals("9999999.0", missing.getAttribute("hae"))
+            assertEquals("999999.0", missing.getAttribute("ce"))
+            assertEquals("999999.0", missing.getAttribute("le"))
+            for (alt in listOf("Infinity", "-Infinity", "", "NaN")) {
+                assertEquals("9999999.0", point(native("optional", "41,-87,$alt,HAE")).getAttribute("hae"))
+            }
+            assertEquals("9999999.0", point(native("agl", "41,-87,100,AGL")).getAttribute("hae"))
+            point(native("two", "41,-87"))
+            point(native("extra", "41,-87,100,HAE,5,6,ignored"))
+            assertThrows(IllegalArgumentException::class.java) {
+                point(native("bad-lat", "NaN,-87,100,HAE,5,6"))
+            }
+            f.emit("chat", exact, unknown)
+            f.drain()
+            assertEquals(setOf("six-fields", "nan-alt"),
+                f.repo.chatRoomsFlow.value.flatMap { it.messageList }.map { it.messageId }.toSet())
         } finally { f.close() }
     }
 
@@ -1405,9 +1508,46 @@ class DittoReceiveIntegrationTest {
             publisher.onDittoDoc(DittoDocumentEvent("mapitem", DittoCotDocument.decode(f.ownedDoc()).xml))
             withContext(Dispatchers.Default) { withTimeout(10_000) { completed.await() } }
             assertTrue(DittoPointLedger.METADATA in writes.single())
+            assertEquals("point", writes.single()["_id"])
+            assertEquals("watch", writes.single()["d"])
+            assertEquals("watch", writes.single()["AuthorId"])
+            assertEquals("WATCH", writes.single()["e"])
             f.clear()
             publisher.retryPointPublications()
             assertEquals(true, writes.last()["_r"])
+        } finally {
+            (DittoService::class.java.getDeclaredField("ioScope").apply { isAccessible = true }
+                .get(publisher) as kotlinx.coroutines.CoroutineScope).coroutineContext[Job]?.cancel()
+            f.close()
+        }
+    }
+
+    @Test fun actualOutboundAlertUsesPublisherIdentityRatherThanEmergencyUid() = runTest {
+        val f = Fixture(this)
+        val writes = java.util.concurrent.CopyOnWriteArrayList<Map<String, Any?>>()
+        val publisher = f.publisher(mutableListOf())
+        val completed = CompletableDeferred<Unit>()
+        every { publisher.writeDocument(any(), any()) } answers {
+            assertEquals("alert", firstArg<String>())
+            writes += secondArg<Map<String, Any?>>()
+            if (writes.size == 2) completed.complete(Unit)
+            Unit
+        }
+        try {
+            MainActivity.Constants.callsign = "WATCH"
+            listOf(false, true).forEach { cancelled ->
+                val raw = f.alarm(cancelled = cancelled) + ("AuthorId" to "watch")
+                publisher.onDittoDoc(DittoDocumentEvent("alert", DittoCotDocument.decode(raw).xml))
+            }
+            withContext(Dispatchers.Default) { withTimeout(10_000) { completed.await() } }
+            writes.forEach {
+                assertEquals("alarm", it["_id"])
+                assertEquals("watch", it["d"])
+                assertEquals("watch", it["AuthorId"])
+                assertEquals("WATCH", it["e"])
+                assertEquals("watch", DittoCotDocument.decode(it).author)
+            }
+            assertEquals(setOf("b-a-o-tbl", "b-a-o-can"), writes.map { it["w"] }.toSet())
         } finally {
             (DittoService::class.java.getDeclaredField("ioScope").apply { isAccessible = true }
                 .get(publisher) as kotlinx.coroutines.CoroutineScope).coroutineContext[Job]?.cancel()

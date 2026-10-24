@@ -194,8 +194,18 @@ class PliMetadataCompatibilityTest {
         dittoA = peer, dittoVersion = peer, dittoDeviceName = peer,
     )
 
+    @Test fun companionPliNeverInventsCoordinatesForMissingFix() {
+        val repo = CompanionAppRepository(RuntimeEnvironment.getApplication())
+        for (location in listOf(null, snapshot().loc!!.copy(timeMillis = 0),
+            snapshot().loc!!.copy(lat = Double.NaN))) {
+            org.junit.Assert.assertThrows(IllegalArgumentException::class.java) {
+                repo.buildPliEnvelopeFromSnapshot(snapshot().copy(loc = location), 30)
+            }
+        }
+    }
+
     private fun snapshot() = DataRepository.PliSnapshot(
-        loc = DataRepository.LocationSnapshot(0, 0.0, 0.0, 0.0, 5f, 5f, 0f, 0f),
+        loc = DataRepository.LocationSnapshot(1, 0.0, 0.0, 0.0, 5f, 5f, 0f, 0f),
         time = CotEventTime(0, 0, 0, START, START, "2026-10-22T12:02:00.000Z"),
         physioData = DataRepository.PhysioSnapshot(0, DataRepository.PhysioData(65, 97f, 30, 70, 60, .25, null, null)),
         systemData = DataRepository.SystemSnapshot(

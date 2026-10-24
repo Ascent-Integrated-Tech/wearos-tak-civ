@@ -14,6 +14,29 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class BestKnownLocationTest {
+    @Test fun periodicPliWaitsForFixAndKeepsLastKnownPositionInsteadOfZeroFallback() = runBlocking {
+        MainActivity.device_uid = "test-watch"
+        MainActivity.versionNumber = "test"
+        val repo = DataRepository(RuntimeEnvironment.getApplication())
+        assertNull(repo.snapshotPli().loc)
+        repo.storeLatestLocation(Location("gps"))
+        assertNull(repo.snapshotPliLocation())
+        repo.storeLatestLocation(Location("gps").apply {
+            time = System.currentTimeMillis() - 60_000
+            latitude = 41.879815
+            longitude = -87.642469
+            altitude = Double.NaN
+            accuracy = 5f
+        })
+        repo.storeLatestLocation(Location("gps").apply { latitude = Double.NaN })
+        val snapshot = repo.snapshotPli().loc!!
+        assertEquals(41.879815, snapshot.lat, 0.0)
+        assertEquals(-87.642469, snapshot.lon, 0.0)
+        assertNull(snapshot.hae)
+        assertTrue(snapshot.ce!! > 5f)
+        assertTrue(snapshot.timeMillis < System.currentTimeMillis() - 30_000)
+    }
+
     @Test fun invalidAndOutOfOrderCallbacksCannotEraseTheNewestValidFix() = runBlocking {
         MainActivity.device_uid = "test-watch"
         MainActivity.versionNumber = "test"

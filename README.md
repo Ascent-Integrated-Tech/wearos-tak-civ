@@ -1120,6 +1120,16 @@ watch process lifetime, including BLE reconnects. Disconnecting does not clear
 received points. There is no offline replay queue or new automatic expiry policy.
 Asynchronous repository failures are logged; cancellation is not treated as an error.
 
+### Position reports before the first fix
+
+Periodic position PLI is withheld until the repository has a valid timestamped,
+finite latitude/longitude fix. A later invalid/missing callback reuses the newest
+valid last-known fix with its original fix timestamp and age-inflated uncertainty,
+never a fabricated `0,0` position. This applies to TAK, Sit(x), multicast, plugin,
+Companion gateway/legacy BLE, and the independent Ditto `track` publisher.
+The CoT/legacy Companion builders also reject no-fix PLI rather than creating a
+zero-coordinate point. A real timestamped fix at `0,0` remains a valid position.
+
 ### WEARTAK-130: chat commands
 
 Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change watch settings by sending chat commands. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. All commands accept direct messages, All Chat Rooms broadcasts, and groups containing the watch UID. Only messages from allowed callsigns are acted on. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.

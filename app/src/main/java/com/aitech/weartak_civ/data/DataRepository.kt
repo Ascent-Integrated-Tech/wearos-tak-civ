@@ -1978,6 +1978,11 @@ class DataRepository(private val context: Context) {
         val systemData: SystemSnapshot
     )
 
+    suspend fun snapshotPliLocation(): LocationSnapshot? =
+        com.aitech.weartak_civ.cot.EmergencyLocationPolicy.forDispatch(
+            snapshotLocation(bestKnownLocation()), System.currentTimeMillis()
+        )
+
     suspend fun snapshotPli(): PliSnapshot {
         val timeSnap = CotEventTimeFactory.now(
             startOffset = CotTimeOffset(),
@@ -1985,7 +1990,7 @@ class DataRepository(private val context: Context) {
         )
 
         return PliSnapshot(
-            loc = snapshotLocation(),
+            loc = snapshotPliLocation(),
             time = timeSnap,
             physioData = snapshotPhysio(),
             systemData = snapshotSystem()
