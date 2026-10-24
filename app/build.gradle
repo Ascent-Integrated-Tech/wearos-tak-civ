@@ -84,9 +84,11 @@ android {
         if (lpFile.exists()) lp.load(lpFile.newDataInputStream())
         def owKey = lp.getProperty("OPENWEATHER_API_KEY", "")
         buildConfigField "String", "OPENWEATHER_API_KEY", "\"${owKey}\""
-        // Inject Ditto Community identity from Gradle property
-        def dittoCommunityIdentity =
-                project.findProperty("dittoCommunityIdentity") ?: "\"\""
+        // CI supplies the authorized Community PDL without exposing it in command arguments.
+        def communityPdl = System.getenv("DITTO_COMMUNITY_IDENTITY")?.trim()
+        def dittoCommunityIdentity = communityPdl
+                ? groovy.json.JsonOutput.toJson(communityPdl)
+                : (project.findProperty("dittoCommunityIdentity") ?: "\"\"")
 
         buildConfigField(
                 "String",
@@ -251,7 +253,7 @@ dependencies {
     implementation 'com.google.code.gson:gson:2.13.1'
     implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.10.0"
 
-    implementation "live.ditto:ditto:4.10.2"
+    implementation "live.ditto:ditto:4.14.6"
     implementation libs.play.services.wearable
     implementation platform(libs.compose.bom)
     implementation libs.ui

@@ -122,8 +122,11 @@ Example JSON (the native `_c` CRDT is created by the SDK, so is omitted here):
 Matching document fields does not join different Ditto databases. All clients
 need the same authorized app ID **and** matching SharedKey identity/valid offline
 license credentials. Changing the app ID alone is insufficient. WearOS retains
-its existing Community/Custom PDL selection; no APK keys/tokens are copied and
-the default identity is unchanged. Provision one authorized PDL across clients
-or obtain an appropriate PDL from the credential issuer. SDK-version and live
-peer interoperability still require vendor confirmation/authorized testing;
-no device actions are part of this change.
+its existing Community/Custom PDL selection. Authorized release builds receive
+the ATAK-compatible Community PDL from masked, protected CI variable
+`DITTO_COMMUNITY_IDENTITY`, which takes precedence over the local Gradle property.
+No identity value is stored in this document, source changes, or CI command
+arguments. The release job fails explicitly if that variable is missing.
+Custom PDL selection remains independent. Ditto Android is pinned to `4.14.6`,
+matching the inspected official plugin. Live peer interoperability still needs
+authorized device testing; no device actions are part of this change.
