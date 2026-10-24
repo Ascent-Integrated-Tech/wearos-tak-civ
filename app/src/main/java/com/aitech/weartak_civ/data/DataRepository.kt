@@ -16,6 +16,7 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
@@ -1289,6 +1290,26 @@ class DataRepository(private val context: Context) {
 
     private val _latestHeartRate = MutableStateFlow<Int?>(null)
     val latestHeartRate: StateFlow<Int?> = _latestHeartRate
+    private val selfStatusHeartRate = MutableStateFlow<PhysioSample<Int>?>(null)
+    private val selfStatusSkinTemperature = MutableStateFlow<PhysioSample<Float>?>(null)
+
+    fun selfStatusInputs(): Flow<SelfStatusInputs> = combine(
+        context.dataStore.data, selfStatusHeartRate, selfStatusSkinTemperature, latestIsDeviceWorn
+    ) { prefs, hr, skin, worn ->
+        val savedMopp = MoppStatus.entries.firstOrNull { it.key == prefs[MOPP_STATUS] }?.let {
+            SavedMoppStatus(it, prefs[MOPP_SAVED_AT])
+        }
+        SelfStatusInputs(
+            SelfStatusPolicy(
+                prefs[ENABLE_MOPP] ?: false, savedMopp,
+                prefs[ENABLE_PHYSIOLOGICAL_SERVICES] ?: DEFAULT_ENABLE_PHYSIOLOGICAL_SERVICES,
+                prefs[ENABLE_HEART_RATE_SERVICE] ?: DEFAULT_ENABLE_HEART_RATE_SERVICE,
+                prefs[ENABLE_SKIN_TEMP_SERVICE] ?: DEFAULT_ENABLE_SKIN_TEMPERATURE_SERVICE,
+                worn, prefs[AGE] ?: (Year.now().value - DEFAULT_BIRTH_YEAR).coerceAtLeast(0),
+                prefs[RESTING_HEART_RATE] ?: DEFAULT_RESTING_HR
+            ), hr, skin
+        )
+    }
 
     val getEnableCrmService: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[ENABLE_CRM_SERVICE] ?: DEFAULT_ENABLE_CRM_SERVICE
@@ -1305,7 +1326,10 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeMoppStatus(status: MoppStatus) {
-        context.dataStore.edit { it[MOPP_STATUS] = status.key }
+        context.dataStore.edit {
+            it[MOPP_STATUS] = status.key
+            it[MOPP_SAVED_AT] = System.currentTimeMillis()
+        }
     }
 
     suspend fun storeEnableDataSync(enabled: Boolean) {
@@ -3062,8 +3086,13 @@ class DataRepository(private val context: Context) {
     suspend fun requestClearLast() = _clearMarkerRequests.emit(ClearRequest.Last)
     suspend fun requestClearAll() = _clearMarkerRequests.emit(ClearRequest.All)
 
-    suspend fun storeLatestHeartRate(heartRate: Int) {
+    fun recordHeartRateSample(heartRate: Int, measuredAtMillis: Long?) {
+        selfStatusHeartRate.value = measuredAtMillis?.takeIf { it > 0 }?.let { PhysioSample(heartRate, it) }
+    }
+
+    suspend fun storeLatestHeartRate(heartRate: Int, measuredAtMillis: Long? = null) {
         Log.e("HR_REPO", "storeLatestHeartRate($heartRate)")
+        recordHeartRateSample(heartRate, measuredAtMillis)
         _latestHeartRate.emit(heartRate)
     }
 
@@ -3075,7 +3104,8 @@ class DataRepository(private val context: Context) {
         _latestActivityConfidence.emit(confidence)
     }
 
-    suspend fun storeLatestSkinTemp(skinTemp: Float) {
+    suspend fun storeLatestSkinTemp(skinTemp: Float, measuredAtMillis: Long? = null) {
+        selfStatusSkinTemperature.value = measuredAtMillis?.takeIf { it > 0 }?.let { PhysioSample(skinTemp, it) }
         _latestSkinTemp.emit(skinTemp)
     }
 
@@ -5619,6 +5649,7 @@ class DataRepository(private val context: Context) {
     companion object {
         private val ENABLE_MOPP = booleanPreferencesKey("enable_mopp")
         private val MOPP_STATUS = stringPreferencesKey("mopp_status")
+        private val MOPP_SAVED_AT = longPreferencesKey("mopp_saved_at")
         private val ENABLE_DATA_SYNC = booleanPreferencesKey("enable_data_sync")
         private val PASSIVE_DATA_ENABLED = booleanPreferencesKey("passive_data_enabled")
         // private val LATEST_HEART_RATE = intPreferencesKey("latest_heart_rate")

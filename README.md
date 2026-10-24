@@ -1153,9 +1153,11 @@ no snapshot, stream or historical SRT/KLV ingestion is added by this icon.
 Status** selector: **None**, **MOPP 0**, **MOPP 1**, **MOPP 2**, **MOPP 3**,
 **MOPP 4**. None is the unset default, not level 0. MOPP defaults off; enable
 it to edit, choose a candidate, then **Save** locally. Back discards an unsaved
-candidate. Disabling retains the saved status. This does not send a report,
-detect PPE/CBRN, assess protection/compliance, set a commanded level or start
-a filter timer.
+candidate. Disabling retains the saved status but withdraws its Companion
+contribution. With a capable bonded and connected phone, only the saved
+selection contributes to the phone's outgoing self PLI (see below). Standalone
+watch PLI is unchanged. This does not detect PPE/CBRN, assess
+protection/compliance, set a commanded level or start a filter timer.
 
 **Data Sync** now has its own icon and split enable/navigation row. The default
 remains on. Off pauses new mission API requests and background polling without
@@ -1163,6 +1165,75 @@ unsubscribing or deleting content/progress; On resumes on the current direct
 TAK session. A request already in flight may finish. Mission settings remain
 viewable while paused, but subscription actions are disabled. Other TAK traffic
 and bonded-companion transport gating are unchanged.
+
+### Companion saved PPE and fresh physiology (SELF_STATUS v1)
+
+The watch sends status only after the current bonded BLE READY connection
+receives `{"msg_type":"self_status_capability","version":1}`. Older phones
+receive unchanged legacy PLI. Once a status snapshot is queued, legacy JSON
+PLI omits its untimed `hr`; the negotiated snapshots carry timed physiology
+instead. This does not create an independent reporter or change standalone
+CoT routing, the phone's UID/location, or operator remarks.
+
+Every notification is a full snapshot, for example:
+
+```json
+{
+  "vers": 1,
+  "msgType": "self_status",
+  "msgUid": "watch-uid",
+  "src": "wearos",
+  "payload": {
+    "version": 1,
+    "session": "a1b2c3d4-1234-4567-89ab-123456789abc",
+    "seq": 0,
+    "deviceUid": "watch-uid",
+    "model": "WEAROS",
+    "ppe": {"level": "MOPP 2", "savedAt": null},
+    "physio": {
+      "hr": 72,
+      "measuredAt": "2026-10-24T18:15:30Z",
+      "sktF": 93.4,
+      "sktFMeasuredAt": "2026-10-24T18:15:20Z",
+      "exert": 0.094,
+      "exertMeasuredAt": "2026-10-24T18:15:30Z"
+    }
+  }
+}
+```
+
+- `session` is a new UUID per connection generation; repeated capability
+  messages retain it. `seq` starts at zero and increases on successful queue
+  admission. Old-generation queued frames cannot reach a replacement connection.
+- `ppe` is null for an unsaved status or disabled MOPP plugin. Saved levels are
+  exactly `None`, `MOPP 0` through `MOPP 4`; candidates never enter the sender.
+  The required `savedAt` key is ISO-8601 UTC for a new Save, or null for an
+  existing saved choice with unknown save time. None remains distinct from level 0.
+- `physio` is null without an eligible metric. Otherwise omit absent metric
+  keys: whole-number `hr` 20..250 with `measuredAt`; Fahrenheit `sktF` 59..113
+  with `sktFMeasuredAt`; fraction `exert` 0..1 with `exertMeasuredAt`.
+  Global physiological monitoring, individual HR/skin switches and worn state
+  gate publication. HR uses the sensor's monotonic sample time converted to UTC;
+  skin uses the Samsung data point's timestamp. Exertion reuses the existing
+  HR-reserve calculation from real HR, saved age and resting HR, retaining that
+  HR sample's time. No snapshot/receipt/keepalive timestamp substitutes for a sample.
+- Each metric expires independently after 120 seconds and is rejected more
+  than 30 seconds in the future. Snapshots are checked every second: new samples
+  are rate-limited to one snapshot per 15 seconds, saved PPE/policy changes and
+  metric removals bypass that limit, and a keepalive is due every 55 seconds
+  while READY, leaving scheduling margin below the 60-second limit (queue
+  failures are logged and retried).
+
+The matching Companion receiver owns the phone self-PLI merge and cleanup. It
+binds the first accepted session/device UID to READY, requires increasing sequence
+numbers, and removes watch contributions on disconnect/unbond or 300 seconds
+without a snapshot. It merges a provider `<device>` into existing
+`<biometrics version="1">` using `model` WEAROS, watch `uid`, newest `sampleTime`,
+and individually timed `<hr>`, `<skt>` (Fahrenheit for WEAROS), `<exert>` children.
+The JSON skin key remains `sktF`, not `skt`. Managed remarks use
+`MOPP2; HR: 72 bpm @ 18:15:30Z; Skin: 93.4F @ 18:15:20Z; Exert: 9% @ 18:15:30Z`;
+None is omitted, and other remarks/providers remain intact. A matching phone
+release is required; synthetic coverage is not physical BLE/ATAK acceptance.
 
 ### Top display metrics and shortcuts
 

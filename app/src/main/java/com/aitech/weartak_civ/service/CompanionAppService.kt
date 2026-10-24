@@ -131,6 +131,7 @@ class CompanionAppService : Service() {
     }
     private fun advanceCompanionGeneration() = synchronized(companionUserLock) {
         bloodhoundConnectionGeneration.incrementAndGet()
+        selfStatus.reset()
         repo.clearCompanionUsers()
         if (phoneRoutesReceived) {
             routeSync.connectionChanged(false)
@@ -170,6 +171,43 @@ class CompanionAppService : Service() {
     }
 
     private var observedBloodhoundGeneration = 0L
+    private val selfStatus = com.aitech.weartak_civ.data.CompanionSelfStatus()
+    @Volatile private var selfStatusInputs: com.aitech.weartak_civ.data.SelfStatusInputs? = null
+
+    @SuppressLint("MissingPermission")
+    private fun startSelfStatus() {
+        serviceScope.launch { repo.selfStatusInputs().collect { selfStatusInputs = it } }
+        serviceScope.launch {
+            while (true) {
+                sendSelfStatusIfDue()
+                delay(1_000L)
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendSelfStatusIfDue() = synchronized(companionUserLock) {
+        if (!bloodhoundLinkReady()) selfStatus.reset()
+        else selfStatusInputs?.let { input ->
+            val uid = MainActivity.device_uid
+            if (uid.isBlank()) Log.w(TAG, "Self status cannot send before watch identity is ready")
+            else if (selfStatus.sendIfDue(
+                bloodhoundConnectionGeneration.get(), uid, input, System.currentTimeMillis(),
+                android.os.SystemClock.elapsedRealtime(), ::sendBloodhoundControl
+            ) == false) Log.w(TAG, "Self status queue unavailable; snapshot will retry")
+        }
+    }
+
+    private fun gatewayAllowsControl(message: org.json.JSONObject, generation: Long): Boolean {
+        if (capRepo.gateway.session == null) return true
+        return when (message.optString("msgType")) {
+            "gateway_cot", "gateway_ready", "gateway_error" ->
+                message.optString("session") == capRepo.gateway.session
+            "self_status" -> selfStatus.acceptsSession(
+                generation, message.optJSONObject("payload")?.optString("session"))
+            else -> false
+        }
+    }
     private data class BloodhoundFrame(
         val bytes: ByteArray,
         val address: String,
@@ -305,9 +343,7 @@ class CompanionAppService : Service() {
                     ?: continue
                 if (capRepo.gateway.session != null) {
                     val message = org.json.JSONObject(frame.bytes.toString(Charsets.UTF_8))
-                    val type = message.optString("msgType")
-                    if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) continue
-                    if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) continue
+                    if (!gatewayAllowsControl(message, frame.generation)) continue
                 }
                 if (frame.diagnostic) {
                     val message = org.json.JSONObject(frame.bytes.toString(Charsets.UTF_8))
@@ -519,9 +555,7 @@ class CompanionAppService : Service() {
     private fun sendBloodhoundControl(json: String): Boolean {
         if (capRepo.gateway.session != null) {
             val message = org.json.JSONObject(json)
-            val type = message.optString("msgType")
-            if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return false
-            if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) return false
+            if (!gatewayAllowsControl(message, bloodhoundConnectionGeneration.get())) return false
         }
         if (!bloodhoundLinkReady()) return false
         val address = connectedDevice?.address ?: return false
@@ -872,6 +906,7 @@ class CompanionAppService : Service() {
             }
         }
         startBloodhoundSync()
+        startSelfStatus()
 
         // 6) Finish setup async
         serviceScope.launch {
@@ -934,7 +969,10 @@ class CompanionAppService : Service() {
                 val json = when (event) {
                     is CompanionAppRepository.OutboundCotEvent.Pli -> {
                         Log.i(TAG, "PLI - BLE Outbound Collector")
-                        val env = capRepo.buildPliEnvelopeFromSnapshot(snapshot = event.snapshot, repIntSeconds = repo.almightyReportingIntervalSecs.value)
+                        val env = capRepo.buildPliEnvelopeFromSnapshot(
+                            snapshot = event.snapshot, repIntSeconds = repo.almightyReportingIntervalSecs.value,
+                            includeLegacyHeartRate = !selfStatus.active(bloodhoundConnectionGeneration.get())
+                        )
                         capRepo.envelopeToJson(env)
                     }
 
@@ -1563,6 +1601,7 @@ class CompanionAppService : Service() {
 
             if (disableNoti) {
                 notificationsEnabled = false
+                selfStatus.reset()
                 repo.setCompanionAppDisconnected()
                 capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.CONNECTED)
                 respond(BluetoothGatt.GATT_SUCCESS)
@@ -1719,9 +1758,7 @@ class CompanionAppService : Service() {
     ) {
         if (capRepo.gateway.session != null) {
             val message = org.json.JSONObject(bytes.toString(Charsets.UTF_8))
-            val type = message.optString("msgType")
-            if (type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return
-            if (type.startsWith("gateway_") && message.optString("session") != capRepo.gateway.session) return
+            if (!gatewayAllowsControl(message, expectedGeneration ?: bloodhoundConnectionGeneration.get())) return
         }
         val device = connectedDevice ?: run {
             Log.d(TAG, "sendChunkedNotify: no connectedDevice")
@@ -1750,7 +1787,7 @@ class CompanionAppService : Service() {
             val type = message.optString("msgType")
             val gatewayToken = if (type.startsWith("gateway_")) message.optString("session") else null
             if (capRepo.gateway.session != null &&
-                type !in listOf("gateway_cot", "gateway_ready", "gateway_error")) return
+                !gatewayAllowsControl(message, expectedGeneration ?: bloodhoundConnectionGeneration.get())) return
             var offset = 0
             while (offset < bytes.size) {
                 if (gatewayToken != null && gatewayToken != capRepo.gateway.session) return
@@ -1932,6 +1969,14 @@ class CompanionAppService : Service() {
 
         try {
             val base = gson.fromJson(json, CompanionAppRepository.EnvelopeBase::class.java)
+            if (base.type == "self_status_capability") {
+                synchronized(companionUserLock) {
+                    require(bloodhoundLinkReady()) { "Self status capability requires bonded ready transport" }
+                    require(org.json.JSONObject(json).opt("version") == 1) { "Unsupported self status capability" }
+                    selfStatus.negotiate(bloodhoundConnectionGeneration.get())
+                }
+                return
+            }
             if (base.type == "gateway_hello") {
                 require(bloodhoundLinkReady()) { "Gateway requires bonded ready transport" }
                 val ack = capRepo.gateway.negotiate(org.json.JSONObject(json))
