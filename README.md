@@ -1265,11 +1265,16 @@ Existing Steps and retained selections persist; removed selector choices
 selector, not those features or collectors. The existing CRM Reserve screen
 remains accessible from **Plugins > CRM** alongside its threshold settings.
 
-The same list exposes the real physiological-monitoring and physiological-alert
-switches. Merely opening it preserves both switches and all thresholds. The
-Alerts row has a separate threshold-navigation arrow, usable while alerts are
-off; changing the switch never navigates and opening thresholds never toggles it.
-Existing alert-threshold editors and managed-settings behavior are reused.
+The list starts with **Physiological Monitoring**, then **Physiological Alerts**,
+using matching native toggle chips before the metric choices. Merely opening it
+preserves both switches and all thresholds. The Alerts chip's text area opens
+the existing thresholds even while alerts are off; its separate switch never
+navigates, and opening thresholds never toggles it. Existing alert-threshold
+editors and managed-settings behavior are reused.
+
+The home MGRS readout is text-only, with its full one-meter value retained; active
+alert warning icons, Lat/Long and the reporting shortcut are unchanged. Heart Rate
+uses the same recognizable filled-heart vector as the physiology dashboard.
 
 When monitoring is off, Exertion, Heart Rate, Skin Temp **and Steps** show
 **Disabled**, ahead of old readings or wear state. This Steps display rule does

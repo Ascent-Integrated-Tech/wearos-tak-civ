@@ -17,9 +17,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material3.IconButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -84,22 +81,18 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context, settingsVm: Wear
             exitActivity()
         },
         columnContent = {
+            item {
+                MetricMonitoringControls(monitoring, alertsEnabled,
+                    settingsVm::storeEnablePhysiologicalServices,
+                    settingsVm::storeEnablePhysiologicalAlerts) {
+                        context.startActivity(settingsShortcutIntent(context, "physiological_alerts"))
+                    }
+            }
             items(choices.size) { index ->
                 val (metric, label) = choices[index]
                 TopMetricChoice(label, topMetricValue(metric, repo), selected == metric.key) {
                     settingsVm.storeSelectedPhysioMetric(metric.key)
                 }
-            }
-            item {
-                MetricAlertControls(alertsEnabled, settingsVm::storeEnablePhysiologicalAlerts) {
-                    context.startActivity(settingsShortcutIntent(context, "physiological_alerts"))
-                }
-            }
-            item {
-                WearTAKToggleChip(
-                    checkedLive = monitoring,
-                    onCheckedChange = settingsVm::storeEnablePhysiologicalServices,
-                    title = stringResource(R.string.physiological_monitoring))
             }
             items(alerts.size) { index ->
                 val alert = alerts[index]
@@ -140,17 +133,35 @@ internal fun TopMetricChoice(label: String, value: String, selected: Boolean, on
 }
 
 @Composable
-internal fun MetricAlertControls(enabled: Boolean, onToggle: (Boolean) -> Unit, onThresholds: () -> Unit) {
-    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically) {
-        Text(stringResource(R.string.metric_alerts), modifier = Modifier.weight(1f))
-        val label = stringResource(R.string.metric_alerts)
-        Switch(checked = enabled, onCheckedChange = onToggle,
-            modifier = Modifier.size(48.dp).semantics { contentDescription = label })
-        IconButton(onClick = onThresholds, modifier = Modifier.size(48.dp)) {
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                contentDescription = stringResource(R.string.metric_alert_thresholds))
-        }
+internal fun MetricMonitoringControls(
+    monitoring: Boolean,
+    alertsEnabled: Boolean,
+    onMonitoring: (Boolean) -> Unit,
+    onAlerts: (Boolean) -> Unit,
+    onThresholds: () -> Unit
+) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        WearTAKToggleChip(checkedLive = monitoring, onCheckedChange = onMonitoring,
+            title = stringResource(R.string.physiological_monitoring))
+        MetricAlertControls(alertsEnabled, onAlerts, onThresholds)
     }
+}
+
+@Composable
+internal fun MetricAlertControls(enabled: Boolean, onToggle: (Boolean) -> Unit, onThresholds: () -> Unit) {
+    val thresholds = stringResource(R.string.metric_alert_thresholds)
+    SplitToggleChip(
+        checked = enabled,
+        onCheckedChange = onToggle,
+        onClick = onThresholds,
+        label = {
+            Text(stringResource(R.string.physiological_alerts),
+                modifier = Modifier.semantics { contentDescription = thresholds })
+        },
+        secondaryLabel = { Text(thresholds) },
+        toggleControl = { Switch(checked = enabled, onCheckedChange = null) },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+    )
 }
 
 fun List<DataRepository.CustomEmergencyAlert>.alertChipState(isEnabled: Boolean?): Utils.AlertChipState = when {

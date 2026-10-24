@@ -2833,13 +2833,15 @@ internal fun HomeTopMetricCard(
             contentColor = Color.White,
         ),
             enabled = true,
-            icon = {
+            icon = if (!containsAlert && metric == com.aitech.weartak_civ.data.TopDisplayMetric.MGRS) null else {
+              {
                 Icon(
                     painter = painterResource(iconRes),
                     contentDescription = stringResource(R.string.top_display_metric),
                     tint = alertChipColors(chipState),
                     modifier = Modifier.size(19.dp),
                 )
+              }
             },
             label = {
                 Row(modifier = Modifier
