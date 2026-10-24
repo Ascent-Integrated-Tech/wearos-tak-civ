@@ -154,6 +154,8 @@ class CotDispatchService : Service() {
                     is CotCompanionPayload.Pli -> capRepo.enqueuePliSnapshotForBle(payload.snapshot)
                     is CotCompanionPayload.Chat -> capRepo.enqueueChatSnapshotForBle(payload.snapshot)
                     is CotCompanionPayload.Marker -> capRepo.enqueueMarkerSnapshotForBle(payload.snapshot)
+                    is CotCompanionPayload.OwnedPointDeletion ->
+                        error("Owned point deletion requires a negotiated Companion gateway")
                     is CotCompanionPayload.Emergency -> capRepo.enqueueEmergencySnapshotForBle(payload.snapshot)
                 }
             },
@@ -1217,7 +1219,7 @@ class CotDispatchService : Service() {
         }
         if (capRepo.gateway.session != null && companionAppAvailable() &&
             message.kind in listOf(
-                CotMessageKind.PLI, CotMessageKind.MARKER,
+                CotMessageKind.PLI, CotMessageKind.MARKER, CotMessageKind.MARKER_CLEAR,
                 CotMessageKind.CHAT, CotMessageKind.EMERGENCY
             )) {
             val accepted = endpointDispatcher.dispatchGateway(message) { capRepo.offerGatewayCot(message.xml) }
@@ -1231,15 +1233,29 @@ class CotDispatchService : Service() {
         return endpointDispatcher.dispatch(message, endpointAvailability())
     }
 
-    private suspend fun handleClearMarkerUid(uid: String) {
-        val wasLocal = dataRepository.droppedMarkerList.value.any { it.uid == uid }
-        val removed = dataRepository.deleteDroppedPointLocally(uid, bhRepo)
-        if (wasLocal && !removed) return
-        if (removed) {
-            requestBloodhoundComplicationUpdate(this)
-        }
+    private suspend fun handleClearMarkerUid(uid: String) = markerDispatchMutex.withLock {
+        handleClearMarkerUidLocked(uid)
+    }
+
+    private suspend fun handleClearMarkerUidLocked(uid: String) {
+        val marker = dataRepository.droppedMarkerList.value.firstOrNull { it.uid == uid } ?: return
+        val owned = dataRepository.dittoPointLedger.owns(uid)
+        val gatewayDeletion = owned && capRepo.gateway.session != null && companionAppAvailable()
+        val removed = dataRepository.deleteDroppedPointLocally(uid, bhRepo, emitMirrorRequest = !gatewayDeletion)
+        if (!removed) return
+        requestBloodhoundComplicationUpdate(this)
+        selfMarkerRefreshes.remove(uid)
         markerDropMap.remove(uid)
         pendingMarkerCotList.removeAll { it.uid == uid }
+        if (!owned) {
+            Log.w(TAG, "Pin removed locally without external deletion: no persisted local-origin ownership")
+            return
+        }
+        val xml = CotMessageBuilder.ownedPointDeletion(uid, marker.location)
+        val accepted = dispatch(CotOutboundMessage(xml, CotMessageKind.MARKER_CLEAR,
+            CotCompanionPayload.OwnedPointDeletion(uid)))
+        if (accepted) Log.i(TAG, "Owned pin removed locally; external deletion offered best effort")
+        else Log.w(TAG, "Owned pin removed locally; no compatible route accepted external deletion (no new offline replay queue)")
     }
 
     private suspend fun handleClearMarkerAll() {
@@ -1481,7 +1497,7 @@ class CotDispatchService : Service() {
         val phoneSuppliesLocation = phoneSuppliesLocation()
         for ((i, item) in pendingMarkerCotList.withIndex()) {
             if (item.cotType == DataRepository.MarkerCotType.CLEAR) {
-                handleClearMarkerUid(item.uid)
+                handleClearMarkerUidLocked(item.uid)
                 if (dataRepository.droppedMarkerList.value.any { it.uid == item.uid }) {
                     newPendingMarkerDropList.add(item)
                     sentAllReadyToSend = false

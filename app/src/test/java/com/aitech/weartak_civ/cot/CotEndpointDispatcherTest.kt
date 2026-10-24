@@ -9,7 +9,7 @@ import org.junit.Test
 
 class CotEndpointDispatcherTest {
     @Test
-    fun deletionNeverCallsExternalDispatchOrLegacyCompanionCotWithEveryTransportAvailable() = runBlocking {
+    fun ownedDeletionUsesDirectRoutesWithoutDittoAndNeverFallsThroughReadyCompanion() = runBlocking {
         val calls = mutableListOf<String>()
         val dispatcher = CotEndpointDispatcher(
             sendTak = { _, _ -> calls += "TAK" },
@@ -20,14 +20,16 @@ class CotEndpointDispatcherTest {
             sendCompanion = { calls += "legacy companion CoT" },
             sendPlugin = { calls += "plugin" },
         )
-        listOf(false, true).forEach { ready ->
-            val sent = dispatcher.dispatch(
-                CotOutboundMessage("<deletion-must-not-be-sent/>", CotMessageKind.MARKER_CLEAR,
-                    CotCompanionPayload.Chat(chatSnapshot())),
-                allAvailable.copy(companion = ready, plugin = true))
-            assertEquals(false, sent)
-            assertTrue(calls.isEmpty())
-        }
+        val message = CotOutboundMessage("<owned-deletion/>", CotMessageKind.MARKER_CLEAR,
+            CotCompanionPayload.OwnedPointDeletion("own-pin"))
+        assertTrue(dispatcher.dispatch(message, allAvailable.copy(companion = false, plugin = true)))
+        assertEquals(listOf("plugin", "multicast", "TAK", "SITX"), calls)
+        calls.clear()
+        assertEquals(false, dispatcher.dispatch(message, allAvailable.copy(plugin = true)))
+        assertTrue(calls.isEmpty())
+        assertEquals(false, dispatcher.dispatch(message,
+            CotEndpointAvailability(false, false, false, false, false)))
+        assertTrue(calls.isEmpty())
     }
     @Test
     fun dispatchesChatOnlyToReadyCompanion() = runBlocking {

@@ -1525,12 +1525,25 @@ transport. Command audit messages omit argument values, but ordinary chat and
 packet diagnostics are not a secret-storage channel.
 ### WEARTAK-112: explicit shared-point deletion
 
-**Local paired-device mirrors only.** A watch deletion removes the selected local
-point and its eligible paired-phone copy; a phone deletion removes its local point
-and its eligible paired-watch copy. It never sends a deletion to TAK servers,
-multicast, Ditto, SITX, plugins/mesh, or any other devices. This also holds when
-BLE is unavailable: delete locally immediately, without queuing a network clear.
-Incoming mirrored deletion neither broadcasts nor re-echoes deletion.
+**Owned watch pins versus received points.** Delete/Last/Clear All removes local
+watch-created pins immediately, stops their active guidance and clears pending
+live updates. Only pins with persisted local-origin ownership also send a
+best-effort `t-x-d-d` request to currently connected TAK/SITX/multicast/plugin
+routes, or exclusively through a negotiated connected Companion gateway.
+Each request has an independent event UID and links the exact original pin UID
+with `relation="none" type="none"` plus `__forcedelete`, valid point fields,
+current time/start and 24-hour stale. This follows
+[ATAK's delete importer](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV/blob/889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc/atak/ATAK/app/src/main/java/com/atakmap/android/cotdelete/CotDeleteImporter.java).
+Peers may ignore a request; enqueue is not proof of remote removal.
+
+There is no new offline CoT deletion queue or reconnect replay. If no route is
+ready, deletion still completes locally; no unrelated peer or global wipe is
+sent. Existing transport queues retain their existing semantics. Ditto uses its
+existing author-owned persistent tombstone and retry ledger, never a raw delete
+CoT document. Received points remain local-only except their existing eligible
+paired-phone mirror removal below. Incoming deletions never rebroadcast.
+Older Companions without a negotiated gateway keep that mirror-local behavior;
+the watch does not bypass a connected Companion by using direct routes.
 
 Both peers add an opaque `payload.revision` (UUID) to live marker envelopes.
 Existing marker fields and XML remain unchanged; peers without this addition can
@@ -1570,8 +1583,9 @@ The existing watch received-marker Delete UX still removes all local copies of
 that UID; it relays only when the selected visible copy belongs to the companion.
 Dropped-marker Clear/Last/All removes local points immediately and emits
 per-point explicit BLE deletions only for points shared this connection.
-Legacy expired marker clear CoT is no longer generated or dispatched on any
-transport; the outbound `MARKER_CLEAR` policy rejects every CoT route defensively.
+Legacy expired marker clear CoT is not generated. `MARKER_CLEAR` now carries only
+the explicit owned-pin linked request; its policy excludes raw Ditto and legacy
+Companion marker envelopes.
 Bloodhound menu Remove remains local target dismissal, not map deletion.
 Transport enqueue is best-effort, not delivery confirmation: both apps must be
 updated together and hardware acceptance is still required.

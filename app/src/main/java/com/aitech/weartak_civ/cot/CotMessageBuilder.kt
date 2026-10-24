@@ -164,6 +164,28 @@ object CotMessageBuilder {
         ), point, detail)
     }
 
+    fun ownedPointDeletion(
+        targetUid: String,
+        location: DataRepository.LocationSnapshot?,
+        nowMillis: Long = System.currentTimeMillis(),
+        eventUid: String = UUID.randomUUID().toString(),
+    ): String {
+        require(targetUid.isNotBlank() && targetUid.length <= 512 && targetUid.none(Char::isISOControl))
+        require(eventUid.isNotBlank() && eventUid != targetUid)
+        val time = CotEventTimeFactory.at(nowMillis, staleOffset = CotTimeOffset(days = 1))
+        val point = location?.takeIf {
+            it.lat.isFinite() && it.lat in -90.0..90.0 && it.lon.isFinite() && it.lon in -180.0..180.0
+        }
+        return CotXml.event(
+            listOf("version" to "2.0", "uid" to CotXml.escape(eventUid), "type" to "t-x-d-d",
+                "time" to time.timeCot, "start" to time.startCot, "stale" to time.staleCot, "how" to "h-g-i-g-o"),
+            listOf("lat" to (point?.lat ?: 0.0), "lon" to (point?.lon ?: 0.0),
+                "hae" to (point?.hae?.takeIf { it.isFinite() } ?: 0.0), "ce" to 9999999, "le" to 9999999),
+            CotXml.element("link", listOf("uid" to CotXml.escape(targetUid),
+                "relation" to "none", "type" to "none")) + CotXml.element("__forcedelete"),
+        )
+    }
+
     fun chat(
         snapshot: DataRepository.ChatEventSnapshot,
         senderCallsign: String,

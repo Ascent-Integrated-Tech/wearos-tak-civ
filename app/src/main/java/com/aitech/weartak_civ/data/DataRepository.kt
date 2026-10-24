@@ -2546,12 +2546,13 @@ class DataRepository(private val context: Context) {
         _pointDeletionResults.tryEmit(result)
     }
 
-    fun notifyLocalPointDeletion(uid: String) {
+    fun notifyLocalPointDeletion(uid: String, emitMirrorRequest: Boolean = true) {
         // The receiver of this request checks readiness and its connection generation.
         val revision = companionPointRevisions.current(uid, companionPointGeneration) ?: return
         receivedMarkerStore.removeIfNotOlder(SourceCotKey("companion-phone", uid),
             revision.time, System.currentTimeMillis())
         companionPointRevisions.forget(uid)
+        if (!emitMirrorRequest) return
         if (_pointDeletionRequests.subscriptionCount.value == 0) {
             Log.d(TAG, "Point deletion local only: no active companion transport")
         } else if (!_pointDeletionRequests.tryEmit(PointDeletionRequest(uid, revision))) {
@@ -2577,7 +2578,11 @@ class DataRepository(private val context: Context) {
             receivedMarkerStore.removeUid(uid)
         }
 
-    suspend fun deleteDroppedPointLocally(uid: String, bloodhounds: BloodhoundRepository): Boolean =
+    suspend fun deleteDroppedPointLocally(
+        uid: String,
+        bloodhounds: BloodhoundRepository,
+        emitMirrorRequest: Boolean = true,
+    ): Boolean =
         markerIngressMutex.withLock {
             if (_droppedMarkerList.value.none { it.uid == uid }) return@withLock false
             try {
@@ -2590,7 +2595,7 @@ class DataRepository(private val context: Context) {
             companionPointRevisions.current(uid, companionPointGeneration)?.let {
                 bloodhounds.removeMarkerCopy(uid, "companion-phone", it.time, System.currentTimeMillis())
             }
-            notifyLocalPointDeletion(uid)
+            notifyLocalPointDeletion(uid, emitMirrorRequest)
             bloodhounds.removeLocalMarkerCopy(uid)
             removeMarkerByUid(uid)
             true

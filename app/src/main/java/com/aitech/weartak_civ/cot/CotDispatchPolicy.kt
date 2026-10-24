@@ -20,10 +20,10 @@ object CotDispatchPolicy {
     // conditional on any other endpoint being up.
 
     fun routesFor(kind: CotMessageKind, availability: CotEndpointAvailability): List<CotRoute> =
-        // Point removal is a local paired-device operation, never outbound clear CoT.
-        if (kind == CotMessageKind.MARKER_CLEAR) emptyList()
-        else if (availability.companion) {
-            listOf(CotRoute.COMPANION)
+        if (availability.companion) {
+            // Negotiated gateway deletion is dispatched before this legacy policy.
+            if (kind == CotMessageKind.MARKER_CLEAR) emptyList()
+            else listOf(CotRoute.COMPANION)
         } else when (kind) {
             CotMessageKind.PLI -> buildList {
                 if (availability.plugin) add(CotRoute.PLUGIN)
@@ -32,7 +32,13 @@ object CotDispatchPolicy {
                 if (availability.companion) add(CotRoute.COMPANION)
                 add(CotRoute.MULTICAST)
             }
-            CotMessageKind.MARKER_CLEAR -> emptyList()
+            CotMessageKind.MARKER_CLEAR -> buildList {
+                if (availability.plugin) add(CotRoute.PLUGIN)
+                if (availability.multicast) add(CotRoute.MULTICAST)
+                if (availability.tak) add(CotRoute.TAK)
+                if (availability.sitx) add(CotRoute.SITX)
+                // Ditto deletion uses its author-owned persistent point tombstone, not clear CoT.
+            }
             CotMessageKind.CHAT, CotMessageKind.MARKER, CotMessageKind.EMERGENCY -> buildList {
                 if (availability.plugin) add(CotRoute.PLUGIN)
                 if (availability.companion) add(CotRoute.COMPANION)

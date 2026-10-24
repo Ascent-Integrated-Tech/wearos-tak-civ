@@ -96,12 +96,14 @@ class CotDispatchPolicyTest {
     }
 
     @Test
-    fun markerClearCannotReachAnyCotTransportIncludingPluginsAndCompanion() {
-        listOf(false, true).forEach { companion ->
-            assertEquals(emptyList<CotRoute>(), CotDispatchPolicy.routesFor(
-                CotMessageKind.MARKER_CLEAR,
-                CotEndpointAvailability(true, true, true, true, companion, plugin = true)))
-        }
+    fun ownedMarkerClearUsesAvailableDirectRoutesButNeverDittoOrLegacyCompanion() {
+        val all = CotEndpointAvailability(true, true, true, true, false, plugin = true)
+        assertEquals(listOf(CotRoute.PLUGIN, CotRoute.MULTICAST, CotRoute.TAK, CotRoute.SITX),
+            CotDispatchPolicy.routesFor(CotMessageKind.MARKER_CLEAR, all))
+        assertEquals(emptyList<CotRoute>(),
+            CotDispatchPolicy.routesFor(CotMessageKind.MARKER_CLEAR, all.copy(companion = true)))
+        assertEquals(emptyList<CotRoute>(), CotDispatchPolicy.routesFor(
+            CotMessageKind.MARKER_CLEAR, CotEndpointAvailability(false, false, true, false, false)))
     }
 
     @Test
