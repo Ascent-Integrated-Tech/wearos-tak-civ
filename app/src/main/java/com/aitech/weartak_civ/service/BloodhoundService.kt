@@ -130,6 +130,15 @@ class BloodhoundService: Service() {
                 updateVectors()
             }
         }
+        collectLocalMarkerTargets()
+    }
+
+    private fun collectLocalMarkerTargets() {
+        scope.launch {
+            repo.droppedMarkerList.collect { markers ->
+                if (bhRepo.refreshLocalMarkerTargets(markers)) updateVectors()
+            }
+        }
     }
 
     private fun collectActiveSelection() {

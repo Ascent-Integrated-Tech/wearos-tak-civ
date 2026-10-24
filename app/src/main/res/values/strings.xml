@@ -1,4 +1,7 @@
 <resources>
+    <string name="home_open_bloodhound">Open Bloodhound</string>
+    <string name="home_open_map">Map</string>
+    <string name="home_unread_bloodhound">Unread Bloodhound targets</string>
     <string name="bloodhound_picker_camera">Camera</string>
     <string name="mopp">MOPP</string>
     <string name="mopp_ppe_status">PPE Status</string>

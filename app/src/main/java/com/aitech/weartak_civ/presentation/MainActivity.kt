@@ -9,6 +9,11 @@
 
 package com.aitech.weartak_civ.presentation
 
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+
 import android.annotation.SuppressLint
 import android.content.BroadcastReceiver
 import android.content.ComponentName
@@ -2481,6 +2486,8 @@ fun MainScreen(
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
     val activeItem by bhRepo.activeBhItemUi.collectAsState()
+    val northBearing by dataRepository.azimuthTrueDegSmoothed.collectAsState()
+    val hasUnreadBloodhounds by dataRepository.hasUnreadBloodhounds.collectAsState()
 
     // Get the repo for gunshots
     val context = LocalContext.current
@@ -2502,6 +2509,9 @@ fun MainScreen(
     LaunchedEffect(Unit) {
         dataRepository.refreshUnreadCount()
     }
+    LaunchedEffect(activeItem, hasUnreadBloodhounds) {
+        requestBloodhoundComplicationUpdate(context)
+    }
 
     WearTAKCIVTheme {
         SwipeToDismissBox(
@@ -2516,14 +2526,7 @@ fun MainScreen(
                     .unswipeable()
             ) {
                 OrientationAware()
-                Column(
-                    modifier = Modifier
-                        .background(colors.background)
-                        .padding(top = 20.dp)
-                        .padding(5.dp),
-                    //                horizontalAlignment = Alignment.CenterHorizontally,
-                    //                verticalArrangement = Arrangement.Center
-                ) {
+                HomeDashboardColumn {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2593,35 +2596,10 @@ fun MainScreen(
                         )
                         Callsign(context, callsignState)
                     }
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f),
-//                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center
-                    ){
-                        if (activeItem == null) {
-                            BloodhoundButton(context, activeItem)
-                            Spacer(modifier = Modifier.width(5.dp))
-                        }
-                        FilledIconButton(
-                            onClick ={ context.startActivity(Intent(context, MapActivity::class.java)) },
-                            modifier = Modifier.size(37.dp),
-                            colors = IconButtonColors(
-                                containerColor = Color.DarkGray,
-                                contentColor = Color.Unspecified,
-                                disabledContentColor = Color.Gray,
-                                disabledContainerColor = Color.Black
-                            ),
-                        ) {
-                            Icon(
-                                painter = painterResource(R.drawable.maps),
-                                contentDescription = "Favorite icon",
-                                tint = Color.Unspecified,
-                                modifier = Modifier.size(20.dp),
-                            )
-                        }
-                    }
+                    HomeNavigationRow(activeItem, northBearing, hasUnreadBloodhounds,
+                        onBloodhound = { context.startActivity(Intent(context, BloodhoundActivity::class.java)) },
+                        onMap = { context.startActivity(Intent(context, MapActivity::class.java)) },
+                        modifier = Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 8.dp))
                     Spacer(modifier = Modifier.height(4.dp))
                 }
                 TroubleshootingIcons(sitxVm, settingsVm)
@@ -3256,61 +3234,78 @@ fun bloodhoundActiveComplication(): Int {
 }
 
 @Composable
-fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
-    val northBearing by dataRepository.azimuthTrueDegSmoothed.collectAsState()
+internal fun HomeDashboardColumn(content: @Composable ColumnScope.() -> Unit) {
+    Column(Modifier.fillMaxSize().background(colors.background)
+        .padding(top = 20.dp, bottom = 24.dp).padding(5.dp), content = content)
+}
+
+@Composable
+internal fun HomeNavigationRow(
+    activeItem: Utils.BloodhoundItem?,
+    northBearing: Double?,
+    hasUnread: Boolean,
+    onBloodhound: () -> Unit,
+    onMap: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        BloodhoundButton(activeItem, northBearing, hasUnread, onBloodhound, Modifier.weight(1f))
+        FilledIconButton(onClick = onMap, modifier = Modifier.size(48.dp),
+            colors = IconButtonColors(Color.DarkGray, Color.Unspecified, Color.Gray, Color.Black)) {
+            Icon(painterResource(R.drawable.maps), contentDescription = stringResource(R.string.home_open_map),
+                tint = Color.Unspecified, modifier = Modifier.size(20.dp))
+        }
+    }
+}
+
+@Composable
+internal fun BloodhoundButton(
+    activeItem: Utils.BloodhoundItem?,
+    northBearing: Double?,
+    hasUnreadBloodhound: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     val properNorthBearing = Utils.normalize0to360(0.0 - (northBearing ?: 0.0))
     val needleOrientation = activeItem?.orientation ?: properNorthBearing
     val activeTarget = activeItem?.target ?: ""
     val activeDistanceText = com.aitech.weartak_civ.ui.formatter.UnitFormatter.distanceKm(
         activeItem?.distance, currentUnitPrefs(), separator = ""
     )
-    val hasUnreadBloodhound by dataRepository.hasUnreadBloodhounds.collectAsState() // monitor the number of unread messages
     val activeType = activeItem?.targetKind
-
-    requestBloodhoundComplicationUpdate(context)
- Row(
-        modifier = Modifier
-            .clickable(
-                onClick = {
-                    context.startActivity(Intent(context, BloodhoundActivity::class.java))
-                })
-            .widthIn(max = 115.dp),
-//        verticalAlignment = Alignment.CenterVertically
-    ){
-         if (hasUnreadBloodhound) {
-             requestBloodhoundComplicationUpdate(context)
-             Image(
-                 painter = painterResource(R.drawable.new_item_indicator),
-                 contentDescription = "Top Left Icon",
-                 modifier = Modifier
-                     .size(10.dp),
-                 alignment = Alignment.TopCenter
-             )
-         } else {
-             requestBloodhoundComplicationUpdate(context)
-         }
-        Image(
-            painter = if (activeItem != null) painterResource(R.drawable.compass_1) else painterResource(R.drawable.compass_needle),
-            contentDescription = "Top Left Icon",
-            modifier = Modifier
-                .align(Alignment.CenterVertically)
-                .size(35.dp)
-                .graphicsLayer {
-                    rotationZ = needleOrientation.toFloat()
-                }
-        )
-         if (activeItem != null) {
-             Image(
-                 painter = if (activeType == Utils.BloodhoundTargetKind.POINT) painterResource(R.drawable.atak_nav_routes) else painterResource(R.drawable.bloodhound),
-                 contentDescription = "Bloodhound Route Icon",
-                 modifier = Modifier
-                     .size(25.dp)
-                     .padding(start = 4.dp),
-                 alignment = Alignment.Center
-             )
-         }
+    val openDescription = stringResource(R.string.home_open_bloodhound)
+    Row(
+        modifier = modifier.heightIn(min = 48.dp)
+            .clickable(onClick = onClick)
+            .semantics { contentDescription = openDescription },
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(Modifier.size(32.dp)) {
+            Image(
+                painter = painterResource(if (activeItem != null) R.drawable.compass_1 else R.drawable.compass_needle),
+                contentDescription = null,
+                modifier = Modifier.align(Alignment.Center).size(28.dp)
+                    .graphicsLayer { rotationZ = needleOrientation.toFloat() }
+            )
+            if (activeItem != null) {
+                Image(
+                    painter = painterResource(if (activeType == Utils.BloodhoundTargetKind.POINT)
+                        R.drawable.atak_nav_routes else R.drawable.bloodhound),
+                    contentDescription = null,
+                    modifier = Modifier.align(Alignment.BottomEnd).size(12.dp)
+                )
+            }
+            if (hasUnreadBloodhound) {
+                Image(
+                    painter = painterResource(R.drawable.new_item_indicator),
+                    contentDescription = stringResource(R.string.home_unread_bloodhound),
+                    modifier = Modifier.align(Alignment.TopStart).size(8.dp)
+                )
+            }
+        }
         Column (
-            modifier = Modifier.padding(start = 5.dp)
+            modifier = Modifier.weight(1f).padding(start = 4.dp)
         ) {
             if (activeItem != null) {
                 Text(
@@ -3321,16 +3316,18 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
                     fontWeight = FontWeight.Medium,
                 )
 
-                    Text(
-                        text = activeDistanceText,
-                        fontSize = 12.sp,
-                        overflow = TextOverflow.Ellipsis,
-                        fontWeight = FontWeight.SemiBold,
-                    )
+                Text(
+                    text = activeDistanceText,
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    fontWeight = FontWeight.SemiBold,
+                )
             } else {
                 Text(
                     text = stringResource(R.string.compass),
                     fontSize = 13.sp,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.Medium,
                 )
@@ -3338,6 +3335,7 @@ fun BloodhoundButton(context: Context, activeItem: Utils.BloodhoundItem?){
                 Text(
                     text = "---",
                     fontSize = 15.sp,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )

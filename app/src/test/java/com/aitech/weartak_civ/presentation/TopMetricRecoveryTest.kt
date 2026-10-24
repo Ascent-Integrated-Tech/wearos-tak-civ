@@ -47,23 +47,28 @@ class TopMetricRecoveryTest {
             CompositionLocalProvider(LocalDensity provides Density(density, fontScale)) {
                 WearTAKCIVTheme {
                     Column(Modifier.requiredWidth((pixels / density).dp).verticalScroll(rememberScrollState())) {
-                        // Match the home screen's four equal-height rows and top/bottom insets.
-                        Column(Modifier.height((pixels / density).dp).padding(top = 30.dp, start = 10.dp, end = 10.dp)) {
+                        Box(Modifier.height((pixels / density).dp).padding(5.dp)) {
+                          HomeDashboardColumn {
                             Row(Modifier.fillMaxWidth().weight(1f)) {
                                 HomeTopMetricCard("Heart Rate", "105bpm", TopDisplayMetric.HEART_RATE,
                                     R.drawable.heart_rate, Utils.AlertChipState.None, null, {})
                             }
-                            repeat(3) { Spacer(Modifier.weight(1f)) }
+                            repeat(2) { Spacer(Modifier.weight(1f)) }
                             Spacer(Modifier.height(4.dp))
+                            Spacer(Modifier.height(48.dp))
+                          }
                         }
                         if (!onlyHeartRate) {
-                            Column(Modifier.height((pixels / density).dp).padding(top = 30.dp, start = 10.dp, end = 10.dp)) {
+                            Box(Modifier.height((pixels / density).dp).padding(5.dp)) {
+                              HomeDashboardColumn {
                                 Row(Modifier.fillMaxWidth().weight(1f)) {
                                     HomeTopMetricCard("Lat/Long", coordinate, TopDisplayMetric.LAT_LONG,
                                         R.drawable.heart_rate, Utils.AlertChipState.None, null, {})
                                 }
-                                repeat(3) { Spacer(Modifier.weight(1f)) }
+                                repeat(2) { Spacer(Modifier.weight(1f)) }
                                 Spacer(Modifier.height(4.dp))
+                                Spacer(Modifier.height(48.dp))
+                              }
                             }
                             Row(Modifier.width(IntrinsicSize.Max)) {
                                 TopMetricChoice("MGRS", grid, true) {}

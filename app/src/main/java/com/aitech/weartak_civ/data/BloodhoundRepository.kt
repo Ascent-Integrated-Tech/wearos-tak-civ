@@ -135,7 +135,8 @@ class BloodhoundRepository(
         val receivedAt: Long = System.currentTimeMillis(),
         val remoteAlert: RemoteAlert? = null,
         val tracksUserPosition: Boolean = false,
-        val isRouteFollow: Boolean = false
+        val isRouteFollow: Boolean = false,
+        val tracksLocalMarker: Boolean = false
     )
 
     data class RemoteAlert(
@@ -491,6 +492,7 @@ class BloodhoundRepository(
             targetKind = when {
                 bhEvent.remoteAlert != null -> Utils.BloodhoundTargetKind.ALERT
                 uid.startsWith("route-point-") -> Utils.BloodhoundTargetKind.POINT
+                bhEvent.tracksLocalMarker -> Utils.BloodhoundTargetKind.MARKER
                 bhEvent.tracksUserPosition || target.type.startsWith("a-") -> Utils.BloodhoundTargetKind.CONTACT
                 else -> Utils.BloodhoundTargetKind.MARKER
             }
@@ -503,7 +505,8 @@ class BloodhoundRepository(
         lat: Double,
         lon: Double,
         time: Long,
-        isCamera: Boolean = false
+        isCamera: Boolean = false,
+        tracksLocalMarker: Boolean = false
     ) {
         val point = CotPoint(
             lat = lat,
@@ -543,7 +546,8 @@ class BloodhoundRepository(
                 mapItem = mapItem,
                 server = "local",
                 timeIssued = time,
-                timeCompleted = null
+                timeCompleted = null,
+                tracksLocalMarker = tracksLocalMarker
             )
         )
     }
@@ -601,6 +605,35 @@ class BloodhoundRepository(
                 val key = SourceCotKey(user.sourceServerId ?: NON_TAK_BLOODHOUND_SOURCE_ID, user.uid)
                 if (bloodhoundStore.item(key)?.bhEvent?.tracksUserPosition == true) addUserTarget(user)
             }
+        }
+
+    fun refreshLocalMarkerTargets(markers: List<DataRepository.DroppedMarker>): Boolean =
+        synchronized(bloodhoundStateLock) {
+            var changed = false
+            markers.filter { it.cotType != DataRepository.MarkerCotType.CLEAR }.forEach { marker ->
+                val location = marker.location ?: return@forEach
+                if (!location.lat.isFinite() || !location.lon.isFinite() ||
+                    location.lat !in -90.0..90.0 || location.lon !in -180.0..180.0
+                ) return@forEach
+                val key = SourceCotKey(NON_TAK_BLOODHOUND_SOURCE_ID, marker.uid)
+                val item = bloodhoundStore.item(key) ?: return@forEach
+                if (!item.bhEvent.tracksLocalMarker) return@forEach
+                val oldEvent = item.bhEvent.mapItem.cotEvent
+                val event = oldEvent.copy(
+                    point = oldEvent.point.copy(lat = location.lat, lon = location.lon),
+                    type = marker.markerType.type,
+                    detail = oldEvent.detail.copy(markerCallsign = marker.title)
+                )
+                if (event == oldEvent) return@forEach
+                val mapItem = CotMarkerMapItem(event)
+                bloodhoundStore.update(key) {
+                    it.copy(bhEvent = it.bhEvent.copy(mapItem = mapItem),
+                        target = BloodhoundItem.Target(mapItem))
+                }
+                changed = true
+            }
+            if (changed) publishVisibleBloodhounds()
+            changed
         }
 
 

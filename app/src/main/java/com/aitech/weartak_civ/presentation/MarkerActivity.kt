@@ -1279,7 +1279,8 @@ fun EditSelectedMarker(
                                 markerType = markerType,
                                 lat = locationLat,
                                 lon = locationLon,
-                                time = time
+                                time = time,
+                                tracksLocalMarker = true
                             )
 
                             bhRepo.requestActivateBloodhound(uid)

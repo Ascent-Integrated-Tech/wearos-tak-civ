@@ -448,6 +448,18 @@ local tests does not establish phone consumption or server/ATAK receipt.
 
 ### WEARTAK-121: Bloodhound to a map user
 
+From Home, tap the compass/Bloodhound target to open the picker, including while
+guidance is active. The picker row's red square stops guidance without deleting
+the target; **Remove** removes that row. **nPos** means **In Position**: it completes
+the ordinary assignment, removes its Bloodhound row and stops its guidance. A chat
+reply is sent only when the assignment has an identified issuer; local pins do not
+invent a recipient. This does not delete the dropped pin itself.
+
+On the pin-drop screen, hold **X** to open the marker menu, then **Dropped Markers**
+to inspect or delete saved pins. Moving a local pin that is being Bloodhounded
+updates its guidance destination without restarting tracking; unrelated pins do
+not change the selected target.
+
 Tap a user on the map, then **Start Bloodhound** immediately below **Open Chat** to
 start the existing Bloodhound action and return to the map. The action uses the
 selected user's UID and location; subsequent PLI from that same source refreshes
