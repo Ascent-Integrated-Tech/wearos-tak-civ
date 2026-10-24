@@ -42,10 +42,15 @@ internal data class DittoCotDocument(
                     require(it.isFinite()) { "Invalid Ditto coordinate $key" }
                 } ?: throw IllegalArgumentException("Missing Ditto coordinate $key")
 
-            val uid = text("d")
-            require(text("_id") == uid) { "Ditto document/event identity mismatch" }
+            val uid = text("_id")
+            val sender = text("d")
             val peer = text("a")
-            val author = doc["AuthorId"]?.let { text("AuthorId") }
+            val legacyAuthor = doc["AuthorId"]?.let { text("AuthorId") }
+            // Older WearTAK documents put the event UID in d and the author in AuthorId.
+            require(sender == uid || legacyAuthor == null || legacyAuthor == sender) {
+                "Ditto document author mismatch"
+            }
+            val author = legacyAuthor ?: sender
             val time = timestamp("b")
             val start = timestamp("n")
             val stale = timestamp("o")

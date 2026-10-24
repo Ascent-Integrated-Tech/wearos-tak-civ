@@ -313,8 +313,8 @@ class DittoService : Service() {
                         "a" to pks,
                         "b" to timeStart,
                         "c" to cs,
-                        "d" to id,
-                        "e" to cs,
+                        "d" to uuid,
+                        "e" to callsign,
                         "f" to true,
 
                         // — CoT point & timing —
@@ -344,8 +344,8 @@ class DittoService : Service() {
                         // only common & CoT props—no c/f for alerts
                         "a" to pks,
                         "b" to timeStart,
-                        "d" to id,
-                        "e" to "${cs}-Alert",
+                        "d" to uuid,
+                        "e" to callsign,
 
                         "authorCs" to callsign,
                         "AuthorId" to uuid,
