@@ -277,7 +277,7 @@ not message bodies. It suppresses older revisions, repeated snapshots and
 track/mapitem duplicates from the same peer; conflicting equal-time revisions
 are first-accepted-wins. Expired input cannot introduce live points/routes.
 Receiving an expired revision removes only the matching source's copy, never
-another transport's copy; this does not add a route lifetime scheduler.
+another transport's copy. Routes expire at their original CoT stale time.
 At restart, equal current live revisions can rehydrate the repositories; already
 recorded chat documents are not re-notified or used as historical inbox restoration.
 The journal holds **8,192 identities**; entries whose previously accepted
@@ -582,8 +582,14 @@ One package is processed at a time without blocking incoming CoT; failed imports
 are logged and show a watch toast. Resend after an import failure.
 When requested, transfer success/failure acknowledgements are routed back to the
 sender through the source TAK server; success is sent only after route import.
-Imported routes use the existing in-memory route store; restart recovery requires
-a resend or a subscribed Data Sync mission.
+Received routes with a valid CoT `stale` are stored on the watch and recovered
+after process restart, including force-stop/relaunch, without a resend. Original
+timestamps, source/mission ownership, method and checkpoint/control geometry are
+preserved. Expired routes are not recovered; live routes also expire at their
+original stale time. Legacy routes without `stale` remain memory-only rather
+than being retained indefinitely. Source-scoped CoT delete watermarks survive
+restart and reject older/equal replays. Local remove/remove-all and mission
+removal also update the persisted catalog; restart alone cannot restore them.
 
 Ordinary route geometry CoT (`b-m-r`) received on the configured Wi-Fi multicast
 subscriptions uses the same route store, complete geometry and point actions as
@@ -637,8 +643,14 @@ Bloodhound compass, and **Stop route**. Reaching the final point shows **Route
 complete** and clears the active target. Starting another Bloodhound stops route
 following; removing the route from the watch also stops it. A received geometry
 change stops following so an old point index cannot target a different path.
-Standalone following sends no CoT/chat/acknowledgement to the sender, and both
-routes and follow progress are in memory, not restored after app restart.
+Standalone following sends no CoT/chat/acknowledgement to the sender. An active
+standalone route with an unexpired persisted copy resumes its start mode,
+checkpoint index and already-reached checkpoint set after restart. Range/bearing
+wait for a fresh location fix. Recovery stays local and does not send a new
+navigation start to ATAK on reconnection; explicitly starting a route again uses
+the normal Companion handoff. Stop, completion, switching targets, removal,
+expiry or changed geometry prevent recovery. Phone-owned navigation is never
+auto-resumed: a fresh ready Companion snapshot remains authoritative.
 
 Picker rows have small map, start/stop, and remove icons in a single vertical
 column with separate 40 dp touch targets. Remove is local to the watch; **Remove

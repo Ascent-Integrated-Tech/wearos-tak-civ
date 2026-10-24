@@ -12,7 +12,7 @@ class RouteFollow private constructor(
     val completed: Boolean,
     private val remainingSegments: DoubleArray,
     val arrivalRadiusMeters: Double,
-    private val arrived: Set<Int> = emptySet()
+    internal val arrived: Set<Int> = emptySet()
 ) {
     enum class StartMode { BEGINNING, NEAREST }
 
@@ -41,9 +41,10 @@ class RouteFollow private constructor(
     fun remainingDistanceMeters(location: TakRoutePoint): Double =
         if (completed) 0.0 else distanceMeters(location, target) + remainingSegments[currentIndex]
 
-    fun atIndex(index: Int, completed: Boolean = false): RouteFollow {
+    fun atIndex(index: Int, completed: Boolean = false, arrivedCheckpoints: Set<Int> = arrived): RouteFollow {
         require(index in points.indices) { "Route target index out of range" }
-        return RouteFollow(points, mode, index, completed, remainingSegments, arrivalRadiusMeters, arrived)
+        require(arrivedCheckpoints.all { it in points.indices && points[it].isCheckpoint })
+        return RouteFollow(points, mode, index, completed, remainingSegments, arrivalRadiusMeters, arrivedCheckpoints)
     }
 
     companion object {
@@ -126,7 +127,8 @@ data class RouteFollowSession(
     val navigation: RouteFollow,
     val remainingMeters: Double?,
     val phoneSessionId: String? = null,
-    val localSessionId: String = java.util.UUID.randomUUID().toString()
+    val localSessionId: String = java.util.UUID.randomUUID().toString(),
+    val recoveredLocally: Boolean = false
 ) {
     val uid: String get() = if (route.eventTime != null) "route-follow-cot-${route.uid}"
         else "route-follow-${route.serverId.length}-${route.serverId}-${route.uid}"

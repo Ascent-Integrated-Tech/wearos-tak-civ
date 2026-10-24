@@ -322,6 +322,24 @@ class BloodhoundRepository(
 
     private val _routeFollow = MutableStateFlow<RouteFollowSession?>(null)
     val routeFollow: StateFlow<RouteFollowSession?> = _routeFollow
+    private var routePersistence: RoutePersistence? = null
+
+    private fun setRouteSession(session: RouteFollowSession?) {
+        routePersistence?.saveSession(session)
+        _routeFollow.value = session
+    }
+
+    internal fun restoreRouteSession(routes: List<TakRoute>, persistence: RoutePersistence) =
+        synchronized(bloodhoundStateLock) {
+            routePersistence = persistence
+            val session = persistence.restoreSession(routes, System.currentTimeMillis())
+            setRouteSession(session)
+            if (session != null) {
+                updateRouteTarget(session)
+                // Recovery selects only the local synthetic target; no phone command or ACK is sent.
+                activate(session.uid)
+            }
+        }
     private data class PhoneRouteRevision(val sequence: Long, val routeUid: String, val ended: Boolean)
     private val phoneRouteRevisions = object : LinkedHashMap<String, PhoneRouteRevision>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PhoneRouteRevision>?) = size > 128
@@ -338,9 +356,9 @@ class BloodhoundRepository(
                 if (session != null) {
                     stopRoute()
                     if (update.completed) {
-                        _routeFollow.value = session.copy(
+                        setRouteSession(session.copy(
                             navigation = session.navigation.atIndex(session.navigation.points.lastIndex, completed = true),
-                            remainingMeters = 0.0)
+                            remainingMeters = 0.0))
                     }
                 }
                 return@synchronized true
@@ -351,7 +369,7 @@ class BloodhoundRepository(
             if (_routeFollow.value?.phoneSessionId != update.sessionId) stopRoute()
             val fix = location?.takeIf(RouteFollow::validLocation)
             val session = RouteFollowSession(route, navigation, fix?.let(navigation::remainingDistanceMeters), update.sessionId)
-            _routeFollow.value = session
+            setRouteSession(session)
             phoneRouteRevisions[update.sessionId] = PhoneRouteRevision(update.sequence, update.routeUid, false)
             updateRouteTarget(session)
             activate(session.uid)
@@ -361,7 +379,7 @@ class BloodhoundRepository(
     fun disconnectPhoneRoute() = synchronized(bloodhoundStateLock) {
         val session = _routeFollow.value?.takeIf { it.phoneSessionId != null } ?: return@synchronized
         // A reconnect may resume, but explicit local stop/delete remains tombstoned.
-        _routeFollow.value = null
+        setRouteSession(null)
         removeTarget(session.uid)
     }
 
@@ -374,22 +392,23 @@ class BloodhoundRepository(
     fun preparePhoneRoute(sessionId: String) = synchronized(bloodhoundStateLock) {
         val session = _routeFollow.value ?: return@synchronized
         phoneRouteRevisions[sessionId] = PhoneRouteRevision(-1L, session.route.uid, false)
-        _routeFollow.value = session.copy(phoneSessionId = sessionId)
+        setRouteSession(session.copy(phoneSessionId = sessionId))
     }
 
     fun resumeLocalRoute(sessionId: String) = synchronized(bloodhoundStateLock) {
         val session = _routeFollow.value?.takeIf { it.phoneSessionId == sessionId } ?: return@synchronized
         dismissPhoneRoute(session)
-        _routeFollow.value = session.copy(phoneSessionId = null)
+        setRouteSession(session.copy(phoneSessionId = null))
     }
 
     fun startRoute(route: TakRoute, mode: RouteFollow.StartMode, location: TakRoutePoint?): Boolean =
         synchronized(bloodhoundStateLock) {
+            if (route.staleTime?.let { it <= System.currentTimeMillis() } == true) return@synchronized false
             val navigation = runCatching { RouteFollow.start(route.points, mode, location, route.method) }.getOrNull()
                 ?: return@synchronized false
             stopRoute()
             val session = RouteFollowSession(route, navigation, location?.let(navigation::remainingDistanceMeters))
-            _routeFollow.value = session
+            setRouteSession(session)
             updateRouteTarget(session)
             // Use the same single-active selection as ordinary and companion targets, without an ACK.
             activate(session.uid)
@@ -399,7 +418,7 @@ class BloodhoundRepository(
     fun stopRoute() = synchronized(bloodhoundStateLock) {
         val session = _routeFollow.value ?: return@synchronized
         dismissPhoneRoute(session)
-        _routeFollow.value = null
+        setRouteSession(null)
         removeTarget(session.uid)
     }
 
@@ -421,11 +440,11 @@ class BloodhoundRepository(
         val updated = session.copy(navigation = navigation, remainingMeters = navigation.remainingDistanceMeters(location))
         if (navigation.completed) {
             // Keep completion visible, but remove the synthetic target and clear active navigation.
-            _routeFollow.value = null
+            setRouteSession(null)
             removeTarget(session.uid)
-            _routeFollow.value = updated
+            setRouteSession(updated)
         } else {
-            _routeFollow.value = updated
+            setRouteSession(updated)
             if (navigation.currentIndex != session.navigation.currentIndex) updateRouteTarget(updated)
         }
     }
@@ -952,7 +971,7 @@ class BloodhoundRepository(
         val route = _routeFollow.value
         if (route != null && !route.navigation.completed && key?.cotUid != route.uid) {
             dismissPhoneRoute(route)
-            _routeFollow.value = null
+            setRouteSession(null)
             bloodhoundStore.removeUid(route.uid)
             publishVisibleBloodhounds()
         }

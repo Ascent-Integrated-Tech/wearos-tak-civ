@@ -61,6 +61,7 @@ object TakRouteCotParser {
             // UID used to identify the route
             var routeUid: String? = null
             var eventTime: Long? = null
+            var staleTime: Long? = null
 
             // Name of the route shown in TAK
             var routeName: String? = null
@@ -112,6 +113,9 @@ object TakRouteCotParser {
                             if (isRoute) {
                                 routeUid = parser.getAttributeValue(null, "uid")
                                 eventTime = parser.getAttributeValue(null, "time")?.let {
+                                    Instant.parse(it).toEpochMilli().also { time -> require(time > 0) }
+                                }
+                                staleTime = parser.getAttributeValue(null, "stale")?.let {
                                     Instant.parse(it).toEpochMilli().also { time -> require(time > 0) }
                                 }
                             }
@@ -247,7 +251,8 @@ object TakRouteCotParser {
                 missionName = missionName,
                 sender = sender,
                 eventTime = eventTime,
-                method = method
+                method = method,
+                staleTime = staleTime
             )
 
         } catch (e: Exception) {

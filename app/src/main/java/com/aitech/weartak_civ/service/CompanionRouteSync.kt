@@ -34,6 +34,8 @@ internal class CompanionRouteSync(
     fun localRouteChanged() {
         if (!connected) return
         val route = activeRoute()?.takeUnless { it.navigation.completed }
+        // A restart resumes only local progress, not a new navigation command on ATAK.
+        if (route?.recoveredLocally == true) return
         if (route?.localSessionId == ignoredLocalId && route != null) return
         if (route?.phoneSessionId != null && session?.id == route.phoneSessionId) return
         session?.let { command(it, start = false) }
