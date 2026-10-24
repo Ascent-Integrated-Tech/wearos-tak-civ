@@ -143,4 +143,24 @@ class RouteBloodhoundTest {
         compose.onNodeWithText("Cancel").performClick()
         compose.runOnIdle { assertEquals(0, started); assertEquals(1, cancelled) }
     }
+
+    @Test fun routeCanBeRemovedDirectlyFromPicker() {
+        var removed: TakRoute? = null
+        compose.setContent {
+            BloodhoundPickerList(emptyList(), listOf(route), null, {}, {}, Modifier.fillMaxSize(),
+                onRemoveRoute = { removed = it })
+        }
+        compose.onNodeWithTag("bloodhound-route-remove").performClick()
+        compose.runOnIdle { assertEquals(route, removed) }
+    }
+
+    @Test fun routeCanBeRemovedFromNavigationDetails() {
+        var removed = 0
+        compose.setContent {
+            RouteBloodhoundDetails(route, null, null, null, {}, {}, {}, onRemove = { removed++ })
+        }
+        scroll("route-follow-remove")
+        compose.onNodeWithTag("route-follow-remove").performClick()
+        compose.runOnIdle { assertEquals(1, removed) }
+    }
 }

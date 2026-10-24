@@ -359,6 +359,22 @@ class DataRepository(private val context: Context) {
         _takRoutes.update { it - (serverId to routeUid) }
     }
 
+    fun removeRouteFromWatch(route: TakRoute, bloodhoundRepository: BloodhoundRepository) {
+        if (bloodhoundRepository.routeFollow.value?.matches(route) == true) bloodhoundRepository.stopRoute()
+        _takRoutes.update { routes ->
+            routes.filterValues { candidate ->
+                !(candidate.uid == route.uid && (candidate.serverId == route.serverId ||
+                    (route.eventTime != null && candidate.eventTime != null)))
+            }
+        }
+        bloodhoundRepository.reconcileRoutes(takRouteCopies)
+    }
+
+    fun clearRoutesFromWatch(bloodhoundRepository: BloodhoundRepository) {
+        bloodhoundRepository.stopRoute()
+        _takRoutes.value = emptyMap()
+    }
+
     // Remove routes that belong to a specific mission on a specific server
     // Keep routes from other missions and TAK Servers
     fun removeTakRoutesForMission(serverId: String, missionName: String) {

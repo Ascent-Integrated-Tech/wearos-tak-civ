@@ -31,6 +31,7 @@ class CompanionBloodhoundCollectorsTest {
         val sync = mockk<CompanionBloodhoundSync>(relaxed = true)
         every { repository.activeUid } returns activeUid
         every { repository.activeBhItemMap } returns activeItem
+        every { repository.routeFollow } returns MutableStateFlow(null)
         every { companion.bleConnectionState } returns connection
         val service = CompanionAppService()
         setLazy(service, "bhRepo", repository)

@@ -2945,7 +2945,7 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                     route = route,
                     onPoint = { index -> selectRoutePoint(serverId, routeUid, index) },
                     onRemove = {
-                        dataRepository.removeTakRoute(serverId, routeUid)
+                        dataRepository.removeRouteFromWatch(route, bhRepo)
                         selectedRoutePoint = null
                         selectedRoute = null
                     },

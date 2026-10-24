@@ -658,6 +658,7 @@ class CompanionPhoneManagementReleaseTest {
         val bloodhound = mockk<BloodhoundRepository>(relaxed = true)
         every { bloodhound.activeUid } returns MutableStateFlow(null)
         every { bloodhound.activeBhItemMap } returns MutableStateFlow(null)
+        every { bloodhound.routeFollow } returns MutableStateFlow(null)
         every { bloodhound.activeTrackingItem() } returns null
         every { capRepo.bleConnectionState } returns
             MutableStateFlow(CompanionAppRepository.BleConnectionState.NOT_CONNECTED)

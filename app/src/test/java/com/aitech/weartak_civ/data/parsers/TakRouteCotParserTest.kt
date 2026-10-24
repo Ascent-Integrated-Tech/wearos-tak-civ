@@ -11,6 +11,28 @@ import org.robolectric.shadows.ShadowLog
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class TakRouteCotParserTest {
+    @Test fun methodCheckpointsControlsAndPointUidsRoundTripWithoutChangingRawIndices() {
+        val source = """
+            <event uid="route" type="b-m-r"><detail><contact callsign="A &amp; B"/>
+            <link_attr method="Driving"/><link uid="start" type="b-m-p-w" point="0,0"/>
+            <link uid="control" type="b-m-p-c" point="0,0.001"/>
+            <link uid="finish" type="b-m-p-w" point="0,0.002"/>
+            </detail></event>
+        """.trimIndent()
+        val route = requireNotNull(TakRouteCotParser.parse(source, "server", strictPoints = true))
+        assertEquals("Driving", route.method)
+        assertEquals(listOf(true, false, true), route.points.map { it.isCheckpoint })
+        assertEquals(listOf("start", "control", "finish"), route.points.map { it.uid })
+        val restored = requireNotNull(TakRouteCotParser.parse(TakRouteCotParser.serialize(route), "server", strictPoints = true))
+        assertEquals(route.method, restored.method)
+        assertEquals(route.name, restored.name)
+        assertEquals(route.points.map { it.uid to it.isCheckpoint }, restored.points.map { it.uid to it.isCheckpoint })
+        assertEquals(route.points.map { it.longitude }, restored.points.map { it.longitude })
+        assertFalse(requireNotNull(TakRouteCotParser.parse(
+            """<event uid="legacy" type="b-m-r"><detail><link point="0,0"/></detail></event>""", "server"))
+            .points.single().isCheckpoint)
+    }
+
     private val xml = """
         <event uid="route-1" type="b-m-r"><detail>
             <contact callsign="Test route"/>

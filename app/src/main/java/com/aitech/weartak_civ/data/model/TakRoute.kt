@@ -28,7 +28,8 @@ data class TakRoute(
 
     val sender: String? = null,
 
-    val eventTime: Long? = null
+    val eventTime: Long? = null,
+    val method: String = "Walking"
 
 )
 
@@ -51,5 +52,7 @@ data class TakRoutePoint(
     val altitude: Double? = null,
 
     // Optional name or label for the point
-    val name: String? = null
+    val name: String? = null,
+    val isCheckpoint: Boolean = true,
+    val uid: String? = null
 )

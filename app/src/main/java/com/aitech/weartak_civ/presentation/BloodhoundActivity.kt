@@ -348,7 +348,8 @@ fun BloodhoundCivApp(
                         requestBloodhoundComplicationUpdate(context)
                     },
                     onBack = { navController.popBackStack() },
-                    choosingStart = destination == "bloodhound_route_start")
+                    choosingStart = destination == "bloodhound_route_start",
+                    onRemove = { dataRepository.removeRouteFromWatch(route, bhRepo) })
             }
         }
         }
@@ -402,7 +403,7 @@ fun BloodhoundScreen(
     val actionScope = rememberCoroutineScope()
     var removingAll by remember { mutableStateOf(false) }
     val showRemoveAllConfirmation = remember { mutableStateOf(false) }
-    val canRemove = (bloodhounds.isNotEmpty() || session?.navigation?.completed == false) && !removingAll
+    val canRemove = (bloodhounds.isNotEmpty() || routes.isNotEmpty() || session != null) && !removingAll
     val goBack = {
         exitActivity()
         context.startActivity(Intent(context, MainActivity::class.java))
@@ -416,7 +417,9 @@ fun BloodhoundScreen(
                     removingAll = true
                     actionScope.launch {
                         try {
-                            (context.applicationContext as WearTakApplication).bhRepo.removeAllFromMenu()
+                            val app = context.applicationContext as WearTakApplication
+                            app.bhRepo.removeAllFromMenu()
+                            app.repo.clearRoutesFromWatch(app.bhRepo)
                         } finally {
                             removingAll = false
                         }
@@ -436,6 +439,15 @@ fun BloodhoundScreen(
             session = session, onMapTarget = onMapTarget, onMapRoute = onMapRoute,
             onStartTarget = onStartTarget, onChooseRoute = onChooseRoute,
             onStopTarget = onStopTarget, onStopRoute = onStopRoute,
+            onRemoveTarget = { uid ->
+                actionScope.launch {
+                    (context.applicationContext as WearTakApplication).bhRepo.removeFromMenu(uid)
+                }
+            },
+            onRemoveRoute = { route ->
+                val app = context.applicationContext as WearTakApplication
+                app.repo.removeRouteFromWatch(route, app.bhRepo)
+            },
             header = {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
                     Text(stringResource(R.string.bloodhound), color = colors.primary,

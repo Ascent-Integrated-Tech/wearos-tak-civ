@@ -7,6 +7,7 @@ import org.xmlpull.v1.XmlPullParserFactory
 import java.io.StringReader
 import android.util.Log
 import java.time.Instant
+import java.io.StringWriter
 
 // Reads incoming route CoT XML and turns it into a TakRoute object
 // CoT messages use XML to store route details and coordinates
@@ -14,10 +15,41 @@ import java.time.Instant
 // Returns null if the message is not a valid route
 object TakRouteCotParser {
 
+    fun serialize(route: TakRoute): String {
+        val output = StringWriter()
+        val xml = XmlPullParserFactory.newInstance().newSerializer()
+        xml.setOutput(output)
+        val now = Instant.now()
+        xml.startTag(null, "event").attribute(null, "version", "2.0")
+            .attribute(null, "uid", route.uid).attribute(null, "type", "b-m-r")
+            .attribute(null, "how", "h-e").attribute(null, "time", now.toString())
+            .attribute(null, "start", now.toString()).attribute(null, "stale", now.plusSeconds(86400).toString())
+        val first = route.points.first()
+        xml.startTag(null, "point").attribute(null, "lat", first.latitude.toString())
+            .attribute(null, "lon", first.longitude.toString())
+            .attribute(null, "hae", (first.altitude ?: 0.0).toString())
+            .attribute(null, "ce", "9999999").attribute(null, "le", "9999999").endTag(null, "point")
+        xml.startTag(null, "detail")
+        xml.startTag(null, "contact").attribute(null, "callsign", route.name).endTag(null, "contact")
+        xml.startTag(null, "link_attr").attribute(null, "method", route.method)
+            .attribute(null, "direction", "Infil").endTag(null, "link_attr")
+        route.points.forEachIndexed { index, point ->
+            xml.startTag(null, "link").attribute(null, "uid", point.uid ?: "${route.uid}-point-$index")
+                .attribute(null, "type", if (point.isCheckpoint || index == route.points.lastIndex) "b-m-p-w" else "b-m-p-c")
+                .attribute(null, "relation", "c")
+                .attribute(null, "point", "${point.latitude},${point.longitude},${point.altitude ?: 0.0}")
+            point.name?.let { xml.attribute(null, "callsign", it) }
+            xml.endTag(null, "link")
+        }
+        xml.endTag(null, "detail").endTag(null, "event")
+        xml.flush()
+        return output.toString()
+    }
+
     // Takes the raw CoT XML and the ID of the server it came from
     // Goes through the XML to find route information and coordinates
     // Builds a TakRoute object if the route has a valid UID and points
-    fun parse(rawXml: String, serverId: String): TakRoute? {
+    fun parse(rawXml: String, serverId: String, strictPoints: Boolean = false): TakRoute? {
         return try {
 
             // Create an XML parser to read the CoT message
@@ -38,6 +70,7 @@ object TakRouteCotParser {
 
             // Callsign of the person who created or sent the route
             var sender: String? = null
+            var method = "Walking"
 
             // Tracks whether the CoT event is actually a route
             var isRoute = false
@@ -109,6 +142,12 @@ object TakRouteCotParser {
                             }
                         }
 
+                        "link_attr" -> {
+                            if (isRoute && inDetail) {
+                                method = parser.getAttributeValue(null, "method") ?: "Walking"
+                            }
+                        }
+
                         "link" -> {
 
                             // Each link can contain a point along the route
@@ -159,10 +198,16 @@ object TakRouteCotParser {
                                                 altitude = alt,
                                                 name = parser.getAttributeValue(
                                                     null, "callsign"
-                                                )
+                                                ),
+                                                isCheckpoint = parser.getAttributeValue(null, "type") == "b-m-p-w",
+                                                uid = parser.getAttributeValue(null, "uid")
                                             )
                                         )
+                                    } else if (strictPoints) {
+                                        return null
                                     }
+                                } else if (strictPoints && coordinateString != null) {
+                                    return null
                                 }
                             }
                         }
@@ -201,7 +246,8 @@ object TakRouteCotParser {
                 serverId = serverId,
                 missionName = missionName,
                 sender = sender,
-                eventTime = eventTime
+                eventTime = eventTime,
+                method = method
             )
 
         } catch (e: Exception) {

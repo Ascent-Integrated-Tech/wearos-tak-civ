@@ -65,6 +65,17 @@ class BloodhoundPickerActionsTest {
         compose.onNodeWithTag("bloodhound-target-marker-body").assertHasClickAction()
     }
 
+    @Test fun removeMarkerDoesNotOpenOrStartIt() {
+        var removed: String? = null
+        var opened = 0
+        compose.setContent {
+            BloodhoundPickerList(listOf(marker), emptyList(), null, { opened++ }, {}, Modifier.fillMaxSize(),
+                onRemoveTarget = { removed = it })
+        }
+        compose.onNodeWithContentDescription("Remove Rally Point from watch").performClick()
+        compose.runOnIdle { assertEquals("marker", removed); assertEquals(0, opened) }
+    }
+
     @Test fun smallWatchPickerActionsFitWithoutOverlap() {
         verifyPickerLayout()
     }
@@ -82,10 +93,14 @@ class BloodhoundPickerActionsTest {
         val body = compose.onNodeWithTag("bloodhound-target-marker-body").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val map = compose.onNodeWithTag("bloodhound-target-marker-map").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val hound = compose.onNodeWithTag("bloodhound-target-marker-hound").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val remove = compose.onNodeWithTag("bloodhound-target-marker-remove").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
         val row = compose.onNodeWithTag("bloodhound-target-marker").fetchSemanticsNode().boundsInRoot
         assertTrue(body.right <= map.left)
-        assertTrue(map.right < hound.left)
-        assertTrue(hound.right <= row.right)
+        assertEquals(map.left, hound.left)
+        assertEquals(hound.left, remove.left)
+        assertTrue(map.bottom < hound.top)
+        assertTrue(hound.bottom < remove.top)
+        assertTrue(remove.right <= row.right)
         assertTrue(body.width > 0)
     }
 }

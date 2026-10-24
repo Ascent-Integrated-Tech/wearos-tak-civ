@@ -610,23 +610,85 @@ offer, credentials, query values or hash values.
 
 Tap a route line to view the whole route and select any of its points (including
 unnamed vertices) for the existing point details and Bloodhound action. **Remove
-from watch** requires confirmation and removes only that source server/route UID
-from local map state, never the server copy or another server's matching UID.
+from watch** requires confirmation and removes the selected route from local map
+state, never the server copy. Versioned CoT copies of the same route UID are
+removed together so an older transport copy cannot immediately restore the row;
+legacy unversioned routes retain source ownership.
 A later resend or Data Sync update can restore a locally removed route. Existing
 single-point Bloodhound targets remain until stopped or removed using Bloodhound controls.
 
 The Bloodhound picker also lists each received **whole route** once, with its total
 point count and distance to the nearest vertex when a location fix is available.
 Open a route and choose **Start nearest** (requires a location fix) or **Start from
-beginning**. Navigation follows every vertex in its received order, including
-unnamed points, advancing past consecutive targets within **20 m**. The route
+beginning**. Standalone navigation now targets checkpoints (`b-m-p-w`), preserving
+control vertices (`b-m-p-c`, also the default for links without a type) in route
+geometry/distance. The final vertex remains the destination, including legacy
+routes without typed checkpoints. Start nearest selects the next checkpoint
+ahead of the closest projected position along the route, rather than the nearest
+raw vertex. Arrival radii follow ATAK defaults: **Walking/Swimming 10 m, Driving
+20 m, Watercraft 100 m, Flying 1000 m**; missing/unknown method defaults to Walking.
+The current GNSS horizontal accuracy is added to that radius when available.
+A nonterminal checkpoint must have been reached within the bubble and then
+passed along the route projection before advancing. Reaching the final vertex's
+arrival bubble completes the route. There are no bearing or timeout rules.
+This replaces the old fixed-20-m/every-vertex behavior. The route
 screen shows **Point X of N**, remaining distance along the route, the existing
 Bloodhound compass, and **Stop route**. Reaching the final point shows **Route
 complete** and clears the active target. Starting another Bloodhound stops route
 following; removing the route from the watch also stops it. A received geometry
 change stops following so an old point index cannot target a different path.
-Following is local only (no CoT, chat or acknowledgement to the sender), and both
+Standalone following sends no CoT/chat/acknowledgement to the sender, and both
 routes and follow progress are in memory, not restored after app restart.
+
+Picker rows have small map, start/stop, and remove icons in a single vertical
+column with separate 40 dp touch targets. Remove is local to the watch; **Remove
+all** clears whole routes as well as marker/alert targets and any completed route
+session. Routes can also be removed from their Bloodhound details screen. The
+main-screen Bloodhound shortcut is hidden while a target is active.
+
+Bonded, ready, single-watch Companion sessions accept `phone_route_navigation`
+JSON envelopes. Version 1 payloads contain `sessionId`, monotonically increasing
+`sequence`, `action` (`start`, `progress`, `stop`), and `routeUid`. Start/progress
+also contain the full `b-m-r` XML in `routeCot` and a zero-based
+`targetPointIndex` over every raw geometry vertex (including unnamed points).
+The geometry UID must match, and malformed vertices or out-of-range indices
+reject the snapshot rather than shifting its index. Stop optionally contains
+`completed: true` when ATAK reports final arrival.
+
+For phone-owned navigation, the watch follows exactly the phone's index; its
+own location updates only range/bearing and remaining distance, not progression.
+ATAK decides advancement and completion using its own arrival settings. A phone
+completion clears the active target and retains the completed route details;
+manual phone stop does not claim completion. Duplicate/older sequences and
+ended sessions are ignored (bounded 128-session history). Disconnect clears the
+active phone target; a fresh snapshot with a higher sequence may resume it.
+Explicit watch stop, delete, Remove all, or switching targets sends a
+session-scoped stop to the bonded phone and suppresses further snapshots for that
+session. Removal never deletes the phone/server route geometry.
+
+Watch-started routes on a ready bonded connection send `watch_route_navigation`
+with version 1, `requestId`, proposed `sessionId`, `action: start`, `routeUid`,
+`targetPointIndex`, and full `routeCot`. The phone validates/imports missing
+geometry locally and starts native ATAK navigation; existing incompatible
+geometry is rejected. Native snapshots use that same session ID. Watch-side
+export retains raw order and marks the fallback final destination as a checkpoint
+so a watch-only legacy route can be imported as navigable geometry. Watch-side
+advancement pauses during takeover. `route_navigation_ack` includes `requestId`,
+`sessionId`, `ok`, and optional `error`; a rejection or missing native snapshot
+after **8 seconds** reports a sync failure and resumes local navigation without
+an automatic retry loop. A timeout also sends a scoped stop to cancel a late
+phone start. Stop uses the same message type with `action: stop`, a fresh
+request ID, the session ID, and route UID. There is no competing watch progress
+loop while ATAK owns navigation. Disconnect before takeover resumes local
+navigation; disconnect after takeover clears the phone-owned active target.
+
+Standalone rules are ATAK-aligned, not a reimplementation of its full engine:
+the watch uses nearest-segment equirectangular projection with geodesic segment
+lengths, not ATAK's spatial SQL engine. It does not share phone
+`waypointBubble.<method>` preference overrides, navigation-cue-triggered
+departure, engine-dirty/off-route reselection, or ATAK's navigation-loop cadence.
+Bonded operation delegates these decisions to ATAK and therefore uses the native
+phone's exact objective and completion events.
 
 Route lines and named point markers remain visible on the map. Selecting a point
 uses the standard marker range/bearing display, Bloodhound/In Position action,

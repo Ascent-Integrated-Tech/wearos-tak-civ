@@ -2592,8 +2592,10 @@ fun MainScreen(
 //                        verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.Center
                     ){
-                        BloodhoundButton(context, activeItem)
-                        Spacer(modifier = Modifier.width(5.dp))
+                        if (activeItem == null) {
+                            BloodhoundButton(context, activeItem)
+                            Spacer(modifier = Modifier.width(5.dp))
+                        }
                         FilledIconButton(
                             onClick ={ context.startActivity(Intent(context, MapActivity::class.java)) },
                             modifier = Modifier.size(37.dp),
