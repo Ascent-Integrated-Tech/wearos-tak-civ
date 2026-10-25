@@ -838,10 +838,10 @@ class MainActivity : ComponentActivity() {
             vehicleReportingInterval       = dataRepository.getVehicleReportingInterval.first()
             whileAlertingReportingInterval = dataRepository.getWhileAlertingReportingInterval.first()
 
-            // Initially on start ActivityRecognized is UNKNOWN
+            // No verified speed is available during startup.
             val dynamicReportingInterval = calcDynamicReportingInterval(
                 false,
-                ActivityRecognized.UNKNOWN,
+                null,
                 whileAlertingReportingInterval,
                 onFootReportingInterval,
                 vehicleReportingInterval,
@@ -854,6 +854,10 @@ class MainActivity : ComponentActivity() {
             dataRepository.storeReportingUpdateInterval(reportingUpdateInterval)
             CotDispatchService.desiredReportingIntervalSecs = reportingUpdateInterval
             CotDispatchService.actualReportingIntervalSecs = reportingUpdateInterval
+            CotDispatchService.desiredLocationObservationIntervalSecs =
+                com.aitech.weartak_civ.service.SpeedReportingPolicy.desiredObservationIntervalSeconds(
+                    reportingUpdateInterval, onFootReportingInterval, vehicleReportingInterval,
+                )
 
             // --- External endpoints / integrations ---
             enableTakEndpoint              = dataRepository.getEnableTakEndpoint.first()

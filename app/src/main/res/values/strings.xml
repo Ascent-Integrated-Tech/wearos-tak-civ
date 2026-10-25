@@ -475,7 +475,7 @@
     <string name="wifiOptimization_ssid_list_description" translatable="false">Provide a double pipe || separated list of WiFi Network SSIDs.</string>
 
     <string name="enable_dynamic_reporting_strategy_title" translatable="false">Enable Dynamic Reporting Strategy</string>
-    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval dynamically changes based on motion and alerting status OR if it is constant.</string>
+    <string name="enable_dynamic_reporting_strategy_description" translatable="false">Boolean that determines if reporting interval dynamically changes based on selected-input speed and alerting status OR if it is constant. Saved On Foot and Vehicle intervals bound speed interpolation; Stationary and While Alerting keep their saved intervals.</string>
     <string name="enable_dynamic_reporting_strategy_default" translatable="false">true</string>
 
     <string name="constant_reporting_interval_title" translatable="false">Constant Reporting Interval (Constant Reporting Strategy)</string>

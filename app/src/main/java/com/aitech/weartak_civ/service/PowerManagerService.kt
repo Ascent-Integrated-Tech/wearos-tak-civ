@@ -130,6 +130,7 @@ class PowerManagerService : Service() {
                 dockedAndShouldThrottleDispatch =
                     dockType == BatteryService.DockType.WIRELESS ||
                             (dockType == BatteryService.DockType.USB && enableDispatchThrottleOnDevDock)
+                observationDockThrottled = dockedAndShouldThrottleDispatch
 
                 // ✅ Key fix:
                 // If we should throttle, do it immediately, even during startup delay.
@@ -236,6 +237,8 @@ class PowerManagerService : Service() {
                                enableWifiPowerOptim: Boolean, enablePowerOptimOnAllWifiSsids: Boolean,
                                powerOptimWifiSsidList: List<DataRepository.WifiSsidItem>) {
         Log.d(TAG, "PowerManagerService dynamicUpdates(): nwConnected($nwConnected), nwTransport($nwTransport), connWifiSsid($connWifiSsid), enableWifiPowerOptim($enableWifiPowerOptim), enablePowerOptimOnAllWifiSsids($enablePowerOptimOnAllWifiSsids), powerOptimWifiSsidList(${powerOptimWifiSsidList.toString()})")
+        observationPowerThrottled = !nwConnected || (nwTransport == WIFI && enableWifiPowerOptim &&
+            (enablePowerOptimOnAllWifiSsids || powerOptimWifiSsidList.any { it.name == connWifiSsid }))
         if (dockedAndShouldThrottleDispatch) {
             Log.w(TAG, "Device is docked and should be throttled. Exiting dynamicUpdates() early....")
             return
@@ -311,6 +314,20 @@ class PowerManagerService : Service() {
     }
 
     companion object {
+        @Volatile
+        var observationPowerThrottled = false
+            private set
+        @Volatile
+        var observationDockThrottled = false
+            private set
+
+        fun locationObservationIntervalSeconds(dynamic: Boolean): Int =
+            SpeedReportingPolicy.observationIntervalSeconds(
+                dynamic, CotDispatchService.desiredLocationObservationIntervalSecs,
+                CotDispatchService.actualReportingIntervalSecs,
+                observationPowerThrottled, observationDockThrottled,
+            )
+
         private val TAG = "WearTAK-" + PowerManagerService::class.java.simpleName
         private val POWERMANAGER_SERVICE_NOTIFICATION_ID = 555
         private const val INITIAL_START_DELAY = 5_000L // 5 seconds

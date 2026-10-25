@@ -9,11 +9,15 @@
 
 package com.aitech.weartak_civ.service
 
+import android.Manifest
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.DEFAULT_ON_FOOT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
@@ -21,27 +25,30 @@ import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.LocationInput
+import com.aitech.weartak_civ.data.LocationInputStatus
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.UPDATE_INTERVAL_CHANGED
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
 import java.util.concurrent.atomic.AtomicBoolean
-import kotlin.math.max
 
 
 class ReportingIntervalStrategyService : Service() {
     private val TAG = "WearTAK-" + ReportingIntervalStrategyService::class.java.simpleName
     private lateinit var dataRepository: DataRepository
     private val serviceJob = SupervisorJob()
-    private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private val serviceScope = CoroutineScope(Dispatchers.Main.immediate + serviceJob)
     private var enableDynamicReportingStrategy = false
     private var constantReportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
     private var whileAlertingReportingInterval = DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
@@ -51,7 +58,7 @@ class ReportingIntervalStrategyService : Service() {
     private var dynamicReportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
     private var reportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
     private var isAlerting = false
-    private var latestActivity = ActivityRecognized.UNKNOWN
+    private var latestSpeedMps: Double? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -66,7 +73,7 @@ class ReportingIntervalStrategyService : Service() {
         startDynamicReportingIntervalCollector()
         startConstantReportingIntervalCollector()
         startIsAlertingCollector()
-        startActivityCollector()
+        startSpeedCollector()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -92,15 +99,18 @@ class ReportingIntervalStrategyService : Service() {
             vehicleReportingInterval = dataRepository.getVehicleReportingInterval.first()
             stationaryReportingInterval = dataRepository.getStationaryReportingInterval.first()
             isAlerting = dataRepository.isAlerting.first()
-            latestActivity = dataRepository.latestActivityRecognized.first()
 
-            dynamicReportingInterval = calcDynamicReportingInterval(isAlerting, latestActivity,
+            dynamicReportingInterval = calcDynamicReportingInterval(isAlerting, latestSpeedMps,
                 whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval, stationaryReportingInterval)
             reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
+            CotDispatchService.desiredLocationObservationIntervalSecs =
+                SpeedReportingPolicy.desiredObservationIntervalSeconds(
+                    reportingInterval, onFootReportingInterval, vehicleReportingInterval,
+                )
             dataRepository.storeReportingUpdateInterval(reportingInterval)
             Log.d(TAG, "initializeVariables enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
                     "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
-                    "(activity=$latestActivity, isAlerting=$isAlerting, alerting=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
+                    "(speedMps=$latestSpeedMps, isAlerting=$isAlerting, alerting=$whileAlertingReportingInterval, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
             if (reportingInterval != CotDispatchService.desiredReportingIntervalSecs) {
                 Log.d(TAG, "initializeVariables reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.desiredReportingIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
                 CotDispatchService.desiredReportingIntervalSecs = reportingInterval
@@ -110,12 +120,17 @@ class ReportingIntervalStrategyService : Service() {
     }
 
     private suspend fun calcReportingIntervalAndSendUpdate() {
+        val previousInterval = reportingInterval
         reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
-        dataRepository.storeReportingUpdateInterval(reportingInterval)
+        val observationInterval = SpeedReportingPolicy.desiredObservationIntervalSeconds(
+            reportingInterval, onFootReportingInterval, vehicleReportingInterval,
+        )
+        val observationChanged = observationInterval != CotDispatchService.desiredLocationObservationIntervalSecs
+        CotDispatchService.desiredLocationObservationIntervalSecs = observationInterval
+        if (reportingInterval != previousInterval) dataRepository.storeReportingUpdateInterval(reportingInterval)
         //Log.d(TAG, "calcReportingIntervalAndSendUpdate enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
         //            "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
-        //            "(activity=$latestActivity, alerting=$isAlerting, onFoot=$onFootReportingInterval, vehicle=$vehicleReportingInterval, stationary=$stationaryReportingInterval)")
-        if (reportingInterval != CotDispatchService.desiredReportingIntervalSecs) {
+        if (reportingInterval != CotDispatchService.desiredReportingIntervalSecs || observationChanged) {
             //Log.d(TAG, "calcReportingIntervalAndSendUpdate reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
             CotDispatchService.desiredReportingIntervalSecs = reportingInterval
             EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, reportingInterval))
@@ -123,13 +138,13 @@ class ReportingIntervalStrategyService : Service() {
     }
 
     private suspend fun calcDynamicReportingIntervalAndSendUpdate() {
-        val dynamicRI = calcDynamicReportingInterval(isAlerting, latestActivity,
+        val dynamicRI = calcDynamicReportingInterval(isAlerting, latestSpeedMps,
             whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval, stationaryReportingInterval)
         if (dynamicRI != dynamicReportingInterval) {
             Log.d(TAG, "dynamicReportingInterval changed from $dynamicReportingInterval to $dynamicRI")
             dynamicReportingInterval = dynamicRI
-            calcReportingIntervalAndSendUpdate()
         }
+        calcReportingIntervalAndSendUpdate()
     }
 
     private fun startEnableDynamicStrategyCollector() {
@@ -195,16 +210,45 @@ class ReportingIntervalStrategyService : Service() {
         }
     }
 
-    private fun startActivityCollector() {
+    private fun startSpeedCollector() {
         serviceScope.launch {
-            dataRepository.latestActivityRecognized.collect { activity ->
-                if (latestActivity != activity) {
-                    Log.d(TAG, "latestActivity changed from ${latestActivity.name} to ${activity.name}")
-                    latestActivity = activity
+            combine(LocationService.speedObservation, dataRepository.getLocationInput,
+                dataRepository.getEnableLocationService, dataRepository.locationInputStatus
+            ) { observation, _, _, _ -> observation }.collectLatest { observation ->
+                latestSpeedMps = currentReportingSpeed(dataRepository)
+                calcDynamicReportingIntervalAndSendUpdate()
+                if (latestSpeedMps != null && observation != null) {
+                    val remainingMillis = (observation.validUntilElapsedNanos -
+                        SystemClock.elapsedRealtimeNanos()) / 1_000_000L
+                    // A one-shot expiry does not keep polling or acquire another fix.
+                    delay(remainingMillis.coerceAtLeast(0) + 1)
+                    latestSpeedMps = null
                     calcDynamicReportingIntervalAndSendUpdate()
                 }
             }
+
         }
+    }
+
+    private suspend fun currentReportingSpeed(repo: DataRepository): Double? {
+        val observation = LocationService.speedObservation.value ?: return null
+        val location = observation.location
+        val enabled = repo.getEnableLocationService.first()
+        val permitted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED || (location.provider != LocationInput.INTERNAL_GNSS.provider &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
+                PackageManager.PERMISSION_GRANTED)
+        return SpeedReportingPolicy.validSpeed(
+            location.speed.toDouble().takeIf { location.hasSpeed() },
+            location.elapsedRealtimeNanos,
+            SystemClock.elapsedRealtimeNanos(),
+            enabled && permitted && repo.isCurrentLocationInput(location) &&
+                repo.locationInputStatus.value in setOf(
+                    LocationInputStatus.READY,
+                    LocationInputStatus.ACQUIRING,
+                ),
+            observation.validUntilElapsedNanos,
+        )
     }
 
     private fun startIsAlertingCollector() {
@@ -223,16 +267,7 @@ class ReportingIntervalStrategyService : Service() {
         val isRunning = AtomicBoolean(false)
         private const val REPORTING_INTERVAL_STRATEGY_SERVICE_NOTIFICATION_ID = 1123
 
-        fun calcDynamicReportingInterval(alerting: Boolean, activity: ActivityRecognized, alertingRI: Int, onFootRI: Int, vehicleRI: Int, stationaryRI: Int) : Int {
-            if (alerting) {
-                return alertingRI
-            }
-            return when (activity) {
-                ActivityRecognized.ON_FOOT, ActivityRecognized.RUNNING , ActivityRecognized.WALKING -> onFootRI
-                ActivityRecognized.IN_VEHICLE -> vehicleRI
-                ActivityRecognized.TILTING, ActivityRecognized.BICYCLING, ActivityRecognized.UNKNOWN -> max(onFootRI, vehicleRI)
-                ActivityRecognized.STILL -> stationaryRI
-            }
-        }
+        fun calcDynamicReportingInterval(alerting: Boolean, speedMps: Double?, alertingRI: Int, onFootRI: Int, vehicleRI: Int, stationaryRI: Int): Int =
+            SpeedReportingPolicy.intervalSeconds(speedMps, alerting, alertingRI, onFootRI, vehicleRI, stationaryRI)
     }
 }

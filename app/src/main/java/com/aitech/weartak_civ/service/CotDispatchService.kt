@@ -99,6 +99,8 @@ class CotDispatchService : Service() {
     private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val alertDispatchMutex = Mutex()
     private val markerDispatchMutex = Mutex()
+    private val periodicPliMutex = Mutex()
+    private val periodicReportingGate = PeriodicReportingGate()
     private var identityPliJob: kotlinx.coroutines.Job? = null
     private val outboundAnnouncementGate = OutboundPliAnnouncementGate()
     private val outboundAnnouncementMutex = Mutex()
@@ -1023,11 +1025,12 @@ class CotDispatchService : Service() {
 
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
-            if ((System.currentTimeMillis()-lastLocationUpdateRcvd) > actualReportingIntervalSecs * 1000L) {
+            val dynamic = runBlocking { dataRepository.getEnableDynamicReportingStrategy.first() }
+            if (dynamic || (System.currentTimeMillis()-lastLocationUpdateRcvd) > actualReportingIntervalSecs * 1000L) {
                 // Fused location can update more slowly indoors, so dispatch when the reporting deadline lapses.
-                buildAndSendPhysioLocationCotMsg()
+                buildAndSendPhysioLocationCotMsg(periodic = true)
             }
-            cotDispatchHandler?.postDelayed(this, actualReportingIntervalSecs * 1000L)
+            cotDispatchHandler?.postDelayed(this, if (dynamic) 1_000L else actualReportingIntervalSecs * 1000L)
         }
     }
 
@@ -1334,31 +1337,48 @@ class CotDispatchService : Service() {
         return sent
     }
 
-    fun buildAndSendPhysioLocationCotMsg() {
+    fun buildAndSendPhysioLocationCotMsg(periodic: Boolean = false) {
         // Preserve synchronous dispatch for scheduler and location-triggered calls.
         runBlocking(Dispatchers.IO) {
-            if (outboundAnnouncementGate.hasPending()) {
-                val fresh = dataRepository.latestLocation.value
-                if (fresh != null && announceOutboundPli(fresh)) return@runBlocking
+            periodicPliMutex.withLock {
+                val gated = periodic && dataRepository.getEnableDynamicReportingStrategy.first()
+                if (gated && !dataRepository.getEnableLocationService.first()) return@withLock
+                if (gated &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(applicationContext,
+                        android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(applicationContext,
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) return@withLock
+                val now = android.os.SystemClock.elapsedRealtimeNanos()
+                if (gated && !periodicReportingGate.isDue(now, actualReportingIntervalSecs)) return@withLock
+                if (outboundAnnouncementGate.hasPending()) {
+                    val fresh = dataRepository.latestLocation.value
+                    if (fresh != null && announceOutboundPli(fresh)) {
+                        if (gated) periodicReportingGate.reported(android.os.SystemClock.elapsedRealtimeNanos())
+                        return@withLock
+                    }
+                }
+                val snapshot = dataRepository.snapshotPli()
+                val loc = snapshot.loc
+                if (loc == null || !com.aitech.weartak_civ.cot.EmergencyLocationPolicy.usable(loc)) {
+                    Log.i(TAG, "Skipping outbound PLI: awaiting first valid location fix")
+                    return@withLock
+                }
+
+                val xml = buildPliCot(snapshot)
+
+                Log.i(
+                    TAG,
+                    "Outbound PLI built: uid=${snapshot.systemData.deviceId} " +
+                        "lat=${loc.lat} lon=${loc.lon} " +
+                        "hae=${loc.hae} takConnected=${TAKConnectService.isAnyTakConnected} " +
+                        "sitxAvailable=${sitxAvailable()} companionAvailable=${companionAppAvailable()}"
+                )
+
+                if (dispatch(CotOutboundMessage(xml, CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot))) && gated) {
+                    periodicReportingGate.reported(android.os.SystemClock.elapsedRealtimeNanos())
+                }
             }
-            val snapshot = dataRepository.snapshotPli()
-            val loc = snapshot.loc
-            if (loc == null || !com.aitech.weartak_civ.cot.EmergencyLocationPolicy.usable(loc)) {
-                Log.i(TAG, "Skipping outbound PLI: awaiting first valid location fix")
-                return@runBlocking
-            }
-
-            val xml = buildPliCot(snapshot)
-
-            Log.i(
-                TAG,
-                "Outbound PLI built: uid=${snapshot.systemData.deviceId} " +
-                    "lat=${loc?.lat ?: 0.0} lon=${loc?.lon ?: 0.0} " +
-                    "hae=${loc?.hae ?: 0.0} takConnected=${TAKConnectService.isAnyTakConnected} " +
-                    "sitxAvailable=${sitxAvailable()} companionAvailable=${companionAppAvailable()}"
-            )
-
-            dispatch(CotOutboundMessage(xml, CotMessageKind.PLI, CotCompanionPayload.Pli(snapshot)))
         }
     }
 
@@ -1474,7 +1494,7 @@ class CotDispatchService : Service() {
             }
         }
 
-        buildAndSendPhysioLocationCotMsg()
+        buildAndSendPhysioLocationCotMsg(periodic = true)
     }
 
     private suspend fun enqueueMarkerDrop(marker: DataRepository.DroppedMarker) = markerDispatchMutex.withLock {
@@ -1676,6 +1696,9 @@ class CotDispatchService : Service() {
                 field = value
                 _desiredReportingIntervalSecsFlow.value = value
             }
+
+        @Volatile
+        var desiredLocationObservationIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
 
         lateinit var instance: CotDispatchService
         val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")

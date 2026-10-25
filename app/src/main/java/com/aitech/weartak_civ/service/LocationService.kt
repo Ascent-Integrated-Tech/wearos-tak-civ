@@ -52,6 +52,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.greenrobot.eventbus.EventBus
@@ -73,6 +75,9 @@ class LocationService : Service() {
     private val timeouts = mutableMapOf<Acquisition, Runnable>()
     private val interactionGate = InteractionPliRefreshGate()
     private var periodic = false
+    private var dynamicReporting = false
+    private var acquisitionIntervalMillis = 0L
+    private var observationPowerPolicy = false to false
     private var wakeLock: PowerManager.WakeLock? = null
     private var receiverRegistered = false
     private val binder = LocationServiceBinder()
@@ -96,8 +101,11 @@ class LocationService : Service() {
         receiverRegistered = true
         EventBus.getDefault().register(this)
         scope.launch {
-            dataRepository.getLocationInput.distinctUntilChanged().collect { input ->
+            combine(dataRepository.getLocationInput, dataRepository.getEnableDynamicReportingStrategy) {
+                input, dynamic -> input to dynamic
+            }.distinctUntilChanged().collect { (input, dynamic) ->
                 currentInput = input
+                dynamicReporting = dynamic
                 restartLocationUpdates()
             }
         }
@@ -208,6 +216,13 @@ class LocationService : Service() {
                 (application as? com.aitech.weartak_civ.WearTakApplication)
                     ?.locationDiagnostics?.observeExistingFix(location)
                 dataRepository.locationInputStatus.value = LocationInputStatus.READY
+                if (dynamicReporting && kind != Acquisition.INTERACTION) scheduleNextDynamicObservation()
+                val now = SystemClock.elapsedRealtimeNanos()
+                val expected = nextObservationDeadlineNanos.value ?: (now +
+                    PowerManagerService.locationObservationIntervalSeconds(dynamicReporting) * 1_000_000_000L)
+                speedObservation.value = SpeedObservation(
+                    location, maxOf(now, expected) + ACQUISITION_TIMEOUT_MILLIS * 1_000_000L,
+                )
                 if (reasons != null) EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
                 else EventBus.getDefault().post(LocationRcvd())
             }
@@ -238,10 +253,12 @@ class LocationService : Service() {
                 Log.i(TAG, "$kind ${input.provider} request timed out without a fresh usable fix")
                 cancelRequest(kind)
                 dataRepository.locationInputStatus.value = LocationInputStatus.REQUEST_FAILED
+                if (dynamicReporting && kind == Acquisition.ONE_SHOT)
+                    scope.launch { scheduleNextDynamicObservation() }
             }
             timeouts[kind] = timeout
             handler.postDelayed(timeout, if (kind == Acquisition.INTERACTION)
-                InteractionPliRefreshGate.TIMEOUT_MILLIS else 6_000L)
+                InteractionPliRefreshGate.TIMEOUT_MILLIS else ACQUISITION_TIMEOUT_MILLIS)
         }
         try {
             if (input == LocationInput.FUSED) {
@@ -253,7 +270,7 @@ class LocationService : Service() {
                     .setWaitForAccurateLocation(true)
                     .apply {
                         if (kind != Acquisition.PERIODIC) setDurationMillis(
-                            if (kind == Acquisition.INTERACTION) InteractionPliRefreshGate.TIMEOUT_MILLIS else 6_000L)
+                            if (kind == Acquisition.INTERACTION) InteractionPliRefreshGate.TIMEOUT_MILLIS else ACQUISITION_TIMEOUT_MILLIS)
                     }
                     .build()
                 client.requestLocationUpdates(request, fusedCallback, Looper.getMainLooper())
@@ -263,6 +280,8 @@ class LocationService : Service() {
                         cancelRequest(kind)
                         dataRepository.locationInputStatus.value = if (error is SecurityException)
                             LocationInputStatus.PERMISSION_REQUIRED else LocationInputStatus.REQUEST_FAILED
+                        if (dynamicReporting && kind == Acquisition.ONE_SHOT && error !is SecurityException)
+                            scope.launch { scheduleNextDynamicObservation() }
                     }
             } else {
                 manager.requestLocationUpdates(input.provider, intervalMillis, 0f, listener, Looper.getMainLooper())
@@ -293,6 +312,10 @@ class LocationService : Service() {
 
     private fun restartLocationUpdates() {
         cancelRequests()
+        nextObservationDeadlineNanos.value = null
+        speedObservation.value = null
+        observationPowerPolicy = PowerManagerService.observationPowerThrottled to
+            PowerManagerService.observationDockThrottled
         if (!isRunning.get()) return
         val restartGeneration = generation
         scope.launch {
@@ -301,13 +324,38 @@ class LocationService : Service() {
                 return@launch
             }
             if (restartGeneration != generation) return@launch
-            periodic = CotDispatchService.actualReportingIntervalSecs < MAX_PERIODIC_GPS_UPDATE_INTERVAL
+            val interval = PowerManagerService.locationObservationIntervalSeconds(dynamicReporting)
+            acquisitionIntervalMillis = interval * 1_000L
+            periodic = interval < MAX_PERIODIC_GPS_UPDATE_INTERVAL
+            if (dynamicReporting)
+                nextObservationDeadlineNanos.value = SystemClock.elapsedRealtimeNanos() +
+                    acquisitionIntervalMillis * 1_000_000L
             if (periodic) requestUpdates(Acquisition.PERIODIC,
-                CotDispatchService.actualReportingIntervalSecs * 1_000L)
+                acquisitionIntervalMillis)
             else {
                 requestUpdates(Acquisition.ONE_SHOT)
-                runTimerJob(CotDispatchService.actualReportingIntervalSecs * 1_000L)
+                if (!dynamicReporting) runTimerJob(acquisitionIntervalMillis)
             }
+        }
+    }
+
+    private suspend fun scheduleNextDynamicObservation() {
+        if (!isRunning.get() || !dynamicReporting || !dataRepository.getEnableLocationService.first()) return
+        val intervalMillis = PowerManagerService.locationObservationIntervalSeconds(true) * 1_000L
+        nextObservationDeadlineNanos.value = SystemClock.elapsedRealtimeNanos() + intervalMillis * 1_000_000L
+        if (intervalMillis < MAX_PERIODIC_GPS_UPDATE_INTERVAL * 1_000L) {
+            if (!periodic || intervalMillis != acquisitionIntervalMillis) {
+                // Change a subscription only after its observation completed, never on speed expiry.
+                cancelRequest(Acquisition.PERIODIC)
+                periodic = true
+                acquisitionIntervalMillis = intervalMillis
+                requestUpdates(Acquisition.PERIODIC, intervalMillis)
+            }
+        } else {
+            cancelRequest(Acquisition.PERIODIC)
+            periodic = false
+            acquisitionIntervalMillis = intervalMillis
+            runTimerJob(intervalMillis)
         }
     }
 
@@ -316,7 +364,7 @@ class LocationService : Service() {
             scope.launch {
                 if (!isRunning.get() || periodic || !dataRepository.getEnableLocationService.first()) return@launch
                 cancelRequest(Acquisition.ONE_SHOT)
-                startGlobalTimer(CotDispatchService.actualReportingIntervalSecs * 1_000L)
+                if (!dynamicReporting) startGlobalTimer(CotDispatchService.actualReportingIntervalSecs * 1_000L)
                 if (!inputAvailable()) return@launch
                 val power = getSystemService(POWER_SERVICE) as PowerManager
                 wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "id:gps").apply { acquire(6_000) }
@@ -330,7 +378,11 @@ class LocationService : Service() {
 
     @Subscribe(threadMode = ThreadMode.MAIN)
     fun onPowerManagerEvent(event: PowerManagerEvent) {
-        if (event.eventType == PowerManagerEvent.CHANGED_UPDATE_INTERVAL) restartLocationUpdates()
+        if (event.eventType == PowerManagerEvent.CHANGED_UPDATE_INTERVAL) {
+            val policy = PowerManagerService.observationPowerThrottled to PowerManagerService.observationDockThrottled
+            // Speed/Unknown changes affect the next acquisition cycle, not an in-flight request.
+            if (!dynamicReporting || observationPowerPolicy != policy) restartLocationUpdates()
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -346,6 +398,8 @@ class LocationService : Service() {
         if (receiverRegistered) unregisterReceiver(providerChanges)
         if (EventBus.getDefault().isRegistered(this)) EventBus.getDefault().unregister(this)
         dataRepository.locationInputStatus.value = LocationInputStatus.OFF
+        nextObservationDeadlineNanos.value = null
+        speedObservation.value = null
         locationManager = null
         fusedClient = null
         _instance = null
@@ -354,6 +408,10 @@ class LocationService : Service() {
     }
 
     companion object {
+        const val ACQUISITION_TIMEOUT_MILLIS = 6_000L
+        data class SpeedObservation(val location: Location, val validUntilElapsedNanos: Long)
+        val speedObservation = MutableStateFlow<SpeedObservation?>(null)
+        val nextObservationDeadlineNanos = MutableStateFlow<Long?>(null)
         private const val TAG = "WearTAK-LocationService"
         private const val LOCATION_SERVICE_NOTIFICATION_ID = 1234
         private const val MAX_PERIODIC_GPS_UPDATE_INTERVAL = 10
