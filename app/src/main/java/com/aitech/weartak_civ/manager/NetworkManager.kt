@@ -24,6 +24,8 @@ import com.aitech.weartak_civ.events.NwConnEvent
 import com.aitech.weartak_civ.events.WifiSsidRcvd
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.presentation.requestStatusIconsComplicationUpdate
+import com.aitech.weartak_civ.service.ConnectionDiagnostics
+import com.aitech.weartak_civ.service.NetworkTransition
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -123,6 +125,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
         //writeToLogFileLocation(logFile, "activeNetwork (${connectivityManager?.activeNetwork?.toString()}); activeNetworkCapabilities (${connectivityManager?.getNetworkCapabilities(connectivityManager?.activeNetwork)?.toString()})")
         val activeNetwork = network ?: connectivityManager?.activeNetwork
         val activeNetworkCapabilities = networkCapabilities ?: connectivityManager?.getNetworkCapabilities(activeNetwork)
+        ConnectionDiagnostics.network(NetworkTransition.SNAPSHOT, activeNetwork != null, activeNetworkCapabilities)
         var networkInfoChanged = false
         var currWifiSsid : String? = null
         //Log.d(TAG, "checkNetworkConnected called w/ activeNetwork (${activeNetwork?.toString()}); activeNetworkCapabilities (${activeNetworkCapabilities?.toString()})")
@@ -243,6 +246,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
         super.onCapabilitiesChanged(network, networkCapabilities)
+        ConnectionDiagnostics.network(NetworkTransition.CAPABILITIES, true, networkCapabilities)
 //        Log.d(TAG, "onCapabilitiesChanged called")
         //writeToLogFileLocation(logFile, "onCapabilitiesChanged called")
         checkNetworkConnected(network, networkCapabilities)
@@ -250,6 +254,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onAvailable(network: Network) {
         super.onAvailable(network)
+        ConnectionDiagnostics.network(NetworkTransition.AVAILABLE, true, null)
         Log.d(TAG, "onAvailable called")
         //writeToLogFileLocation(logFile, "onAvailable called")
         checkNetworkConnected()
@@ -257,6 +262,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onLost(network: Network) {
         super.onLost(network)
+        ConnectionDiagnostics.network(NetworkTransition.LOST, false, null)
         Log.d(TAG, "onLost called")
         //writeToLogFileLocation(logFile, "onLost called")
         checkNetworkConnected()
@@ -269,6 +275,7 @@ class NetworkManager(val flags: Int) : ConnectivityManager.NetworkCallback(flags
 
     override fun onUnavailable() {
         super.onUnavailable()
+        ConnectionDiagnostics.network(NetworkTransition.UNAVAILABLE, false, null)
         Log.d(TAG, "onUnavailable called")
         checkNetworkConnected()
     }
