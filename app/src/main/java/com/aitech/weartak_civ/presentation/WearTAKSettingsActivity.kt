@@ -2409,67 +2409,44 @@ fun WearTAKSettingsNav(
 
         //Alerting Settings vvv
         composable("alerting_preferences") {
+            val entries = alertPreferenceEntries(context, "alerting_preferences")
             WearTAKPageWithBackArrow(
                 stringResource(R.string.alerting_preferences),
                 columnContent = {
-                    item {
-                        WearTAKTitleChip(
-                            route = "physiological_alerts",
-                            title =  stringResource(R.string.physiological_alerts),
-                            navController = navController
-                        )
-                    }
-                    item {
-                        WearTAKTitleChip(
-                            route = "environmental_alerts",
-                            title = stringResource(R.string.environmental_alerts),
-                            navController = navController
-                        )
-                    }
-                    item {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                            thickness = 1.dp,
-                            color = Color.White
-                        )
-                    }
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enableBatteryAlerts,
-                            onCheckedChange = { settingsVm.storeEnableBatteryAlerts(it) },
-                            title = stringResource(R.string.battery_alerts),
-                            description = stringResource(R.string.on_off)
-                        )
+                    items(entries.size) { index ->
+                        val (route, label) = entries[index]
+                        if (route == "battery_alerts") {
+                            WearTAKToggleChip(
+                                checkedLive = enableBatteryAlerts,
+                                onCheckedChange = { settingsVm.storeEnableBatteryAlerts(it) },
+                                title = label,
+                                description = stringResource(R.string.on_off)
+                            )
+                        } else {
+                            WearTAKTitleChip(route = route, title = label, navController = navController)
+                        }
                     }
                 },
                 navController,
             )
         }
         composable("physiological_alerts") {
+            val entries = alertPreferenceEntries(context, "physiological_alerts")
             WearTAKPageWithBackArrow(
                 stringResource(R.string.physiological_alerts),
                 columnContent = {
-                    item {
-                        WearTAKToggleChip(
-                            checkedLive = enablePhysioAlerts,
-                            onCheckedChange = { settingsVm.storeEnablePhysiologicalAlerts(it) },
-                            title = stringResource(R.string.physiological_alerts),
-                            description = stringResource(R.string.on_off)
-                        )
-                    }
-                    item {
-                    WearTAKTitleChip(
-                        route = "heart_rate_alerts",
-                        title = stringResource(R.string.heart_rate_alerts),
-                        navController = navController
-                    )
-                    }
-                    item {
-                        WearTAKTitleChip(
-                            route = "exertion_alerts",
-                            title = stringResource(R.string.exertion_alerts),
-                            navController = navController
-                        )
+                    items(entries.size) { index ->
+                        val (route, label) = entries[index]
+                        if (route == "physiological_master") {
+                            WearTAKToggleChip(
+                                checkedLive = enablePhysioAlerts,
+                                onCheckedChange = { settingsVm.storeEnablePhysiologicalAlerts(it) },
+                                title = label,
+                                description = stringResource(R.string.on_off)
+                            )
+                        } else {
+                            WearTAKTitleChip(route = route, title = label, navController = navController)
+                        }
                     }
                 },
                 navController,
@@ -2724,22 +2701,13 @@ fun WearTAKSettingsNav(
             )
         }
         composable("environmental_alerts") {
+            val entries = alertPreferenceEntries(context, "environmental_alerts")
             WearTAKPageWithBackArrow(
                 stringResource(R.string.environmental_alerts),
                 columnContent = {
-                    item {
-                        WearTAKTitleChip(
-                            route = "immersion_alerts",
-                            title =stringResource(R.string.immersion_alerts),
-                            navController = navController
-                        )
-                    }
-                    item {
-                        WearTAKTitleChip(
-                            route = "atm_pressure_alerts",
-                            title = stringResource(R.string.atm_pressure_alerts),
-                            navController = navController
-                        )
+                    items(entries.size) { index ->
+                        val (route, label) = entries[index]
+                        WearTAKTitleChip(route = route, title = label, navController = navController)
                     }
                 },
                 navController,
