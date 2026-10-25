@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlin.math.pow
@@ -320,6 +321,31 @@ class BloodhoundRepository(
     private val _activeKey = MutableStateFlow<SourceCotKey?>(null)
     private val _activeUid = MutableStateFlow<String?>(null)
     val activeUid: StateFlow<String?> = _activeUid
+    private val presentationConsumers = mutableMapOf<Any, String?>()
+    // Null means the visible picker needs every target; a set means only those detail targets.
+    private val _presentationTargets = MutableStateFlow<Set<String>?>(emptySet())
+    internal val presentationTargets: StateFlow<Set<String>?> = _presentationTargets
+
+    internal fun requestPresentation(consumer: Any, uid: String? = null) = synchronized(bloodhoundStateLock) {
+        presentationConsumers[consumer] = uid
+        publishPresentationDemand()
+    }
+
+    internal fun releasePresentation(consumer: Any) = synchronized(bloodhoundStateLock) {
+        presentationConsumers.remove(consumer)
+        publishPresentationDemand()
+    }
+
+    private fun publishPresentationDemand() {
+        _presentationTargets.value = if (presentationConsumers.values.any { it == null }) null
+            else presentationConsumers.values.filterNotNull().toSet()
+    }
+
+    internal fun guidanceTargets(): Map<String, BloodhoundItem> = synchronized(bloodhoundStateLock) {
+        val requested = _presentationTargets.value ?: return@synchronized _bloodhoundMap.value
+        val uids = requested + listOfNotNull(_activeUid.value)
+        uids.mapNotNull { uid -> _bloodhoundMap.value[uid]?.let { uid to it } }.toMap()
+    }
 
     private val _routeFollow = MutableStateFlow<RouteFollowSession?>(null)
     val routeFollow: StateFlow<RouteFollowSession?> = _routeFollow
@@ -651,7 +677,12 @@ class BloodhoundRepository(
                 .map { item ->
                     item.toUi(isActive = sourceKey(item.bhEvent) == activeKey)
                 }
-        }.stateIn(scope, SharingStarted.Eagerly, emptyList())
+        }.stateIn(scope, SharingStarted.WhileSubscribed(0, replayExpirationMillis = 0), emptyList())
+
+    internal fun bloodhoundItemUi(uid: String): Flow<Utils.BloodhoundItem?> =
+        combine(bloodhoundMap, _activeKey) { map, activeKey ->
+            map[uid]?.let { it.toUi(isActive = sourceKey(it.bhEvent) == activeKey) }
+        }.distinctUntilChanged()
 
     // UI adapter, BloodhoundItem used by Main Screen button and Complication
     val activeBhItemUi: StateFlow<Utils.BloodhoundItem?> =

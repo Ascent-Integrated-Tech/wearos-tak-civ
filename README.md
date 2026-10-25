@@ -518,6 +518,16 @@ publishing only the completed compass state. Unchanged samples do not rebuild
 the target projections. This does not change heading sampling, background
 guidance, proximity alerts, location acquisition or reporting intervals.
 
+All-target distance/bearing calculations and picker sorting run only while the
+picker is visible. A visible detail page projects only its own target; otherwise
+guidance still updates the active target for navigation, proximity and Companion.
+Stopped/retained pages release their demand, and opening a page or changing the
+active target immediately recomputes using the current location and heading.
+Incoming targets and their source timestamps continue updating offscreen.
+Dashboard collection follows its visible lifecycle. Heading acquisition remains
+available to the map, markers and north complication even without an active target;
+this change does not stop the sensor or alter reporting policy.
+
 ## GitHub pipeline release
 
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling

@@ -274,7 +274,7 @@ class BloodhoundRemoteAlertTest {
         assertTrue(repository.applyEmergencyEvent(shortLived, "TAK", deviceUid = SELF_UID))
         repository.activate(shortLived.uid)
         assertFalse(repository.bloodhoundMap.value[shortLived.uid]!!.bhEvent.remoteAlert!!.isStale)
-        withTimeout(3_000L) { repository.listBhItemsUi.first { it.single().isStale } }
+        withTimeout(3_000L) { repository.listBhItemsUi.first { it.singleOrNull()?.isStale == true } }
         withTimeout(3_000L) { repository.remoteEmergencyMapItems.first { it.single().isStale } }
         assertEquals(shortLived.uid, repository.activeUid.value)
         assertNotNull(repository.bloodhoundMap.value[shortLived.uid]?.bhEvent?.remoteAlert)
@@ -297,7 +297,7 @@ class BloodhoundRemoteAlertTest {
         val fresh = stale.copy(time = now, start = now, stale = now + 60_000L)
         assertTrue(repository.applyEmergencyEvent(fresh, "TAK", sourceServerId = SERVER_A, deviceUid = SELF_UID))
         assertFalse(repository.applyEmergencyEvent(stale, "TAK", sourceServerId = SERVER_A, deviceUid = SELF_UID))
-        withTimeout(3_000L) { repository.listBhItemsUi.first { !it.single().isStale } }
+        withTimeout(3_000L) { repository.listBhItemsUi.first { it.singleOrNull()?.isStale == false } }
         withTimeout(3_000L) { repository.remoteEmergencyMapItems.first { !it.single().isStale } }
         assertEquals(now, repository.bloodhoundMap.value[fresh.uid]?.bhEvent?.mapItem?.cotEvent?.time)
     }
@@ -408,7 +408,7 @@ class BloodhoundRemoteAlertTest {
         assertFalse(restored.applyEmergencyEvent(active.copy(time = now + 12L), "TAK", deviceUid = SELF_UID))
         val reactivated = newRepository()
         assertTrue(reactivated.applyEmergencyEvent(active.copy(time = now + 13L), "TAK", deviceUid = SELF_UID))
-        withTimeout(3_000L) { reactivated.listBhItemsUi.first { it.single().uid == active.uid } }
+        withTimeout(3_000L) { reactivated.listBhItemsUi.first { it.singleOrNull()?.uid == active.uid } }
         withTimeout(3_000L) { reactivated.remoteEmergencyMapItems.first { it.single().uid == active.uid } }
     }
 

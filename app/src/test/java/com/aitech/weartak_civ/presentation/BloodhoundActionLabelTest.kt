@@ -38,7 +38,12 @@ class BloodhoundActionLabelTest {
         val repository = mockk<BloodhoundRepository>()
         val app = mockk<WearTakApplication>()
         val context = mockk<Context>()
-        every { repository.listBhItemsUi } returns MutableStateFlow(listOf(item))
+        every { repository.bloodhoundItemUi(item.uid) } returns MutableStateFlow(item)
+        every { repository.bloodhoundMap } returns MutableStateFlow(
+            mapOf(item.uid to mockk<BloodhoundRepository.BloodhoundItem>(relaxed = true))
+        )
+        every { repository.requestPresentation(any(), any()) } returns Unit
+        every { repository.releasePresentation(any()) } returns Unit
         every { app.bhRepo } returns repository
         every { context.applicationContext } returns app
         compose.setContent {
