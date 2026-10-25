@@ -127,6 +127,18 @@ class HeadingSensorDemandTest {
         }
     }
 
+    @Test fun failedOwnershipPersistenceDoesNotClaimAnOwnerWasRemoved() {
+        val preferences = mockk<android.content.SharedPreferences>()
+        val editor = mockk<android.content.SharedPreferences.Editor>()
+        every { preferences.getStringSet("active", any()) } returns setOf("7")
+        every { preferences.edit() } returns editor
+        every { editor.putStringSet("active", any()) } returns editor
+        every { editor.commit() } returns false
+        val demand = HeadingComplicationDemand(preferences)
+        assertThrows(java.io.IOException::class.java) { demand.setActive(7, false) }
+        assertEquals(setOf("7"), demand.activeIds.value)
+    }
+
     @Test fun screenReceiverUsesCurrentPowerStateAndLateSensorCallbacksCannotPublish() {
         val fixture = Fixture()
         try {
@@ -143,12 +155,19 @@ class HeadingSensorDemandTest {
                 timestamp = 0
             }
             fixture.service.onSensorChanged(stale)
+            assertEquals(0L, field(fixture.service, "count"))
             shadowOf(power).setIsInteractive(true)
             receiver.onReceive(app, Intent(Intent.ACTION_SCREEN_ON))
             fixture.idle()
             fixture.registrations(2)
             fixture.service.onSensorChanged(stale)
+            assertEquals(0L, field(fixture.service, "count"))
             verify(exactly = 0) { fixture.repository.updateMagAzimuthTrue(any()) }
+            shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofMillis(200))
+            stale.timestamp = android.os.SystemClock.elapsedRealtimeNanos()
+            fixture.service.onSensorChanged(stale)
+            assertEquals(1L, field(fixture.service, "count"))
+            verify(exactly = 1) { fixture.repository.updateMagAzimuthTrue(any()) }
         } finally {
             fixture.close()
         }
@@ -169,6 +188,8 @@ class HeadingSensorDemandTest {
             every { repository.headingComplications } returns slots
             every { repository.magneticHeadingSubscriptions } returns subscribers
             every { repository.azimuthTrueDegSmoothed } returns heading
+            every { repository.latestLocation } returns MutableStateFlow<android.location.Location?>(null)
+            every { repository.updateMagAzimuthTrue(any()) } returns Unit
             every { manager.registerListener(service, sensor, any<Int>()) } returns true
             setField(service, "repo\$delegate", lazy { repository })
             setField(service, "sensorManager", manager)
