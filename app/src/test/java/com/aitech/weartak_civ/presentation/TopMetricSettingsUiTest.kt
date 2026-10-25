@@ -4,6 +4,8 @@ import android.app.Application
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.text.TextLayoutResult
@@ -12,6 +14,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import com.aitech.weartak_civ.data.TopDisplayMetric
+import com.aitech.weartak_civ.Utils
+import com.aitech.weartak_civ.R
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -99,19 +103,69 @@ class TopMetricSettingsUiTest {
         assertEquals("physiological_alerts", settingsShortcutRoute(settingsShortcutIntent(app, "physiological_alerts")))
     }
 
-    @Test fun onlyNonAlertCoordinateMetricsOpenReporting() {
+    @Test fun everyMetricAndAlertStateKeepsThePickerDestination() {
         val app = RuntimeEnvironment.getApplication()
+        val selected = mutableStateOf(TopDisplayMetric.MGRS)
+        val hasAlert = mutableStateOf(false)
+        compose.setContent {
+            val context = LocalContext.current
+            HomeTopMetricCard(
+                selected.value.name, "No fix", selected.value, R.drawable.heart_rate,
+                Utils.AlertChipState.None, if (hasAlert.value) "Alert" else null,
+                { context.startActivity(homeMetricIntent(context)) }
+            )
+        }
         for (metric in TopDisplayMetric.entries) {
             for (alert in listOf(false, true)) {
-                val intent = homeMetricIntent(app, metric, alert)
-                if (!alert && metric in listOf(TopDisplayMetric.MGRS, TopDisplayMetric.LAT_LONG)) {
-                    assertEquals(WearTAKSettingsActivity::class.java.name, intent.component!!.className)
-                    assertEquals("reporting_strategy", settingsShortcutRoute(intent))
+                compose.runOnIdle { selected.value = metric; hasAlert.value = alert }
+                compose.onNode(hasClickAction()).performClick()
+                val intent = shadowOf(app).nextStartedActivity
+                assertEquals(PhysioAlertsActivity::class.java.name, intent.component!!.className)
+                assertNull(settingsShortcutRoute(intent))
+            }
+        }
+    }
+
+    @Test fun mgrsCanReturnToHeartRateAndReachMonitoringControls() = verifyCoordinateEscape(TopDisplayMetric.MGRS)
+    @Test fun latLongCanReturnToHeartRateAndReachMonitoringControls() = verifyCoordinateEscape(TopDisplayMetric.LAT_LONG)
+
+    private fun verifyCoordinateEscape(initial: TopDisplayMetric) {
+        val app = RuntimeEnvironment.getApplication()
+        val selected = mutableStateOf(initial)
+        val pickerOpen = mutableStateOf(false)
+        var thresholds = 0
+        var monitoringChanges = 0
+        var alertChanges = 0
+        compose.setContent {
+            WearTAKCIVTheme {
+                if (pickerOpen.value) {
+                    Column {
+                        MetricMonitoringControls(false, false,
+                            { monitoringChanges++ }, { alertChanges++ }, { thresholds++ })
+                        TopMetricChoice("Heart Rate", "Disabled", selected.value == TopDisplayMetric.HEART_RATE) {
+                            selected.value = TopDisplayMetric.HEART_RATE
+                        }
+                    }
                 } else {
-                    assertEquals(PhysioAlertsActivity::class.java.name, intent.component!!.className)
-                    assertNull(settingsShortcutRoute(intent))
+                    HomeTopMetricCard(initial.name, "No fix", initial, R.drawable.heart_rate,
+                        Utils.AlertChipState.None, null, {
+                            assertEquals(PhysioAlertsActivity::class.java.name,
+                                homeMetricIntent(app).component!!.className)
+                            pickerOpen.value = true
+                        })
                 }
             }
+        }
+        compose.onNode(hasClickAction()).performClick()
+        compose.onNodeWithText("Physiological Monitoring").assertIsDisplayed()
+        compose.onNodeWithText("Physiological Alerts").assertIsDisplayed()
+        compose.onNodeWithContentDescription("Change alert thresholds").performClick()
+        compose.onNodeWithText("Heart Rate Disabled").performClick().assertIsSelected()
+        compose.runOnIdle {
+            assertEquals(TopDisplayMetric.HEART_RATE, selected.value)
+            assertEquals(1, thresholds)
+            assertEquals(0, monitoringChanges)
+            assertEquals(0, alertChanges)
         }
     }
 }
