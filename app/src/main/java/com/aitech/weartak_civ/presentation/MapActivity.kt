@@ -47,6 +47,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.tooling.preview.Preview
@@ -1329,16 +1331,15 @@ fun ServerDropdown(label: String, opened: MutableState<Boolean>, onToggle: () ->
 }
 
 // LOCATION DETAIL POPUP
-// Displays coordinates and MGRS beside the user location puck
+// Displays coordinates and MGRS for the user location puck
 @Composable
 fun PopupBox(
-    anchor: DpOffset,
     showPopup: Boolean,
     lat: Double,
     lon: Double,
     onClickOutside: () -> Unit,
 ){
-    val density = LocalDensity.current
+    val popupWidth = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp.dp - 64.dp
 
     // Only create the popup while it is requested
     if (showPopup) {
@@ -1349,16 +1350,8 @@ fun PopupBox(
                 .zIndex(10F),
             contentAlignment = Alignment.Center
         ) {
-            // Position the popup beside the location puck
             Popup(
-                alignment = Alignment.TopStart,
-                // Move the popup slightly right so it does not cover the puck
-                offset = with(density) {
-                    IntOffset(
-                        x = (anchor.x + 12.dp).roundToPx(), // move popup to the right
-                        y = anchor.y.roundToPx()
-                    )
-                },
+                alignment = Alignment.Center,
                 properties = PopupProperties(
                     excludeFromSystemGesture = true,
                 ),
@@ -1367,7 +1360,7 @@ fun PopupBox(
             ) {
                 Box(
                     Modifier
-                        .wrapContentSize()
+                        .width(popupWidth)
                         .background(Color.Black.copy(alpha = 0.8f)),
                     contentAlignment = Alignment.Center
                 ) {
@@ -1377,14 +1370,24 @@ fun PopupBox(
                             color = Color.White,
                             fontWeight = FontWeight.Bold,
                             fontSize = 11.sp,
-                            lineHeight = 12.sp
+                            lineHeight = 12.sp,
+                            modifier = Modifier.align(Alignment.CenterHorizontally)
                         )
-                        Text(
-                            color = Color.White,
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 11.sp,
-                            lineHeight = 10.sp,
-                            text = "Lat: $lat\nLon: $lon\n\n${latLonToMgrs(lat, lon)}")
+                        val latitude = String.format(java.util.Locale.US, "%.5f", lat)
+                        val longitude = String.format(java.util.Locale.US, "%.5f", lon)
+                        val coordinateDescription = stringResource(
+                            R.string.map_self_coordinates_description, latitude, longitude)
+                        val coordinateStyle = androidx.compose.ui.text.TextStyle(
+                            color = Color.White, fontWeight = FontWeight.SemiBold,
+                            fontSize = 11.sp, textAlign = TextAlign.Center)
+                        FittedTopMetricText(
+                            "$latitude, $longitude",
+                            modifier = Modifier.semantics { contentDescription = coordinateDescription },
+                            style = coordinateStyle, minFontSize = 8.sp
+                        )
+                        FittedTopMetricText(
+                            latLonToMgrs(lat, lon), style = coordinateStyle, minFontSize = 8.sp
+                        )
                     }
                 }
             }
@@ -2728,11 +2731,10 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
             )
         }
 
-        // Displays location details beside the location puck
+        // Displays location details selected from the location puck
         if (showPopup && puckScreenOffset != null) {
             PopupBox(
                 showPopup = showPopup,
-                anchor = puckScreenOffset,
                 lat = lat,
                 lon = lon,
 
@@ -3732,7 +3734,7 @@ private fun formatScaleDistance(
 @Preview(widthDp = 192, heightDp = 192, showBackground = true)
 @Composable
 fun MyAppPreview() {
-    PopupBox(showPopup = true, anchor = DpOffset.Unspecified, lat = 41.8832, lon = -87.6324, onClickOutside = {false})
+    PopupBox(showPopup = true, lat = 41.8832, lon = -87.6324, onClickOutside = {false})
 }
 
 //@Preview(widthDp = 192, heightDp = 192, showBackground = true)
