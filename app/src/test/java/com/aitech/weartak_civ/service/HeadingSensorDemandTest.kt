@@ -12,6 +12,8 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.HeadingComplicationDemand
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkObject
+import io.mockk.unmockkObject
 import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
@@ -124,6 +126,51 @@ class HeadingSensorDemandTest {
             assertEquals(0L, field(fixture.service, "lastPublishAtMs"))
         } finally {
             fixture.close()
+        }
+    }
+
+    @Test fun existingScreenAndRegistrationHooksLogOnlyTypedStateChangesIncludingShutdown() {
+        val events = mutableListOf<Pair<DiagnosticEvent, Map<DiagnosticMetric, Long>>>()
+        mockkObject(AppDiagnostics.Companion)
+        every { AppDiagnostics.record(any(), any()) } answers {
+            events.add(firstArg<DiagnosticEvent>() to secondArg<Map<DiagnosticMetric, Long>>())
+            Unit
+        }
+        val fixture = Fixture()
+        try {
+            fixture.start()
+            fixture.subscribers.value = 1
+            val power = app.getSystemService(Context.POWER_SERVICE) as PowerManager
+            val receiver = field(fixture.service, "screenReceiver") as BroadcastReceiver
+            fun screen(value: Boolean) {
+                shadowOf(power).setIsInteractive(value)
+                receiver.onReceive(app, Intent(Intent.ACTION_SCREEN_ON))
+                fixture.idle()
+            }
+            repeat(100) { screen(false) }
+            screen(true)
+            repeat(100) { screen(true) }
+            screen(false)
+            every { fixture.manager.registerListener(fixture.service, fixture.sensor, any<Int>()) } returns false
+            screen(true)
+            screen(false)
+            every { fixture.manager.registerListener(fixture.service, fixture.sensor, any<Int>()) } returns true
+            screen(true)
+            fixture.service.onDestroy()
+            assertEquals(listOf(0L, 1L, 0L, 1L, 0L, 1L), events
+                .filter { it.first == DiagnosticEvent.DISPLAY_INTERACTIVE }
+                .map { it.second[DiagnosticMetric.ACTIVE] })
+            assertEquals(listOf(1L to 1L, 0L to 1L, 0L to 0L, 1L to 1L, 0L to 1L), events
+                .filter { it.first == DiagnosticEvent.ROTATION_LISTENER }
+                .map { it.second[DiagnosticMetric.ACTIVE] to it.second[DiagnosticMetric.RESULT] })
+            assertTrue(events.all { it.first in setOf(
+                DiagnosticEvent.DISPLAY_INTERACTIVE, DiagnosticEvent.ROTATION_LISTENER) })
+            assertTrue(events.all { it.second.keys.all { key ->
+                key in setOf(DiagnosticMetric.ACTIVE, DiagnosticMetric.RESULT)
+            } })
+        } finally {
+            fixture.close()
+            unmockkObject(AppDiagnostics.Companion)
         }
     }
 

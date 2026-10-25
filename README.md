@@ -557,8 +557,15 @@ smoothing reset and pre-registration callbacks rejected. Active Bloodhound
 guidance remains a background consumer regardless of screen state, preserving
 navigation/proximity/Companion behavior. No location/report acquisition,
 permissions, sensor sampling rate, or complication update cadence is changed.
-Diagnostics sensor kind 2 records rotation-listener registration transitions,
-not individual samples or a measured energy saving.
+Logging uses distinct `DISPLAY_INTERACTIVE` and `ROTATION_LISTENER` events from
+these existing hooks. `ACTIVE` is 1 for interactive or registered and 0 otherwise;
+rotation `RESULT` is 1 for successful registration/removal and 0 for a failed
+registration. Initial interactive state and subsequent changes are recorded;
+duplicate screen broadcasts do not create changes. Noninteractive does not
+distinguish display-off from ambient/AOD, and a service request is not proof of
+registration. Shutdown records actual removal. These numeric events use the
+existing five-second aggregation and privacy/storage bounds, not individual
+samples or a measured energy saving.
 
 ## GitHub pipeline release
 
@@ -1267,6 +1274,10 @@ report interval, `OBSERVATION_SCHEDULED`/`LOCATION_REQUEST` applied acquisition
 intervals, fix outcomes and `PLI_ATTEMPT`/`PLI_RESULT`. Neither desired intervals
 nor a local accepted dispatch establish server delivery or an acknowledgement.
 This metadata does not acquire a fix, send a message or change a cadence.
+Recognized walking/running and the generic activity policy are not third-party
+workout start/end evidence. No Health Services user-activity subscription, health
+permission or exercise session is added; user-reported external workout times
+remain separate annotations when no existing callback exposes them.
 
 There are no raw coordinates, speed/health readings, identity/contact/chat
 contents, command names/arguments, exception messages/stacks, credentials,

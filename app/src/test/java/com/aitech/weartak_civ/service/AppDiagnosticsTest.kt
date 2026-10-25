@@ -133,6 +133,39 @@ class AppDiagnosticsTest {
             events.map { it.asJsonObject["metrics"].asJsonObject["DOCK_THROTTLED"].asInt })
     }
 
+    @Test fun displayAndRotationMetadataRemainDistinctNumericAndRateBounded() = runBlocking {
+        val diagnostics = AppDiagnostics(app).also { recorder = it }
+        diagnostics.setEnabled(true)
+        val capture = AppDiagnostics::class.java.getDeclaredMethod(
+            "capture", DiagnosticEvent::class.java, Map::class.java
+        ).apply { isAccessible = true }
+        val categories = setOf(DiagnosticEvent.DISPLAY_INTERACTIVE, DiagnosticEvent.ROTATION_LISTENER)
+        categories.forEach { event ->
+            repeat(100) { index ->
+                val metrics = mapOf(DiagnosticMetric.ACTIVE to (index % 2).toLong()) +
+                    if (event == DiagnosticEvent.ROTATION_LISTENER)
+                        mapOf(DiagnosticMetric.RESULT to 1L) else emptyMap()
+                capture.invoke(diagnostics, event, metrics)
+            }
+        }
+        val events = JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
+            .filter { item -> categories.any { it.name == item.asJsonObject["event"].asString } }
+        categories.forEach { event ->
+            val records = events.filter { it.asJsonObject["event"].asString == event.name }
+            assertEquals(4, records.size)
+            assertEquals(100, records.sumOf { it.asJsonObject["metrics"].asJsonObject["COUNT"].asInt })
+            assertEquals(setOf(0, 1), records.map {
+                it.asJsonObject["metrics"].asJsonObject["ACTIVE"].asInt
+            }.toSet())
+        }
+        assertTrue(events.all { item ->
+            item.asJsonObject["metrics"].asJsonObject.entrySet().all { (key, value) ->
+                key in setOf("ACTIVE", "RESULT", "COUNT", "AGGREGATED") &&
+                    value.isJsonPrimitive && value.asJsonPrimitive.isNumber
+            }
+        })
+    }
+
     @Test fun configurationSnapshotDoesNotStartServicesOrAcquireLocation() = runBlocking {
         com.aitech.weartak_civ.presentation.MainActivity.device_uid = "diagnostics-test"
         val repository = com.aitech.weartak_civ.data.DataRepository(app)

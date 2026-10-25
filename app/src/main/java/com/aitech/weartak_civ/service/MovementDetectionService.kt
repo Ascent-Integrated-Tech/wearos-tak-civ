@@ -57,13 +57,14 @@ class MovementDetectionService : Service(), SensorEventListener {
     private val binder = MovementDetectionServiceBinder()
     private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
     private val interactive = MutableStateFlow(false)
+    private var interactiveInitialized = false
     private var rotationRegistered = false
     private var rotationStartedNanos = 0L
     private var receiverRegistered = false
     private var complicationProjection: Job? = null
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
-            interactive.value = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+            updateInteractive()
         }
     }
 
@@ -94,7 +95,7 @@ class MovementDetectionService : Service(), SensorEventListener {
 
         // Register listeners
 //        accelerometer?.let { sensorManager.registerListener(this, it, ACCELEROMETER_DELAY_US) } // not currently using for compass
-        interactive.value = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+        updateInteractive()
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
@@ -134,6 +135,16 @@ class MovementDetectionService : Service(), SensorEventListener {
         }
     }
 
+    private fun updateInteractive() {
+        val current = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+        if (interactiveInitialized && interactive.value == current) return
+        interactiveInitialized = true
+        interactive.value = current
+        AppDiagnostics.record(DiagnosticEvent.DISPLAY_INTERACTIVE, mapOf(
+            DiagnosticMetric.ACTIVE to if (current) 1L else 0L
+        ))
+    }
+
     private fun collectHeadingDemand(activeTarget: StateFlow<String?>) {
         scope.launch {
             combine(interactive, repo.headingComplications.activeIds) { screen, ids ->
@@ -171,9 +182,9 @@ class MovementDetectionService : Service(), SensorEventListener {
             sensorManager.unregisterListener(this)
             // Preserve the last bearing for cached ambient/complication rendering.
         }
-        AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
-            DiagnosticMetric.KIND to 2L,
-            DiagnosticMetric.ACTIVE to if (rotationRegistered) 1L else 0L
+        AppDiagnostics.record(DiagnosticEvent.ROTATION_LISTENER, mapOf(
+            DiagnosticMetric.ACTIVE to if (rotationRegistered) 1L else 0L,
+            DiagnosticMetric.RESULT to if (wanted && !rotationRegistered) 0L else 1L
         ))
     }
 
@@ -281,11 +292,10 @@ class MovementDetectionService : Service(), SensorEventListener {
         super.onDestroy()
         Log.d(TAG, "MovementDetectionService onDestroy()")
         isRunning.set(false)
-        rotationRegistered = false
         if (receiverRegistered) unregisterReceiver(screenReceiver)
         receiverRegistered = false
         complicationProjection?.cancel()
-        sensorManager.unregisterListener(this)
+        if (rotationRegistered) setRotationDemand(false) else sensorManager.unregisterListener(this)
         repo.updateMagAzimuthTrue(null)
         scope.coroutineContext.cancel()
         stopForeground(STOP_FOREGROUND_DETACH)
