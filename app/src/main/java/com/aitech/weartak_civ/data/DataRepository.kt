@@ -3165,6 +3165,11 @@ class DataRepository(private val context: Context) {
         _latestActivityRecognized.emit(activity)
     }
 
+    fun resetActivityRecognition() {
+        _latestActivityRecognized.value = ActivityRecognized.UNKNOWN
+        _latestActivityConfidence.value = 0
+    }
+
     suspend fun storeLatestActivityConfidence(confidence: Int) {
         _latestActivityConfidence.emit(confidence)
     }

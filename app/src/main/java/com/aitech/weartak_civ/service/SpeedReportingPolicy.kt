@@ -3,14 +3,29 @@ package com.aitech.weartak_civ.service
 import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.min
+import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 
 object SpeedReportingPolicy {
     const val STATIONARY_SPEED_MPS = 0.44704
     const val VEHICLE_SPEED_MPS = 13.4112
-    const val OBSERVATION_CAP_SECONDS = 60
-
-    fun desiredObservationIntervalSeconds(selectedSeconds: Int, onFootSeconds: Int, vehicleSeconds: Int): Int =
-        minOf(OBSERVATION_CAP_SECONDS, selectedSeconds, onFootSeconds, vehicleSeconds)
+    fun activityIntervalSeconds(
+        activity: ActivityRecognized,
+        alerting: Boolean,
+        alertingSeconds: Int,
+        onFootSeconds: Int,
+        vehicleSeconds: Int,
+        stationarySeconds: Int,
+    ): Int {
+        require(listOf(alertingSeconds, onFootSeconds, vehicleSeconds, stationarySeconds).all { it > 0 })
+        if (alerting) return alertingSeconds
+        return when (activity) {
+            ActivityRecognized.ON_FOOT, ActivityRecognized.RUNNING, ActivityRecognized.WALKING -> onFootSeconds
+            ActivityRecognized.IN_VEHICLE -> vehicleSeconds
+            ActivityRecognized.STILL -> stationarySeconds
+            ActivityRecognized.TILTING, ActivityRecognized.BICYCLING, ActivityRecognized.UNKNOWN ->
+                max(onFootSeconds, vehicleSeconds)
+        }
+    }
 
     fun validSpeed(
         speedMps: Double?,
@@ -34,8 +49,8 @@ object SpeedReportingPolicy {
     ): Int {
         if (!dynamic) return actualReportSeconds
         if (dockThrottled) return com.aitech.weartak_civ.DEFAULT_DOCKED_REPORTING_INTERVAL_SECS
-        val interval = min(desiredReportSeconds, OBSERVATION_CAP_SECONDS)
-        return if (powerThrottled) PowerManagerService.slowDownReportingInterval(interval) else interval
+        return if (powerThrottled) PowerManagerService.slowDownReportingInterval(desiredReportSeconds)
+            else desiredReportSeconds
     }
 
     fun intervalSeconds(
@@ -45,11 +60,13 @@ object SpeedReportingPolicy {
         onFootSeconds: Int,
         vehicleSeconds: Int,
         stationarySeconds: Int,
+        activity: ActivityRecognized = ActivityRecognized.UNKNOWN,
     ): Int {
         require(listOf(alertingSeconds, onFootSeconds, vehicleSeconds, stationarySeconds).all { it > 0 })
         if (alerting) return alertingSeconds
         if (speedMps == null || !speedMps.isFinite() || speedMps < 0) {
-            return max(onFootSeconds, vehicleSeconds)
+            return activityIntervalSeconds(activity, false, alertingSeconds,
+                onFootSeconds, vehicleSeconds, stationarySeconds)
         }
         if (speedMps < STATIONARY_SPEED_MPS) return stationarySeconds
         val fraction = ((speedMps - STATIONARY_SPEED_MPS) /

@@ -368,12 +368,23 @@ class LocationService : Service() {
         }
     }
 
-    private suspend fun scheduleNextDynamicObservation() {
+    private fun setObservationDeadline(deadlineNanos: Long) {
+        nextObservationDeadlineNanos.value = deadlineNanos
+        val observation = speedObservation.value ?: return
+        val expiry = deadlineNanos + ACQUISITION_TIMEOUT_MILLIS * 1_000_000L
+        if (expiry < observation.validUntilElapsedNanos)
+            speedObservation.value = observation.copy(validUntilElapsedNanos = expiry)
+    }
+
+    private suspend fun scheduleNextDynamicObservation(
+        anchorNanos: Long = SystemClock.elapsedRealtimeNanos(),
+    ) {
         if (!isRunning.get() || !dynamicReporting || !dataRepository.getEnableLocationService.first()) return
         val intervalMillis = PowerManagerService.locationObservationIntervalSeconds(true) * 1_000L
         AppDiagnostics.record(DiagnosticEvent.OBSERVATION_SCHEDULED,
             mapOf(DiagnosticMetric.INTERVAL_SECONDS to intervalMillis / 1_000L))
-        nextObservationDeadlineNanos.value = SystemClock.elapsedRealtimeNanos() + intervalMillis * 1_000_000L
+        val deadline = anchorNanos + intervalMillis * 1_000_000L
+        setObservationDeadline(deadline)
         if (intervalMillis < MAX_PERIODIC_GPS_UPDATE_INTERVAL * 1_000L) {
             if (!periodic || intervalMillis != acquisitionIntervalMillis) {
                 // Change a subscription only after its observation completed, never on speed expiry.
@@ -386,14 +397,28 @@ class LocationService : Service() {
             cancelRequest(Acquisition.PERIODIC)
             periodic = false
             acquisitionIntervalMillis = intervalMillis
-            runTimerJob(intervalMillis)
+            val remainingMillis = (deadline - SystemClock.elapsedRealtimeNanos()) / 1_000_000L
+            if (remainingMillis > 0) runTimerJob(remainingMillis)
+            else acquireWakelockAndRequestLocation()
         }
     }
 
     fun acquireWakelockAndRequestLocation() {
         handler.post {
+            val requestGeneration = generation
+            val requestVersion = requestVersions[Acquisition.ONE_SHOT] ?: 0L
+            if (listeners.containsKey(Acquisition.ONE_SHOT) || fusedCallbacks.containsKey(Acquisition.ONE_SHOT)) {
+                AppDiagnostics.record(DiagnosticEvent.LOCATION_COALESCED)
+                return@post
+            }
             scope.launch {
-                if (!isRunning.get() || periodic || !dataRepository.getEnableLocationService.first()) return@launch
+                val enabled = dataRepository.getEnableLocationService.first()
+                if (!isRunning.get() || periodic || !enabled || requestGeneration != generation) return@launch
+                if (requestVersion != (requestVersions[Acquisition.ONE_SHOT] ?: 0L) ||
+                    listeners.containsKey(Acquisition.ONE_SHOT) || fusedCallbacks.containsKey(Acquisition.ONE_SHOT)) {
+                    AppDiagnostics.record(DiagnosticEvent.LOCATION_COALESCED)
+                    return@launch
+                }
                 cancelRequest(Acquisition.ONE_SHOT)
                 if (!dynamicReporting) startGlobalTimer(CotDispatchService.actualReportingIntervalSecs * 1_000L)
                 if (!inputAvailable()) return@launch
@@ -414,8 +439,18 @@ class LocationService : Service() {
     fun onPowerManagerEvent(event: PowerManagerEvent) {
         if (event.eventType == PowerManagerEvent.CHANGED_UPDATE_INTERVAL) {
             val policy = PowerManagerService.observationPowerThrottled to PowerManagerService.observationDockThrottled
-            // Speed/Unknown changes affect the next acquisition cycle, not an in-flight request.
-            if (!dynamicReporting || observationPowerPolicy != policy) restartLocationUpdates()
+            if (!dynamicReporting) {
+                restartLocationUpdates()
+                return
+            }
+            val intervalMillis = PowerManagerService.locationObservationIntervalSeconds(true) * 1_000L
+            if (observationPowerPolicy == policy && acquisitionIntervalMillis == intervalMillis) return
+            observationPowerPolicy = policy
+            // Keep native pending requests and their deadlines; their completion uses the new profile.
+            if (listeners.containsKey(Acquisition.ONE_SHOT) || fusedCallbacks.containsKey(Acquisition.ONE_SHOT)) return
+            val anchor = nextObservationDeadlineNanos.value?.minus(acquisitionIntervalMillis * 1_000_000L)
+                ?: SystemClock.elapsedRealtimeNanos()
+            scope.launch { scheduleNextDynamicObservation(anchor) }
         }
     }
 

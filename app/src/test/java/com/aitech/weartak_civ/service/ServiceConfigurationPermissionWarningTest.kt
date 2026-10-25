@@ -14,10 +14,44 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 import io.mockk.mockk
+import com.aitech.weartak_civ.data.DataRepository
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class ServiceConfigurationPermissionWarningTest {
+    @Test
+    fun dynamicMotionDemandDoesNotEnablePhysiologyOrRequireBodySensors() = runBlocking {
+        val app = RuntimeEnvironment.getApplication()
+        val repo = DataRepository(app)
+        val configuration = ServiceConfiguration(app, repo, mockk(relaxed = true))
+        repo.storeEnablePhysiologicalServices(false)
+        repo.storeEnableActivityRecognitionService(true)
+        repo.storeEnableHeartRateService(true)
+        repo.storeEnableDynamicReportingStrategy(true)
+        repo.storeEnableLocationService(true)
+        assertTrue(configuration.getServiceEnabledFlow(ServiceType.ACTIVITY_RECOGNITION).first())
+        assertFalse(configuration.getServiceEnabledFlow(ServiceType.HEART_RATE).first())
+        assertFalse(configuration.getServiceEnabledFlow(ServiceType.SKIN_TEMP).first())
+        shadowOf(app).denyPermissions(Manifest.permission.BODY_SENSORS)
+        shadowOf(app).grantPermissions(Manifest.permission.ACTIVITY_RECOGNITION)
+        assertTrue(configuration.permissionsGranted(ServiceType.ACTIVITY_RECOGNITION))
+        assertFalse(configuration.permissionsGranted(ServiceType.HEART_RATE))
+        shadowOf(app).denyPermissions(Manifest.permission.ACTIVITY_RECOGNITION)
+        assertFalse(configuration.permissionsGranted(ServiceType.ACTIVITY_RECOGNITION))
+        repo.storeEnableActivityRecognitionService(false)
+        assertFalse(configuration.getServiceEnabledFlow(ServiceType.ACTIVITY_RECOGNITION).first())
+        repo.storeEnableActivityRecognitionService(true)
+        repo.storeEnableLocationService(false)
+        assertFalse(configuration.getServiceEnabledFlow(ServiceType.ACTIVITY_RECOGNITION).first())
+        repo.storeEnableLocationService(true)
+        repo.storeEnableDynamicReportingStrategy(false)
+        assertFalse(configuration.getServiceEnabledFlow(ServiceType.ACTIVITY_RECOGNITION).first())
+        repo.storeEnablePhysiologicalServices(true)
+        assertTrue(configuration.getServiceEnabledFlow(ServiceType.ACTIVITY_RECOGNITION).first())
+    }
+
     @Test
     fun logsOncePerFeatureAndResumesAfterPermissionStateChanges() {
         val app = RuntimeEnvironment.getApplication()

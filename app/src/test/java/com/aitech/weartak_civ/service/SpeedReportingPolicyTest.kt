@@ -3,6 +3,7 @@ package com.aitech.weartak_civ.service
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.ActivityRecognized
 
 class SpeedReportingPolicyTest {
     private fun interval(speed: Double?, foot: Int = 60, vehicle: Int = 10, alert: Boolean = false) =
@@ -62,21 +63,40 @@ class SpeedReportingPolicyTest {
         }
     }
 
-    @Test fun observationCapUsesSelectedRateAndIndependentExistingPowerPolicy() {
-        assertEquals(30, SpeedReportingPolicy.desiredObservationIntervalSeconds(3600, 30, 60))
-        assertEquals(30, SpeedReportingPolicy.desiredObservationIntervalSeconds(3600, 60, 30))
-        assertEquals(60, SpeedReportingPolicy.desiredObservationIntervalSeconds(3600, 120, 90))
-        assertEquals(10, SpeedReportingPolicy.desiredObservationIntervalSeconds(10, 30, 60))
+    @Test fun activityOwnsAcquisitionWithoutMovingCapAndKeepsIncumbentPowerPolicy() {
         fun observation(dynamic: Boolean, desired: Int, actual: Int = desired,
                         power: Boolean = false, dock: Boolean = false) =
             SpeedReportingPolicy.observationIntervalSeconds(dynamic, desired, actual, power, dock)
-        assertEquals(60, observation(true, 3600))
+        assertEquals(3600, observation(true, 3600))
         assertEquals(30, observation(true, 30))
         assertEquals(1, observation(true, 1))
         assertEquals(3600, observation(false, 3600))
-        assertEquals(260, observation(true, 3600, power = true))
+        assertEquals(3800, observation(true, 3600, power = true))
         assertEquals(140, observation(true, 30, power = true))
         assertEquals(900, observation(true, 1, power = true, dock = true))
         assertEquals(17, observation(false, 1, actual = 17, power = true, dock = true))
+    }
+
+    @Test fun speedHasPriorityAndEveryIncumbentActivityIsAnExplicitFallback() {
+        ActivityRecognized.entries.forEach { activity ->
+            val expected = when (activity) {
+                ActivityRecognized.STILL -> 3600
+                ActivityRecognized.ON_FOOT, ActivityRecognized.RUNNING, ActivityRecognized.WALKING -> 30
+                ActivityRecognized.IN_VEHICLE -> 60
+                else -> 60
+            }
+            assertEquals(expected,
+                SpeedReportingPolicy.activityIntervalSeconds(activity, false, 7, 30, 60, 3600))
+            listOf(null, Double.NaN, -1.0).forEach { speed ->
+                assertEquals(expected,
+                    SpeedReportingPolicy.intervalSeconds(speed, false, 7, 30, 60, 3600, activity))
+            }
+            assertEquals(60,
+                SpeedReportingPolicy.intervalSeconds(100.0, false, 7, 30, 60, 3600, activity))
+            assertEquals(7,
+                SpeedReportingPolicy.intervalSeconds(null, true, 7, 30, 60, 3600, activity))
+            assertEquals(7,
+                SpeedReportingPolicy.activityIntervalSeconds(activity, true, 7, 30, 60, 3600))
+        }
     }
 }

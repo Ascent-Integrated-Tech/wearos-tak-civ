@@ -41,12 +41,14 @@ import java.time.Duration
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class InteractionLocationRefreshTest {
-    private fun await(condition: () -> Boolean) = runBlocking {
-        withTimeout(3_000) {
+    private fun await(stage: String = "condition", condition: () -> Boolean) = runBlocking {
+        try { withTimeout(3_000) {
             while (!condition()) {
                 shadowOf(Looper.getMainLooper()).idle()
                 delay(5)
             }
+        } } catch (timeout: kotlinx.coroutines.TimeoutCancellationException) {
+            throw AssertionError("Timed out waiting for $stage", timeout)
         }
     }
 
@@ -86,7 +88,7 @@ class InteractionLocationRefreshTest {
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
     }
 
-    @Test fun dynamicObservationsAreCappedWithoutRestartingPendingFixOnSpeedOrUnknown() {
+    @Test fun dynamicActivityCadenceDoesNotRestartPendingFixOnSpeedOrUnknown() {
         val manager = mockk<LocationManager>(relaxed = true)
         val listener = slot<LocationListener>()
         every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
@@ -98,22 +100,25 @@ class InteractionLocationRefreshTest {
         }
         val oldDesired = CotDispatchService.desiredReportingIntervalSecs
         val oldActual = CotDispatchService.actualReportingIntervalSecs
+        val oldObservation = CotDispatchService.desiredLocationObservationIntervalSecs
         mockkObject(com.aitech.weartak_civ.Utils)
         every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
         try {
             CotDispatchService.desiredReportingIntervalSecs = 3600
             CotDispatchService.actualReportingIntervalSecs = 3600
+            CotDispatchService.desiredLocationObservationIntervalSecs = 3600
             service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
-            await { listener.isCaptured }
+            await("initial dynamic request") { listener.isCaptured }
             val first = listener.captured
             CotDispatchService.desiredReportingIntervalSecs = 60
             CotDispatchService.actualReportingIntervalSecs = 60
+            CotDispatchService.desiredLocationObservationIntervalSecs = 60
             service.onPowerManagerEvent(PowerManagerEvent(PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
             verify(exactly = 1) { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
                 any<LocationListener>(), any<Looper>()) }
             verify(exactly = 0) { manager.removeUpdates(first) }
             first.onLocationChanged(fix().apply { speed = 0f })
-            await { LocationService.speedObservation.value != null }
+            await("accepted dynamic fix") { LocationService.speedObservation.value != null }
             val observation = requireNotNull(LocationService.speedObservation.value)
             verify { com.aitech.weartak_civ.Utils.runTimerJob(60_000L) }
             assertTrue(observation.validUntilElapsedNanos > observation.location.elapsedRealtimeNanos)
@@ -121,9 +126,13 @@ class InteractionLocationRefreshTest {
 
             // Unknown/expiry affects reporting only; it must not renew the old speed's lifetime.
             service.acquireWakelockAndRequestLocation()
-            await { listener.captured !== first }
+            await("next scheduled observation") { listener.captured !== first }
+            val pending = listener.captured
+            service.acquireWakelockAndRequestLocation()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertSame(pending, listener.captured)
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
-            await { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.REQUEST_FAILED }
+            await("pending observation timeout") { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.REQUEST_FAILED }
             assertSame(observation, LocationService.speedObservation.value)
             runBlocking { MainActivity.dataRepository.storeEnableLocationService(false) }
             val before = listener.captured
@@ -133,6 +142,49 @@ class InteractionLocationRefreshTest {
         } finally {
             CotDispatchService.desiredReportingIntervalSecs = oldDesired
             CotDispatchService.actualReportingIntervalSecs = oldActual
+            CotDispatchService.desiredLocationObservationIntervalSecs = oldObservation
+            service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun activityReschedulesFromLastObservationWithoutRenewingSpeedOrRequestingAnotherFreshFix() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val listener = slot<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(listener), any<Looper>()) } just Runs
+        val service = service(manager)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        LocationService::class.java.getDeclaredField("dynamicReporting").apply {
+            isAccessible = true; set(service, true)
+        }
+        val oldObservation = CotDispatchService.desiredLocationObservationIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        try {
+            CotDispatchService.desiredLocationObservationIntervalSecs = 3600
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { listener.isCaptured }
+            listener.captured.onLocationChanged(fix().apply { speed = 0f })
+            await { LocationService.speedObservation.value != null }
+            val stationaryDue = requireNotNull(LocationService.nextObservationDeadlineNanos.value)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
+            CotDispatchService.desiredLocationObservationIntervalSecs = 60
+            service.onPowerManagerEvent(PowerManagerEvent(PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
+            val movingDue = stationaryDue - 3_600_000_000_000L + 60_000_000_000L
+            await { LocationService.nextObservationDeadlineNanos.value == movingDue }
+            verify(exactly = 1) { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+                any<LocationListener>(), any<Looper>()) }
+            val expires = requireNotNull(LocationService.speedObservation.value).validUntilElapsedNanos
+            assertEquals(movingDue + 6_000_000_000L, expires)
+            service.onPowerManagerEvent(PowerManagerEvent(PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
+            assertEquals(movingDue, LocationService.nextObservationDeadlineNanos.value)
+            CotDispatchService.desiredLocationObservationIntervalSecs = 3600
+            service.onPowerManagerEvent(PowerManagerEvent(PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
+            await { LocationService.nextObservationDeadlineNanos.value == stationaryDue }
+            assertEquals(expires, requireNotNull(LocationService.speedObservation.value).validUntilElapsedNanos)
+        } finally {
+            CotDispatchService.desiredLocationObservationIntervalSecs = oldObservation
             service.onDestroy()
             unmockkObject(com.aitech.weartak_civ.Utils)
         }

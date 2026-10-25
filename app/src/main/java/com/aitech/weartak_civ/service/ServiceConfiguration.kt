@@ -60,7 +60,7 @@ class ServiceConfiguration(
 
         /* PHYSIO Service is virtual group – not used to start a real service.
          * It is like an API for the UI and Knox to gate the HR, Skin, and
-         * Act Rec Services. If disabled, nothing runs. If Enabled, we check
+         * passive activity metrics. If disabled, these do not run. If Enabled, we check
          * whether individual services are enabled / disabled. Individual service
          * toggles are controlled in Knox and Knox only (i.e. there are no settings
          * UI toggle buttons for HR, Skin, Act Rec)
@@ -84,9 +84,11 @@ class ServiceConfiguration(
 
         ServiceType.ACTIVITY_RECOGNITION -> combine(
             dataRepository.getEnablePhysiologicalServices.distinctUntilChanged(),
-            dataRepository.getEnableActRecService.distinctUntilChanged()
-        ) { physioOn, actOn ->
-            if (!physioOn) { false } else { actOn }
+            dataRepository.getEnableActRecService.distinctUntilChanged(),
+            dataRepository.getEnableDynamicReportingStrategy.distinctUntilChanged(),
+            dataRepository.getEnableLocationService.distinctUntilChanged()
+        ) { physioOn, actOn, dynamic, locationOn ->
+            actOn && (physioOn || (dynamic && locationOn))
         }.distinctUntilChanged()
 
         // Companion stays running while reconnecting; only an active link suspends Ditto.
@@ -148,8 +150,8 @@ class ServiceConfiguration(
 
         ServiceType.HEART_RATE,
         ServiceType.SKIN_TEMP,
-        ServiceType.ACTIVITY_RECOGNITION,
         ServiceType.CRM_INFERENCE -> requiredPerms(ServiceType.PHYSIO)
+        ServiceType.ACTIVITY_RECOGNITION -> listOf(android.Manifest.permission.ACTIVITY_RECOGNITION)
 
         ServiceType.BLE_BEACON -> buildList {
             add(android.Manifest.permission.BLUETOOTH_SCAN)

@@ -855,9 +855,7 @@ class MainActivity : ComponentActivity() {
             CotDispatchService.desiredReportingIntervalSecs = reportingUpdateInterval
             CotDispatchService.actualReportingIntervalSecs = reportingUpdateInterval
             CotDispatchService.desiredLocationObservationIntervalSecs =
-                com.aitech.weartak_civ.service.SpeedReportingPolicy.desiredObservationIntervalSeconds(
-                    reportingUpdateInterval, onFootReportingInterval, vehicleReportingInterval,
-                )
+                reportingUpdateInterval // Startup has neither an activity classification nor a verified speed.
 
             // --- External endpoints / integrations ---
             enableTakEndpoint              = dataRepository.getEnableTakEndpoint.first()

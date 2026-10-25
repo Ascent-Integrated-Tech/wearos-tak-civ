@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.service
 
 import android.app.Application
 import android.app.Service
+import android.Manifest
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
@@ -21,6 +22,9 @@ import com.google.android.gms.location.DetectedActivity
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.clearMocks
+import kotlinx.coroutines.flow.MutableStateFlow
+import org.robolectric.Shadows.shadowOf
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -46,6 +50,7 @@ class ActivityRecognitionServiceColdStartTest {
     private val uncaught = Collections.synchronizedList(mutableListOf<Throwable>())
     private var previousHandler: Thread.UncaughtExceptionHandler? = null
     private lateinit var service: ActivityRecognitionService
+    private val monitoring = MutableStateFlow(true)
 
     @Before
     fun setUp() {
@@ -55,6 +60,12 @@ class ActivityRecognitionServiceColdStartTest {
 
         val app = mockk<WearTakApplication>(relaxed = true)
         every { app.repo } returns repo
+        every { repo.getEnablePhysiologicalServices } returns monitoring
+        every { repo.getEnableActRecService } returns MutableStateFlow(true)
+        every { repo.getEnableDynamicReportingStrategy } returns MutableStateFlow(true)
+        every { repo.getEnableLocationService } returns MutableStateFlow(true)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.BODY_SENSORS, Manifest.permission.ACTIVITY_RECOGNITION)
         val base = object : ContextWrapper(RuntimeEnvironment.getApplication()) {
             override fun getApplicationContext(): Context = app
         }
@@ -111,6 +122,72 @@ class ActivityRecognitionServiceColdStartTest {
         } catch (e: AssertionError) {
             throw AssertionError("${e.message}; uncaught service exceptions: $uncaught", uncaught.firstOrNull() ?: e)
         }
+    }
+
+    @Test
+    fun motionOnlyUpdatesActivityWithoutAcceptingPassiveHealthOrFallCallbacks() {
+        monitoring.value = false
+        service.onCreate()
+        val intent = Intent("com.aitech.weartak_civ.ACTION_RECOGNITION").putExtra(
+            "com.google.android.location.internal.EXTRA_ACTIVITY_RESULT",
+            ActivityRecognitionResult(DetectedActivity(DetectedActivity.STILL, 80), 1_000L, 1_000L)
+        )
+        service.onStartCommand(intent, 0, 1)
+        verifyRepo { repo.storeLatestActivityRecognized(ActivityRecognized.STILL) }
+        clearMocks(repo, answers = false)
+        passiveCallback().onNewDataPointsReceived(DataPointContainer(listOf(
+            IntervalDataPoint(DataType.STEPS_DAILY, 123L, Duration.ZERO, Duration.ofMinutes(1))
+        )))
+        passiveCallback().onHealthEventReceived(
+            HealthEvent(HealthEvent.Type.FALL_DETECTED, Instant.now(), DataPointContainer(emptyList()))
+        )
+        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repo.addPhysioAndAutoGenAlertRequest(any(), any(), any(), any(), any(), any()) }
+    }
+
+    @Test
+    fun incumbentConfidenceThresholdIsNotLoweredByMotionOnlyDemand() {
+        monitoring.value = false
+        service.onCreate()
+        fun detect(confidence: Int) = service.onStartCommand(
+            Intent("com.aitech.weartak_civ.ACTION_RECOGNITION").putExtra(
+                "com.google.android.location.internal.EXTRA_ACTIVITY_RESULT",
+                ActivityRecognitionResult(DetectedActivity(DetectedActivity.WALKING, confidence), 1_000L, 1_000L)
+            ), 0, 1
+        )
+        detect(49)
+        coVerify(exactly = 0) { repo.storeLatestActivityRecognized(any()) }
+        detect(50)
+        verifyRepo { repo.storeLatestActivityRecognized(ActivityRecognized.WALKING) }
+        verifyRepo { repo.storeLatestActivityConfidence(50) }
+    }
+
+    @Test
+    fun monitoringToggleAndBodyPermissionContinueToGateRetainedPassiveCallbacks() {
+        service.onCreate()
+        fun awaitMonitoring(expected: Boolean) {
+            val field = ActivityRecognitionService::class.java.getDeclaredField("passiveMonitoringEnabled")
+                .apply { isAccessible = true }
+            val deadline = System.nanoTime() + 3_000_000_000L
+            while (field.getBoolean(service) != expected && System.nanoTime() < deadline) Thread.sleep(10)
+            assertEquals(expected, field.getBoolean(service))
+        }
+        fun sample() = passiveCallback().onNewDataPointsReceived(DataPointContainer(listOf(
+            IntervalDataPoint(DataType.STEPS_DAILY, 456L, Duration.ZERO, Duration.ofMinutes(1))
+        )))
+        awaitMonitoring(true)
+        monitoring.value = false
+        awaitMonitoring(false)
+        sample()
+        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any(), any()) }
+        monitoring.value = true
+        awaitMonitoring(true)
+        shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.BODY_SENSORS)
+        sample()
+        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any(), any()) }
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.BODY_SENSORS)
+        sample()
+        verifyRepo { repo.updateDailyMetrics(any(), 456L, null, null, null) }
     }
 
     private fun passiveCallback(): PassiveListenerCallback =

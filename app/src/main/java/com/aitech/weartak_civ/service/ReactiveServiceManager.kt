@@ -886,7 +886,7 @@ class ReactiveServiceManager : Service() {
         HEART_RATE(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         SKIN_TEMP(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
         PRESSURE(true, isKnoxMgdService = true),
-        ACTIVITY_RECOGNITION(true, dependencies = listOf(PHYSIO), isKnoxMgdService = true),
+        ACTIVITY_RECOGNITION(true, isKnoxMgdService = true),
         HAIL(isKnoxMgdService = true, isNotRunnable = true),
         DITTO(true, isKnoxMgdService = true),
         BLE_BEACON(true, isKnoxMgdService = true),
