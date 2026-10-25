@@ -85,9 +85,13 @@ fun PhysioAlertsApp(exitActivity: () -> Unit, context: Context, settingsVm: Wear
             item {
                 MetricMonitoringControls(monitoring, alertsEnabled,
                     settingsVm::storeEnablePhysiologicalServices,
-                    settingsVm::storeEnablePhysiologicalAlerts) {
+                    settingsVm::storeEnablePhysiologicalAlerts,
+                    onThresholds = {
                         context.startActivity(settingsShortcutIntent(context, "physiological_alerts"))
-                    }
+                    },
+                    onEnvironmental = {
+                        context.startActivity(settingsShortcutIntent(context, "environmental_alerts"))
+                    })
             }
             items(choices.size) { index ->
                 val (metric, label) = choices[index]
@@ -139,9 +143,17 @@ internal fun MetricMonitoringControls(
     alertsEnabled: Boolean,
     onMonitoring: (Boolean) -> Unit,
     onAlerts: (Boolean) -> Unit,
-    onThresholds: () -> Unit
+    onThresholds: () -> Unit,
+    onEnvironmental: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Chip(
+            onClick = onEnvironmental,
+            label = { FittedTopMetricText(stringResource(R.string.environmental_alerts),
+                minFontSize = 8.sp) },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        )
         MetricAlertControls(alertsEnabled, onAlerts, onThresholds)
         ToggleChip(
             checked = monitoring,

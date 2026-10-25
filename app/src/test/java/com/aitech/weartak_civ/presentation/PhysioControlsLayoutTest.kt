@@ -48,10 +48,12 @@ class PhysioControlsLayoutTest {
         val metric = mutableStateOf<TopDisplayMetric?>(null)
         val warning = mutableStateOf(false)
         var thresholdOpens = 0
+        var environmentalOpens = 0
         val restoration = StateRestorationTester(compose)
         val context = RuntimeEnvironment.getApplication()
         val monitorLabel = context.getString(R.string.physiological_monitoring)
         val alertsLabel = context.getString(R.string.physiological_alerts)
+        val environmentalLabel = context.getString(R.string.environmental_alerts)
         val thresholdsLabel = context.getString(R.string.metric_alert_thresholds)
         val iconLabel = context.getString(R.string.top_display_metric)
         restoration.setContent {
@@ -62,7 +64,8 @@ class PhysioControlsLayoutTest {
                             Column(Modifier.fillMaxSize().padding(horizontal = 12.dp, vertical = 32.dp)
                                 .verticalScroll(rememberScrollState())) {
                                 MetricMonitoringControls(monitoring.value, alerting.value,
-                                    { monitoring.value = it }, { alerting.value = it }, { thresholdOpens++ })
+                                    { monitoring.value = it }, { alerting.value = it }, { thresholdOpens++ },
+                                    { environmentalOpens++ })
                                 TopMetricChoice("Heart Rate", "Off-Wrist", true) {}
                             }
                         } else {
@@ -101,9 +104,17 @@ class PhysioControlsLayoutTest {
         }
         assertTextFits(monitorLabel)
         assertTextFits(alertsLabel)
+        assertTextFits(environmentalLabel)
         val monitorBounds = compose.onNodeWithText(monitorLabel).fetchSemanticsNode().boundsInRoot
         val alertBounds = compose.onNodeWithText(alertsLabel).fetchSemanticsNode().boundsInRoot
         assertTrue("Alerts must lead", alertBounds.top < monitorBounds.top)
+        val environmental = compose.onNodeWithText(environmentalLabel)
+        assertTrue(environmental.fetchSemanticsNode().boundsInRoot.top < alertBounds.top)
+        assertEquals(2, compose.onAllNodes(isToggleable()).fetchSemanticsNodes().size)
+        environmental.performClick()
+        assertEquals(1, environmentalOpens)
+        assertTrue(monitoring.value)
+        assertFalse(alerting.value)
         compose.onAllNodes(isToggleable()).fetchSemanticsNodes().forEach {
             assertTrue("Keep 48dp touch target", it.touchBoundsInRoot.height / density >= 48f)
         }
@@ -113,7 +124,7 @@ class PhysioControlsLayoutTest {
         compose.onAllNodes(isToggleable())[0].performClick()
         assertTrue(alerting.value)
         assertTrue(monitoring.value)
-        compose.onNodeWithText(monitorLabel).performClick()
+        compose.onNodeWithText(monitorLabel).performScrollTo().performClick()
         assertFalse(monitoring.value)
         assertTrue(alerting.value)
         restoration.emulateSavedInstanceStateRestore()

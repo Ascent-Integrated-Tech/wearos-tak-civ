@@ -132,6 +132,7 @@ class TopMetricSettingsUiTest {
         assertEquals("reporting_strategy", settingsShortcutRoute(intent))
         assertNull(shadowOf(app).nextStartedActivity)
         assertEquals("physiological_alerts", settingsShortcutRoute(settingsShortcutIntent(app, "physiological_alerts")))
+        assertEquals("environmental_alerts", settingsShortcutRoute(settingsShortcutIntent(app, "environmental_alerts")))
     }
 
     @Test fun everyMetricAndAlertStateKeepsThePickerDestination() {
@@ -172,7 +173,7 @@ class TopMetricSettingsUiTest {
                 if (pickerOpen.value) {
                     Column {
                         MetricMonitoringControls(false, false,
-                            { monitoringChanges++ }, { alertChanges++ }, { thresholds++ })
+                            { monitoringChanges++ }, { alertChanges++ }, { thresholds++ }, {})
                         TopMetricChoice("Heart Rate", "Disabled", selected.value == TopDisplayMetric.HEART_RATE) {
                             selected.value = TopDisplayMetric.HEART_RATE
                         }

@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Icon
 import com.aitech.weartak_civ.R
 
-private val settingsShortcutPages = setOf("reporting_strategy", "physiological_alerts")
+private val settingsShortcutPages = setOf("environmental_alerts", "physiological_alerts", "reporting_strategy")
 
 internal fun settingsShortcutIntent(context: Context, route: String): Intent {
     require(route in settingsShortcutPages)
