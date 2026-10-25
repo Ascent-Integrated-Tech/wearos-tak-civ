@@ -883,6 +883,39 @@ identity PLI waits for the first usable position rather than inventing coordinat
 
 ### Reporting and Location Input
 
+Dynamic Reporting uses real speed from the selected location input, not activity
+recognition or physiological monitoring. Below 0.44704 m/s (1 mph), it uses the saved
+Stationary interval. From 0.44704 to 13.4112 m/s (30 mph), it linearly interpolates
+between the saved On Foot and Vehicle intervals, rounding to the nearest whole
+second (halves upward), bounded by those saved rates. At or above 13.4112 m/s it
+uses Vehicle. Equal or reversed user rates remain valid and are not rewritten.
+While Alerting overrides Dynamic; Constant mode and all saved rates/defaults remain unchanged.
+
+Dynamic location observations use the faster saved moving interval, capped at
+60 seconds, even when stationary; a faster selected reporting/alert interval is
+also retained. Existing Wi-Fi/disconnected power saving and dock throttling apply
+separately to observations and reports. For example, On Foot 30s, Vehicle 60s,
+Stationary 3600s requests observations at 30s before power adjustments, but routine
+stationary PLI is still hourly. This is a requested cadence, not a guarantee that
+the provider, permissions, background execution or watch power state will deliver a fix.
+
+A separate one-second cached-data send check uses time since the last routine
+emission. Observations do not force extra PLI or timer-driven coordinate redraws.
+Speed must be present, finite, nonnegative, from the current input/generation and
+not future-dated. Its validity ends at that observation's expected next acquisition
+deadline plus the existing six-second acquisition timeout. Missing/expired speed
+is Unknown, using the slower of saved On Foot and Vehicle intervals, never fabricated
+stationary speed. Expiry changes send timing only: it does not restart a pending
+acquisition or extend the old observation's validity. Source/power changes still
+invalidate the appropriate requests. Existing explicit map, self-point, alert,
+identity and route-readiness refresh paths retain their own freshness/dispatch rules.
+Phone-managed constant reporting and Companion-exclusive routing remain authoritative.
+
+The speed thresholds follow the [pinned public ATAK implementation](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV/blob/889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc/atak/ATAK/app/src/main/java/com/atakmap/comms/ReportingRate.java);
+WearTAK retains its own user rates and power policy, uses clamped interpolation
+without ATAK's normalization offset, and adds no distance, heading, altitude or
+speed-change immediate-send triggers.
+
 The former Reporting Strategy page is now **Reporting**. The main location icon
 opens it. Every top-slot metric readout, including MGRS and Lat/Long and active
 alerts, opens **Top Display Metric**, keeping all metric choices and Physiological

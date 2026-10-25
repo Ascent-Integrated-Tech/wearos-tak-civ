@@ -14,6 +14,7 @@ import com.aitech.weartak_civ.events.InteractionLocationRcvd
 import com.aitech.weartak_civ.events.InteractionPliRefresh
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PliRefreshReason
+import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -83,6 +84,58 @@ class InteractionLocationRefreshTest {
         latitude = 41.0; longitude = -87.0; altitude = 100.0; accuracy = 5f
         time = System.currentTimeMillis()
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+    }
+
+    @Test fun dynamicObservationsAreCappedWithoutRestartingPendingFixOnSpeedOrUnknown() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val listener = slot<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(listener), any<Looper>()) } just Runs
+        val service = service(manager)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        LocationService::class.java.getDeclaredField("dynamicReporting").apply {
+            isAccessible = true; set(service, true)
+        }
+        val oldDesired = CotDispatchService.desiredReportingIntervalSecs
+        val oldActual = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        try {
+            CotDispatchService.desiredReportingIntervalSecs = 3600
+            CotDispatchService.actualReportingIntervalSecs = 3600
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { listener.isCaptured }
+            val first = listener.captured
+            CotDispatchService.desiredReportingIntervalSecs = 60
+            CotDispatchService.actualReportingIntervalSecs = 60
+            service.onPowerManagerEvent(PowerManagerEvent(PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
+            verify(exactly = 1) { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+                any<LocationListener>(), any<Looper>()) }
+            verify(exactly = 0) { manager.removeUpdates(first) }
+            first.onLocationChanged(fix().apply { speed = 0f })
+            await { LocationService.speedObservation.value != null }
+            val observation = requireNotNull(LocationService.speedObservation.value)
+            verify { com.aitech.weartak_civ.Utils.runTimerJob(60_000L) }
+            assertTrue(observation.validUntilElapsedNanos > observation.location.elapsedRealtimeNanos)
+            assertTrue(observation.validUntilElapsedNanos - SystemClock.elapsedRealtimeNanos() <= 66_000_000_000L)
+
+            // Unknown/expiry affects reporting only; it must not renew the old speed's lifetime.
+            service.acquireWakelockAndRequestLocation()
+            await { listener.captured !== first }
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+            await { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.REQUEST_FAILED }
+            assertSame(observation, LocationService.speedObservation.value)
+            runBlocking { MainActivity.dataRepository.storeEnableLocationService(false) }
+            val before = listener.captured
+            service.acquireWakelockAndRequestLocation()
+            shadowOf(Looper.getMainLooper()).idle()
+            assertSame(before, listener.captured)
+        } finally {
+            CotDispatchService.desiredReportingIntervalSecs = oldDesired
+            CotDispatchService.actualReportingIntervalSecs = oldActual
+            service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
     }
 
     @Test fun fusedUsesRealClientCoalescesFreshRequestsAndNeverUsesNetworkProvider() {

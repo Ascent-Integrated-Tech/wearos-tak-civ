@@ -44,6 +44,7 @@ class OutboundPliAnnouncementServiceTest {
     private val sent = LinkedBlockingQueue<Pair<CotOutboundMessage, CotEndpointAvailability>>()
     private val repo = mockk<DataRepository>(relaxed = true)
     private lateinit var service: CotDispatchService
+    private lateinit var dispatcher: CotEndpointDispatcher
     private val observer = TrackObserver()
 
     class TrackObserver {
@@ -81,7 +82,7 @@ class OutboundPliAnnouncementServiceTest {
         every { hostApp.pluginManager.settingsCoordinator.anyPluginHasSettingEnabled(any()) } returns false
         val companion = mockk<CompanionAppRepository>(relaxed = true)
         every { companion.gateway } returns CompanionGatewaySession()
-        val dispatcher = mockk<CotEndpointDispatcher>()
+        dispatcher = mockk<CotEndpointDispatcher>()
         coEvery { dispatcher.dispatch(any(), any(), true) } coAnswers {
             sent.add(firstArg<CotOutboundMessage>() to secondArg<CotEndpointAvailability>())
             true
@@ -173,5 +174,43 @@ class OutboundPliAnnouncementServiceTest {
         service.onInteractionLocationRcvd(InteractionLocationRcvd(freshFix(), setOf(PliRefreshReason.OUTBOUND_ROUTE_READY)))
         assertTrue(sent.poll(3, TimeUnit.SECONDS)!!.second.companion)
         assertNull(observer.tracks.poll(150, TimeUnit.MILLISECONDS))
+    }
+
+    @Test fun dynamicObservationsShareAnchoredDueGateWithoutWritingCoordinatesOrBypassingOptOut() {
+        val dynamic = MutableStateFlow(true)
+        every { repo.getEnableDynamicReportingStrategy } returns dynamic
+        val realRepo = DataRepository(RuntimeEnvironment.getApplication())
+        val snapshot = runBlocking {
+            realRepo.storeLocationInput(com.aitech.weartak_civ.data.LocationInput.FUSED)
+            realRepo.storeLatestLocation(freshFix())
+            realRepo.snapshotPli()
+        }
+        assertNotNull(snapshot.loc)
+        every { repo.isCurrentLocationSnapshot(any()) } answers { realRepo.isCurrentLocationSnapshot(firstArg()) }
+        coEvery { repo.snapshotPli() } returns snapshot
+        coEvery { dispatcher.dispatch(any(), any(), false) } coAnswers {
+            sent.add(firstArg<CotOutboundMessage>() to secondArg<CotEndpointAvailability>())
+            true
+        }
+        val previous = CotDispatchService.actualReportingIntervalSecs
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 3600
+            service.buildAndSendPhysioLocationCotMsg(periodic = true)
+            assertNotNull(sent.poll(1, TimeUnit.SECONDS))
+            repeat(10) { service.buildAndSendPhysioLocationCotMsg(periodic = true) }
+            assertTrue(sent.isEmpty())
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(30))
+            service.buildAndSendPhysioLocationCotMsg(periodic = true)
+            assertTrue(sent.isEmpty())
+            CotDispatchService.actualReportingIntervalSecs = 30
+            service.buildAndSendPhysioLocationCotMsg(periodic = true)
+            assertNotNull(sent.poll(1, TimeUnit.SECONDS))
+            locationEnabled.value = false
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(30))
+            service.buildAndSendPhysioLocationCotMsg(periodic = true)
+            assertTrue(sent.isEmpty())
+            coVerify(exactly = 0) { repo.storeLatestLocation(any()) }
+            coVerify(exactly = 0) { repo.requestInteractionPliRefresh(any()) }
+        } finally { CotDispatchService.actualReportingIntervalSecs = previous }
     }
 }
