@@ -883,9 +883,11 @@ identity PLI waits for the first usable position rather than inventing coordinat
 
 ### Reporting and Location Input
 
-The former Reporting Strategy page is now **Reporting**. Both the main location icon
-and a non-alert coordinate readout open it; physiological metrics and active alerts keep
-their existing dashboard shortcuts.
+The former Reporting Strategy page is now **Reporting**. The main location icon
+opens it. Every top-slot metric readout, including MGRS and Lat/Long and active
+alerts, opens **Top Display Metric**, keeping all metric choices and Physiological
+Monitoring/Alerts reachable. Changing Location Input does not change the saved
+top-display metric.
 
 **Location Input** offers **Fused Location**, then **Internal GNSS**. Fused Location
 uses Google Play services' real fused location client, combining available satellite,

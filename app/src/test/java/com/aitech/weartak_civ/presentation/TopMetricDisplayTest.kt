@@ -7,6 +7,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.TopDisplayMetric
+import com.aitech.weartak_civ.data.LocationInput
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -19,6 +20,24 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class TopMetricDisplayTest {
+    @Test fun persistedMetricKeysSurviveProviderChangesAndRepositoryRecreation() = runBlocking {
+        val app = RuntimeEnvironment.getApplication()
+        MainActivity.device_uid = "test-watch"
+        val repo = DataRepository(app)
+        val key = stringPreferencesKey("selected_physio_metric")
+        for (metric in TopDisplayMetric.entries) {
+            // Seed the existing persisted format rather than rewriting it via the current setter.
+            repo.legacyDataStore().edit { it[key] = metric.key }
+            for (input in LocationInput.entries) {
+                val reopened = DataRepository(app)
+                assertEquals(metric.key, reopened.getSelectedPhysioMetric.first())
+                assertTrue(reopened.storeLocationInput(input))
+                assertEquals(metric.key, DataRepository(app).getSelectedPhysioMetric.first())
+                assertEquals(metric.key, repo.legacyDataStore().data.first()[key])
+            }
+        }
+    }
+
     private fun value(metric: TopDisplayMetric, monitoring: Boolean = true, worn: Boolean = true,
                       location: Location? = null, locationEnabled: Boolean = true) =
         topMetricValue(metric, monitoring, worn, 80, .4f, 32f, 123,
