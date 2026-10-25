@@ -42,6 +42,8 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.data.model.TakRoutePoint
@@ -186,10 +188,13 @@ class BloodhoundService: Service() {
         }
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private fun collectAzimuthFlow() {
         scope.launch {
-            combine(repo.azimuthTrueDegSmoothed, bhRepo.presentationTargets, bhRepo.activeUid) {
-                azimuth, _, _ -> azimuth
+            combine(bhRepo.presentationTargets, bhRepo.activeUid) { targets, active ->
+                targets == null || targets.isNotEmpty() || active != null
+            }.flatMapLatest { demanded ->
+                if (demanded) repo.azimuthTrueDegSmoothed else flowOf(null)
             }.collect { azimuth ->
                 val map = bhRepo.guidanceTargets()
                 if (azimuth != null) {

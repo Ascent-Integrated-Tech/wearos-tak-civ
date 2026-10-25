@@ -524,11 +524,12 @@ guidance still updates the active target for navigation, proximity and Companion
 Stopped/retained pages release their demand, and opening a page or changing the
 active target immediately recomputes using the current location and heading.
 Incoming targets and their source timestamps continue updating offscreen.
-Dashboard collection follows its visible lifecycle. Heading acquisition remains
-available to the map, markers and north complication even without an active target;
-this change does not stop the sensor or alter reporting policy.
+Dashboard collection follows its visible lifecycle. Interactive map/marker views
+and installed compass complications remain heading consumers without an active
+target; active guidance also owns background heading. The listener-demand and
+cached-ambient behavior is described below, independently of reporting policy.
 
-## GitHub pipeline release
+## Performance and heading demand
 
 Incoming CoT parsing reuses thread-safe compiled attribute patterns keyed only by
 the parser's fixed schema names, never incoming XML or attribute values.
@@ -542,6 +543,31 @@ existing tag/level check enables `VERBOSE` for `WearTAK-DittoService`. Disabled
 verbose logging no longer stringifies whole documents. Enabled verbose messages,
 warnings/errors, the opt-in Logging journal and all publication/retry/gating
 behavior remain unchanged.
+
+Rotation-sensor acquisition is demand-driven, not implied by the core movement
+service running. Interactive dashboard/map/marker and Bloodhound views use their
+existing lifecycle-owned heading subscriptions; an idle Bloodhound service no
+longer keeps a heading subscription. Installed compass complication slots retain
+independent ownership across process restart and removal, and keep the fused
+heading projection subscribed while interactive. Existing subscribed-flow
+cleanup delays still apply after the final view closes.
+Display-off and noninteractive ambient/AOD compass rendering use the last cached
+bearing, **not live heading**. Rotation resumes on interactive demand, with
+smoothing reset and pre-registration callbacks rejected. Active Bloodhound
+guidance remains a background consumer regardless of screen state, preserving
+navigation/proximity/Companion behavior. No location/report acquisition,
+permissions, sensor sampling rate, or complication update cadence is changed.
+Logging uses distinct `DISPLAY_INTERACTIVE` and `ROTATION_LISTENER` events from
+these existing hooks. `ACTIVE` is 1 for interactive or registered and 0 otherwise;
+rotation `RESULT` is 1 for successful registration/removal and 0 for a failed
+registration. Initial interactive state and subsequent changes are recorded;
+duplicate screen broadcasts do not create changes. Noninteractive does not
+distinguish display-off from ambient/AOD, and a service request is not proof of
+registration. Shutdown records actual removal. These numeric events use the
+existing five-second aggregation and privacy/storage bounds, not individual
+samples or a measured energy saving.
+
+## GitHub pipeline release
 
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
 **TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
@@ -1248,6 +1274,10 @@ report interval, `OBSERVATION_SCHEDULED`/`LOCATION_REQUEST` applied acquisition
 intervals, fix outcomes and `PLI_ATTEMPT`/`PLI_RESULT`. Neither desired intervals
 nor a local accepted dispatch establish server delivery or an acknowledgement.
 This metadata does not acquire a fix, send a message or change a cadence.
+Recognized walking/running and the generic activity policy are not third-party
+workout start/end evidence. No Health Services user-activity subscription, health
+permission or exercise session is added; user-reported external workout times
+remain separate annotations when no existing callback exposes them.
 
 There are no raw coordinates, speed/health readings, identity/contact/chat
 contents, command names/arguments, exception messages/stacks, credentials,

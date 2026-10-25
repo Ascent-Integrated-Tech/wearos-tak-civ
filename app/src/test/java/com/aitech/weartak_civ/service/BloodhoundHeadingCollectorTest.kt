@@ -14,6 +14,10 @@ import io.mockk.verify
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.delay
+import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -46,17 +50,23 @@ class BloodhoundHeadingCollectorTest {
                 invoke(service)
             }
             verify(timeout = 5_000, atLeast = 1) { bloodhounds.guidanceTargets() }
+            assertEquals(0, heading.subscriptionCount.value)
             verify(exactly = 0) { bloodhounds.updateBloodhoundCompassNeedles(any()) }
             demand.value = null
             verify(timeout = 5_000, exactly = 1) {
                 bloodhounds.updateBloodhoundCompassNeedles(mapOf("first" to 45.0, "second" to 225.0))
             }
+            assertEquals(1, heading.subscriptionCount.value)
             demand.value = emptySet()
+            runBlocking { withTimeout(5_000) {
+                while (heading.subscriptionCount.value != 0) delay(5)
+            } }
             heading.value = 90.0
             active.value = "second"
             verify(timeout = 5_000, exactly = 1) {
                 bloodhounds.updateBloodhoundCompassNeedles(mapOf("second" to 180.0))
             }
+            assertEquals(1, heading.subscriptionCount.value)
             active.value = "first"
             verify(timeout = 5_000, exactly = 1) {
                 bloodhounds.updateBloodhoundCompassNeedles(mapOf("first" to 0.0))

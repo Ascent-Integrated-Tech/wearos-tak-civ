@@ -12,6 +12,9 @@ package com.aitech.weartak_civ.service
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.IntentFilter
 import android.hardware.GeomagneticField
 import android.hardware.Sensor
 import android.hardware.SensorEvent
@@ -21,6 +24,8 @@ import android.os.Binder
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
+import androidx.core.content.ContextCompat
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
@@ -29,7 +34,13 @@ import com.aitech.weartak_civ.provider.LocationVectorCalculator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.math.sqrt
 
@@ -44,7 +55,18 @@ class MovementDetectionService : Service(), SensorEventListener {
     private val repo by lazy { (applicationContext as WearTakApplication).repo as DataRepository }
     // --- WearTAK Service requirements: Binder / scope ---
     private val binder = MovementDetectionServiceBinder()
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+    private val interactive = MutableStateFlow(false)
+    private var interactiveInitialized = false
+    private var rotationRegistered = false
+    private var rotationStartedNanos = 0L
+    private var receiverRegistered = false
+    private var complicationProjection: Job? = null
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            updateInteractive()
+        }
+    }
 
     // --- Movement detection state ---
     private val gravity = FloatArray(3)
@@ -73,7 +95,13 @@ class MovementDetectionService : Service(), SensorEventListener {
 
         // Register listeners
 //        accelerometer?.let { sensorManager.registerListener(this, it, ACCELEROMETER_DELAY_US) } // not currently using for compass
-        rotationVector?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        receiverRegistered = true
+        updateInteractive()
+        collectHeadingDemand((applicationContext as WearTakApplication).bhRepo.activeUid)
 
         // Initial state
         isUserMoving = false
@@ -99,11 +127,65 @@ class MovementDetectionService : Service(), SensorEventListener {
 
     override fun onSensorChanged(event: SensorEvent?) {
         event ?: return
+        if (!rotationRegistered || event.timestamp < rotationStartedNanos) return
 
         when (event.sensor.type) {
 //            Sensor.TYPE_ACCELEROMETER -> handleAccelerometer(event.values)
             Sensor.TYPE_ROTATION_VECTOR -> handleRotationVector(event.values)
         }
+    }
+
+    private fun updateInteractive() {
+        val current = (getSystemService(POWER_SERVICE) as PowerManager).isInteractive
+        if (interactiveInitialized && interactive.value == current) return
+        interactiveInitialized = true
+        interactive.value = current
+        AppDiagnostics.record(DiagnosticEvent.DISPLAY_INTERACTIVE, mapOf(
+            DiagnosticMetric.ACTIVE to if (current) 1L else 0L
+        ))
+    }
+
+    private fun collectHeadingDemand(activeTarget: StateFlow<String?>) {
+        scope.launch {
+            combine(interactive, repo.headingComplications.activeIds) { screen, ids ->
+                screen && ids.isNotEmpty()
+            }.distinctUntilChanged().collect { wanted ->
+                complicationProjection?.cancel()
+                complicationProjection = if (wanted) scope.launch {
+                    repo.azimuthTrueDegSmoothed.collect { }
+                } else null
+            }
+        }
+        scope.launch {
+            combine(interactive, repo.magneticHeadingSubscriptions, activeTarget,
+                repo.headingComplications.activeIds) { screen, subscribers, active, slots ->
+                active != null || (screen && (subscribers > 0 || slots.isNotEmpty()))
+            }.distinctUntilChanged().collect(::setRotationDemand)
+        }
+    }
+
+    private fun setRotationDemand(wanted: Boolean) {
+        if (wanted == rotationRegistered) return
+        if (wanted) {
+            val sensor = rotationVector
+            if (sensor == null) {
+                Log.w(TAG, "Rotation sensor unavailable for requested heading")
+                return
+            }
+            lastAzimuthTrueDeg = null
+            lastPublishAtMs = 0L
+            rotationStartedNanos = android.os.SystemClock.elapsedRealtimeNanos()
+            rotationRegistered = sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+            if (!rotationRegistered) Log.e(TAG, "Rotation listener registration failed")
+        } else {
+            rotationRegistered = false
+            sensorManager.unregisterListener(this)
+            // Preserve the last bearing for cached ambient/complication rendering.
+        }
+        AppDiagnostics.record(DiagnosticEvent.ROTATION_LISTENER, mapOf(
+            DiagnosticMetric.ACTIVE to if (rotationRegistered) 1L else 0L,
+            DiagnosticMetric.RESULT to if (wanted && !rotationRegistered) 0L else 1L
+        ))
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
@@ -210,7 +292,10 @@ class MovementDetectionService : Service(), SensorEventListener {
         super.onDestroy()
         Log.d(TAG, "MovementDetectionService onDestroy()")
         isRunning.set(false)
-        sensorManager.unregisterListener(this)
+        if (receiverRegistered) unregisterReceiver(screenReceiver)
+        receiverRegistered = false
+        complicationProjection?.cancel()
+        if (rotationRegistered) setRotationDemand(false) else sensorManager.unregisterListener(this)
         repo.updateMagAzimuthTrue(null)
         scope.coroutineContext.cancel()
         stopForeground(STOP_FOREGROUND_DETACH)

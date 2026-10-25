@@ -28,6 +28,24 @@ import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withRotation
 
 class BloodhoundComplicationService : SuspendingComplicationDataSourceService() {
+    override fun onComplicationActivated(complicationInstanceId: Int, type: ComplicationType) {
+        super.onComplicationActivated(complicationInstanceId, type)
+        setHeadingOwner(complicationInstanceId, true)
+    }
+
+    override fun onComplicationDeactivated(complicationInstanceId: Int) {
+        setHeadingOwner(complicationInstanceId, false)
+        super.onComplicationDeactivated(complicationInstanceId)
+    }
+
+    private fun setHeadingOwner(id: Int, active: Boolean) {
+        try {
+            (applicationContext as WearTakApplication).repo.headingComplications.setActive(id, active)
+        } catch (error: java.io.IOException) {
+            android.util.Log.e(TAG, "Compass complication ownership could not be saved", error)
+        }
+    }
+
     companion object {
         val TAG = "WearTAK-" + BloodhoundComplicationService::class.java.simpleName
         const val CHAT_DISABLED = "disabled"
@@ -43,6 +61,7 @@ class BloodhoundComplicationService : SuspendingComplicationDataSourceService() 
     }
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData {
+        setHeadingOwner(request.complicationInstanceId, true)
         val app = applicationContext as WearTakApplication
         val bhRepo = app.bhRepo
         val active = bhRepo.activeBhItemUi.value
