@@ -584,9 +584,6 @@ fun WearTAKSettingsNav(
                                 WearTAKDebugVersionText(
                                     wearTakInfo = wearTakInfo,
                                     devModeEnabled = isDevMode,
-                                    onDebugToggled = {
-                                        setAirplaneMode("0")
-                                    },
                                     settingsVm = settingsVm
                                 )
                             }
@@ -3354,7 +3351,9 @@ fun WearTAKSettingsNav(
 
         //Admin Preferences vvv
         composable("admin_preferences") {
-            WearTAKPageWithBackArrow(
+            if (!isDevMode) {
+                LaunchedEffect(Unit) { navController.popBackStack() }
+            } else WearTAKPageWithBackArrow(
                 stringResource(R.string.admin_preferences),
                 columnContent = {
                     item {
@@ -4869,9 +4868,9 @@ fun WearTAKDebugVersionText(
 
                         withContext(Dispatchers.Main) {
                             val toastText = if (newValue) {
-                                "Debug tools enabled (airplane mode off)"
+                                "Debug tools enabled"
                             } else {
-                                "Debug tools disabled (airplane mode off)"
+                                "Debug tools disabled"
                             }
                             showTopToast(toastText)
                         }

@@ -123,6 +123,11 @@ class BatteryService: Service() {
             lastDockType = dockType
             lastBatteryPct = batteryPct
             lastChargingOrFull = chargingOrFull
+            AppDiagnostics.record(DiagnosticEvent.BATTERY, mapOf(
+                DiagnosticMetric.BATTERY_PERCENT to batteryPct.toLong(),
+                DiagnosticMetric.DOCK to dockType.ordinal.toLong(),
+                DiagnosticMetric.CHARGING to if (chargingOrFull) 1L else 0L
+            ))
 
             Log.i(TAG, "batteryPowerReceiver: pct=$batteryPct dockType=$dockType (plugged=$plugged, status=$status, chargingOrFull=$chargingOrFull)")
 

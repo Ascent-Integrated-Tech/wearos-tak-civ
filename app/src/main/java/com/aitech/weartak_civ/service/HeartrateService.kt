@@ -192,14 +192,20 @@ class HeartrateService: Service() {
             try {
                 registrationStartedAtNanos = android.os.SystemClock.elapsedRealtimeNanos()
                 sensorRegistered = sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
+                AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
+                    DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to if (sensorRegistered) 1L else 0L))
                 if (sensorRegistered) Log.i(TAG, "HeartrateService heartRateSensor callback registered")
                 else Log.w(TAG, "Heart-rate listener registration refused; will reconcile while permitted")
             } catch (error: SecurityException) {
                 sensorRegistered = false
                 Log.w(TAG, "Heart-rate permission revoked during registration", error)
+                AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
+                    DiagnosticMetric.KIND to 1L, DiagnosticMetric.RESULT to -1L))
             }
         } else {
             Log.e(TAG, "HeartrateService heartRateSensor is null. CANNOT read heartrate")
+            AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
+                DiagnosticMetric.KIND to 1L, DiagnosticMetric.RESULT to 0L))
         }
     }
 
@@ -208,6 +214,8 @@ class HeartrateService: Service() {
         Log.d(TAG, "HeartrateService stopSensors(): active=$active monitoring=$monitoringEnabled worn=${sharedRepository.latestIsDeviceWorn.value} permission=$permission")
         sensorManager.unregisterListener(sensorEventListener)
         sensorRegistered = false
+        AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
+            DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 0L))
     }
 
     private val sensorEventListener = object : SensorEventListener {

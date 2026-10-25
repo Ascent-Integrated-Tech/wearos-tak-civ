@@ -59,6 +59,7 @@ class ReportingIntervalStrategyService : Service() {
     private var reportingInterval = DEFAULT_CONSTANT_REPORTING_INTERVAL
     private var isAlerting = false
     private var latestSpeedMps: Double? = null
+    private var diagnosticSpeedUsable: Boolean? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -131,6 +132,11 @@ class ReportingIntervalStrategyService : Service() {
         //Log.d(TAG, "calcReportingIntervalAndSendUpdate enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
         //            "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
         if (reportingInterval != CotDispatchService.desiredReportingIntervalSecs || observationChanged) {
+            AppDiagnostics.record(DiagnosticEvent.REPORT_POLICY, mapOf(
+                DiagnosticMetric.REPORT_SECONDS to reportingInterval.toLong(),
+                DiagnosticMetric.OBSERVATION_SECONDS to observationInterval.toLong(),
+                DiagnosticMetric.KIND to if (enableDynamicReportingStrategy) 1L else 0L
+            ))
             //Log.d(TAG, "calcReportingIntervalAndSendUpdate reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
             CotDispatchService.desiredReportingIntervalSecs = reportingInterval
             EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, reportingInterval))
@@ -216,6 +222,7 @@ class ReportingIntervalStrategyService : Service() {
                 dataRepository.getEnableLocationService, dataRepository.locationInputStatus
             ) { observation, _, _, _ -> observation }.collectLatest { observation ->
                 latestSpeedMps = currentReportingSpeed(dataRepository)
+                recordSpeedValidity()
                 calcDynamicReportingIntervalAndSendUpdate()
                 if (latestSpeedMps != null && observation != null) {
                     val remainingMillis = (observation.validUntilElapsedNanos -
@@ -223,11 +230,20 @@ class ReportingIntervalStrategyService : Service() {
                     // A one-shot expiry does not keep polling or acquire another fix.
                     delay(remainingMillis.coerceAtLeast(0) + 1)
                     latestSpeedMps = null
+                    recordSpeedValidity()
                     calcDynamicReportingIntervalAndSendUpdate()
                 }
             }
 
         }
+    }
+
+    private fun recordSpeedValidity() {
+        val usable = latestSpeedMps != null
+        if (usable == diagnosticSpeedUsable) return
+        diagnosticSpeedUsable = usable
+        AppDiagnostics.record(DiagnosticEvent.SPEED_VALIDITY,
+            mapOf(DiagnosticMetric.RESULT to if (usable) 1L else 0L))
     }
 
     private suspend fun currentReportingSpeed(repo: DataRepository): Double? {

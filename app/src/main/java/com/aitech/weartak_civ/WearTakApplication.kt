@@ -50,6 +50,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
 import com.aitech.weartak_civ.service.BondedLocationDiagnostics
+import com.aitech.weartak_civ.service.AppDiagnostics
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -63,6 +64,7 @@ class WearTakApplication : Application() {
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
     lateinit var locationDiagnostics: BondedLocationDiagnostics; private set
+    lateinit var diagnostics: AppDiagnostics; private set
     lateinit var sitxRepo: SitxSecretsRepository; private set
     lateinit var takServerRepo: TakServerSecretsRepository; private set
     lateinit var audioRepo: AudioCaptureRepository; private set
@@ -95,9 +97,11 @@ class WearTakApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        diagnostics = AppDiagnostics.initialize(this)
         MainActivity.device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)
+        diagnostics.bindRepository(repo)
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             repo.unitPrefs.collect(com.aitech.weartak_civ.ui.formatter.UnitPrefsState::update)
         }
@@ -118,10 +122,6 @@ class WearTakApplication : Application() {
         AppCtx.init(this)
         Log.i(TAG, "WearTakApplication Created")
 
-        // Wipe debug mode to false on every boot!
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-            repo.storeEnableWearTakDevMode(false)
-        }
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
             val migrationResult = runCatching {
                 TakServerMigration(repo.legacyDataStore(), takServerRepo).runIfNeeded()

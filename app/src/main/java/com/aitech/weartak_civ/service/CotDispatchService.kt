@@ -1214,26 +1214,38 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun dispatch(message: CotOutboundMessage): Boolean {
-        val position = (message.companionPayload as? CotCompanionPayload.Pli)?.snapshot?.loc
-        if (message.kind == CotMessageKind.PLI && position?.provider != null &&
-            !dataRepository.isCurrentLocationSnapshot(position)) {
-            Log.i(TAG, "Skipping PLI built before a location input change")
-            return false
+        val started = android.os.SystemClock.elapsedRealtime()
+        var accepted: Boolean? = null
+        if (message.kind == CotMessageKind.PLI) AppDiagnostics.record(DiagnosticEvent.PLI_ATTEMPT)
+        try {
+            val position = (message.companionPayload as? CotCompanionPayload.Pli)?.snapshot?.loc
+            if (message.kind == CotMessageKind.PLI && position?.provider != null &&
+                !dataRepository.isCurrentLocationSnapshot(position)) {
+                Log.i(TAG, "Skipping PLI built before a location input change")
+                accepted = false
+                return false
+            }
+            if (capRepo.gateway.session != null && companionAppAvailable() &&
+                message.kind in listOf(
+                    CotMessageKind.PLI, CotMessageKind.MARKER, CotMessageKind.MARKER_CLEAR,
+                    CotMessageKind.CHAT, CotMessageKind.EMERGENCY
+                )) {
+                val gatewayAccepted = endpointDispatcher.dispatchGateway(message) { capRepo.offerGatewayCot(message.xml) }
+                if (!gatewayAccepted) Log.w(TAG, "Gateway output queue full; CoT not sent")
+                accepted = gatewayAccepted
+                return gatewayAccepted
+            }
+            if (capRepo.gateway.session != null) {
+                // Non-map traffic keeps its existing independent endpoints, never the gateway.
+                return endpointDispatcher.dispatch(message, endpointAvailability().copy(companion = false)).also { accepted = it }
+            }
+            return endpointDispatcher.dispatch(message, endpointAvailability()).also { accepted = it }
+        } finally {
+            if (message.kind == CotMessageKind.PLI) AppDiagnostics.record(DiagnosticEvent.PLI_RESULT, mapOf(
+                DiagnosticMetric.RESULT to when (accepted) { true -> 1L; false -> 0L; null -> -1L },
+                DiagnosticMetric.DURATION_MS to android.os.SystemClock.elapsedRealtime() - started
+            ))
         }
-        if (capRepo.gateway.session != null && companionAppAvailable() &&
-            message.kind in listOf(
-                CotMessageKind.PLI, CotMessageKind.MARKER, CotMessageKind.MARKER_CLEAR,
-                CotMessageKind.CHAT, CotMessageKind.EMERGENCY
-            )) {
-            val accepted = endpointDispatcher.dispatchGateway(message) { capRepo.offerGatewayCot(message.xml) }
-            if (!accepted) Log.w(TAG, "Gateway output queue full; CoT not sent")
-            return accepted
-        }
-        if (capRepo.gateway.session != null) {
-            // Non-map traffic keeps its existing independent endpoints, never the gateway.
-            return endpointDispatcher.dispatch(message, endpointAvailability().copy(companion = false))
-        }
-        return endpointDispatcher.dispatch(message, endpointAvailability())
     }
 
     private suspend fun handleClearMarkerUid(uid: String) = markerDispatchMutex.withLock {

@@ -1136,9 +1136,117 @@ This does **not** repair rejected credentials: HTTP 401 still requires valid
 credentials/server-side authorization. Response bodies and certificate material
 are not logged by enrollment.
 
+### Persistent developer menus and Diagnostics
+
+Tap the version eight times in **Preferences** to unlock **Admin Preferences**
+and **Developer Preferences**. Repeat the same eight-tap gesture to hide them.
+This local UI preference now survives navigation, process restart, reboot and
+in-place updates until explicitly disabled. It is not an authenticated admin
+session: phone-managed restrictions, network locking, licensing, platform
+permissions and Knox authorization remain independent and unchanged. Hiding
+the menus immediately removes access to their pages, not those restrictions.
+The unlock gesture no longer changes airplane mode. Developer entries are sorted by their current localized visible labels, with
+the title and Back navigation kept outside the sorted entries.
+
+Open **Developer Preferences > Diagnostics**, then switch **Diagnostics** on
+before a normal unplugged session. This is one app-wide, default-off recording
+preference, not a battery-only switch. Its choice survives app/watch restarts and
+updates. Recording resumes when Android next runs WearTAK; it does not launch
+the app or override force-stop, suspension or battery restrictions. Hiding the
+developer menus does not turn off Diagnostics or erase evidence. Re-enable
+the menus and explicitly switch **Diagnostics** off to stop it. **Clear logs**
+deletes only this recorder's files, without changing the preference; switching
+off alone preserves recorded evidence. Uninstall/app-data clearing removes it.
+Existing Bonded Location Diagnostics remains a separate, unchanged feature;
+the new Diagnostics switch does not enable its GNSS measurement callbacks.
+
+The journal contains only compiled event categories and allowlisted numeric
+metadata: app/activity lifecycle, best-effort Java crash occurrence, battery
+percentage/charging/dock changes, location requests/acceptance/rejection/timeouts/
+coalescing, observation schedules versus report-policy changes, saved reporting/
+source/monitoring configuration and usable-versus-Unknown speed status, PLI dispatch
+attempts/results, power policies, existing location/Stay awake lock hooks,
+service start/stop requests, HR listener registration, connectivity transitions,
+sync/chat/command occurrence and command success/failure. Service requests are
+not proof that Android started a service; a successful PLI result means an
+existing transport accepted the dispatch, not a delivery acknowledgement.
+This is troubleshooting evidence, not a promise to capture every app error.
+
+There are no raw coordinates, speed/health readings, identity/contact/chat
+contents, command names/arguments, exception messages/stacks, credentials,
+tokens, server addresses or device identifiers in this journal. No logcat
+interception, uploads, listener, wireless-debugging enablement, extra
+GPS/sensor/wakelock/network requests or battery polling is added. Existing
+callbacks feed the recorder. Events are limited to one record per category/
+source/kind/state per five seconds; repeated occurrences are aggregated as counts,
+including on export/off. The queue is bounded to 128 records, the aggregation
+table to 256 keys, and overflow is explicitly counted. An I/O failure pauses
+file writes and is visible in Android logging and the Diagnostics page; retry
+export or clear after fixing storage. Process termination can lose queued
+events and unflushed aggregate counts.
+
+Storage is three rotating JSONL files, each at most 256 KiB (768 KiB total),
+with up-to-three-day retention enforced on write/export (a file is discarded
+when its oldest record expires). Records include schema,
+app version/code/source commit, reporting-policy version, wall-clock milliseconds
+and monotonic elapsed milliseconds. Elapsed time restarts on watch reboot;
+do not subtract elapsed timestamps across boots. `COUNT` includes aggregated
+occurrences; `AGGREGATED=1` denotes a summary, not another occurrence.
+`LOCATION_ACCEPTED.DURATION_MS` is time since request/subscription start, not
+per-fix latency on a continuous subscription. Numeric source/kind values follow
+the version's `LocationInput`, acquisition and `ServiceType` enums; screen codes
+are other=0, map=1, settings=2, chat=3, main=4. Battery dock codes are none=0,
+USB=1, wireless=2; sensor kind 1 is the HR listener; lock kind 1 is Stay awake
+(the location lock has no kind field). PLI result is accepted=1, rejected=0,
+exception=-1; connectivity result uses `TakServerConnStatusEvent` constants.
+Location acquisition kind codes are periodic=0, one-shot=1, interaction=2.
+Configuration source -1 means no selected input; an omitted battery percentage
+means it has not yet been observed.
+Speed validity result is usable=1, Unknown=0, without recording the speed.
+Location lock `ACTIVE=1` carries its configured timeout; `ACTIVE=0` carries
+elapsed time capped at that timeout (an upper bound, not measured energy).
+Its release result is explicitly-held=1 or already-released/expired=0.
+
+After a session, connect using your existing authorized wireless ADB workflow
+(these commands do not pair, enable debugging or change watch settings).
+For the signed production package:
+
+```powershell
+adb pull /sdcard/Android/data/com.aitech.weartak_civ/files/diagnostics .\wear-tak-diagnostics
+```
+
+Keep all available `events.jsonl`, `events.1.jsonl`, and `events.2.jsonl`;
+oldest is `.2`, newest is unsuffixed. Read only complete JSON lines if Android
+terminated a write. Debug builds use package `com.aitech.weartak_civ.dev`.
+Scoped-storage access depends on the watch OS/ADB policy. If direct pull is
+denied, **Export logs** uses Android's document picker to save a bounded JSON
+snapshot to a user-selected destination, then retrieve that file with ADB.
+The page reports export/storage failures and unavailable document pickers;
+no broad storage permission or exported provider is introduced.
+
+For corroboration, collect existing OS evidence without resetting state:
+
+```powershell
+adb shell dumpsys batterystats com.aitech.weartak_civ > .\wear-tak-batterystats.txt
+adb logcat -b crash -d > .\wear-tak-crash.txt
+```
+
+These manual OS outputs are separate from the privacy-allowlisted app journal
+and may contain sensitive or other-app information: inspect/redact before
+sharing. Native crashes, system kills and tombstones may not reach the Java
+handler or app file. Do not run `batterystats --reset` or clear logcat for this
+workflow. Charging, wireless debugging, a connected debugger and **Stay awake**
+can materially alter power use, connectivity and dock throttling. Capture the
+normal unplugged session first, and note the later debugging/charging interval.
+For a practical battery comparison, hold hardware, build, screen use, sensors,
+transport/RF conditions, saved rates and dock policy constant; compare several
+matched unplugged sessions with elapsed time, battery percentage drop and OS
+wakelock/radio/GPS evidence. Event counts cannot establish per-component energy
+use or prove battery savings, and no physical battery measurements are claimed.
+
 ### Dev Mode Stay Awake
 
-Debug and release APKs include one opt-in **Stay awake** split-toggle chip at the top of
+Debug and release APKs include one opt-in **Stay awake** split-toggle chip in the alphabetized
 **Developer Preferences** (tap the
 version eight times in Preferences to reveal these tools). This standalone demo/development
 session control does not require Wireless debugging or read its system setting. The switch

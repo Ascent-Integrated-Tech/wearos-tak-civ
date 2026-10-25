@@ -29,10 +29,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Alignment
@@ -59,6 +61,7 @@ import androidx.wear.compose.material.Text
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.service.LocationDiagnosticSample
+import com.aitech.weartak_civ.service.AppDiagnostics
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
@@ -66,6 +69,11 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.qrcode.QRCodeWriter
 import java.io.IOException
+import java.text.Collator
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private const val DEBUG_SERVER_PORT = 8000
 
@@ -94,6 +102,17 @@ private data class DebugRow(
     val value: String
 )
 
+internal enum class DeveloperEntryId {
+    BUILD, DIAGNOSTICS, GIT, IP, LOCATION, PORT, QR, SSID, STAY_AWAKE, TRANSPORT, VERSION, VERSION_CODE
+}
+
+internal data class DeveloperEntry(val id: DeveloperEntryId, val label: String, val value: String = "")
+
+internal fun sortedDeveloperEntries(entries: List<DeveloperEntry>, locale: Locale): List<DeveloperEntry> {
+    val collator = Collator.getInstance(locale)
+    return entries.sortedWith { left, right -> collator.compare(left.label, right.label) }
+}
+
 @Composable
 fun DebugScreen(
     navController: NavController
@@ -117,10 +136,16 @@ private fun DebugScreen(
     dataRepository: DataRepository,
     onExit: () -> Unit
 ) {
+    val developerEnabled by dataRepository.getEnableWearTakDevMode.collectAsState(initial = true)
+    if (!developerEnabled) {
+        LaunchedEffect(Unit) { onExit() }
+        return
+    }
     var showQrCode by remember {
         mutableStateOf(false)
     }
     var showLocationDiagnostics by remember { mutableStateOf(false) }
+    var showAppDiagnostics by remember { mutableStateOf(false) }
     var exportStatus by remember { mutableStateOf("") }
     val context = LocalContext.current
     val diagnosticsEnabled by dataRepository.getBondedLocationDiagnosticsEnabled.collectAsState(initial = false)
@@ -165,7 +190,9 @@ private fun DebugScreen(
     )
 
     fun navigateBack() {
-        if (showLocationDiagnostics) {
+        if (showAppDiagnostics) {
+            showAppDiagnostics = false
+        } else if (showLocationDiagnostics) {
             showLocationDiagnostics = false
         } else if (showQrCode) {
             showQrCode = false
@@ -182,7 +209,12 @@ private fun DebugScreen(
         Box(
             modifier = Modifier.fillMaxSize()
         ) {
-            if (showLocationDiagnostics) {
+            if (showAppDiagnostics) {
+                AppDiagnosticsPage(
+                    diagnostics = (context.applicationContext as WearTakApplication).diagnostics,
+                    onBack = { showAppDiagnostics = false }
+                )
+            } else if (showLocationDiagnostics) {
                 DebugLocationDiagnosticsPage(
                     watch = watchSample,
                     phone = phoneSample,
@@ -211,7 +243,8 @@ private fun DebugScreen(
                     onShowQrCode = {
                         showQrCode = true
                     },
-                    onShowLocationDiagnostics = { showLocationDiagnostics = true }
+                    onShowLocationDiagnostics = { showLocationDiagnostics = true },
+                    onShowDiagnostics = { showAppDiagnostics = true }
                 )
             }
         }
@@ -223,42 +256,25 @@ internal fun DebugInformationPage(
     debugInfo: DebugDisplayInfo,
     onBack: () -> Unit,
     onShowQrCode: () -> Unit,
-    onShowLocationDiagnostics: () -> Unit
+    onShowLocationDiagnostics: () -> Unit,
+    onShowDiagnostics: () -> Unit = {}
 ) {
-    val rows = listOf(
-        DebugRow(
-            label = "Version",
-            value = debugInfo.versionName
-        ),
-        DebugRow(
-            label = "Version code",
-            value = debugInfo.versionCode.toString()
-        ),
-        DebugRow(
-            label = "Build",
-            value = debugInfo.buildType
-        ),
-        DebugRow(
-            label = "Git",
-            value = "${debugInfo.gitBranch}@${debugInfo.gitCommit}"
-        ),
-        DebugRow(
-            label = "Transport",
-            value = debugInfo.transport
-        ),
-        DebugRow(
-            label = "SSID",
-            value = debugInfo.ssid
-        ),
-        DebugRow(
-            label = "IP address",
-            value = debugInfo.ipAddress
-        ),
-        DebugRow(
-            label = "Port",
-            value = debugInfo.port.toString()
-        )
-    )
+    val context = LocalContext.current
+    val entries = sortedDeveloperEntries(listOf(
+        DeveloperEntry(DeveloperEntryId.BUILD, stringResource(R.string.debug_build), debugInfo.buildType),
+        DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, stringResource(R.string.app_diagnostics)),
+        DeveloperEntry(DeveloperEntryId.GIT, stringResource(R.string.debug_git), "${debugInfo.gitBranch}@${debugInfo.gitCommit}"),
+        DeveloperEntry(DeveloperEntryId.IP, stringResource(R.string.debug_ip), debugInfo.ipAddress),
+        DeveloperEntry(DeveloperEntryId.LOCATION, stringResource(R.string.companion_location_diagnostics)),
+        DeveloperEntry(DeveloperEntryId.PORT, stringResource(R.string.debug_port), debugInfo.port.toString()),
+        DeveloperEntry(DeveloperEntryId.QR, stringResource(
+            if (debugInfo.canShowQrCode) R.string.debug_show_qr else R.string.debug_no_ip)),
+        DeveloperEntry(DeveloperEntryId.SSID, stringResource(R.string.debug_ssid), debugInfo.ssid),
+        DeveloperEntry(DeveloperEntryId.STAY_AWAKE, stringResource(R.string.debug_stay_awake)),
+        DeveloperEntry(DeveloperEntryId.TRANSPORT, stringResource(R.string.debug_transport), debugInfo.transport),
+        DeveloperEntry(DeveloperEntryId.VERSION, stringResource(R.string.debug_version), debugInfo.versionName),
+        DeveloperEntry(DeveloperEntryId.VERSION_CODE, stringResource(R.string.debug_version_code), debugInfo.versionCode.toString())
+    ), context.resources.configuration.locales[0])
 
     ScalingLazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -281,53 +297,106 @@ internal fun DebugInformationPage(
             )
         }
 
-        item { DebugStayAwakeSetting() }
-
-        items(rows) { row ->
-            DebugInformationRow(row)
-        }
-
-        item {
-            Button(
-                onClick = onShowLocationDiagnostics,
-                modifier = Modifier.size(width = 148.dp, height = 42.dp)
-            ) {
-                Text("Location Diagnostics", textAlign = TextAlign.Center, fontSize = 11.sp)
-            }
-        }
-
-        item {
-            Spacer(
-                modifier = Modifier.size(5.dp)
-            )
-        }
-
-        item {
-            Button(
-                onClick = onShowQrCode,
-                enabled = debugInfo.canShowQrCode,
-                modifier = Modifier.size(
-                    width = 118.dp,
-                    height = 42.dp
-                ),
-                colors = ButtonDefaults.buttonColors(
-                    backgroundColor = MaterialTheme.colors.primary
-                )
-            ) {
-                Text(
-                    text = if (debugInfo.canShowQrCode) {
-                        "Show QR"
-                    } else {
-                        "No IP"
-                    },
-                    textAlign = TextAlign.Center,
-                    fontSize = 12.sp
-                )
+        items(entries, key = { it.id }) { entry ->
+            when (entry.id) {
+                DeveloperEntryId.STAY_AWAKE -> DebugStayAwakeSetting()
+                DeveloperEntryId.DIAGNOSTICS, DeveloperEntryId.LOCATION, DeveloperEntryId.QR ->
+                    Button(
+                        onClick = when (entry.id) {
+                            DeveloperEntryId.DIAGNOSTICS -> onShowDiagnostics
+                            DeveloperEntryId.LOCATION -> onShowLocationDiagnostics
+                            else -> onShowQrCode
+                        },
+                        enabled = entry.id != DeveloperEntryId.QR || debugInfo.canShowQrCode,
+                        modifier = Modifier.size(width = 148.dp, height = 48.dp)
+                    ) { Text(entry.label, textAlign = TextAlign.Center, fontSize = 11.sp) }
+                else -> DebugInformationRow(DebugRow(entry.label, entry.value))
             }
         }
         item {
             WearTAKBackButton(onClick = onBack)
         }
+    }
+}
+
+@Composable
+private fun AppDiagnosticsPage(diagnostics: AppDiagnostics, onBack: () -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val enabled by diagnostics.enabled.collectAsState()
+    val failed by diagnostics.storageFailed.collectAsState()
+    var status by remember { mutableStateOf("") }
+    var busy by remember { mutableStateOf(false) }
+    fun action(success: Int, exclusive: Boolean = true, block: suspend () -> Unit) {
+        if (exclusive && busy) return
+        if (exclusive) busy = true
+        scope.launch {
+            try {
+                withContext(Dispatchers.IO) { block() }
+                status = context.getString(success)
+            } catch (error: IOException) {
+                status = context.getString(R.string.app_diagnostics_failed)
+                Toast.makeText(context, status, Toast.LENGTH_LONG).show()
+            } catch (error: SecurityException) {
+                status = context.getString(R.string.app_diagnostics_failed)
+                Toast.makeText(context, status, Toast.LENGTH_LONG).show()
+            } finally {
+                if (exclusive) busy = false
+            }
+        }
+    }
+    val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        if (uri != null) action(R.string.app_diagnostics_exported) {
+            val json = diagnostics.exportJson()
+            context.contentResolver.openOutputStream(uri)?.use {
+                it.write(json.toByteArray(Charsets.UTF_8))
+            } ?: throw IOException("Cannot open diagnostics destination")
+        }
+    }
+    ScalingLazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 40.dp, bottom = 26.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(5.dp)
+    ) {
+        item {
+            WearTAKToggleChip(
+                title = stringResource(R.string.app_diagnostics),
+                checkedLive = enabled,
+                onCheckedChange = { value ->
+                    action(R.string.app_diagnostics_saved, exclusive = false) { diagnostics.setEnabled(value) }
+                }
+            )
+        }
+        item {
+            Text(stringResource(R.string.app_diagnostics_description), fontSize = 11.sp, textAlign = TextAlign.Center)
+        }
+        if (failed || status.isNotEmpty()) item {
+            Text(if (failed) stringResource(R.string.app_diagnostics_failed) else status,
+                fontSize = 11.sp, textAlign = TextAlign.Center)
+        }
+        item {
+            Button(onClick = {
+                try {
+                    export.launch("wear-tak-diagnostics.json")
+                } catch (error: android.content.ActivityNotFoundException) {
+                    status = context.getString(R.string.app_diagnostics_no_picker)
+                    Toast.makeText(context, status, Toast.LENGTH_LONG).show()
+                } catch (error: SecurityException) {
+                    status = context.getString(R.string.app_diagnostics_failed)
+                    Toast.makeText(context, status, Toast.LENGTH_LONG).show()
+                }
+            }, enabled = !busy, modifier = Modifier.size(width = 148.dp, height = 48.dp)) {
+                Text(stringResource(R.string.app_diagnostics_export), textAlign = TextAlign.Center, fontSize = 11.sp)
+            }
+        }
+        item {
+            Button(onClick = { action(R.string.app_diagnostics_cleared) { diagnostics.clear() } }, enabled = !busy,
+                modifier = Modifier.size(width = 148.dp, height = 48.dp)) {
+                Text(stringResource(R.string.app_diagnostics_clear), textAlign = TextAlign.Center, fontSize = 11.sp)
+            }
+        }
+        item { WearTAKBackButton(onClick = onBack) }
     }
 }
 
