@@ -95,12 +95,12 @@ class MovementDetectionService : Service(), SensorEventListener {
 
         // Register listeners
 //        accelerometer?.let { sensorManager.registerListener(this, it, ACCELEROMETER_DELAY_US) } // not currently using for compass
-        updateInteractive()
         ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
             addAction(Intent.ACTION_SCREEN_ON)
             addAction(Intent.ACTION_SCREEN_OFF)
         }, ContextCompat.RECEIVER_NOT_EXPORTED)
         receiverRegistered = true
+        updateInteractive()
         collectHeadingDemand((applicationContext as WearTakApplication).bhRepo.activeUid)
 
         // Initial state
