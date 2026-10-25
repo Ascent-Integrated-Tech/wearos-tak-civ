@@ -65,7 +65,7 @@ internal data class DiagnosticRecord(
 
 internal class DiagnosticJournal(
     private val directory: () -> File,
-    private val maxBytes: Long = 256 * 1024L,
+    private val maxBytes: Long = 2 * 1024 * 1024L,
     private val retentionMs: Long = 3 * 24 * 60 * 60 * 1000L,
     private val wallClock: () -> Long = System::currentTimeMillis
 ) {
