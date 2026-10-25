@@ -30,6 +30,7 @@ import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.cot.CotStreamFramer
 import com.aitech.weartak_civ.cot.TakServerCotEnvelope
+import com.aitech.weartak_civ.cot.TakServerCotIngestResult
 import com.aitech.weartak_civ.cot.TakServerCotIngestor
 import com.aitech.weartak_civ.cot.TakServerCotSink
 import com.aitech.weartak_civ.cot.CotUserPositionEvent
@@ -2228,6 +2229,44 @@ class TAKConnectService: Service() {
                 .take(8)
                 .joinToString(separator = "") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
+        internal suspend fun ingestServerCot(
+            envelope: TakServerCotEnvelope,
+            serverName: String,
+            activeChannels: () -> List<TakChannel>,
+            ingest: suspend (TakServerCotEnvelope) -> TakServerCotIngestResult,
+        ): TakServerCotIngestResult {
+            val diagnostics = if (Log.isLoggable(TAG, Log.DEBUG)) {
+                CotMessageParser.ingressDiagnostics(envelope.rawXml).also { diagnostics ->
+                    val channels = activeChannels()
+                    Log.d(
+                        TAG,
+                        "Inbound CoT received serverId=${envelope.sourceServerId} " +
+                            "serverName=$serverName sourceAddress=${envelope.sourceServerAddress} " +
+                            "uid=${diagnostics.uid} type=${diagnostics.type} " +
+                            "eventTime=${diagnostics.eventTime} receivedAt=${envelope.receivedAt} " +
+                            "team=${diagnostics.teamName} role=${diagnostics.teamRole} " +
+                            "flowTags=${diagnostics.flowTagNames} " +
+                            "explicitChannelStamps=${diagnostics.explicitChannelStamps} " +
+                            "activeChannelsAtReceipt=${channels.diagnosticSummary()} " +
+                            "channelOwnership=${if (diagnostics.explicitChannelStamps.isEmpty()) "unavailable" else "explicit-stamp-present"} " +
+                            "payloadSha256Prefix=${cotPayloadFingerprint(envelope.rawXml)} " +
+                            "payloadBytes=${envelope.rawXml.toByteArray(Charsets.UTF_8).size}"
+                    )
+                }
+            } else {
+                null
+            }
+            val result = ingest(envelope)
+            if (diagnostics != null) {
+                Log.d(
+                    TAG,
+                    "Inbound CoT routed serverId=${envelope.sourceServerId} uid=${diagnostics.uid} " +
+                        "type=${diagnostics.type} result=$result"
+                )
+            }
+            return result
+        }
+
         var newServerAddedViaUi = false
         val newServerAddedViaUiConnectionStatusLiveData: MutableLiveData<String> = MutableLiveData<String>(TAK_SERVER_CONNECTING_STRING)
 
@@ -3559,31 +3598,17 @@ class TAKConnectService: Service() {
                                     rawXml = rawXml,
                                     sourceSessionId = attempt.sessionId
                                 )
-                                val diagnostics = CotMessageParser.ingressDiagnostics(rawXml)
-                                val activeChannels = dataRepository.takChannels.value
-                                    .firstOrNull { it.serverId == takServerDetail.serverId }
-                                    ?.channels
-                                    .orEmpty()
-                                    .filter { it.active }
-                                Log.d(
-                                    TAG,
-                                    "Inbound CoT received serverId=${takServerDetail.serverId} " +
-                                        "serverName=${takServerDetail.name} sourceAddress=${takServerDetail.address} " +
-                                        "uid=${diagnostics.uid} type=${diagnostics.type} " +
-                                        "eventTime=${diagnostics.eventTime} receivedAt=${envelope.receivedAt} " +
-                                        "team=${diagnostics.teamName} role=${diagnostics.teamRole} " +
-                                        "flowTags=${diagnostics.flowTagNames} " +
-                                        "explicitChannelStamps=${diagnostics.explicitChannelStamps} " +
-                                        "activeChannelsAtReceipt=${activeChannels.diagnosticSummary()} " +
-                                        "channelOwnership=${if (diagnostics.explicitChannelStamps.isEmpty()) "unavailable" else "explicit-stamp-present"} " +
-                                        "payloadSha256Prefix=${cotPayloadFingerprint(rawXml)} " +
-                                        "payloadBytes=${rawXml.toByteArray(Charsets.UTF_8).size}"
-                                )
-                                val result = cotIngestor.ingest(envelope)
-                                Log.d(
-                                    TAG,
-                                    "Inbound CoT routed serverId=${takServerDetail.serverId} uid=${diagnostics.uid} " +
-                                        "type=${diagnostics.type} result=$result"
+                                ingestServerCot(
+                                    envelope = envelope,
+                                    serverName = takServerDetail.name,
+                                    activeChannels = {
+                                        dataRepository.takChannels.value
+                                            .firstOrNull { it.serverId == takServerDetail.serverId }
+                                            ?.channels
+                                            .orEmpty()
+                                            .filter { it.active }
+                                    },
+                                    ingest = cotIngestor::ingest,
                                 )
                             }
                         }
