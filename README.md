@@ -455,6 +455,15 @@ their current ownership. This avoids invalidating queued overlay filter updates
 when toggling layers. Unknown layer IDs from older saved settings are ignored,
 not deleted.
 
+The immutable base style is scoped to each map composition. Returning to a
+retained map keeps its live style; recreating map content creates fresh overlay
+wrappers. Do not reintroduce in-place whole-style replacement while overlays are
+live: the pinned MapLibre Compose library can apply an already queued filter
+after that old native style has been cleared. Lifecycle regression tests cover
+stop/resume, destruction, navigation and recreation with 74 synthetic feature
+records and mocked native calls; they do not establish physical-device rendering
+or crash acceptance.
+
 ### WEARTAK-121: Bloodhound to a map user
 
 From Home, tap the compass/Bloodhound target to open the picker, including while
