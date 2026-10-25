@@ -71,7 +71,8 @@ internal fun FittedTopMetricText(
     value: String,
     modifier: Modifier = Modifier,
     style: TextStyle = MaterialTheme.typography.body1.copy(
-        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
+        fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Color.White),
+    minFontSize: TextUnit = 0.25.sp
 ) {
     BasicText(
         text = value,
@@ -83,7 +84,7 @@ internal fun FittedTopMetricText(
         maxLines = 1,
         softWrap = false,
         autoSize = TextAutoSize.StepBased(
-            minFontSize = 0.25.sp, maxFontSize = style.fontSize, stepSize = 0.25.sp
+            minFontSize = minFontSize, maxFontSize = style.fontSize, stepSize = 0.25.sp
         )
     )
 }

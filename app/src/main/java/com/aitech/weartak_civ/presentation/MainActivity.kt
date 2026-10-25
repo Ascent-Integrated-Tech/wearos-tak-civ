@@ -2527,11 +2527,12 @@ fun MainScreen(
                     .unswipeable()
             ) {
                 OrientationAware()
+                val topMetricKey by settingsVm.savedSelectedPhysioMetric.collectAsState()
                 HomeDashboardColumn {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .weight(1f)
+                            .weight(if (com.aitech.weartak_civ.data.TopDisplayMetric.fromKey(topMetricKey).physiological) 1f else 1.5f)
                             .padding(vertical = 0.dp)
                     ) {
                         requestPhysioStatusAndAlertingComplicationUpdate(context)
@@ -2826,6 +2827,8 @@ internal fun HomeTopMetricCard(
             )
         }
         Chip(
+            modifier = if (metric.physiological || containsAlert) Modifier
+                else Modifier.padding(horizontal = 24.dp),
             border = ChipDefaults.outlinedChipBorder(alertChipColors(chipState), borderWidth = 2.dp),
             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
             onClick = onClick,
@@ -2834,7 +2837,7 @@ internal fun HomeTopMetricCard(
             contentColor = Color.White,
         ),
             enabled = true,
-            icon = if (!containsAlert && metric == com.aitech.weartak_civ.data.TopDisplayMetric.MGRS) null else {
+            icon = if (!containsAlert && !metric.physiological) null else {
               {
                 Icon(
                     painter = painterResource(iconRes),
@@ -2852,8 +2855,10 @@ internal fun HomeTopMetricCard(
                 ) {
                     if (!containsAlert) {
                         FittedTopMetricText(value, style = MaterialTheme.typography.body1.copy(
-                            fontSize = if (metric.physiological) 16.sp else 14.sp,
-                            fontWeight = FontWeight.SemiBold, color = Color.White))
+                            fontSize = if (metric.physiological) 16.sp else 13.sp,
+                            textAlign = if (metric.physiological) TextAlign.Start else TextAlign.Center,
+                            fontWeight = FontWeight.SemiBold, color = Color.White),
+                            minFontSize = if (metric.physiological) 0.25.sp else 10.sp)
                     } else Text(
                         text = alert ?: value,
                         textAlign = TextAlign.Start,
