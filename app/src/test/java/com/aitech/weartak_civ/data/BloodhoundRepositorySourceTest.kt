@@ -14,17 +14,65 @@ import com.aitech.weartak_civ.cot.CotMarkerDetail
 import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
 import com.aitech.weartak_civ.cot.CotPoint
+import com.aitech.weartak_civ.data.BloodhoundRepository.BloodhoundItem
 import io.mockk.mockk
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class BloodhoundRepositorySourceTest {
+    @Test
+    fun compassBatchMatchesSequentialFinalStateWithoutIntermediateTargetMaps() = runBlocking {
+        val sequential = BloodhoundRepository(mockk<Context>(relaxed = true))
+        val batched = BloodhoundRepository(mockk<Context>(relaxed = true))
+        for (repository in listOf(sequential, batched)) {
+            repository.upsertFromEvent(event(SERVER_A, "Hidden", 100L))
+            repository.upsertFromEvent(event(SERVER_B, "Visible", 200L))
+            repository.upsertFromEvent(event(SERVER_A, "Other", 100L, uid = "other"))
+            repository.activate(UID)
+        }
+        val snapshots = mutableListOf<Map<String, BloodhoundItem>>()
+        val collector = launch(Dispatchers.Unconfined) {
+            batched.bloodhoundMap.collect { snapshots.add(it) }
+        }
+        try {
+            val needles = mapOf(UID to 42.0, "other" to 180.0, "absent" to 10.0)
+            needles.forEach { (uid, angle) -> sequential.updateBloodhoundCompassNeedle(uid, angle) }
+            batched.updateBloodhoundCompassNeedles(needles)
+
+            assertEquals(sequential.bloodhoundMap.value, batched.bloodhoundMap.value)
+            assertEquals(2, snapshots.size)
+            assertEquals(42.0, snapshots.last()[UID]?.compass?.targetBearingDeg)
+            assertEquals(180.0, snapshots.last()["other"]?.compass?.targetBearingDeg)
+            assertEquals(UID, batched.activeUid.value)
+            assertEquals(SERVER_B, batched.activeTrackingItem()?.sourceServerId)
+            assertTrue(batched.activeTrackingItem()?.state?.active == true)
+            val unchanged = batched.bloodhoundMap.value
+            batched.updateBloodhoundCompassNeedles(needles)
+            batched.updateBloodhoundCompassNeedles(emptyMap())
+            assertSame(unchanged, batched.bloodhoundMap.value)
+            assertEquals(2, snapshots.size)
+
+            sequential.clearSource(SERVER_B)
+            batched.clearSource(SERVER_B)
+            assertEquals(sequential.bloodhoundMap.value, batched.bloodhoundMap.value)
+            assertNull(batched.activeUid.value)
+            assertEquals("Hidden", batched.bloodhoundMap.value[UID]?.target?.name)
+        } finally {
+            collector.cancel()
+        }
+    }
+
     @Test
     fun companionStopPreservesTargetAndDoesNotStopAnotherUid() {
         val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
@@ -141,11 +189,12 @@ class BloodhoundRepositorySourceTest {
     private fun event(
         serverId: String,
         title: String,
-        receivedAt: Long
+        receivedAt: Long,
+        uid: String = UID
     ): BloodhoundRepository.BloodhoundEvent {
         val marker = CotMarkerEvent(
             version = "2.0",
-            uid = UID,
+            uid = uid,
             type = "a-h-G",
             how = "h-g-i-g-o",
             time = receivedAt,

@@ -513,6 +513,11 @@ actions remain reachable on round screens. The ordinary Bloodhound detail action
 also reads **Start Bloodhound** instead of **RGR**; acknowledgement and stop behavior
 are unchanged.
 
+Bloodhound applies each heading sample to source-owned targets in one batch,
+publishing only the completed compass state. Unchanged samples do not rebuild
+the target projections. This does not change heading sampling, background
+guidance, proximity alerts, location acquisition or reporting intervals.
+
 ## GitHub pipeline release
 
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling

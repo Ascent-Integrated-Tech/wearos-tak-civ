@@ -13,9 +13,49 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertSame
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 class SourceAwareCotStoreTest {
+    @Test
+    fun batchTransformPublishesOnlyCompletedStateAndKeepsSourceOrdering() = runBlocking {
+        val store = store()
+        val hidden = Item("server-a", "same", 100L, 100L, "hidden")
+        store.upsert(hidden)
+        store.upsert(Item("server-b", "same", 200L, 200L, "visible"))
+        store.upsert(Item("server-a", "other", 100L, 100L, "other"))
+        val snapshots = mutableListOf<List<Item>>()
+        val collector = launch(Dispatchers.Unconfined) {
+            store.visibleItems.collect { snapshots.add(it) }
+        }
+        try {
+            val changed = store.transformAll { key, item ->
+                if (key == SourceCotKey("server-a", "same")) item
+                else item.copy(value = "updated-${item.value}")
+            }
+
+            assertTrue(changed)
+            assertEquals(2, snapshots.size)
+            assertEquals(listOf("updated-visible", "updated-other"),
+                snapshots.last().map(Item::value))
+            assertSame(hidden, store.item(SourceCotKey("server-a", "same")))
+            assertEquals(SourceCotKey("server-b", "same"), store.visibleKey("same"))
+
+            val all = store.allItems.value
+            val visible = store.visibleItems.value
+            assertFalse(store.transformAll { _, item -> item })
+            assertSame(all, store.allItems.value)
+            assertSame(visible, store.visibleItems.value)
+            assertEquals(2, snapshots.size)
+        } finally {
+            collector.cancel()
+        }
+    }
+
     private data class Item(
         val sourceId: String,
         val uid: String,

@@ -104,12 +104,16 @@ class SourceAwareCotStore<T>(
     }
 
     fun transformAll(transform: (SourceCotKey, T) -> T) = synchronized(lock) {
+        var changed = false
         storedByKey.entries.forEach { entry ->
-            entry.setValue(
-                entry.value.copy(value = transform(entry.key, entry.value.value))
-            )
+            val updated = transform(entry.key, entry.value.value)
+            if (updated !== entry.value.value) {
+                entry.setValue(entry.value.copy(value = updated))
+                changed = true
+            }
         }
-        publishLocked()
+        if (changed) publishLocked()
+        changed
     }
 
     fun remove(key: SourceCotKey): T? = synchronized(lock) {
