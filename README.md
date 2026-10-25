@@ -889,6 +889,12 @@ alerts, opens **Top Display Metric**, keeping all metric choices and Physiologic
 Monitoring/Alerts reachable. Changing Location Input does not change the saved
 top-display metric.
 
+Home coordinates retain their complete precision on one line. Their centered
+readout is inset from the round display edge and uses the existing intrinsic-safe
+text fitter between 10sp and 13sp, respecting the system font scale. The coordinate
+top slot gets additional vertical space for the heading and readout; physiological
+metrics keep their existing layout. No coordinate is abbreviated or ellipsized.
+
 **Location Input** offers **Fused Location**, then **Internal GNSS**. Fused Location
 uses Google Play services' real fused location client, combining available satellite,
 Wi-Fi and cellular sources; it is not Android's network-only provider. Internal GNSS
