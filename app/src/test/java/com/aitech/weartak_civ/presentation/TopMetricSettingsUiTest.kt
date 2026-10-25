@@ -32,6 +32,37 @@ import org.robolectric.annotation.GraphicsMode
 class TopMetricSettingsUiTest {
     @get:Rule val compose = createComposeRule()
 
+    @Test fun alertMenusSortLocalizedLabelsWithoutChangingEntryAssociations() {
+        val app = RuntimeEnvironment.getApplication()
+        val expected = mapOf(
+            "alerting_preferences" to listOf(
+                "battery_alerts" to R.string.battery_alerts,
+                "environmental_alerts" to R.string.environmental_alerts,
+                "physiological_alerts" to R.string.physiological_alerts),
+            "environmental_alerts" to listOf(
+                "atm_pressure_alerts" to R.string.atm_pressure_alerts,
+                "immersion_alerts" to R.string.immersion_alerts),
+            "physiological_alerts" to listOf(
+                "exertion_alerts" to R.string.exertion_alerts,
+                "heart_rate_alerts" to R.string.heart_rate_alerts,
+                "physiological_master" to R.string.physiological_alerts)
+        )
+        for (locale in listOf(java.util.Locale.US, java.util.Locale.GERMAN, java.util.Locale.FRENCH)) {
+            val config = android.content.res.Configuration(app.resources.configuration).apply { setLocale(locale) }
+            val localized = app.createConfigurationContext(config)
+            val collator = java.text.Collator.getInstance(locale)
+            expected.forEach { (page, associations) ->
+                val result = alertPreferenceEntries(localized, page)
+                assertEquals(associations.associate { it.first to localized.getString(it.second) }, result.toMap())
+                assertTrue(result.zipWithNext().all { (a, b) -> collator.compare(a.second, b.second) <= 0 })
+            }
+        }
+        assertEquals(listOf("battery_alerts", "environmental_alerts", "physiological_alerts"),
+            alertPreferenceEntries(app, "alerting_preferences").map { it.first })
+        assertEquals(listOf("exertion_alerts", "heart_rate_alerts", "physiological_master"),
+            alertPreferenceEntries(app, "physiological_alerts").map { it.first })
+    }
+
     @Test fun alertThresholdNavigationAndSwitchAreIndependentEvenWhenOff() = verifyAlertControls()
 
     @Test

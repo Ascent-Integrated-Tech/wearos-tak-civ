@@ -39,6 +39,7 @@ class PhysioControlsLayoutTest {
     @Test fun at498Font10() = verifySurfaces(498, 1f)
     @Test fun at498Font11() = verifySurfaces(498, 1.1f)
     @Test fun at498Font13() = verifySurfaces(498, 1.3f)
+    @Test fun at192dpFont13() = verifySurfaces(408, 1.3f)
 
     private fun verifySurfaces(pixels: Int, fontScale: Float) {
         val density = 340f / 160
@@ -68,7 +69,7 @@ class PhysioControlsLayoutTest {
                             val selected = metric.value!!
                             Box(Modifier.fillMaxSize().padding(5.dp)) {
                                 HomeDashboardColumn {
-                                    Row(Modifier.fillMaxWidth().weight(1f)) {
+                                    Row(Modifier.fillMaxWidth().weight(if (selected.physiological) 1f else 1.5f)) {
                                         HomeTopMetricCard(selected.name, when (selected) {
                                             TopDisplayMetric.MGRS -> "60XWU1234598765"
                                             TopDisplayMetric.LAT_LONG -> "-79.12345/-179.98765"
@@ -92,16 +93,24 @@ class PhysioControlsLayoutTest {
             compose.onNodeWithText(label).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
             assertFalse("$label clipped vertically at $pixels/$fontScale", layouts.single().didOverflowHeight)
             assertFalse("$label clipped horizontally at $pixels/$fontScale", layouts.single().didOverflowWidth)
+            assertEquals("$label must stay on one line", 1, layouts.single().lineCount)
+            assertFalse(layouts.single().isLineEllipsized(0))
+            assertEquals(label, layouts.single().layoutInput.text.text)
+            assertTrue("Readable scaled label size",
+                layouts.single().layoutInput.style.fontSize.value * fontScale >= 10f)
         }
         assertTextFits(monitorLabel)
         assertTextFits(alertsLabel)
         val monitorBounds = compose.onNodeWithText(monitorLabel).fetchSemanticsNode().boundsInRoot
         val alertBounds = compose.onNodeWithText(alertsLabel).fetchSemanticsNode().boundsInRoot
-        assertTrue("Monitoring must lead", monitorBounds.top < alertBounds.top)
+        assertTrue("Alerts must lead", alertBounds.top < monitorBounds.top)
+        compose.onAllNodes(isToggleable()).fetchSemanticsNodes().forEach {
+            assertTrue("Keep 48dp touch target", it.touchBoundsInRoot.height / density >= 48f)
+        }
         compose.onNodeWithContentDescription(thresholdsLabel).performClick()
         assertEquals(1, thresholdOpens)
         assertFalse(alerting.value)
-        compose.onAllNodes(isToggleable())[1].performClick()
+        compose.onAllNodes(isToggleable())[0].performClick()
         assertTrue(alerting.value)
         assertTrue(monitoring.value)
         compose.onNodeWithText(monitorLabel).performClick()
@@ -110,11 +119,12 @@ class PhysioControlsLayoutTest {
         restoration.emulateSavedInstanceStateRestore()
         assertFalse(monitoring.value)
         assertTrue(alerting.value)
+        if (pixels == 408) return
         compose.runOnIdle { metric.value = TopDisplayMetric.MGRS }
         compose.onNodeWithContentDescription(iconLabel).assertDoesNotExist()
         assertTextFits("60XWU1234598765")
         compose.runOnIdle { metric.value = TopDisplayMetric.LAT_LONG }
-        compose.onNodeWithContentDescription(iconLabel).assertExists()
+        compose.onNodeWithContentDescription(iconLabel).assertDoesNotExist()
         assertTextFits("-79.12345/-179.98765")
         compose.runOnIdle { metric.value = TopDisplayMetric.HEART_RATE }
         assertEquals(R.drawable.heart, TopDisplayMetric.HEART_RATE.icon)

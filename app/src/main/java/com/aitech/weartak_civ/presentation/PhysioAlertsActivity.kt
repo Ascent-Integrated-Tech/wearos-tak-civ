@@ -26,6 +26,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.wear.compose.material.*
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -141,9 +142,19 @@ internal fun MetricMonitoringControls(
     onThresholds: () -> Unit
 ) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        WearTAKToggleChip(checkedLive = monitoring, onCheckedChange = onMonitoring,
-            title = stringResource(R.string.physiological_monitoring))
         MetricAlertControls(alertsEnabled, onAlerts, onThresholds)
+        ToggleChip(
+            checked = monitoring,
+            onCheckedChange = onMonitoring,
+            label = { FittedTopMetricText(stringResource(R.string.physiological_monitoring),
+                minFontSize = 8.sp) },
+            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+            toggleControl = { Switch(checked = monitoring, onCheckedChange = null) },
+            colors = ToggleChipDefaults.toggleChipColors(
+                uncheckedToggleControlColor = ToggleChipDefaults.SwitchUncheckedIconColor
+            ),
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+        )
     }
 }
 
@@ -155,9 +166,11 @@ internal fun MetricAlertControls(enabled: Boolean, onToggle: (Boolean) -> Unit, 
         onCheckedChange = onToggle,
         onClick = onThresholds,
         label = {
-            Text(stringResource(R.string.physiological_alerts),
-                modifier = Modifier.semantics { contentDescription = thresholds })
+            FittedTopMetricText(stringResource(R.string.physiological_alerts),
+                modifier = Modifier.semantics { contentDescription = thresholds },
+                minFontSize = 8.sp)
         },
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
         toggleControl = { Switch(checked = enabled, onCheckedChange = null) },
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
     )
