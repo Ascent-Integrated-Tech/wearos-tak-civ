@@ -544,6 +544,13 @@ verbose logging no longer stringifies whole documents. Enabled verbose messages,
 warnings/errors, the opt-in Logging journal and all publication/retry/gating
 behavior remain unchanged.
 
+TAK reader `DEBUG` diagnostics likewise compute ingress metadata, active-channel
+projections, payload hashes and UTF-8 formatting only when Android enables
+`DEBUG` for `WearTAK-TAKConnectService`. They are logging-only, not protocol,
+authorization or deduplication inputs. Enabled receipt/routing messages keep
+their content and ordering; disabled diagnostics retain no per-frame metadata.
+Ingest ordering, warnings/errors and opt-in typed Logging events are unchanged.
+
 Native location requests still start independently for scheduled observation
 and explicit interactions, with their existing six-second and five-second
 deadlines. An already-arrived usable fix may complete other active consumers
