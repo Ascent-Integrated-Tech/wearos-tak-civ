@@ -1214,6 +1214,26 @@ not proof that Android started a service; a successful PLI result means an
 existing transport accepted the dispatch, not a delivery acknowledgement.
 This is troubleshooting evidence, not a promise to capture every app error.
 
+New records identify the current hybrid as `hybrid-speed-activity-v2`; older
+records keep their original policy, app version and source commit.
+`REPORT_POLICY` captures the initial/enabled snapshot and subsequent changes in
+selected intervals, activity or selection reason, not every speed tick. Its
+`KIND` is 0 for Constant or 1 for Dynamic; `REPORT_SECONDS` and
+`OBSERVATION_SECONDS` are the **desired** intervals, not measured send/fix gaps.
+`ACTIVITY` uses the native enum codes: running 0, walking 1, tilting 2, still 3,
+bicycling 4, in-vehicle 5, on-foot 6, Unknown 7.
+`REPORT_REASON` and `OBSERVATION_REASON` use explicit codes: Constant 0, alert 1,
+stationary speed 2, interpolated speed 3, vehicle speed 4, recognized activity
+profile 5, Unknown/unsupported activity fallback 6. Valid fresh speed owns
+Dynamic reporting; activity owns acquisition and the invalid-speed reporting
+fallback. Tilting, bicycling and Unknown use the existing conservative maximum
+of foot/vehicle intervals, not the stationary interval.
+Correlate these selections with `POWER_CHANGED` power/dock flags and applied
+report interval, `OBSERVATION_SCHEDULED`/`LOCATION_REQUEST` applied acquisition
+intervals, fix outcomes and `PLI_ATTEMPT`/`PLI_RESULT`. Neither desired intervals
+nor a local accepted dispatch establish server delivery or an acknowledgement.
+This metadata does not acquire a fix, send a message or change a cadence.
+
 There are no raw coordinates, speed/health readings, identity/contact/chat
 contents, command names/arguments, exception messages/stacks, credentials,
 tokens, server addresses or device identifiers in this journal. No logcat

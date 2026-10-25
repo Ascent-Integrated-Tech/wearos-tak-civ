@@ -8,6 +8,7 @@ import android.os.SystemClock
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.LocationInput
 import com.aitech.weartak_civ.data.LocationInputStatus
+import com.google.gson.JsonParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -42,6 +43,62 @@ class ReportingIntervalStrategyServiceTest {
                 shadowOf(Looper.getMainLooper()).idle()
                 delay(5)
             }
+        }
+    }
+
+    @Test fun enablingDiagnosticsSnapshotsCachedPolicyWithoutAcquisitionOrRateChanges() {
+        val app = RuntimeEnvironment.getApplication()
+        app.getSharedPreferences("app_diagnostics", Application.MODE_PRIVATE).edit().clear().commit()
+        val repository = DataRepository(app)
+        runBlocking {
+            repository.storeEnableDynamicReportingStrategy(false)
+            repository.storeConstantReportingInterval(43)
+        }
+        val field = AppDiagnostics::class.java.getDeclaredField("instance").apply { isAccessible = true }
+        val previousRecorder = field.get(null)
+        val diagnostics = AppDiagnostics(app)
+        field.set(null, diagnostics)
+        val service = Robolectric.buildService(ReportingIntervalStrategyService::class.java).get()
+        ReportingIntervalStrategyService::class.java.getDeclaredField("dataRepository").apply {
+            isAccessible = true; set(service, repository)
+        }
+        fun call(name: String) = ReportingIntervalStrategyService::class.java.getDeclaredMethod(name).apply {
+            isAccessible = true
+        }.invoke(service)
+        fun policies() = runBlocking {
+            JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
+                .filter { it.asJsonObject["event"].asString == "REPORT_POLICY" }
+        }
+        val previousReport = CotDispatchService.desiredReportingIntervalSecs
+        val previousObservation = CotDispatchService.desiredLocationObservationIntervalSecs
+        val location = repository.latestLocation.value
+        try {
+            call("initializeVariables")
+            call("startDiagnosticsCollector")
+            assertTrue(policies().isEmpty())
+            runBlocking { diagnostics.setEnabled(true) }
+            await { policies().size == 1 }
+            val metrics = policies().single().asJsonObject["metrics"].asJsonObject
+            assertEquals(43, metrics["REPORT_SECONDS"].asInt)
+            assertEquals(DiagnosticSelectionReason.CONSTANT.code, metrics["REPORT_REASON"].asLong)
+            runBlocking { diagnostics.setEnabled(false) }
+            shadowOf(Looper.getMainLooper()).idle()
+            runBlocking { diagnostics.setEnabled(true) }
+            await { policies().size == 2 }
+            assertEquals(43, CotDispatchService.desiredReportingIntervalSecs)
+            assertEquals(43, CotDispatchService.desiredLocationObservationIntervalSecs)
+            assertSame(location, repository.latestLocation.value)
+            assertNull(shadowOf(app).nextStartedService)
+        } finally {
+            val scope = ReportingIntervalStrategyService::class.java.getDeclaredField("serviceScope").apply {
+                isAccessible = true
+            }.get(service) as CoroutineScope
+            scope.cancel()
+            runBlocking { diagnostics.setEnabled(false) }
+            diagnostics.close()
+            field.set(null, previousRecorder)
+            CotDispatchService.desiredReportingIntervalSecs = previousReport
+            CotDispatchService.desiredLocationObservationIntervalSecs = previousObservation
         }
     }
 

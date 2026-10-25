@@ -47,7 +47,8 @@ enum class DiagnosticMetric {
     SOURCE, KIND, DURATION_MS, INTERVAL_SECONDS, REPORT_SECONDS, OBSERVATION_SECONDS,
     BATTERY_PERCENT, DOCK, CHARGING, RESULT, SCREEN, COUNT, AGGREGATED, ACTIVE,
     POWER_THROTTLED, DOCK_THROTTLED, FOOT_SECONDS, VEHICLE_SECONDS, STATIONARY_SECONDS,
-    ALERT_SECONDS, CONSTANT_SECONDS, DYNAMIC, LOCATION_ENABLED, PHYSIO_ENABLED, HR_ENABLED
+    ALERT_SECONDS, CONSTANT_SECONDS, DYNAMIC, LOCATION_ENABLED, PHYSIO_ENABLED, HR_ENABLED,
+    ACTIVITY, REPORT_REASON, OBSERVATION_REASON
 }
 
 @Keep
@@ -56,7 +57,7 @@ internal data class DiagnosticRecord(
     val version: String = BuildConfig.VERSION_NAME,
     val versionCode: Int = BuildConfig.VERSION_CODE,
     val sourceCommit: String = BuildConfig.GIT_COMMIT_SHORT,
-    val policy: String = "dynamic-speed-observation-v1",
+    val policy: String = "hybrid-speed-activity-v2",
     val wallTimeMs: Long,
     val elapsedMs: Long,
     val event: DiagnosticEvent,
@@ -163,7 +164,9 @@ class AppDiagnostics internal constructor(private val application: Application) 
     private data class Rate(val at: Long, val metrics: Map<DiagnosticMetric, Long>, var skipped: Long = 0)
     private data class RateKey(
         val event: DiagnosticEvent, val kind: Long?, val source: Long?,
-        val active: Long?, val result: Long?, val dock: Long?, val charging: Long?
+        val active: Long?, val result: Long?, val dock: Long?, val charging: Long?,
+        val activity: Long?, val reportReason: Long?, val observationReason: Long?,
+        val powerThrottled: Long?, val dockThrottled: Long?
     )
     private val rates = mutableMapOf<RateKey, Rate>()
     private val journal = DiagnosticJournal({
@@ -323,7 +326,10 @@ class AppDiagnostics internal constructor(private val application: Application) 
             val now = SystemClock.elapsedRealtime()
             val key = RateKey(event, metrics[DiagnosticMetric.KIND], metrics[DiagnosticMetric.SOURCE],
                 metrics[DiagnosticMetric.ACTIVE], metrics[DiagnosticMetric.RESULT],
-                metrics[DiagnosticMetric.DOCK], metrics[DiagnosticMetric.CHARGING])
+                metrics[DiagnosticMetric.DOCK], metrics[DiagnosticMetric.CHARGING],
+                metrics[DiagnosticMetric.ACTIVITY], metrics[DiagnosticMetric.REPORT_REASON],
+                metrics[DiagnosticMetric.OBSERVATION_REASON], metrics[DiagnosticMetric.POWER_THROTTLED],
+                metrics[DiagnosticMetric.DOCK_THROTTLED])
             val prior = rates[key]
             if (prior != null && now - prior.at < 5_000L) {
                 rates[key] = prior.copy(metrics = metrics.toMap(), skipped = prior.skipped + 1)
@@ -451,6 +457,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
 
     companion object {
         @Volatile private var instance: AppDiagnostics? = null
+        internal val recordingEnabled get() = instance?.enabled
         fun initialize(application: Application): AppDiagnostics =
             instance ?: synchronized(this) {
                 instance ?: AppDiagnostics(application).also { instance = it }
