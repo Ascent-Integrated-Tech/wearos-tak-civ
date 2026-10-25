@@ -37,6 +37,7 @@ import androidx.health.services.client.data.HealthEvent
 import com.aitech.weartak_civ.manager.RestingHrManager
 import androidx.health.services.client.data.PassiveListenerConfig
 import androidx.health.services.client.getCapabilities
+import androidx.health.services.client.clearPassiveListenerCallback
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
@@ -46,6 +47,15 @@ import com.aitech.weartak_civ.CAT_FALL_DETECTED
 import com.aitech.weartak_civ.DESC_GOOGLE_SDK_FALL_DETECTED
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import com.google.common.util.concurrent.FutureCallback
+import com.google.common.util.concurrent.Futures
 import java.io.File
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -77,6 +87,8 @@ class ActivityRecognitionService : Service() {
     private val passiveMonitoringClient by lazy { healthClient.passiveMonitoringClient }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val ioScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var passiveMonitoringEnabled = false
+    private var passiveListenerRegistered = false
 
     private var cumulativeSteps:     Long?   = null
     private var cumulativeCalories:  Double? = null
@@ -86,6 +98,7 @@ class ActivityRecognitionService : Service() {
     override fun onCreate() {
         super.onCreate()
         isRunning.set(true)
+        repo.resetActivityRecognition()
         Log.i(TAG, "ActivityRecognitionService onCreate()")
         //writeToLogFileLocation(logFile, logStr)
         activityRecognitionClient = ActivityRecognition.getClient(this)
@@ -96,15 +109,20 @@ class ActivityRecognitionService : Service() {
 
         callbackIntent = PendingIntent.getService(this, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE)
 
-        if (ContextCompat.checkSelfPermission( this, Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED) {
-            activityRecognitionClient.requestActivityUpdates(UPDATE_INTERVAL_MS, callbackIntent)
-                .addOnSuccessListener { Log.i(TAG, "Activity updates requested every $UPDATE_INTERVAL_MS ms") }
-                .addOnFailureListener { Log.e(TAG, "Failed to request activity updates", it) }
-        } else {
-            Log.w(TAG, "Cannot request activity updates: permission not granted")
+        scope.launch {
+            if (!isRunning.get() || !recognitionEnabled()) return@launch
+            if (ContextCompat.checkSelfPermission(this@ActivityRecognitionService,
+                Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED) {
+                activityRecognitionClient.requestActivityUpdates(UPDATE_INTERVAL_MS, callbackIntent)
+                    .addOnSuccessListener { Log.i(TAG, "Activity updates requested every $UPDATE_INTERVAL_MS ms") }
+                    .addOnFailureListener { Log.e(TAG, "Failed to request activity updates", it) }
+            } else {
+                Log.w(TAG, "Cannot request activity updates: permission not granted")
+            }
         }
 
         scope.launch {
+            if (!repo.getEnablePhysiologicalServices.first()) return@launch
             CepBus.emit(
                 CepEvent(
                     topic = Topics.ACTIVITY,
@@ -120,43 +138,83 @@ class ActivityRecognitionService : Service() {
             )
         }
 
+        startPassiveMonitoringCollector()
+    }
+
+    private fun startPassiveMonitoringCollector() {
         scope.launch {
-            try {
-                val caps = passiveMonitoringClient.getCapabilities()
-
-                Log.i(TAG, "Passive caps => ${caps.supportedDataTypesPassiveMonitoring}")
-
-                val wanted = buildSet {
-                    if (DataType.STEPS_DAILY   in caps.supportedDataTypesPassiveMonitoring)
-                        add(DataType.STEPS_DAILY)
-                    if (DataType.CALORIES_DAILY in caps.supportedDataTypesPassiveMonitoring)
-                        add(DataType.CALORIES_DAILY)
-                    if (DataType.FLOORS_DAILY  in caps.supportedDataTypesPassiveMonitoring)
-                        add(DataType.FLOORS_DAILY)
-                    if (DataType.ELEVATION_GAIN_DAILY in caps.supportedDataTypesPassiveMonitoring)
-                        add(DataType.ELEVATION_GAIN_DAILY)
-                }
-
-                if (wanted.isEmpty()) {
-                    Log.w(TAG, "No requested passive data types supported"); return@launch
-                }
-
-
-                val cfg = PassiveListenerConfig
-                    .builder()
-                    .setDataTypes(wanted)
-                    .setHealthEventTypes(setOf(HealthEvent.Type.FALL_DETECTED))
-                    .build()
-
-                passiveMonitoringClient.setPassiveListenerCallback(cfg, passiveDailyListenerCallback)
-                val logStr = "Registered passive listener for $wanted"
-                Log.d(TAG, logStr)
-                //writeToLogFileLocation(logFile, logStr)
-            } catch (t: Throwable) {
-                Log.e(TAG, "Failed to register passive listener", t)
+            combine(repo.getEnablePhysiologicalServices, repo.getEnableActRecService) {
+                monitoring, activity -> monitoring && activity
+            }.distinctUntilChanged().collectLatest { enabled ->
+                passiveMonitoringEnabled = enabled &&
+                    ContextCompat.checkSelfPermission(this@ActivityRecognitionService,
+                        Manifest.permission.BODY_SENSORS) == PackageManager.PERMISSION_GRANTED
+                if (!passiveMonitoringEnabled) {
+                    if (passiveListenerRegistered) {
+                        passiveListenerRegistered = false
+                        try {
+                            withContext(NonCancellable) { passiveMonitoringClient.clearPassiveListenerCallback() }
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            Log.e(TAG, "Failed to clear passive listener; disabled callbacks remain rejected", error)
+                        }
+                    }
+                } else registerPassiveMonitoring()
             }
         }
     }
+
+    private suspend fun registerPassiveMonitoring() {
+        try {
+            val caps = passiveMonitoringClient.getCapabilities()
+            if (!canAcceptPassiveData() || !repo.getEnablePhysiologicalServices.first() ||
+                !repo.getEnableActRecService.first()) return
+            Log.i(TAG, "Passive caps => ${caps.supportedDataTypesPassiveMonitoring}")
+            val wanted = buildSet {
+                if (DataType.STEPS_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.STEPS_DAILY)
+                if (DataType.CALORIES_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.CALORIES_DAILY)
+                if (DataType.FLOORS_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.FLOORS_DAILY)
+                if (DataType.ELEVATION_GAIN_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.ELEVATION_GAIN_DAILY)
+            }
+            if (wanted.isEmpty()) {
+                Log.w(TAG, "No requested passive data types supported")
+                return
+            }
+            val cfg = PassiveListenerConfig.builder()
+                .setDataTypes(wanted)
+                .setHealthEventTypes(setOf(HealthEvent.Type.FALL_DETECTED))
+                .build()
+            passiveMonitoringClient.setPassiveListenerCallback(cfg, passiveDailyListenerCallback)
+            passiveListenerRegistered = true
+            Log.d(TAG, "Registered passive listener for $wanted")
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (t: Exception) {
+            Log.e(TAG, "Failed to register passive listener", t)
+        }
+    }
+
+    private fun clearPassiveMonitoring() {
+        if (!passiveListenerRegistered) return
+        passiveListenerRegistered = false
+        Futures.addCallback(passiveMonitoringClient.clearPassiveListenerCallbackAsync(),
+            object : FutureCallback<Void> {
+                override fun onSuccess(result: Void?) = Unit
+                override fun onFailure(error: Throwable) {
+                    Log.e(TAG, "Failed to clear passive listener; disabled callbacks remain rejected", error)
+                }
+            }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun canAcceptPassiveData(): Boolean =
+        passiveMonitoringEnabled && isRunning.get() &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.BODY_SENSORS) ==
+                PackageManager.PERMISSION_GRANTED
+
+    private suspend fun recognitionEnabled(): Boolean =
+        repo.getEnableActRecService.first() && (repo.getEnablePhysiologicalServices.first() ||
+            (repo.getEnableDynamicReportingStrategy.first() && repo.getEnableLocationService.first()))
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.i(TAG, "ActivityRecognitionService onStartCommand()")
@@ -183,7 +241,7 @@ class ActivityRecognitionService : Service() {
             //writeToLogFileLocation(logFile, line)
 
             // TODO: Need to look at confidence and do sthg if confidence is less than 50? Maybe store in a data class
-            if ((act?.confidence ?: 0) >= 50) {
+            if (isRunning.get() && (act?.confidence ?: 0) >= 50) {
                 val cepState = when (detectedActivity) {
                     ActivityRecognized.RUNNING          -> "RUNNING"
                     ActivityRecognized.WALKING,
@@ -197,14 +255,18 @@ class ActivityRecognitionService : Service() {
 
                 //Log.i(TAG, "CEP Activity: $cepState")
                 ioScope.launch {
+                    if (!isRunning.get() || !recognitionEnabled() ||
+                        ContextCompat.checkSelfPermission(this@ActivityRecognitionService,
+                            Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) return@launch
                     // Emit to CEP inside coroutine scope
-                    CepBus.emit(
+                    val monitoring = repo.getEnablePhysiologicalServices.first()
+                    if (monitoring) CepBus.emit(
                         CepEvent(
                             topic = Topics.ACTIVITY,
                             payload = ActivityPayload(state = cepState, confidence = act?.confidence ?: 0)
                         )
                     )
-                    CepBus.emit(
+                    if (monitoring) CepBus.emit(
                         CepEvent(
                             topic = Topics.SLEEP,
                             payload = SleepPayload(is_sleeping = false)
@@ -228,10 +290,12 @@ class ActivityRecognitionService : Service() {
         Log.i(TAG, "ActivityRecognitionService onDestroy()")
 
         if (!isRunning.getAndSet(false)) return
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) return
+        passiveMonitoringEnabled = false
         scope.cancel()
         ioScope.cancel()
-        passiveMonitoringClient.clearPassiveListenerCallbackAsync()
+        repo.resetActivityRecognition()
+        clearPassiveMonitoring()
+        if (!::activityRecognitionClient.isInitialized || !::callbackIntent.isInitialized) return
         activityRecognitionClient.removeActivityUpdates(callbackIntent).addOnSuccessListener { callbackIntent.cancel() }.addOnFailureListener { Log.e(TAG, "Failed to remove activity updates", it) }
     }
 
@@ -239,6 +303,7 @@ class ActivityRecognitionService : Service() {
 
     private val passiveDailyListenerCallback = object : PassiveListenerCallback {
         override fun onNewDataPointsReceived(dataPoints: DataPointContainer) {
+            if (!canAcceptPassiveData()) return
             // Read the optional points
             // Each call may contain 0-many data points for each requested type
             dataPoints.getData(DataType.STEPS_DAILY).firstOrNull()?.value?.toLong()?.let { cumulativeSteps = it }
@@ -253,6 +318,8 @@ class ActivityRecognitionService : Service() {
 
             // Push snapshot to repository
             scope.launch {
+                if (!canAcceptPassiveData() || !repo.getEnablePhysiologicalServices.first() ||
+                    !repo.getEnableActRecService.first()) return@launch
                 val nowHour = Instant.now().truncatedTo(ChronoUnit.HOURS)
                 //Log.d(TAG, "passiveDailyListenerCallback: nowHour: $nowHour; Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
                 repo.updateDailyMetrics(
@@ -266,12 +333,15 @@ class ActivityRecognitionService : Service() {
         }
 
         override fun onHealthEventReceived(event: HealthEvent) {
+            if (!canAcceptPassiveData()) return
             Log.d(TAG, "HealthEvent: ${event.type} at ${event.eventTime}")
             if (event.type == HealthEvent.Type.FALL_DETECTED) {
                 Log.w(TAG, "FALL_DETECTED @ ${event.eventTime}")
 
                 // Post Fall Emergency Event
                 scope.launch {
+                    if (!canAcceptPassiveData() || !repo.getEnablePhysiologicalServices.first() ||
+                        !repo.getEnableActRecService.first()) return@launch
                     // TODO: There is no CLEAR event & do we want a separate flow for fall detect & we are not addPhysioAlertToFront
                     repo.addPhysioAndAutoGenAlertRequest(UUID.randomUUID().toString(), CAT_FALL_DETECTED, DESC_GOOGLE_SDK_FALL_DETECTED, 1, true, System.currentTimeMillis() )
                 }

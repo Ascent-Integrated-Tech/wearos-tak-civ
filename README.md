@@ -894,31 +894,44 @@ identity PLI waits for the first usable position rather than inventing coordinat
 
 ### Reporting and Location Input
 
-Dynamic Reporting uses real speed from the selected location input, not activity
-recognition or physiological monitoring. Below 0.44704 m/s (1 mph), it uses the saved
+Dynamic Reporting first uses valid real speed from the selected location input.
+Below 0.44704 m/s (1 mph), it uses the saved
 Stationary interval. From 0.44704 to 13.4112 m/s (30 mph), it linearly interpolates
 between the saved On Foot and Vehicle intervals, rounding to the nearest whole
 second (halves upward), bounded by those saved rates. At or above 13.4112 m/s it
 uses Vehicle. Equal or reversed user rates remain valid and are not rewritten.
 While Alerting overrides Dynamic; Constant mode and all saved rates/defaults remain unchanged.
 
-Dynamic location observations use the faster saved moving interval, capped at
-60 seconds, even when stationary; a faster selected reporting/alert interval is
-also retained. Existing Wi-Fi/disconnected power saving and dock throttling apply
-separately to observations and reports. For example, On Foot 30s, Vehicle 60s,
-Stationary 3600s requests observations at 30s before power adjustments, but routine
-stationary PLI is still hourly. This is a requested cadence, not a guarantee that
+Dynamic location acquisition uses the incumbent recognized-activity profile:
+Still uses Stationary; Walking, Running and On Foot use On Foot; In Vehicle uses
+Vehicle; Tilting, Bicycling and Unknown use the slower saved moving interval.
+While Alerting overrides this profile. There is no unconditional 60-second idle
+acquisition cap or new retry/backoff timer. Existing Wi-Fi/disconnected power
+saving and dock throttling apply separately to acquisition and reporting.
+Activity updates retain the incumbent confidence threshold of 50, without adding
+a new expiry or hysteresis threshold. This is a requested cadence, not a guarantee that
 the provider, permissions, background execution or watch power state will deliver a fix.
+
+Activity recognition can run for Dynamic location with physiological monitoring
+off. Its existing per-service opt-out and Android Activity Recognition permission
+remain required. It does not enable HR, collect passive daily health metrics or
+register fall monitoring while physiological monitoring is off; those retain
+their own monitoring and Body Sensors permission gates.
 
 A separate one-second cached-data send check uses time since the last routine
 emission. Observations do not force extra PLI or timer-driven coordinate redraws.
 Speed must be present, finite, nonnegative, from the current input/generation and
 not future-dated. Its validity ends at that observation's expected next acquisition
 deadline plus the existing six-second acquisition timeout. Missing/expired speed
-is Unknown, using the slower of saved On Foot and Vehicle intervals, never fabricated
-stationary speed. Expiry changes send timing only: it does not restart a pending
-acquisition or extend the old observation's validity. Source/power changes still
-invalidate the appropriate requests. Existing explicit map, self-point, alert,
+remains Unknown speed: reporting falls back to the recognized-activity profile
+above. Only when activity is also Unknown/unavailable does it use the slower saved
+On Foot/Vehicle interval. Missing speed never implies stationary. Expiry changes
+send timing only; it does not restart a pending acquisition or extend the old
+observation's validity. Activity/power cadence changes keep pending native requests
+and their deadlines, then use the new profile. Idle rescheduling stays anchored to
+the last observation, and shortening the next deadline can only shorten existing
+speed validity. Source changes still invalidate old-source requests and fixes.
+Existing explicit map, self-point, alert,
 identity and route-readiness refresh paths retain their own freshness/dispatch rules.
 Phone-managed constant reporting and Companion-exclusive routing remain authoritative.
 
