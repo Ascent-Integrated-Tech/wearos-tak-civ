@@ -889,14 +889,16 @@ alerts, opens **Top Display Metric**, keeping all metric choices and Physiologic
 Monitoring/Alerts reachable. Changing Location Input does not change the saved
 top-display metric.
 
-Top Display puts **Physiological Alerts** before **Physiological Monitoring**.
-Both full labels fit on one line with intrinsic-safe responsive text sizing.
+Top Display puts a navigation-only **Environmental Alerts** button before
+**Physiological Alerts**, then **Physiological Monitoring**.
+All full labels fit on one line with intrinsic-safe responsive text sizing.
 The alerts label still opens threshold settings independently of its switch.
 Environmental alert categories are ordered Atmospheric Pressure, then Immersion;
 physiological entries are ordered Exertion, Heart Rate, then Physiological Alerts.
 Alerting Preferences itself sorts Battery, Environmental, then Physiological Alerts.
 All three menus sort their visible localized labels. Environmental rules retain their independent switches;
-there is no new environmental master or top-display shortcut.
+the top-display button opens their existing configuration without changing settings
+or adding an environmental master switch.
 
 Home coordinates retain their complete precision on one line. Their centered
 readout is inset from the round display edge and uses the existing intrinsic-safe
