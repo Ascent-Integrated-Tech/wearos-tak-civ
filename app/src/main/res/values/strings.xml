@@ -1,4 +1,35 @@
 <resources>
+    <string name="notification_weartak_active">WearTAK active</string>
+    <string name="notification_background_services">Background services</string>
+    <plurals name="notification_services_running">
+        <item quantity="one">%d background service running</item>
+        <item quantity="other">%d background services running</item>
+    </plurals>
+    <string name="notification_service_management">Service management</string>
+    <string name="notification_reporting">Position and event reporting</string>
+    <string name="notification_tak_transport">TAK transport</string>
+    <string name="notification_chat">Chat</string>
+    <string name="notification_battery">Battery monitoring</string>
+    <string name="notification_wear_detection">Wear detection</string>
+    <string name="notification_pressure">Pressure sensing</string>
+    <string name="notification_heart_rate">Heart rate sensing</string>
+    <string name="notification_movement">Movement detection</string>
+    <string name="notification_skin_temperature">Skin temperature sensing</string>
+    <string name="notification_geofences">Geofences</string>
+    <string name="notification_sitx">Sit(x) transport</string>
+    <string name="notification_activity">Activity recognition</string>
+    <string name="notification_power">Power management</string>
+    <string name="notification_bloodhound">Bloodhound</string>
+    <string name="notification_gunshot">Gunshot detection</string>
+    <string name="notification_uas">UAS detection</string>
+    <string name="notification_crm">CRM inference</string>
+    <string name="notification_companion">Companion transport</string>
+    <string name="notification_reporting_policy">Reporting policy</string>
+    <string name="notification_weather">Weather</string>
+    <string name="notification_beacons">Beacon localization</string>
+    <string name="notification_location">Location acquisition</string>
+    <string name="notification_environment">Environment sensing</string>
+    <string name="notification_ditto">Ditto sync</string>
     <string name="map_self_location">Self</string>
     <string name="map_self_coordinates_description">Latitude %1$s, longitude %2$s</string>
     <string name="home_open_bloodhound">Open Bloodhound</string>

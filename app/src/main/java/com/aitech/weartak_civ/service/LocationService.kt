@@ -32,6 +32,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.runTimerJob
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.startGlobalTimer
 import com.aitech.weartak_civ.data.LocationInput
 import com.aitech.weartak_civ.data.LocationInputStatus
@@ -529,7 +530,7 @@ class LocationService : Service() {
         locationManager = null
         fusedClient = null
         _instance = null
-        stopForeground(true)
+        stopForegroundServiceCompat()
         super.onDestroy()
     }
 

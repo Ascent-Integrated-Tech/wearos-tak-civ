@@ -12,6 +12,7 @@ import android.util.Log
 import com.aitech.weartak_civ.DEFAULT_HIGH_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.DEFAULT_LOW_ATM_PRESSURE_THRESHOLD
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
@@ -114,7 +115,7 @@ class PressureService : Service() {
         // unregister sensor listener
         stopPressureSensor()
         // remove foreground notification
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {

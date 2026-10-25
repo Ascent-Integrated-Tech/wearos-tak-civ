@@ -28,6 +28,7 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.PassiveListenerCallback
@@ -286,6 +287,7 @@ class ActivityRecognitionService : Service() {
     }
 
     override fun onDestroy() {
+        stopForegroundServiceCompat()
         super.onDestroy()
         Log.i(TAG, "ActivityRecognitionService onDestroy()")
 

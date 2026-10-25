@@ -23,6 +23,7 @@ import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.DEFAULT_CONSTANT_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.integration.plugin.PluginCotEgress
 import com.aitech.weartak_civ.data.CompanionAppRepository
@@ -1643,7 +1644,7 @@ class CotDispatchService : Service() {
         super.onDestroy()
         Log.d(TAG, "CotDispatchService onDestroy()")
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }

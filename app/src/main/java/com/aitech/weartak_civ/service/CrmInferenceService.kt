@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.CrmRawPpgSample
@@ -130,7 +131,7 @@ class CrmInferenceService : Service() {
         ppgCollectJob?.cancel()
         coordinator.close()
         serviceScope.cancel()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         super.onDestroy()
     }
 

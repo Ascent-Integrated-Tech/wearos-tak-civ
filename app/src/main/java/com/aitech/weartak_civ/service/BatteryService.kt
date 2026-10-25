@@ -18,6 +18,7 @@ import android.os.BatteryManager
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -154,7 +155,7 @@ class BatteryService: Service() {
         super.onDestroy()
         Log.d(TAG, "BatteryService onDestroy()")
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         stopBatteryPowerMonitoring()
         serviceScope.cancel()
     }

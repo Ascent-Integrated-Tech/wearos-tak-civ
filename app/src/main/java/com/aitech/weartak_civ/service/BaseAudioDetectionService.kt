@@ -15,6 +15,7 @@ import android.content.Intent
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.audio.AudioDetectionEvent
@@ -109,7 +110,7 @@ abstract class BaseAudioDetectionService : Service() {
         feedbackJob?.cancel()
         runtime.shutdown()
         scope.cancel()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         super.onDestroy()
         Log.d(logTag, "${javaClass.simpleName} onDestroy()")
     }

@@ -17,6 +17,7 @@ import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.OPTIMIZE_BATTERY_ON_WIFI_DETAILS_CHANGED
@@ -82,7 +83,7 @@ class PowerManagerService : Service() {
         super.onDestroy()
         Log.d(TAG, "PowerManagerService onDestroy()")
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         stopPowerManagerThread()
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)

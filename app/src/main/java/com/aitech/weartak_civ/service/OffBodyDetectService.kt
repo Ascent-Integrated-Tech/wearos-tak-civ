@@ -20,6 +20,7 @@ import android.os.IBinder
 import android.util.Log
 //import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
 import com.aitech.weartak_civ.cep.model.Topics
@@ -72,7 +73,7 @@ class OffBodyDetectService: Service() {
         Log.d(TAG, "OffBodyDetectService onDestroy()")
         isRunning.set(false)
         stopOffBodySensor()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
     }
 
     override fun onBind(intent: Intent?): IBinder? {

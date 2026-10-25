@@ -1,7 +1,5 @@
 package com.aitech.weartak_civ.service
 
-import android.app.Notification
-import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Context
@@ -10,10 +8,10 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
-import android.os.Build
 import android.os.IBinder
 import android.util.Log
-import androidx.core.app.NotificationCompat
+import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -47,7 +45,7 @@ class EnvSensorService : Service(), SensorEventListener {
     private var lastHumidity: Float? = null
 
     // Phase 4: CEP events are now emitted at native sensor rate directly from onSensorChanged.
-    // The 1 Hz throttle below applies only to notification UI updates and logSnapshot — not CEP emission.
+    // The 1 Hz throttle below applies only to logSnapshot, not CEP emission.
     private var lastNotifMs: Long = 0
     private val minNotifIntervalMs: Long = 1000
 
@@ -69,13 +67,11 @@ class EnvSensorService : Service(), SensorEventListener {
         if (sLight == null) Log.w(TAG, "Ambient light sensor not available.")
         if (rHumidity == null) Log.w(TAG, "Relative humidity sensor not available.")
 
-        // Prepare the foreground notification channel (API 26+)
-        createNotificationChannelIfNeeded()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         // Promote to foreground immediately for background longevity
-        startForeground(NOTIF_ID, buildPersistentNotification())
+        startForegroundServiceCompat(NOTIF_ID, importance = NotificationManager.IMPORTANCE_LOW)
 
         // Register sensors
         //sTemp?.let     { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
@@ -96,7 +92,7 @@ class EnvSensorService : Service(), SensorEventListener {
         } catch (_: Throwable) { }
         sm.unregisterListener(this)
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopForegroundServiceCompat()
         Log.i(TAG, "EnvSensorService destroyed; listeners unregistered and foreground stopped.")
         super.onDestroy()
     }
@@ -134,69 +130,16 @@ class EnvSensorService : Service(), SensorEventListener {
             }
         }
 
-        // Throttle notification and log updates to 1 Hz — UI/logging only, not CEP emission.
+        // Throttle log updates to 1 Hz, not CEP emission.
         if (now - lastNotifMs >= minNotifIntervalMs) {
             lastNotifMs = now
             logSnapshot(now)
-            updateForegroundNotification()
         }
     }
 
     override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
         sensor ?: return
         Log.d(TAG, "Accuracy changed: type=${sensor.type} accuracy=$accuracy")
-    }
-
-    // ---- Foreground notification helpers ----
-    private fun createNotificationChannelIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            val existing = nm.getNotificationChannel(CHANNEL_ID)
-            if (existing == null) {
-                val ch = NotificationChannel(
-                    CHANNEL_ID,
-                    "Environment Sensors",
-                    NotificationManager.IMPORTANCE_MIN // silent, low-visibility
-                ).apply {
-                    description = "Background logging of ambient temperature, pressure, and light"
-                    setShowBadge(false)
-                    enableVibration(false)
-                    enableLights(false)
-                    lockscreenVisibility = Notification.VISIBILITY_SECRET
-                }
-                nm.createNotificationChannel(ch)
-            }
-        }
-    }
-
-    private fun buildPersistentNotification(): Notification {
-        val content = "Logging env sensors (temp/pressure/light)"
-        return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setOngoing(true)
-            .setSilent(true)
-            .setOnlyAlertOnce(true)
-            .setSmallIcon(android.R.drawable.ic_menu_compass) // system icon; no resource change needed
-            .setContentTitle("Environment Sensors")
-            .setContentText(content)
-            .build()
-    }
-
-    private fun updateForegroundNotification() {
-        // Keep it minimal; update with a one-line snapshot for quick glance
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        val text = "T=${lastTempC?.let { round1(it) } ?: "—"}°C • " +
-                   "P=${lastPressureHpa?.let { round1(it) } ?: "—"}hPa • " +
-                   "L=${lastLux?.let { round1(it) } ?: "—"}lux"
-
-        val notif = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setOngoing(true)
-            .setSilent(true)
-            .setOnlyAlertOnce(true)
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentTitle("Environment Sensors")
-            .setContentText(text)
-            .build()
-        nm.notify(NOTIF_ID, notif)
     }
 
     // ---- Logging helpers ----
@@ -215,9 +158,7 @@ class EnvSensorService : Service(), SensorEventListener {
     companion object {
         val isRunning = AtomicBoolean(false)
         private val TAG = "WearTAK-" + EnvSensorService::class.java.simpleName
-        private const val CHANNEL_ID = "env_sensor_channel"
         private const val NOTIF_ID = 2701
     }
 }
-
 

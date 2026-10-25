@@ -24,6 +24,7 @@ import android.os.IBinder
 import android.util.Log
 import android.widget.Toast
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.cot.CotDetailBuilder
 import com.aitech.weartak_civ.cot.DittoChatDocument
@@ -583,7 +584,7 @@ class DittoService : Service() {
         super.onDestroy()
         Log.d(TAG, "DittoService onDestroy()")
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         dittoUpdateHandler?.removeCallbacks(dittoUpdateRunnable)
         dittoUpdateThread?.quitSafely()
         dittoUpdateHandler = null

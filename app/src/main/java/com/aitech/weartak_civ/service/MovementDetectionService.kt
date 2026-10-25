@@ -28,6 +28,7 @@ import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.provider.LocationVectorCalculator
@@ -298,7 +299,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         if (rotationRegistered) setRotationDemand(false) else sensorManager.unregisterListener(this)
         repo.updateMagAzimuthTrue(null)
         scope.coroutineContext.cancel()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
     }
 
     // --- Required by your manager / project conventions ---

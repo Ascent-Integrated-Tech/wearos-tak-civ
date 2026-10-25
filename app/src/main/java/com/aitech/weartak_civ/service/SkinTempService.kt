@@ -22,6 +22,7 @@ import android.content.BroadcastReceiver
 import android.content.IntentFilter
 import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
@@ -1443,7 +1444,7 @@ class SkinTempService : Service() {
         pushColdInputsOkFlag()
         healthService.disconnectService()
         handlerThread.quitSafely()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

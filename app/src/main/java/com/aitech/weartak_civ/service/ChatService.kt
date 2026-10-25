@@ -17,6 +17,7 @@ import android.text.format.DateFormat
 import android.util.Log
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.cot.ChatMessage
 import com.aitech.weartak_civ.cot.ChatRoom
 import com.aitech.weartak_civ.cot.ChatRoomOrdering
@@ -149,7 +150,7 @@ class ChatService : Service() {
         isRunning.set(false)
         EventBus.getDefault().unregister(this)
         _instance = null
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         serviceScope.cancel()
     }
 

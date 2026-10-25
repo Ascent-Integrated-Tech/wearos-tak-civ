@@ -35,6 +35,7 @@ import com.aitech.weartak_civ.cot.TakServerCotIngestor
 import com.aitech.weartak_civ.cot.TakServerCotSink
 import com.aitech.weartak_civ.cot.CotUserPositionEvent
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
@@ -567,7 +568,7 @@ class TAKConnectService: Service() {
         }
         connectJob?.cancel()
         networkManager = null
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         AppDiagnostics.flushProcessingWork()
         super.onDestroy()
     }

@@ -531,6 +531,21 @@ cached-ambient behavior is described below, independently of reporting policy.
 
 ## Performance and heading demand
 
+Routine foreground services share one silent, ongoing **WearTAK active**
+notification. Its count and expanded capability list describe foreground service
+ownership, not successful server connections, current sensor readings or message
+delivery. Tap it to open WearTAK for current status. Each service still calls
+Android's foreground API with its existing manifest type and permissions.
+Membership changes update the card without polling; stopping one service keeps
+the others visible, and the last owner removes it. Process startup removes known
+legacy routine cards left behind by the old detached-notification lifecycle.
+
+Microphone capture, Stay awake and simulation controls retain separate foreground
+notifications. AltBeacon's supported scanner foreground notification also remains
+separate. Enrollment prompts, test alerts and all existing message, urgent,
+physiological and proximity alert behavior are unchanged. Simulation test alerts
+have their own reserved ID rather than overwriting Companion's former status ID.
+
 Incoming CoT parsing reuses thread-safe compiled attribute patterns keyed only by
 the parser's fixed schema names, never incoming XML or attribute values.
 The ingestor also reuses each immutable message's type/chat classification.

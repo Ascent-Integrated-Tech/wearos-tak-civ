@@ -174,8 +174,8 @@ object Utils {
         if (this.containsKey(key)) this.getString(key) else null
 
     /**
-     * Starts this Service in the foreground, creating a notification channel
-     * named after the service class. Defaults can be overridden.
+     * Starts this Service in the foreground. Routine services share the coordinated
+     * WearTAK active card; dedicated services keep their own channel and notification.
      *
      * @param notificationId  the ID for startForeground(...)
      * @param iconRes         small icon resource (default = R.drawable.weartak_logo)
@@ -193,6 +193,7 @@ object Utils {
         channelName: String = "${this.javaClass.simpleName} Background Channel",
         importance: Int
     ) {
+        if (com.aitech.weartak_civ.service.RoutineServiceNotification.startIfRoutine(this)) return
         val tag = this.javaClass.simpleName
         Log.d(tag, "Starting $tag as ForegroundService")
 
@@ -219,6 +220,12 @@ object Utils {
             startForeground(notificationId, notification)
         } catch (e: NullPointerException) {
             Log.e(tag, "Failed to set $tag as ForegroundService", e)
+        }
+    }
+
+    fun Service.stopForegroundServiceCompat() {
+        if (!com.aitech.weartak_civ.service.RoutineServiceNotification.stopIfRoutine(this)) {
+            stopForeground(Service.STOP_FOREGROUND_REMOVE)
         }
     }
 
