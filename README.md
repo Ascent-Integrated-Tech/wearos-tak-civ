@@ -544,6 +544,22 @@ verbose logging no longer stringifies whole documents. Enabled verbose messages,
 warnings/errors, the opt-in Logging journal and all publication/retry/gating
 behavior remain unchanged.
 
+Native location requests still start independently for scheduled observation
+and explicit interactions, with their existing six-second and five-second
+deadlines. An already-arrived usable fix may complete other active consumers
+only after each passes its own selected-provider/input-generation, request
+timestamp, deadline and latest-action checks. No initial request waits for or
+skips another request. Completion removes only the eligible one-shot owners;
+periodic ownership and original timeout deadlines remain intact. Cancelled
+callbacks cannot deliver to replacement requests.
+Each fully identical platform `Location` is stored once and produces at most
+one normal location notification; richer same-timestamp fixes remain distinct.
+Explicit interaction reasons still produce their own bounded refresh event,
+not a periodic-cadence substitute. Only the last completed/normal fix snapshots
+are retained in memory and cleared on request-generation reset; no location
+contents enter the Logging journal. This reuses fix completion, not proof of
+reduced native GPS acquisitions or measured energy savings.
+
 Rotation-sensor acquisition is demand-driven, not implied by the core movement
 service running. Interactive dashboard/map/marker and Bloodhound views use their
 existing lifecycle-owned heading subscriptions; an idle Bloodhound service no
