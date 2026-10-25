@@ -1314,6 +1314,42 @@ not proof that Android started a service; a successful PLI result means an
 existing transport accepted the dispatch, not a delivery acknowledgement.
 This is troubleshooting evidence, not a promise to capture every app error.
 
+Connection troubleshooting also uses existing callbacks, without additional
+network subscriptions, polling, uploads or changes to retry/connectivity policy:
+
+- `NETWORK_LIFECYCLE`: `KIND` is snapshot=0, available=1, capabilities=2,
+  lost=3, unavailable=4. `ACTIVE` describes presence for that callback/snapshot,
+  not proof of Internet reachability. `VALIDATED` and `INTERNET` are capability
+  flags; `TRANSPORT` is a bitmask: Wi-Fi=1, cellular=2, Bluetooth=4,
+  Ethernet=8, VPN=16. Available/lost callbacks have no capability snapshot;
+  their zero flags mean unavailable metadata, not failed validation.
+- `TAK_CONNECTION`: `KIND` is request=0, attempt-start=1, TLS-start=2,
+  success=3, failure=4, invalidated=5, retry-scheduled=6, retry-started=7,
+  skipped=8, reader-ended=9, write-failed=10, keepalive-timeout=11,
+  status-snapshot=12. `RESULT` is a fixed reason: none/unspecified=0,
+  companion=1, service-stopped=2, terminated=3, disabled=4, no-network=5,
+  duplicate-endpoint=6, active-attempt=7, attempt-limit=8,
+  stale-generation=9, authentication=10, HTTP=11, TLS=12, connectivity=13,
+  certificate=14, end-of-stream=15, cancelled=16, reader-error=17,
+  socket-write=18, keepalive=19, reset=20. Unclassified status-only failures
+  retain reason 0 rather than guessing a cause. `GENERATION`, `ATTEMPT`,
+  `DELAY_MS`, `STATUS` (existing runtime status 0-5) and `ACTIVE`
+  (existing network flag) are numeric. Generations are local cancellation
+  fences, not globally unique connection or server identifiers.
+- `TAK_CONNECTION_COUNTS` samples enabled connected/connecting status counts,
+  adopted open/connected socket count and the app's aggregate
+  `UI_CONNECTED`/`UI_CONNECTING` flags at lifecycle transitions. These are
+  best-effort concurrent snapshots, not atomic delivery or liveness proof.
+  They help distinguish an empty displayed connection count from runtime
+  sockets; they do not probe a socket or perform a network request.
+
+These records contain no server IDs, addresses, hostnames, network handles,
+session UUIDs, credentials, payloads or exception text. They share the existing
+five-second repeated-key grouping (latest numeric metadata plus `COUNT`),
+256-key ceiling, bounded writer queue and journal retention. Rapid transitions
+can be grouped; export/disable flushes retained metadata. Logging off skips
+snapshot construction, and disabling/clearing keeps the existing consent epochs.
+
 New records identify the current hybrid as `hybrid-speed-activity-v2`; older
 records keep their original policy, app version and source commit.
 `REPORT_POLICY` captures the initial/enabled snapshot and subsequent changes in
