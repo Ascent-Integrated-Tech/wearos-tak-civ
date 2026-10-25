@@ -40,7 +40,7 @@ enum class DiagnosticEvent {
     CONFIGURATION, SPEED_VALIDITY,
     PLI_ATTEMPT, PLI_RESULT, POWER_CHANGED, WAKE_LOCK, CONNECTIVITY, SYNC, COMMAND,
     CHAT, SENSOR, SERVICE_REQUEST, APP_EVENT, SUBSCRIBER_FAILURE, QUEUE_OVERFLOW,
-    DISPLAY_INTERACTIVE, ROTATION_LISTENER
+    DISPLAY_INTERACTIVE, ROTATION_LISTENER, PROCESSING_WORK
 }
 
 @Keep
@@ -49,7 +49,12 @@ enum class DiagnosticMetric {
     BATTERY_PERCENT, DOCK, CHARGING, RESULT, SCREEN, COUNT, AGGREGATED, ACTIVE,
     POWER_THROTTLED, DOCK_THROTTLED, FOOT_SECONDS, VEHICLE_SECONDS, STATIONARY_SECONDS,
     ALERT_SECONDS, CONSTANT_SECONDS, DYNAMIC, LOCATION_ENABLED, PHYSIO_ENABLED, HR_ENABLED,
-    ACTIVITY, REPORT_REASON, OBSERVATION_REASON
+    ACTIVITY, REPORT_REASON, OBSERVATION_REASON,
+    BYTES, FRAMES, DURATION_US, MAX_DURATION_US, FAILURES, WINDOW_MS
+}
+
+internal enum class ProcessingStage(val code: Long) {
+    TCP_READ(0), TCP_FRAMING(1), TCP_INGEST(2), PLUGIN_OFFER(3), USER_STORE(4), MARKER_STORE(5)
 }
 
 @Keep
@@ -170,6 +175,26 @@ class AppDiagnostics internal constructor(private val application: Application) 
         val powerThrottled: Long?, val dockThrottled: Long?
     )
     private val rates = mutableMapOf<RateKey, Rate>()
+    private class Work {
+        var at = 0L
+        var count = 0L
+        var bytes = 0L
+        var frames = 0L
+        var durationUs = 0L
+        var maxDurationUs = 0L
+        var failures = 0L
+
+        fun reset() {
+            at = 0L
+            count = 0L
+            bytes = 0L
+            frames = 0L
+            durationUs = 0L
+            maxDurationUs = 0L
+            failures = 0L
+        }
+    }
+    private val work = Array(ProcessingStage.entries.size) { Work() }
     private val journal = DiagnosticJournal({
         application.getExternalFilesDir("diagnostics") ?: throw IOException("Diagnostics storage unavailable")
     })
@@ -300,15 +325,18 @@ class AppDiagnostics internal constructor(private val application: Application) 
             if (enabled.value == value) return
             if (!preferences.edit().putBoolean("enabled", value).commit())
                 throw IOException("Cannot save Diagnostics preference")
-            if (!value) {
-                storage {
-                    flushAggregates()
-                    journal.append(record(DiagnosticEvent.DISABLED))
+            synchronized(rateLock) {
+                if (!value) {
+                    storage {
+                        flushAggregates()
+                        journal.append(record(DiagnosticEvent.DISABLED))
+                    }
                 }
+                generation.incrementAndGet()
+                mutableEnabled.value = value
+                rates.clear()
+                work.forEach { it.reset() }
             }
-            generation.incrementAndGet()
-            mutableEnabled.value = value
-            synchronized(rateLock) { rates.clear() }
             if (value) {
                 attach()
                 enqueue(DiagnosticEvent.ENABLED)
@@ -345,6 +373,79 @@ class AppDiagnostics internal constructor(private val application: Application) 
         }
     }
 
+    internal inline fun <T> measureProcessing(
+        stage: ProcessingStage,
+        bytes: (T) -> Long = { 0L },
+        frames: (T) -> Long = { 0L },
+        block: () -> T,
+    ): T {
+        if (!enabled.value) return block()
+        val epoch = generation.get()
+        val start = SystemClock.elapsedRealtimeNanos()
+        var completed = false
+        var transferred = 0L
+        var produced = 0L
+        try {
+            val result = block()
+            transferred = bytes(result)
+            produced = frames(result)
+            completed = true
+            return result
+        } finally {
+            captureProcessing(stage, epoch, transferred, produced,
+                (SystemClock.elapsedRealtimeNanos() - start).coerceAtLeast(0L) / 1_000L,
+                if (completed) 0L else 1L)
+        }
+    }
+
+    private fun captureProcessing(
+        stage: ProcessingStage, epoch: Long, bytes: Long, frames: Long, durationUs: Long, failures: Long,
+    ) {
+        synchronized(rateLock) {
+            if (!enabled.value || generation.get() != epoch) return
+            val now = SystemClock.elapsedRealtime()
+            val total = work[stage.ordinal]
+            if (total.count == 0L) total.at = now
+            fun add(a: Long, b: Long) = a + b.coerceIn(0L, Long.MAX_VALUE - a)
+            total.count = add(total.count, 1L)
+            total.bytes = add(total.bytes, bytes)
+            total.frames = add(total.frames, frames)
+            total.durationUs = add(total.durationUs, durationUs)
+            total.maxDurationUs = maxOf(total.maxDurationUs, durationUs)
+            total.failures = add(total.failures, failures)
+            if (now - total.at >= 30_000L) {
+                enqueue(DiagnosticEvent.PROCESSING_WORK, processingMetrics(stage, total, now))
+                total.reset()
+            }
+        }
+    }
+
+    private fun processingMetrics(stage: ProcessingStage, total: Work, now: Long) = mapOf(
+        DiagnosticMetric.KIND to stage.code,
+        DiagnosticMetric.COUNT to total.count,
+        DiagnosticMetric.BYTES to total.bytes,
+        DiagnosticMetric.FRAMES to total.frames,
+        DiagnosticMetric.DURATION_US to total.durationUs,
+        DiagnosticMetric.MAX_DURATION_US to total.maxDurationUs,
+        DiagnosticMetric.FAILURES to total.failures,
+        DiagnosticMetric.WINDOW_MS to (now - total.at).coerceAtLeast(0L),
+        DiagnosticMetric.AGGREGATED to 1L,
+    )
+
+    internal fun flushProcessing() {
+        synchronized(rateLock) {
+            if (!enabled.value) return
+            val now = SystemClock.elapsedRealtime()
+            ProcessingStage.entries.forEach { stage ->
+                val total = work[stage.ordinal]
+                if (total.count > 0) {
+                    enqueue(DiagnosticEvent.PROCESSING_WORK, processingMetrics(stage, total, now))
+                    total.reset()
+                }
+            }
+        }
+    }
+
     private fun flushAggregates() {
         val lost = dropped.getAndSet(0)
         if (lost > 0) journal.append(record(DiagnosticEvent.QUEUE_OVERFLOW,
@@ -353,8 +454,15 @@ class AppDiagnostics internal constructor(private val application: Application) 
             val pending = rates.filterValues { it.skipped > 0 }.map { (key, rate) ->
                 record(key.event, rate.metrics +
                     mapOf(DiagnosticMetric.COUNT to rate.skipped, DiagnosticMetric.AGGREGATED to 1L))
-            }
+            }.toMutableList()
             rates.clear()
+            val now = SystemClock.elapsedRealtime()
+            ProcessingStage.entries.forEach { stage ->
+                val total = work[stage.ordinal]
+                if (total.count > 0)
+                    pending.add(record(DiagnosticEvent.PROCESSING_WORK, processingMetrics(stage, total, now)))
+                total.reset()
+            }
             pending
         }
         pending.forEach(journal::append)
@@ -387,6 +495,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
             generation.incrementAndGet()
             dropped.set(0)
             rates.clear()
+            work.forEach { it.reset() }
         }
         try {
             journal.clear()
@@ -401,7 +510,10 @@ class AppDiagnostics internal constructor(private val application: Application) 
     }
 
     internal fun close() = synchronized(storageLock) {
-        if (enabled.value) detach()
+        if (enabled.value) {
+            storage { flushAggregates() }
+            detach()
+        }
         scope.cancel()
         queue.close()
     }
@@ -465,6 +577,18 @@ class AppDiagnostics internal constructor(private val application: Application) 
             }
         fun record(event: DiagnosticEvent, metrics: Map<DiagnosticMetric, Long> = emptyMap()) {
             instance?.capture(event, metrics)
+        }
+        internal inline fun <T> measureProcessing(
+            stage: ProcessingStage,
+            bytes: (T) -> Long = { 0L },
+            frames: (T) -> Long = { 0L },
+            block: () -> T,
+        ): T {
+            val recorder = instance ?: return block()
+            return recorder.measureProcessing(stage, bytes, frames, block)
+        }
+        internal fun flushProcessingWork() {
+            instance?.flushProcessing()
         }
     }
 }

@@ -551,6 +551,27 @@ authorization or deduplication inputs. Enabled receipt/routing messages keep
 their content and ordering; disabled diagnostics retain no per-frame metadata.
 Ingest ordering, warnings/errors and opt-in typed Logging events are unchanged.
 
+With the existing **Logging** consent enabled, `PROCESSING_WORK` records aggregate
+completed work in six fixed stages (`KIND`): TCP socket reads (0), framing (1),
+TCP ingest (2), plugin offers (3), user-store/projection (4) and marker-store/
+projection (5). Sink stages include their other existing direct-CoT entry paths;
+these are not per-server or per-peer counters. Numeric fields contain operation
+`COUNT`, socket `BYTES`, produced `FRAMES`, total/max `DURATION_US`/
+`MAX_DURATION_US`, `FAILURES` and `WINDOW_MS`. Socket bytes are actual decrypted
+application-stream reads, including framing separators, not encoded-frame size
+or cellular/TLS overhead. Exceptions/cancellation propagate unchanged and count
+as incomplete operations. Durations are inclusive elapsed time (including I/O,
+suspension and nested stages), not CPU time; do not sum them as CPU usage.
+Parsing/dispatch time is not separately isolated from the inclusive ingest stage.
+
+Fixed-size numeric accumulators emit at most once per stage per 30-second
+callback-driven window, with a partial-window flush on export, service shutdown
+or Logging disable. There is no timer, extra subscription, transmission or
+per-frame journal write. Disabled Logging skips timing and result selectors.
+No payload, fingerprint, channel, endpoint or contact identity enters these
+aggregates. They can locate workload, but cannot prove a specific sender's
+end-to-end delivery. Message order, acceptance and fanout are unchanged.
+
 Native location requests still start independently for scheduled observation
 and explicit interactions, with their existing six-second and five-second
 deadlines. An already-arrived usable fix may complete other active consumers
