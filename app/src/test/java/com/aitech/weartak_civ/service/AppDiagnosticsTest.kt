@@ -81,6 +81,58 @@ class AppDiagnosticsTest {
         assertTrue(events.all { it.asJsonObject["elapsedMs"].asLong >= 0 })
     }
 
+    @Test fun policyStateTransitionsAreNotMergedTogetherAndOldPolicyRecordsKeepTheirProvenance() = runBlocking {
+        val diagnostics = AppDiagnostics(app).also { recorder = it }
+        diagnostics.setEnabled(true)
+        val capture = AppDiagnostics::class.java.getDeclaredMethod(
+            "capture", DiagnosticEvent::class.java, Map::class.java
+        ).apply { isAccessible = true }
+        listOf(
+            mapOf(DiagnosticMetric.ACTIVITY to 3L, DiagnosticMetric.REPORT_REASON to 4L,
+                DiagnosticMetric.OBSERVATION_REASON to 5L),
+            mapOf(DiagnosticMetric.ACTIVITY to 3L, DiagnosticMetric.REPORT_REASON to 5L,
+                DiagnosticMetric.OBSERVATION_REASON to 5L),
+            mapOf(DiagnosticMetric.ACTIVITY to 7L, DiagnosticMetric.REPORT_REASON to 6L,
+                DiagnosticMetric.OBSERVATION_REASON to 6L),
+        ).forEach { capture.invoke(diagnostics, DiagnosticEvent.REPORT_POLICY, it) }
+        val events = JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
+            .filter { it.asJsonObject["event"].asString == "REPORT_POLICY" }
+        assertEquals(3, events.size)
+        assertTrue(events.all { it.asJsonObject["policy"].asString == "hybrid-speed-activity-v2" })
+        val root = temporary.newFolder()
+        val journal = DiagnosticJournal({ root })
+        journal.append(sample(1).copy(policy = "dynamic-speed-observation-v1",
+            version = "old-build", sourceCommit = "old-source"))
+        journal.append(sample(2))
+        val preserved = JsonParser.parseString(journal.exportJson()).asJsonObject["events"].asJsonArray
+        assertEquals("dynamic-speed-observation-v1", preserved[0].asJsonObject["policy"].asString)
+        assertEquals("old-build", preserved[0].asJsonObject["version"].asString)
+        assertEquals("old-source", preserved[0].asJsonObject["sourceCommit"].asString)
+        assertEquals("hybrid-speed-activity-v2", preserved[1].asJsonObject["policy"].asString)
+    }
+
+    @Test fun powerAndDockThrottleTransitionsKeepDistinctAppliedPolicyRecords() = runBlocking {
+        val diagnostics = AppDiagnostics(app).also { recorder = it }
+        diagnostics.setEnabled(true)
+        val capture = AppDiagnostics::class.java.getDeclaredMethod(
+            "capture", DiagnosticEvent::class.java, Map::class.java
+        ).apply { isAccessible = true }
+        listOf(0L to 0L, 1L to 0L, 1L to 1L).forEach { (power, dock) ->
+            capture.invoke(diagnostics, DiagnosticEvent.POWER_CHANGED, mapOf(
+                DiagnosticMetric.POWER_THROTTLED to power,
+                DiagnosticMetric.DOCK_THROTTLED to dock,
+                DiagnosticMetric.REPORT_SECONDS to 60L
+            ))
+        }
+        val events = JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
+            .filter { it.asJsonObject["event"].asString == "POWER_CHANGED" }
+        assertEquals(3, events.size)
+        assertEquals(listOf(0, 1, 1),
+            events.map { it.asJsonObject["metrics"].asJsonObject["POWER_THROTTLED"].asInt })
+        assertEquals(listOf(0, 0, 1),
+            events.map { it.asJsonObject["metrics"].asJsonObject["DOCK_THROTTLED"].asInt })
+    }
+
     @Test fun configurationSnapshotDoesNotStartServicesOrAcquireLocation() = runBlocking {
         com.aitech.weartak_civ.presentation.MainActivity.device_uid = "diagnostics-test"
         val repository = com.aitech.weartak_civ.data.DataRepository(app)

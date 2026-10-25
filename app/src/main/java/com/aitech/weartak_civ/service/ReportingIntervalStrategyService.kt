@@ -63,6 +63,7 @@ class ReportingIntervalStrategyService : Service() {
     private var latestSpeedMps: Double? = null
     private var latestActivity = ActivityRecognized.UNKNOWN
     private var diagnosticSpeedUsable: Boolean? = null
+    private val policyDiagnostics = ReportingPolicyDiagnostics()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -73,6 +74,7 @@ class ReportingIntervalStrategyService : Service() {
         startForegroundServiceCompat(REPORTING_INTERVAL_STRATEGY_SERVICE_NOTIFICATION_ID, importance = NotificationManager.IMPORTANCE_LOW)
         dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
         initializeVariables()
+        startDiagnosticsCollector()
         startEnableDynamicStrategyCollector()
         startDynamicReportingIntervalCollector()
         startConstantReportingIntervalCollector()
@@ -108,12 +110,14 @@ class ReportingIntervalStrategyService : Service() {
                 dataRepository.getEnableLocationService.first()) dataRepository.latestActivityRecognized.value
                 else ActivityRecognized.UNKNOWN
 
+            val activity = currentActivity()
             dynamicReportingInterval = calcDynamicReportingInterval(isAlerting, latestSpeedMps,
                 whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval,
-                stationaryReportingInterval, currentActivity())
+                stationaryReportingInterval, activity)
             reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
             CotDispatchService.desiredLocationObservationIntervalSecs =
-                desiredObservationInterval()
+                desiredObservationInterval(activity)
+            recordPolicySelection(activity, CotDispatchService.desiredLocationObservationIntervalSecs)
             dataRepository.storeReportingUpdateInterval(reportingInterval)
             Log.d(TAG, "initializeVariables enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
                     "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
@@ -129,24 +133,38 @@ class ReportingIntervalStrategyService : Service() {
     private suspend fun calcReportingIntervalAndSendUpdate() {
         val previousInterval = reportingInterval
         reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
-        val observationInterval = desiredObservationInterval()
+        val activity = currentActivity()
+        val observationInterval = desiredObservationInterval(activity)
         val observationChanged = observationInterval != CotDispatchService.desiredLocationObservationIntervalSecs
         CotDispatchService.desiredLocationObservationIntervalSecs = observationInterval
+        recordPolicySelection(activity, observationInterval)
         if (reportingInterval != previousInterval) dataRepository.storeReportingUpdateInterval(reportingInterval)
         //Log.d(TAG, "calcReportingIntervalAndSendUpdate enableDynamicReportingStrategy($enableDynamicReportingStrategy): " +
         //            "reportingInterval=$reportingInterval w/ constantReportingInterval=$constantReportingInterval, dynamicReportingInterval=$dynamicReportingInterval " +
         if (reportingInterval != CotDispatchService.desiredReportingIntervalSecs || observationChanged) {
-            AppDiagnostics.record(DiagnosticEvent.REPORT_POLICY, mapOf(
-                DiagnosticMetric.REPORT_SECONDS to reportingInterval.toLong(),
-                DiagnosticMetric.OBSERVATION_SECONDS to observationInterval.toLong(),
-                DiagnosticMetric.KIND to if (enableDynamicReportingStrategy) 1L else 0L
-            ))
             //Log.d(TAG, "calcReportingIntervalAndSendUpdate reportingInterval($reportingInterval) != CotDispatchService.reportingUpdateIntervalSecs(${CotDispatchService.reportingUpdateIntervalSecs}). Sending UPDATE_INTERVAL_CHANGED")
             CotDispatchService.desiredReportingIntervalSecs = reportingInterval
             EventBus.getDefault().post(MessageEvent(UPDATE_INTERVAL_CHANGED, reportingInterval))
             // Activity can change acquisition while valid speed keeps the reporting rate unchanged.
             if (observationChanged && enableDynamicReportingStrategy)
                 EventBus.getDefault().post(PowerManagerEvent(PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
+        }
+    }
+
+    private fun recordPolicySelection(activity: ActivityRecognized, observationInterval: Int) {
+        policyDiagnostics.update(enableDynamicReportingStrategy, isAlerting, latestSpeedMps,
+            activity, reportingInterval, observationInterval,
+            recording = AppDiagnostics.recordingEnabled?.value == true)?.let {
+            AppDiagnostics.record(DiagnosticEvent.REPORT_POLICY, it)
+        }
+    }
+
+    private fun startDiagnosticsCollector() {
+        val recording = AppDiagnostics.recordingEnabled ?: return
+        serviceScope.launch {
+            recording.collect {
+                recordPolicySelection(currentActivity(), CotDispatchService.desiredLocationObservationIntervalSecs)
+            }
         }
     }
 
@@ -250,9 +268,9 @@ class ReportingIntervalStrategyService : Service() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
             PackageManager.PERMISSION_GRANTED) latestActivity else ActivityRecognized.UNKNOWN
 
-    private fun desiredObservationInterval(): Int =
+    private fun desiredObservationInterval(activity: ActivityRecognized): Int =
         if (!enableDynamicReportingStrategy) constantReportingInterval
-        else SpeedReportingPolicy.activityIntervalSeconds(currentActivity(), isAlerting,
+        else SpeedReportingPolicy.activityIntervalSeconds(activity, isAlerting,
             whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval,
             stationaryReportingInterval)
 
