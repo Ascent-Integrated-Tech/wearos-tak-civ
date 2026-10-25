@@ -106,7 +106,7 @@ class OutboundPliAnnouncementServiceTest {
         unmockkObject(LicenseManager)
     }
 
-    private fun freshFix() = Location("gps").apply {
+    private fun freshFix() = Location("fused").apply {
         latitude = 41.0; longitude = -87.0; altitude = 100.0; accuracy = 5f
         time = System.currentTimeMillis() - 1000
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()

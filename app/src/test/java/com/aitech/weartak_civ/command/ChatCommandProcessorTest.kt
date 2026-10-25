@@ -24,12 +24,14 @@ class ChatCommandProcessorTest {
     private var locked = false
     private val storedCallsigns = mutableListOf<String>()
     private val prompts = mutableListOf<ServerEnrollment>()
+    private val locationInputs = mutableListOf<com.aitech.weartak_civ.data.LocationInput>()
 
     private fun processor() = ChatCommandProcessor(
         isEnabled = { enabled },
         allowedCallsigns = { listOf("Alpha-1") },
         handlers = mapOf(
             "setcallsign" to SetCallsignHandler({ locked }, { storedCallsigns += it }),
+            "setlocationinput" to SetLocationInputHandler({ locked }, { locationInputs += it; true }),
             "enrollserver" to EnrollServerHandler({ locked }, { prompts += it })
         ),
         reply = { _, text -> replies += text },
@@ -60,6 +62,28 @@ class ChatCommandProcessorTest {
         assertTrue(processor().handle(request("#weartakcommandsetcallsign callsign=ODIN-2")))
         assertEquals(listOf("ODIN-2"), storedCallsigns)
         assertEquals(listOf("Callsign set to ODIN-2"), replies)
+    }
+
+    @Test fun locationInputRequiresAllowedSenderExactValuesAndUnlockedSettingsAndDeduplicates() = runBlocking {
+        val p = processor()
+        p.handle(request("#weartakcommandsetlocationinput input=enhancedgnss", sender = "Eve", id = "unknown"))
+        assertTrue(locationInputs.isEmpty())
+        assertTrue(replies.isEmpty())
+        val command = request("#weartakcommandsetlocationinput input=enhancedgnss")
+        p.handle(command)
+        p.handle(command.copy(sourceServerId = "ditto:peer"))
+        p.handle(request("#weartakcommandsetlocationinput input=gnss", id = "gnss"))
+        assertEquals(listOf(com.aitech.weartak_civ.data.LocationInput.FUSED,
+            com.aitech.weartak_civ.data.LocationInput.INTERNAL_GNSS), locationInputs)
+        assertEquals(listOf("Location Input set to Fused Location", "Location Input set to Internal GNSS"), replies)
+        for (args in listOf("input=network", "input=enhancedgnss extra=1", "", "input=fused")) {
+            p.handle(request("#weartakcommandsetlocationinput $args", id = "invalid-$args"))
+        }
+        assertEquals(2, locationInputs.size)
+        locked = true
+        p.handle(request("#weartakcommandsetlocationinput input=enhancedgnss", id = "locked"))
+        assertEquals(2, locationInputs.size)
+        assertTrue(replies.last().contains("managed"))
     }
 
     @Test

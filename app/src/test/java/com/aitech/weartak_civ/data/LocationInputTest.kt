@@ -41,20 +41,39 @@ class LocationInputTest {
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
     }
 
-    @Test fun migrationDefaultsToExplicitGnssButNeverRelabelsAFusedFix() = runBlocking {
+    @Test fun unsetDefaultIsRealFusedWithoutWritingAnImplicitChoiceOrRelabelingGps() = runBlocking {
         val repo = DataRepository(RuntimeEnvironment.getApplication())
-        assertEquals(LocationInput.INTERNAL_GNSS, repo.getLocationInput.first())
+        assertEquals(LocationInput.FUSED, repo.getLocationInput.first())
         assertFalse(repo.hasConfiguredLocationInput.first())
         assertNull(LocationInput.fromKey("invalid-provider"))
-        repo.storeLatestLocation(fix("fused"))
+        repo.storeLatestLocation(fix("gps"))
         assertNull(repo.latestLocation.value)
         assertNull(repo.bestKnownLocation())
-        repo.storeLatestLocation(fix("gps"))
-        assertEquals("gps", repo.bestKnownLocation()?.provider)
+        repo.storeLatestLocation(fix("network"))
+        assertNull(repo.bestKnownLocation())
+        repo.storeLatestLocation(fix("fused"))
+        assertEquals("fused", repo.bestKnownLocation()?.provider)
+        assertFalse(repo.hasConfiguredLocationInput.first())
+        assertEquals(LocationInput.FUSED, DataRepository(RuntimeEnvironment.getApplication()).getLocationInput.first())
+    }
+
+    @Test fun explicitGnssFusedAndLegacyNetworkSurviveRepositoryRecreation() = runBlocking {
+        val app = RuntimeEnvironment.getApplication()
+        val store = DataRepository(app).legacyDataStore()
+        for (input in LocationInput.entries) {
+            store.edit { it[stringPreferencesKey("location_input")] = input.provider }
+            val upgraded = DataRepository(app)
+            assertEquals(input, upgraded.getLocationInput.first())
+            assertTrue(upgraded.hasConfiguredLocationInput.first())
+            assertEquals(input, DataRepository(app).getLocationInput.first())
+        }
+        store.edit { it[stringPreferencesKey("location_input")] = "invalid-provider" }
+        assertNull(DataRepository(app).getLocationInput.first())
     }
 
     @Test fun switchingInputClearsBothCachesAndRejectsDelayedOtherProviderAndPreviousGeneration() = runBlocking {
         val repo = DataRepository(RuntimeEnvironment.getApplication())
+        repo.storeLocationInput(LocationInput.INTERNAL_GNSS)
         val old = fix("gps")
         repo.storeLatestLocation(old)
         ShadowSystemClock.advanceBy(Duration.ofMillis(10))
@@ -81,6 +100,7 @@ class LocationInputTest {
 
     @Test fun unchangedProviderSelectionStillRequiresANewFixAndKeepsActualSampleTime() = runBlocking {
         val repo = DataRepository(RuntimeEnvironment.getApplication())
+        repo.storeLocationInput(LocationInput.INTERNAL_GNSS)
         val previous = fix("gps")
         repo.storeLatestLocation(previous)
         ShadowSystemClock.advanceBy(Duration.ofMillis(10))
@@ -96,6 +116,7 @@ class LocationInputTest {
 
     @Test fun phoneManagedLockRejectsSelectionWithoutClearingTheCurrentFix() = runBlocking {
         val repo = DataRepository(RuntimeEnvironment.getApplication())
+        repo.storeLocationInput(LocationInput.INTERNAL_GNSS)
         repo.storeLatestLocation(fix("gps"))
         repo.enablePhoneManagedSettings("AA:BB:CC:DD:EE:FF")
         repo.setPhoneManagementSessionActive(true)
@@ -107,8 +128,20 @@ class LocationInputTest {
         } finally { repo.setPhoneManagementSessionActive(false) }
     }
 
+    @Test fun managedUnsetDefaultCannotBecomeAnExplicitGnssChoice() = runBlocking {
+        val repo = DataRepository(RuntimeEnvironment.getApplication())
+        repo.enablePhoneManagedSettings("AA:BB:CC:DD:EE:FF")
+        repo.setPhoneManagementSessionActive(true)
+        try {
+            assertFalse(repo.storeLocationInput(LocationInput.INTERNAL_GNSS))
+            assertEquals(LocationInput.FUSED, repo.getLocationInput.first())
+            assertFalse(repo.hasConfiguredLocationInput.first())
+        } finally { repo.setPhoneManagementSessionActive(false) }
+    }
+
     @Test fun explicitBleRefinementPreservesAcquisitionProviderButDoesNotClaimItsCoordinatesAreGnss() = runBlocking {
         val repo = DataRepository(RuntimeEnvironment.getApplication())
+        repo.storeLocationInput(LocationInput.INTERNAL_GNSS)
         repo.storeEnableBleBeaconService(true)
         mockkObject(Utils.LocationUtils)
         try {

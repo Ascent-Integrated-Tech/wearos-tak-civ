@@ -345,7 +345,6 @@ fun WearTAKSettingsNav(
     val phoneManagedSettings by settingsVm.savedPhoneManagedSettings.collectAsState()
     val selectedLocationInput by dataRepository.getLocationInput.collectAsState(initial = null)
     val locationInputStatus by dataRepository.locationInputStatus.collectAsState()
-    val locationInputConfigured by dataRepository.hasConfiguredLocationInput.collectAsState(initial = true)
 
     val savedBirthYear by settingsVm.savedBirthYear.collectAsState()
     val savedHeightFeet by settingsVm.savedHeightFeet.collectAsState()
@@ -1216,7 +1215,7 @@ fun WearTAKSettingsNav(
                 }, navController)
             } else {
                 LocationInputSettingsPage(selectedLocationInput, locationInputStatus,
-                    locationInputConfigured, navController) { dataRepository.storeLocationInput(it) }
+                    navController) { dataRepository.storeLocationInput(it) }
             }
         }
         composable("reporting_strategy_select") {
@@ -2159,9 +2158,11 @@ fun WearTAKSettingsNav(
                     }
                     itemsIndexed(
                         listOf(
-                            R.string.chat_command_example_team,
-                            R.string.chat_command_example_role,
                             R.string.chat_command_example_callsign,
+                            R.string.chat_command_example_location_fused,
+                            R.string.chat_command_example_location_gnss,
+                            R.string.chat_command_example_role,
+                            R.string.chat_command_example_team,
                         )
                     ) { _, example ->
                         Text(

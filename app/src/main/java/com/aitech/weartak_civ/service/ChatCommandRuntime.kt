@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.command.ProfileOptions
 import com.aitech.weartak_civ.command.ProfileStore
 import com.aitech.weartak_civ.command.ServerEnrollment
 import com.aitech.weartak_civ.command.SetCallsignHandler
+import com.aitech.weartak_civ.command.SetLocationInputHandler
 import com.aitech.weartak_civ.command.SetDittoPdlHandler
 import com.aitech.weartak_civ.command.UseP12Handler
 import com.aitech.weartak_civ.command.ToggleDittoHandler
@@ -123,6 +124,10 @@ object ChatCommandRuntime {
                 "setcallsign" to SetCallsignHandler(
                     isLocked = { repo.phoneManagedSettingsLocked.first() },
                     store = { repo.storeCallsign(it) }
+                ),
+                "setlocationinput" to SetLocationInputHandler(
+                    isLocked = { repo.phoneManagedSettingsLocked.first() },
+                    store = repo::storeLocationInput
                 ),
                 "enrollserver" to EnrollServerHandler(
                     isLocked = {

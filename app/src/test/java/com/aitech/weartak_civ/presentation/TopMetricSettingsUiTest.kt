@@ -41,6 +41,7 @@ class TopMetricSettingsUiTest {
             WearTAKCIVTheme { MetricAlertControls(enabled, { enabled = it }, { navigation++ }) }
         }
         compose.onNodeWithContentDescription("Change alert thresholds").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Change alert thresholds").assertDoesNotExist()
         compose.runOnIdle { assertEquals(1, navigation); assertFalse(enabled) }
         compose.onNode(isToggleable()).performClick()
         compose.runOnIdle { assertEquals(1, navigation); assertTrue(enabled) }

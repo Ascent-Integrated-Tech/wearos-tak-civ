@@ -45,7 +45,7 @@ class DittoTrackLocationTest {
         val documents = mutableListOf<Map<String, Any?>>()
         every { service.writeDocument("track", any()) } answers { documents += secondArg<Map<String, Any?>>() }
         DittoService.localPeerKeyString = "test-peer"
-        val fix = Location("gps").apply {
+        val fix = Location("fused").apply {
             latitude = 41.0; longitude = -87.0; altitude = 123.0; accuracy = 5f
             time = System.currentTimeMillis() - 1000
             elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
@@ -106,17 +106,17 @@ class DittoTrackLocationTest {
         try {
             tick()
             assertTrue(documents.isEmpty())
-            repo.storeLatestLocation(Location("gps"))
+            repo.storeLatestLocation(Location("fused"))
             tick()
             assertTrue(documents.isEmpty())
-            val fix = Location("gps").apply {
+            val fix = Location("fused").apply {
                 time = System.currentTimeMillis() - 60_000
                 latitude = 41.879815
                 longitude = -87.642469
                 accuracy = 5f
             }
             repo.storeLatestLocation(fix)
-            repo.storeLatestLocation(Location("gps").apply { latitude = Double.NaN })
+            repo.storeLatestLocation(Location("fused").apply { latitude = Double.NaN })
             tick()
             assertEquals(1, documents.size)
             assertEquals(41.879815, documents.single()["j"] as Double, 0.0)

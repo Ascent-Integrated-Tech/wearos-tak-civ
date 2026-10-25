@@ -39,6 +39,8 @@ class SelfMarkerLocationRefreshTest {
         MainActivity.versionNumber = "test"
         MainActivity.mainActivity = mockk { every { applicationContext } returns app }
         val repo = DataRepository(app)
+        repo.storeLocationInput(com.aitech.weartak_civ.data.LocationInput.INTERNAL_GNSS)
+        org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMinutes(2))
         repo.setEndpointConnected(DataRepository.Endpoint.TAK_SERVER)
         val old = Location("gps").apply {
             latitude = 41.0; longitude = -87.0; accuracy = 5f; time = System.currentTimeMillis() - 60_000
