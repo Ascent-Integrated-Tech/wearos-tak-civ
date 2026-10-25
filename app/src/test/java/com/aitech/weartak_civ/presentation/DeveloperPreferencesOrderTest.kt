@@ -10,11 +10,11 @@ class DeveloperPreferencesOrderTest {
             DeveloperEntry(DeveloperEntryId.STAY_AWAKE, "Stay awake"),
             DeveloperEntry(DeveloperEntryId.VERSION, "Version", "5.8"),
             DeveloperEntry(DeveloperEntryId.LOCATION, "Location Diagnostics"),
-            DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, "Diagnostics"),
+            DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, "Logging"),
             DeveloperEntry(DeveloperEntryId.BUILD, "Build", "release")
         )
         val sorted = sortedDeveloperEntries(entries, Locale.ENGLISH)
-        assertEquals(listOf("Diagnostics", "Stay awake", "Build", "Location Diagnostics", "Version"),
+        assertEquals(listOf("Logging", "Stay awake", "Build", "Location Diagnostics", "Version"),
             sorted.map { it.label })
         assertEquals(entries.toSet(), sorted.toSet())
         assertEquals(DeveloperEntryId.DIAGNOSTICS, sorted.first().id)

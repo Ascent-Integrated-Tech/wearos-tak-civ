@@ -263,4 +263,6 @@
     <string name="non_coalition_civilian">Non-Coalition Civilian</string>
     <string name="non_coalition_military">Non-Coalition Military</string>
     <string name="opposing_force_detainee">Opposing Force Detainee</string>
+    <string name="app_diagnostics">Registro</string>
+    <string name="app_diagnostics_logs">Registros</string>
 </resources>

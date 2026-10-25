@@ -1175,7 +1175,7 @@ This does **not** repair rejected credentials: HTTP 401 still requires valid
 credentials/server-side authorization. Response bodies and certificate material
 are not logged by enrollment.
 
-### Persistent developer menus and Diagnostics
+### Persistent developer menus and Logging
 
 Tap the version eight times in **Preferences** to unlock **Admin Preferences**
 and **Developer Preferences**. Repeat the same eight-tap gesture to hide them.
@@ -1184,23 +1184,25 @@ in-place updates until explicitly disabled. It is not an authenticated admin
 session: phone-managed restrictions, network locking, licensing, platform
 permissions and Knox authorization remain independent and unchanged. Hiding
 the menus immediately removes access to their pages, not those restrictions.
-The unlock gesture no longer changes airplane mode. **Diagnostics** and **Stay awake**
+The unlock gesture no longer changes airplane mode. **Logging** and **Stay awake**
 are simple toggle rows at the top, alphabetized within that group, without helper text.
 The remaining developer entries are sorted by their current localized visible labels,
 with the title and Back navigation kept outside the sorted entries.
 
-Open **Developer Preferences** and switch **Diagnostics** on
+Open **Developer Preferences** and switch **Logging** on
 before a normal unplugged session. This is one app-wide, default-off recording
 preference, not a battery-only switch. Its choice survives app/watch restarts and
 updates. Recording resumes when Android next runs WearTAK; it does not launch
 the app or override force-stop, suspension or battery restrictions. Hiding the
-developer menus does not turn off Diagnostics or erase evidence. Re-enable
-the menus and explicitly switch **Diagnostics** off to stop it. **Diagnostic logs**
+developer menus does not turn off Logging or erase evidence. Re-enable
+the menus and explicitly switch **Logging** off to stop it. **Logs**
 retains the export and clear actions; **Clear logs**
 deletes only this recorder's files, without changing the preference; switching
 off alone preserves recorded evidence. Uninstall/app-data clearing removes it.
 Existing Bonded Location Diagnostics remains a separate, unchanged feature;
-the new Diagnostics switch does not enable its GNSS measurement callbacks.
+the Logging switch does not enable its GNSS measurement callbacks. Only the
+user-facing name changed from Diagnostics; saved consent, default-off state,
+journal contents, storage paths and technical schema identifiers are unchanged.
 
 The journal contains only compiled event categories and allowlisted numeric
 metadata: app/activity lifecycle, best-effort Java crash occurrence, battery
@@ -1243,7 +1245,7 @@ callbacks feed the recorder. Events are limited to one record per category/
 source/kind/state per five seconds; repeated occurrences are aggregated as counts,
 including on export/off. The queue is bounded to 128 records, the aggregation
 table to 256 keys, and overflow is explicitly counted. An I/O failure pauses
-file writes and is visible in Android logging and the Diagnostics page; retry
+file writes and is visible in Android logging and the Logs page; retry
 export or clear after fixing storage. Process termination can lose queued
 events and unflushed aggregate counts.
 
