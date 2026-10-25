@@ -1,4 +1,5 @@
 <resources>
+    <string name="map_self_location">Self Location</string>
     <string name="home_open_bloodhound">Open Bloodhound</string>
     <string name="home_open_map">Map</string>
     <string name="home_unread_bloodhound">Unread Bloodhound targets</string>

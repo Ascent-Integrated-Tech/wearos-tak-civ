@@ -486,6 +486,10 @@ The dropped-marker list has one scroll owner, a high-contrast heading and an
 explicit **No Dropped Markers** state; Back returns to the existing marker menu.
 The home callsign similarly fits its complete text rather than ellipsizing.
 
+Tapping your own location dot opens its coordinate popup with a **Self Location**
+heading above the unchanged latitude/longitude and MGRS. This identification is
+map-only; it does not add a heading to the dashboard coordinate display.
+
 Nearby visible contacts and pins (within 28 dp of a group anchor on the current
 map projection) share a target-count label. Tap any member icon or its label to
 open a native scrollable **Select Target** list and choose the contact, dropped

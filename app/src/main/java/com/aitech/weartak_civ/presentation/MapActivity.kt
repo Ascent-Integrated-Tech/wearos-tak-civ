@@ -1373,6 +1373,13 @@ fun PopupBox(
                 ) {
                     Column (modifier = Modifier.padding(5.dp)){
                         Text(
+                            text = stringResource(R.string.map_self_location),
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 11.sp,
+                            lineHeight = 12.sp
+                        )
+                        Text(
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 11.sp,
