@@ -36,6 +36,28 @@ class DebugStayAwakeSettingTest {
     @Config(qualifiers = "w227dp-h227dp-round")
     fun largerRoundHasSimpleTopTogglesWithoutHelperText() = verifyTopSplitChip()
 
+    @Test fun loggingLabelsResolveInEverySupportedTranslation() {
+        val labels = mapOf(
+            "en" to ("Logging" to "Logs"),
+            "ar" to ("التسجيل" to "السجلات"),
+            "de" to ("Protokollierung" to "Protokolle"),
+            "es" to ("Registro" to "Registros"),
+            "fr" to ("Journalisation" to "Journaux"),
+            "ja" to ("ログ記録" to "ログ"),
+            "ko" to ("로깅" to "로그"),
+            "tr" to ("Günlük kaydı" to "Günlükler"),
+            "vi" to ("Ghi nhật ký" to "Nhật ký"),
+            "zh" to ("日志记录" to "日志")
+        )
+        labels.forEach { (language, expected) ->
+            val configuration = android.content.res.Configuration(app.resources.configuration)
+            configuration.setLocale(java.util.Locale.forLanguageTag(language))
+            val context = app.createConfigurationContext(configuration)
+            assertEquals(language, expected.first, context.getString(com.aitech.weartak_civ.R.string.app_diagnostics))
+            assertEquals(language, expected.second, context.getString(com.aitech.weartak_civ.R.string.app_diagnostics_logs))
+        }
+    }
+
     @Test fun diagnosticsToggleAndLogActionsRemainDistinctFromStayAwake() {
         var enabled by mutableStateOf(false)
         var changes = 0
@@ -48,9 +70,9 @@ class DebugStayAwakeSettingTest {
                 onDiagnosticsEnabledChange = { enabled = it; changes++ }
             )
         }
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Diagnostics"))
-        compose.onNodeWithText("Diagnostics").assertIsOff().performClick()
-        compose.onNodeWithText("Diagnostics").assertIsOn()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Logging"))
+        compose.onNodeWithText("Logging").assertIsOff().performClick()
+        compose.onNodeWithText("Logging").assertIsOn()
         compose.runOnIdle {
             assertTrue(enabled)
             assertEquals(1, changes)
@@ -58,8 +80,8 @@ class DebugStayAwakeSettingTest {
         }
         compose.onNodeWithText(app.getString(com.aitech.weartak_civ.R.string.app_diagnostics_description))
             .assertDoesNotExist()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Diagnostic logs"))
-        compose.onNodeWithText("Diagnostic logs").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Logs"))
+        compose.onNodeWithText("Logs").performClick()
         compose.runOnIdle {
             assertEquals(1, openedLogs)
             assertEquals(1, changes)
