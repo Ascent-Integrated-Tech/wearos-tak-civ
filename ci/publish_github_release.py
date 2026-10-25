@@ -1,10 +1,12 @@
-"""Publish only the verified develop_release APK; no code/tag synchronization."""
+"""Publish the verified canonical APK to explicitly approved GitHub mirrors."""
 
+import base64
 import hashlib
 import json
 import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import urllib.error
 import urllib.parse
@@ -12,6 +14,11 @@ import urllib.request
 
 
 REPO = "Ascent-Integrated-Tech/wearos-tak-civ"
+PERSONAL_REPO = "aegorsuch/weartak-wearos"
+TOKEN_VARIABLES = {
+    REPO: "WEARTAK_GITHUB_TOKEN",
+    PERSONAL_REPO: "WEARTAK_PERSONAL_GITHUB_TOKEN",
+}
 # Git tags cannot contain spaces or "/", so the tag is the title in tag-safe form.
 TAG = "TAK.gov-Forge-CI-CD-Pipeline-Release"
 TITLE = "TAK.gov Forge CI/CD Pipeline Release"
@@ -42,13 +49,16 @@ class SafeRedirect(urllib.request.HTTPRedirectHandler):
 
 
 class GitHub:
-    def __init__(self, token):
+    def __init__(self, token, repository=REPO):
+        if repository not in TOKEN_VARIABLES:
+            raise PublishError("Unapproved publication destination.")
         self.token = token
+        self.repository_name = repository
         self.opener = urllib.request.build_opener(SafeRedirect())
 
     def request(self, method, path, data=None, *, binary=False, missing_ok=False):
         host = "https://uploads.github.com" if binary else "https://api.github.com"
-        url = f"{host}/repos/{REPO}" + (f"/{path}" if path else "")
+        url = f"{host}/repos/{self.repository_name}" + (f"/{path}" if path else "")
         headers = {
             "Authorization": f"Bearer {self.token}",
             "Accept": "application/vnd.github+json",
@@ -72,7 +82,8 @@ class GitHub:
             # Do not print request headers, tokens, signed URLs, or raw API responses.
             raise PublishError(
                 f"GitHub {method} {path.split('?')[0]} returned HTTP {error.code}. "
-                "Check the protected WEARTAK_GITHUB_TOKEN (repository Contents: write), "
+                f"Check protected {TOKEN_VARIABLES[self.repository_name]} "
+                "(repository Contents: write), "
                 "repository access, rolling tag, and API availability."
             ) from None
         except urllib.error.URLError:
@@ -83,7 +94,7 @@ class GitHub:
 
     def download_digest(self, asset_id):
         request = urllib.request.Request(
-            f"https://api.github.com/repos/{REPO}/releases/assets/{asset_id}",
+            f"https://api.github.com/repos/{self.repository_name}/releases/assets/{asset_id}",
             headers={
                 "Authorization": f"Bearer {self.token}",
                 "Accept": "application/octet-stream",
@@ -117,8 +128,70 @@ class GitHub:
                 return result
             page += 1
 
+    def sync_develop(self, source_sha):
+        if self.repository_name != PERSONAL_REPO:
+            raise PublishError("Automatic source synchronization is personal-mirror only.")
+        # Keep credentials out of arguments, URLs, files, helpers and captured output.
+        env = {key: os.environ[key] for key in (
+            "PATH", "HOME", "LANG", "LC_ALL", "TMPDIR", "TMP", "TEMP", "SystemRoot",
+            "SSL_CERT_FILE", "SSL_CERT_DIR", "GIT_SSL_CAINFO", "GIT_SSL_CAPATH",
+            "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "http_proxy", "https_proxy", "no_proxy",
+        ) if key in os.environ}
+        credentials = base64.b64encode(f"x-access-token:{self.token}".encode()).decode()
+        settings = (
+            ("credential.helper", ""),
+            ("http.extraHeader", ""),
+            (f"http.https://github.com/{PERSONAL_REPO}.git.extraHeader",
+             f"Authorization: Basic {credentials}"),
+            ("http.followRedirects", "false"),
+            ("core.hooksPath", os.devnull),
+        )
+        env.update(GIT_CONFIG_COUNT=str(len(settings)), GIT_CONFIG_NOSYSTEM="1",
+                   GIT_CONFIG_GLOBAL=os.devnull, GIT_TERMINAL_PROMPT="0")
+        for index, (key, value) in enumerate(settings):
+            env[f"GIT_CONFIG_KEY_{index}"] = key
+            env[f"GIT_CONFIG_VALUE_{index}"] = value
 
-def configuration(env):
+        def git(*args):
+            result = subprocess.run(
+                ["git", *args], env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, check=False,
+            )
+            if result.returncode:
+                raise PublishError(
+                    "Personal develop synchronization failed its Git source/ancestry/"
+                    "non-force push check. No force, tag changes or deletion "
+                    "will be attempted; inspect canonical history and repository access."
+                )
+            return result.stdout.strip()
+
+        if git("rev-parse", "HEAD") != source_sha:
+            raise PublishError("CI checkout does not match the publishing pipeline source.")
+        path = "git/ref/heads/develop"
+        remote = self.request("GET", path)
+        remote_sha = remote.get("object", {}).get("sha")
+        if (remote.get("object", {}).get("type") != "commit"
+                or not isinstance(remote_sha, str)
+                or not re.fullmatch(r"[0-9a-f]{40}", remote_sha)):
+            raise PublishError("Personal develop must already reference a verified commit.")
+        if remote_sha != source_sha:
+            url = f"https://github.com/{PERSONAL_REPO}.git"
+            git("fetch", "--no-tags", "--no-recurse-submodules", url, "refs/heads/develop")
+            if git("rev-parse", "FETCH_HEAD") != remote_sha:
+                raise PublishError("Personal develop changed during source inspection; refusing update.")
+            git("merge-base", "--is-ancestor", remote_sha, source_sha)
+            git("push", "--no-follow-tags", "--recurse-submodules=no",
+                url, f"{source_sha}:refs/heads/develop")
+        confirmed = self.request("GET", path)
+        if confirmed.get("object", {}).get("sha") != source_sha:
+            raise PublishError("Personal develop readback differs from the canonical pipeline source.")
+        print(f"Verified {PERSONAL_REPO} develop={source_sha} (non-force, no other refs changed).")
+
+
+def configuration(env, destination=REPO):
+    if destination not in TOKEN_VARIABLES:
+        raise PublishError("Unapproved publication destination.")
+    token_variable = TOKEN_VARIABLES[destination]
     expected = {
         "CI_SERVER_HOST": "git.tak.gov",
         "CI_PROJECT_PATH": "core/weartak-core/wearos-tak-civ",
@@ -129,12 +202,12 @@ def configuration(env):
     for name, value in expected.items():
         if env.get(name) != value:
             raise PublishError(f"Publishing requires {name}={value}.")
-    required = ("WEARTAK_GITHUB_TOKEN", "CI_PROJECT_ID", "CI_PIPELINE_IID",
+    required = (token_variable, "CI_PROJECT_ID", "CI_PIPELINE_IID",
                 "CI_PIPELINE_ID", "CI_PIPELINE_URL", "CI_COMMIT_SHA")
     for name in required:
         if not env.get(name):
             raise PublishError(
-                f"Missing {name}. Configure WEARTAK_GITHUB_TOKEN as a masked, protected "
+                f"Missing {name}. Configure {token_variable} as a masked, protected "
                 "GitLab CI variable with access only to the destination repository."
             )
     for name in ("CI_PROJECT_ID", "CI_PIPELINE_IID", "CI_PIPELINE_ID"):
@@ -266,14 +339,18 @@ def update_body(previous_body, previous_state, generated):
     return previous_body[:marker.start()] + managed + previous_body[marker.end():]
 
 
-def publish(api, state, apk, digest, version, code):
+def publish(api, state, apk, digest, version, code, *, destination=REPO):
+    if destination not in TOKEN_VARIABLES:
+        raise PublishError("Unapproved publication destination.")
     repository = api.request("GET", "")
-    if (repository.get("full_name") != REPO or
+    if (repository.get("full_name") != destination or
             repository.get("archived") is not False or
-            repository.get("disabled") is not False):
+            repository.get("disabled") is not False or
+            (destination == PERSONAL_REPO and repository.get("private") is not False)):
         raise PublishError(
             "Destination must be the explicitly approved, active repository "
-            f"{REPO}; archived, disabled or different repositories are not allowed."
+            f"{destination}; archived, disabled, different or nonpublic personal "
+            "repositories are not allowed."
         )
     # Require an administrator-provisioned fixed tag. Never create/move a ref.
     if not api.request("GET", f"git/ref/tags/{TAG}", missing_ok=True):
@@ -291,6 +368,9 @@ def publish(api, state, apk, digest, version, code):
                 and (previous.get("source_sha") != state["source_sha"]
                      or previous.get("sha256") != digest)):
             raise PublishError("Same pipeline has different source/artifact; refusing replacement.")
+
+    if destination == PERSONAL_REPO:
+        api.sync_develop(state["source_sha"])
 
     state = dict(state, sha256=digest)
     short = display_version(version, state["pipeline_iid"])
@@ -344,6 +424,8 @@ def publish(api, state, apk, digest, version, code):
         if owner is not None and owner < state["pipeline_iid"]:
             api.request("DELETE", f"releases/assets/{old['id']}")
     print(f"Published {title}: version {version} ({code}), SHA256 {digest}")
+    if destination == PERSONAL_REPO:
+        return
     # Only a verified build reaches testers. The workflow re-reads the release itself and
     # deduplicates per pipeline, so retrying a failed notification is safe.
     try:
@@ -358,11 +440,15 @@ def publish(api, state, apk, digest, version, code):
         ) from None
 
 
-def main():
+def main(argv=()):
     try:
-        state = configuration(os.environ)
+        if list(argv) not in ([], ["--personal"]):
+            raise PublishError("Only the fixed --personal destination option is supported.")
+        destination = PERSONAL_REPO if argv else REPO
+        state = configuration(os.environ, destination)
         apk, digest, version, code = artifact(Path.cwd())
-        publish(GitHub(os.environ["WEARTAK_GITHUB_TOKEN"]), state, apk, digest, version, code)
+        publish(GitHub(os.environ[TOKEN_VARIABLES[destination]], destination),
+                state, apk, digest, version, code, destination=destination)
     except (PublishError, OSError, ValueError, KeyError, TypeError, urllib.error.URLError) as error:
         # urllib transport errors can contain signed URLs; do not echo their details.
         message = str(error) if isinstance(error, PublishError) else type(error).__name__
@@ -376,4 +462,4 @@ def main():
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))
