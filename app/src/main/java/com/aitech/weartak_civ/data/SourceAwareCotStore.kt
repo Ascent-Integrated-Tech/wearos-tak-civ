@@ -44,6 +44,7 @@ class SourceAwareCotStore<T>(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<SourceCotKey, Long>?) = size > 2048
     }
     private val uidOrder = LinkedHashMap<String, Long>()
+    private val visibleByUid = HashMap<String, Stored<T>>()
     private var sequence = 0L
 
     private val _allItems = MutableStateFlow<Map<SourceCotKey, T>>(emptyMap())
@@ -70,7 +71,7 @@ class SourceAwareCotStore<T>(
 
         uidOrder.putIfAbsent(key.cotUid, sequence)
         storedByKey[key] = candidate
-        publishLocked()
+        publishLocked(key)
         SourceCotUpsertResult(key, applied = true)
     }
 
@@ -214,15 +215,30 @@ class SourceAwareCotStore<T>(
         }
     }
 
-    private fun publishLocked() {
-        _allItems.value = storedByKey.mapValues { it.value.value }
-        val visibleByUid = HashMap<String, Stored<T>>(uidOrder.size)
-        storedByKey.forEach { (key, candidate) ->
-            val current = visibleByUid[key.cotUid]
-            if (current == null || candidate.isNewerThan(current)) {
-                visibleByUid[key.cotUid] = candidate
+    private fun publishLocked(upsertKey: SourceCotKey? = null) {
+        var visibleChanged = true
+        val upserted = upsertKey?.let(storedByKey::get)
+        if (upsertKey != null && upserted != null) {
+            // An accepted upsert cannot make its source's previous winner older.
+            val current = visibleByUid[upsertKey.cotUid]
+            if (current != null && !upserted.isNewerThan(current)) {
+                visibleChanged = false
+            } else {
+                visibleByUid[upsertKey.cotUid] = upserted
+                visibleChanged = current == null || current.value != upserted.value
+            }
+        } else {
+            visibleByUid.clear()
+            storedByKey.forEach { (key, candidate) ->
+                val current = visibleByUid[key.cotUid]
+                if (current == null || candidate.isNewerThan(current)) {
+                    visibleByUid[key.cotUid] = candidate
+                }
             }
         }
+        // Keep the cache coherent before a synchronous all-items collector can re-enter.
+        _allItems.value = storedByKey.mapValues { it.value.value }
+        if (!visibleChanged) return
         _visibleItems.value = uidOrder.keys.mapNotNull { uid ->
             visibleByUid[uid]?.value
         }

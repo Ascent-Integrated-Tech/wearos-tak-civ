@@ -2375,7 +2375,7 @@ class TAKConnectService: Service() {
                                 receivedAt = envelope.receivedAt
                             )
                         }
-                        Log.d(
+                        if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(
                             TAG,
                                 "Inbound marker delivered to map state uid=${event.uid} " +
                                 "sourceServerId=${envelope.sourceServerId} sourceAddress=${envelope.sourceServerAddress} " +
@@ -2390,7 +2390,7 @@ class TAKConnectService: Service() {
                             return
                         }
 
-                        Log.d(
+                        if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(
                             TAG,
                             "Inbound marker delivered to Bloodhound state uid=${event.uid} " +
                                 "sourceServerId=${envelope.sourceServerId} eventTime=${event.time}"

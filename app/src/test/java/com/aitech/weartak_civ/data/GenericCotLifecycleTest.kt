@@ -1,9 +1,12 @@
 package com.aitech.weartak_civ.data
 
 import android.app.Application
+import android.util.Log
 import com.aitech.weartak_civ.cot.*
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.mockk
+import io.mockk.every
+import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
@@ -12,6 +15,7 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
@@ -26,6 +30,36 @@ class GenericCotLifecycleTest {
     private fun marker(uid: String, time: Long = now, stale: Long = now + 60_000, type: String = "a-n-A-C-F") =
         CotMarkerEvent("2.0", uid, type, "m-g", time, time, stale, null, CotPoint(41.0, -87.0, 0.0, 10.0, 10.0),
             CotMarkerDetail(null, null, null, null, null, null))
+
+    @Test fun disabledMarkerDebugSkipsChannelProjectionWithoutSkippingLiveOrStaleUpdates() = runBlocking {
+        ShadowLog.setLoggable("WearTAK-DataRepository", Log.INFO)
+        ShadowLog.setLoggable("WearTAK-BloodhoundRepository", Log.INFO)
+        val watched = spyk(repo, recordPrivateCalls = true)
+        every { watched["activeChannelsForLog"]("server") } throws AssertionError("Disabled debug projected channels")
+        val navigation = BloodhoundRepository(RuntimeEnvironment.getApplication())
+        assertTrue(watched.receiveMarkerEvent(marker("drop", type = "a-f-G"), navigation, "TAK", "server", now))
+        assertEquals("drop", watched.receivedMarkerList.value.single().uid)
+        assertEquals("drop", navigation.bloodhoundMap.value.values.single().uid)
+        assertFalse(watched.receiveMarkerEvent(
+            marker("drop", time = now + 1, stale = now - 1, type = "a-f-G"),
+            navigation, "TAK", "server", now + 1))
+        assertTrue(watched.receivedMarkerList.value.isEmpty())
+        assertTrue(navigation.bloodhoundMap.value.isEmpty())
+        verify(exactly = 0) { watched["activeChannelsForLog"]("server") }
+        assertTrue(ShadowLog.getLogsForTag("WearTAK-DataRepository").none { it.msg.startsWith("Map state marker") })
+        assertTrue(ShadowLog.getLogsForTag("WearTAK-BloodhoundRepository").none { it.msg.startsWith("Map state bloodhound upsert") })
+    }
+
+    @Test fun enabledMarkerDebugRetainsSourceAndChannelDiagnosticsAfterStateUpdate() = runBlocking {
+        ShadowLog.setLoggable("WearTAK-DataRepository", Log.DEBUG)
+        val watched = spyk(repo, recordPrivateCalls = true)
+        every { watched["activeChannelsForLog"]("server") } returns "test-channel-projection"
+        assertTrue(watched.applyReceivedMarkerEvent(marker("drop", type = "a-f-G"), "TAK", "server", now, now))
+        val log = ShadowLog.getLogsForTag("WearTAK-DataRepository").single { it.msg.startsWith("Map state marker upsert") }
+        assertTrue(log.msg.contains("applied=true visibleSourceId=server activeChannelsAtIngest=test-channel-projection"))
+        verify(exactly = 1) { watched["activeChannelsForLog"]("server") }
+        watched.clearReceivedMarkers()
+    }
 
     @Test fun aircraftChurnIsBoundedWithoutEvictingExistingDropMarkers() = runBlocking {
         repo.applyReceivedMarkerEvent(marker("drop", type = "a-f-G"), "TAK", "server", now, now)

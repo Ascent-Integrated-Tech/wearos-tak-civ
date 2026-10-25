@@ -1350,6 +1350,17 @@ five-second repeated-key grouping (latest numeric metadata plus `COUNT`),
 can be grouped; export/disable flushes retained metadata. Logging off skips
 snapshot construction, and disabling/clearing keeps the existing consent epochs.
 
+Received-marker ingestion preserves every source-owned copy, event-time/receipt/
+insertion tie-break, removal watermark and per-update state publication.
+An accepted single-source upsert compares only that UID against its cached visible
+winner rather than rebuilding winners for unrelated UIDs; removals and bulk
+transforms still rebuild the full projection. The all-source snapshot remains
+published on every accepted change. DEBUG-only map/navigation marker diagnostics
+defer source lookup, channel projection and string formatting until DEBUG is
+enabled; warnings, stale handling, expiry, guidance and opt-in Logging are
+unchanged. Deterministic equivalence/work tests establish less projection work,
+not a measured watch CPU or battery saving.
+
 New records identify the current hybrid as `hybrid-speed-activity-v2`; older
 records keep their original policy, app version and source commit.
 `REPORT_POLICY` captures the initial/enabled snapshot and subsequent changes in
