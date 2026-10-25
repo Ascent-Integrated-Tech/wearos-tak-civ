@@ -182,11 +182,13 @@ class BloodhoundService: Service() {
         scope.launch {
             repo.azimuthTrueDegSmoothed.collect { azimuth ->
                 val map = bhRepo.bloodhoundMap.value
-                map.values.forEach { item ->
-                    if (item.bhEvent.remoteAlert?.hasLocation == false) return@forEach
-                    if (azimuth != null) {
-                        updateCompassAngle(item.uid, item.vector.bearing, azimuth)
-                    }
+                if (azimuth != null) {
+                    val needles = map.values.mapNotNull { item ->
+                        if (item.bhEvent.remoteAlert?.hasLocation == false) null
+                        else LocationVectorCalculator.needleAngle(item.vector.bearing, azimuth)
+                            ?.let { item.uid to it }
+                    }.toMap()
+                    bhRepo.updateBloodhoundCompassNeedles(needles)
                 }
                 evaluateActiveTargetProximity()
             }

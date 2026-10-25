@@ -974,16 +974,21 @@ class BloodhoundRepository(
         _bloodhoundMap.value[uid]?.containsHoundmasterRemark ?: false
 
     fun updateBloodhoundCompassNeedle(uid: String, needleDeg: Double) {
+        updateBloodhoundCompassNeedles(mapOf(uid to needleDeg))
+    }
+
+    fun updateBloodhoundCompassNeedles(needles: Map<String, Double>) {
         synchronized(bloodhoundStateLock) {
-            visibleKey(uid)?.let { key -> bloodhoundStore.update(key) { item ->
-                if (item.compass.targetBearingDeg == needleDeg) {
-                    item
-                } else {
-                    item.copy(compass = item.compass.copy(targetBearingDeg = needleDeg))
-                }
-                }
+            val bySource = needles.mapNotNull { (uid, angle) ->
+                visibleKey(uid)?.let { it to angle }
+            }.toMap()
+            if (bySource.isEmpty()) return
+            val changed = bloodhoundStore.transformAll { key, item ->
+                val angle = bySource[key]
+                if (angle == null || item.compass.targetBearingDeg == angle) item
+                else item.copy(compass = item.compass.copy(targetBearingDeg = angle))
             }
-            publishVisibleBloodhounds()
+            if (changed) publishVisibleBloodhounds()
         }
     }
 
