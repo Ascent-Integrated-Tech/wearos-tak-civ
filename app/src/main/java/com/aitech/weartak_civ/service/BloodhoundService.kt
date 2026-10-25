@@ -25,6 +25,7 @@ import com.aitech.weartak_civ.FEATURE_ENABLE_BLOODHOUND_PROXIMITY_INTENSITY_SELE
 import com.aitech.weartak_civ.Utils
 import java.util.concurrent.atomic.AtomicBoolean
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.BloodhoundRepository.ActivationResult
@@ -95,7 +96,7 @@ class BloodhoundService: Service() {
         cancelActiveProximityAlert()
         isRunning.set(false)
         scope.coroutineContext.cancel()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

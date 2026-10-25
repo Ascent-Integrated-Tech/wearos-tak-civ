@@ -97,6 +97,7 @@ class WearTakApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        com.aitech.weartak_civ.service.RoutineServiceNotification.reconcileProcessStart(this)
         diagnostics = AppDiagnostics.initialize(this)
         MainActivity.device_uid = "WEAROS_" + Secure.getString(this.getContentResolver(), Secure.ANDROID_ID)
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))

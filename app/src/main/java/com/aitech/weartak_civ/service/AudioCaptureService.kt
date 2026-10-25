@@ -166,7 +166,7 @@ class AudioCaptureService : Service() {
         handlerThread?.quitSafely()
         handlerThread = null
         handler = null
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForeground(STOP_FOREGROUND_REMOVE)
         serviceScope.cancel()
         super.onDestroy()
     }

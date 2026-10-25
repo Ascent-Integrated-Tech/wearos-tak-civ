@@ -17,6 +17,7 @@ import android.util.Log
 import com.aitech.weartak_civ.Utils.isPointInPolygon
 import com.aitech.weartak_civ.Utils.setAirplaneMode
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.data.GeofenceRepository
 import com.aitech.weartak_civ.data.model.GeofenceCot
 import com.aitech.weartak_civ.data.model.GeofenceTrigger
@@ -65,7 +66,7 @@ class GeofenceService: Service() {
         super.onDestroy()
         Log.d(TAG, "GeofenceService onDestroy()")
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         serviceScope.cancel()
     }
 

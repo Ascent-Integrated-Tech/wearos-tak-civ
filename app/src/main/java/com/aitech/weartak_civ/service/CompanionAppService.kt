@@ -35,6 +35,7 @@ import android.util.Log
 import androidx.annotation.RequiresPermission
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.cot.CotMessageParser
@@ -1126,7 +1127,7 @@ class CompanionAppService : Service() {
         isRunning.set(false)
 
         // 5) Foreground teardown
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         super.onDestroy()
     }
 

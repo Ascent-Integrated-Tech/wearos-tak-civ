@@ -16,6 +16,7 @@ import android.os.IBinder
 import android.util.Log
 import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
@@ -176,7 +177,7 @@ class ReactiveServiceManager : Service() {
         stopAll()
         scope.cancel()
         serviceLoop.close()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

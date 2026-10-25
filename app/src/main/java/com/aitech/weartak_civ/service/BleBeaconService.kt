@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.Utils.getValueFromJson
 import com.aitech.weartak_civ.Utils.jitteredLatLon
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.writeToLogFileLocation
 import com.aitech.weartak_civ.events.MessageEvent
 import com.aitech.weartak_civ.events.MessageEvent.Companion.CUSTOM_DEVELOPER_CONFIG_JSON_CHANGED
@@ -399,7 +400,7 @@ class BleBeaconService: Service() {
         super.onDestroy()
         Log.d(TAG, "BleBeaconService onDestroy()")
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
 
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)

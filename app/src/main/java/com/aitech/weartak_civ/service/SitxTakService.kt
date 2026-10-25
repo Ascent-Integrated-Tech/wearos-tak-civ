@@ -20,6 +20,7 @@ import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
 import com.aitech.weartak_civ.cot.CotMessageParser
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
@@ -144,7 +145,7 @@ class SitxTakService : Service() {
         Log.d(TAG, "SitxTakService onDestroy()")
         isRunning.set(false)
         closeWebsockets()
-        stopForeground(STOP_FOREGROUND_DETACH)
+        stopForegroundServiceCompat()
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }

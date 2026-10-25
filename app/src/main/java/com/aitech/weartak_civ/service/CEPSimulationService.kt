@@ -256,7 +256,7 @@ class CEPSimulationService : Service() {
             .setAutoCancel(true)
             .build()
 
-        nm.notify(999, notification)
+        nm.notify(RoutineServiceNotification.SIMULATION_ALERT_ID, notification)
     }
 
 

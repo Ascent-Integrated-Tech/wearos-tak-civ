@@ -16,6 +16,7 @@ import android.location.Location
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.cep.bus.CepBus
 import com.aitech.weartak_civ.cep.model.CepEvent
@@ -117,13 +118,14 @@ class WeatherService : Service() {
 		Log.i(TAG, "WeatherService onDestroy()")
 		isRunning.set(false)
 		serviceScope.cancel()
-		stopForeground(STOP_FOREGROUND_REMOVE)
+		stopForegroundServiceCompat()
 	}
 
 	private fun stopSelfSafely() {
 		try {
-			stopForeground(STOP_FOREGROUND_REMOVE)
-		} catch (_: Throwable) {
+			stopForegroundServiceCompat()
+		} catch (error: RuntimeException) {
+			Log.e(TAG, "Failed to release foreground notification", error)
 		}
 		stopSelf()
 	}
@@ -488,6 +490,4 @@ class WeatherService : Service() {
 		}
 	}
 }
-
-
 

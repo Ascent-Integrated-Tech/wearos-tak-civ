@@ -24,6 +24,7 @@ import com.aitech.weartak_civ.DEFAULT_STATIONARY_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_VEHICLE_REPORTING_INTERVAL
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
+import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.LocationInput
 import com.aitech.weartak_civ.data.LocationInputStatus
@@ -92,7 +93,7 @@ class ReportingIntervalStrategyService : Service() {
         super.onDestroy()
         Log.i(TAG, "ReportingIntervalStrategyService onDestroy()")
         isRunning.set(false)
-        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopForegroundServiceCompat()
         // TODO: should we serviceJob.cancel()
         serviceScope.cancel()
     }
