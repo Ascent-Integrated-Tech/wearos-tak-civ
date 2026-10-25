@@ -151,6 +151,16 @@ class HeadingSensorDemandTest {
             receiver.onReceive(app, Intent(Intent.ACTION_SCREEN_OFF))
             fixture.idle()
             fixture.unregistrations(1)
+            val display = (app.getSystemService(Context.DISPLAY_SERVICE) as android.hardware.display.DisplayManager)
+                .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+            listOf(android.view.Display.STATE_OFF, android.view.Display.STATE_DOZE,
+                android.view.Display.STATE_DOZE_SUSPEND, android.view.Display.STATE_ON).forEach { state ->
+                shadowOf(display).setState(state)
+                receiver.onReceive(app, Intent(Intent.ACTION_SCREEN_OFF))
+                fixture.idle()
+                fixture.registrations(1)
+                fixture.unregistrations(1)
+            }
             val stale = ShadowSensorManager.createSensorEvent(3, Sensor.TYPE_ROTATION_VECTOR).apply {
                 timestamp = 0
             }
