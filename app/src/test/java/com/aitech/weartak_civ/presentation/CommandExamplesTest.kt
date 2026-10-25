@@ -39,6 +39,8 @@ class CommandExamplesTest {
             R.string.chat_command_example_team to ChatCommand("setteam", mapOf("team" to "Dark Green")),
             R.string.chat_command_example_role to ChatCommand("setrole", mapOf("role" to "Team Member")),
             R.string.chat_command_example_callsign to ChatCommand("setcallsign", mapOf("callsign" to "ALPHA-1")),
+            R.string.chat_command_example_location_fused to ChatCommand("setlocationinput", mapOf("input" to "enhancedgnss")),
+            R.string.chat_command_example_location_gnss to ChatCommand("setlocationinput", mapOf("input" to "gnss")),
         )
         examples.forEach { (resource, command) ->
             val parsed = ChatCommandParser.parse(context.getString(resource))

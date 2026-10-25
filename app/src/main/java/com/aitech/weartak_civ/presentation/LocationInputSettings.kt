@@ -30,7 +30,6 @@ internal fun locationInputStatusLabel(status: LocationInputStatus): Int = when (
 internal fun LocationInputSettingsPage(
     selected: LocationInput?,
     status: LocationInputStatus,
-    configured: Boolean,
     navController: NavHostController,
     onSelect: suspend (LocationInput) -> Boolean,
 ) {
@@ -41,11 +40,18 @@ internal fun LocationInputSettingsPage(
         title = stringResource(R.string.location_input),
         navController = navController,
         columnContent = {
-            item { Text(stringResource(R.string.location_input_help)) }
-            if (!configured) item { Text(stringResource(R.string.location_input_migration)) }
-            item { Text(stringResource(locationInputStatusLabel(status))) }
-            items(LocationInput.entries.size) { index ->
-                val input = LocationInput.entries[index]
+            if (selected == LocationInput.NETWORK) {
+                item { Text(stringResource(R.string.location_input_legacy)) }
+            }
+            if (status != LocationInputStatus.READY) {
+                item { Text(stringResource(locationInputStatusLabel(status))) }
+            }
+            if (status in setOf(LocationInputStatus.UNAVAILABLE, LocationInputStatus.DISABLED,
+                    LocationInputStatus.PERMISSION_REQUIRED, LocationInputStatus.REQUEST_FAILED)) {
+                item { Text(stringResource(R.string.location_input_help)) }
+            }
+            items(LocationInput.selectable.size) { index ->
+                val input = LocationInput.selectable[index]
                 SelectableChip(
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
                     selected = selected == input,

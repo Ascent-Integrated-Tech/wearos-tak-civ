@@ -21,6 +21,9 @@ import com.aitech.weartak_civ.cot.CotMessageBuilder
 import com.aitech.weartak_civ.command.ChatCommandParser
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.CompanionAppRepository
+import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.cot.CompanionGatewaySession
 import com.aitech.weartak_civ.data.RouteFollow
 import com.aitech.weartak_civ.TakMulticastEndpoints
 import com.aitech.weartak_civ.WifiMulticastReceiver
@@ -34,6 +37,7 @@ import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
 import io.mockk.coVerify
+import io.mockk.coEvery
 import io.mockk.mockkConstructor
 import io.mockk.unmockkConstructor
 import io.mockk.mockkObject
@@ -200,7 +204,20 @@ class DittoReceiveIntegrationTest {
 
         suspend fun clear(uid: String = "point", queueRetry: Boolean? = null) {
             MainActivity.Constants.bhRepo = bh
-            val service = Robolectric.buildService(CotDispatchService::class.java).get()
+            val service = spyk(Robolectric.buildService(CotDispatchService::class.java).get())
+            val host = mockk<WearTakApplication>(relaxed = true)
+            every { host.pluginManager.settingsCoordinator.anyPluginHasSettingEnabled(any()) } returns false
+            every { service.applicationContext } returns host
+            val companion = mockk<CompanionAppRepository>(relaxed = true)
+            every { companion.gateway } returns CompanionGatewaySession()
+            val dispatcher = mockk<CotEndpointDispatcher>()
+            coEvery { dispatcher.dispatch(any(), any(), any()) } returns false
+            CotDispatchService::class.java.getDeclaredField("endpointDispatcher\$delegate").apply {
+                isAccessible = true; set(service, lazyOf(dispatcher))
+            }
+            CotDispatchService::class.java.getDeclaredField("capRepo\$delegate").apply {
+                isAccessible = true; set(service, lazyOf(companion))
+            }
             CotDispatchService::class.java.getDeclaredField("dataRepository").apply {
                 isAccessible = true
                 set(service, repo)

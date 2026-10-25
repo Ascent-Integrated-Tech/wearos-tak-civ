@@ -1434,7 +1434,7 @@ class DataRepository(private val context: Context) {
     }
     val hasConfiguredLocationInput: Flow<Boolean> = context.dataStore.data.map { it.contains(LOCATION_INPUT) }
     private val locationInputWriteMutex = Mutex()
-    @Volatile private var currentLocationInput: LocationInput? = LocationInput.INTERNAL_GNSS
+    @Volatile private var currentLocationInput: LocationInput? = LocationInput.FUSED
     @Volatile private var locationInputChanging = false
     @Volatile private var locationInputChangedNanos = 0L
 

@@ -867,19 +867,24 @@ The former Reporting Strategy page is now **Reporting**. Both the main location 
 and a non-alert coordinate readout open it; physiological metrics and active alerts keep
 their existing dashboard shortcuts.
 
-**Location Input** selects only Android's `GPS_PROVIDER` (**Internal GNSS**) or
-`NETWORK_PROVIDER` (**LTE/WiFi Derived**) for periodic, scheduled one-shot and
-interaction/current-PLI acquisition. A missing or disabled provider, missing permission,
-or failed fresh-fix acquisition is reported explicitly; neither provider silently falls
-back to fused positioning or the other provider. Network-provider availability and
-network-derived positioning depend on the watch and Android services; this is not a
-guarantee that every LTE or Wi-Fi watch can obtain such a fix.
+**Location Input** offers **Fused Location**, then **Internal GNSS**. Fused Location
+uses Google Play services' real fused location client, combining available satellite,
+Wi-Fi and cellular sources; it is not Android's network-only provider. Internal GNSS
+uses only Android's `GPS_PROVIDER`. The selected input applies to periodic, scheduled
+one-shot and interaction/current-PLI acquisition. Missing services/providers, disabled
+location, missing permission and failed fresh-fix acquisition are reported explicitly;
+neither selection silently falls back to another location input.
 
-Existing fused users deliberately migrate to Internal GNSS. Historical fused samples
-are not relabeled or reused. Changing the input clears current/best-known acquisition
+An absent saved selection defaults to Fused Location without persisting an implicit
+choice. Explicit saved GNSS and fused selections survive upgrades/restarts. An explicit
+legacy `network` choice remains network-only, shown as **Network Only (Legacy)** until
+the user chooses one of the two current options; it is never silently relabeled fused.
+Unknown persisted selections remain unavailable, rather than defaulting silently.
+Historical samples are not relabeled or reused. Changing the input clears current/best-known acquisition
 caches and rejects callbacks and pending PLI snapshots from the previous input, including
 switch-away/back races. A fresh actual sample is required; no synthetic `0,0` is created.
-GPS requires fine location permission; network acquisition accepts coarse or fine.
+GPS requires fine location permission; fused and legacy network acquisition accept
+coarse or fine, subject to Android's resulting precision.
 Phone-managed Reporting remains locked, and location opt-out remains authoritative.
 Existing reporting intervals and accuracy/freshness/privacy policies are unchanged.
 Scheduled one-shot acquisition is now explicitly cancelled after its existing six-second
@@ -1407,11 +1412,12 @@ Format: `#weartakcommand<name> key=value key2="value with spaces"`
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
+| `enrollserver` | `name`, `url` (host name or IP), `port` (default 8089) | Posts a notification on the watch. Tapping it opens the New Server screen pre-filled; the user enters the username and password there and they are stored like any other TAK server. Credentials are never accepted in chat. Refused when network settings are locked or phone-managed. |
 | `setcallsign` | `callsign` (1-32 letters, digits, space, `.`, `_`, `-`) | Sets the callsign. Refused when settings are managed by the phone. |
+| `setlocationinput` | Exactly `input=enhancedgnss` or `input=gnss` | Selects real Fused Location or satellite-only Internal GNSS respectively. Persists the same setting as Reporting, invalidates prior-input fixes and starts fresh acquisition without fallback. Refused when settings are phone-managed. The acknowledgement confirms the selection, not a successful position fix. |
 | `setpdl` | One positional argument: `community` or an encoded SharedKey v2 PDL | Validates the selected identity and expiry, atomically saves source/custom identity, then recreates Ditto with the new identity. Refused when network settings are locked or phone-managed. Does not change the Ditto enable toggle. |
 | `toggleditto` | Exactly one positional `on` or `off` | Persists the same enable setting as the UI, preserving selected identity and normal runtime gates. Repeated on/on or off/off is safe. |
 | `usep12` | `<hex> server=<configured-id> [password="..."]` | Installs one validated client P12 on exactly the existing server ID. Missing/unknown ID or managed network settings changes nothing. Standard Base64 is also accepted. |
-| `enrollserver` | `name`, `url` (host name or IP), `port` (default 8089) | Posts a notification on the watch. Tapping it opens the New Server screen pre-filled; the user enters the username and password there and they are stored like any other TAK server. Credentials are never accepted in chat. Refused when network settings are locked or phone-managed. |
 
 For example, `#weartakcommandsetpdl community` selects the unchanged built-in
 Community identity; `#weartakcommandsetpdl <PDL>` selects a validated Custom PDL.
@@ -1593,10 +1599,11 @@ updated together and hardware acceptance is still required.
 Regression coverage: `CompanionPhoneMarkerLifecycleTest`, `SourceAwareCotStoreTest`,
 and companion `PhoneMarkerRelayTest` cover revision/session rejection, source
 preservation, navigation cleanup, replay watermarks, echo release, and write failures.
-`CotDispatchServicePointDeletionTest` verifies local clear and dispatch-backlog
-cleanup without any external/network/legacy companion CoT calls.
-`CotEndpointDispatcherTest`/`CotDispatchPolicyTest` verify clear CoT never reaches
-any transport even with all endpoints available, both with and without ready BLE.
+`CotDispatchServicePointDeletionTest` verifies ownership-scoped individual/Clear All
+deletion, active-guidance/backlog cleanup and best-effort routing with mocked endpoints.
+`CotEndpointDispatcherTest`/`CotDispatchPolicyTest` verify own-pin clear CoT uses only
+eligible direct routes or the exclusive negotiated raw-CoT gateway, never raw Ditto or
+the legacy revision-based marker-delete envelope. No real deletion is sent by these tests.
 
 Paired-device acceptance (not performed by JVM tests): create a phone point, start
 watch Bloodhound, then delete in ATAK: the companion-source point/target disappears
@@ -1606,8 +1613,10 @@ and repeat both directions. With a same-UID TAK copy present, verify deleting th
 phone copy leaves the TAK copy intact. Replay the old deletion after a newer
 shared edit or reconnect: the newer point must remain, with no echo deletion or
 startup replay. Unsupported PLI/emergency/route/shape/group items must remain.
-With a third TAK/network peer displaying the same point, delete on either paired
-device and verify that third peer retains its copy and receives no deletion packet.
+With a safe watch-owned test point on a third TAK/network peer, watch Delete/Clear All
+requests best-effort removal through the eligible direct or negotiated raw-CoT route.
+Received-point dismissal and legacy companion mirror deletion remain local/mirror-scoped;
+verify unrelated peer-owned points remain untouched. Remote peers may ignore requests.
 ### Remote emergencies
 
 Incoming `b-a-o`, `b-a-o-*`, and ATAK's standard `b-a-g` CoT emergencies share one active

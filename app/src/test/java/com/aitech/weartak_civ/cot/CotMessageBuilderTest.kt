@@ -40,7 +40,8 @@ class CotMessageBuilderTest {
 
     @Test
     fun pliUsesActualCoordinateSourceWithoutRelabelingBleRefinementAsItsAcquisitionProvider() {
-        for ((provider, source) in listOf("gps" to "gps", "network" to "network", "gps" to "ble")) {
+        for ((provider, source) in listOf("fused" to "fused", "fused" to "ble",
+                "gps" to "gps", "network" to "network", "gps" to "ble")) {
             val base = pliSnapshot()
             val snapshot = base.copy(loc = base.loc!!.copy(provider = provider, coordinateSource = source))
             val xml = CotMessageBuilder.pli(snapshot,

@@ -41,6 +41,12 @@ import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.google.android.gms.location.FusedLocationProviderClient
+import com.google.android.gms.location.LocationCallback
+import com.google.android.gms.location.LocationRequest
+import com.google.android.gms.location.LocationResult
+import com.google.android.gms.location.LocationServices
+import com.google.android.gms.location.Priority
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -58,9 +64,11 @@ class LocationService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private var locationManager: LocationManager? = null
+    private var fusedClient: FusedLocationProviderClient? = null
     private var currentInput: LocationInput? = null
     private var generation = 0L
     private val listeners = mutableMapOf<Acquisition, LocationListener>()
+    private val fusedCallbacks = mutableMapOf<Acquisition, LocationCallback>()
     private val requestVersions = mutableMapOf<Acquisition, Long>()
     private val timeouts = mutableMapOf<Acquisition, Runnable>()
     private val interactionGate = InteractionPliRefreshGate()
@@ -80,6 +88,7 @@ class LocationService : Service() {
         isRunning.set(true)
         _instance = this
         locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
+        fusedClient = LocationServices.getFusedLocationProviderClient(this)
         startForegroundServiceCompat(notificationId = LOCATION_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW)
         ContextCompat.registerReceiver(this, providerChanges,
@@ -99,7 +108,7 @@ class LocationService : Service() {
     private fun permitted(input: LocationInput): Boolean {
         val fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) ==
             PackageManager.PERMISSION_GRANTED
-        return fine || (input == LocationInput.NETWORK &&
+        return fine || (input != LocationInput.INTERNAL_GNSS &&
             ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) ==
                 PackageManager.PERMISSION_GRANTED)
     }
@@ -111,6 +120,9 @@ class LocationService : Service() {
             when {
                 input == null || manager == null -> LocationInputStatus.UNAVAILABLE
                 !permitted(input) -> LocationInputStatus.PERMISSION_REQUIRED
+                input == LocationInput.FUSED && fusedClient == null -> LocationInputStatus.UNAVAILABLE
+                input == LocationInput.FUSED && !manager.isLocationEnabled -> LocationInputStatus.DISABLED
+                input == LocationInput.FUSED -> LocationInputStatus.ACQUIRING
                 input.provider !in manager.allProviders -> LocationInputStatus.UNAVAILABLE
                 !manager.isProviderEnabled(input.provider) -> LocationInputStatus.DISABLED
                 else -> LocationInputStatus.ACQUIRING
@@ -131,7 +143,18 @@ class LocationService : Service() {
     private fun cancelRequest(kind: Acquisition) {
         requestVersions[kind] = (requestVersions[kind] ?: 0L) + 1L
         timeouts.remove(kind)?.let(handler::removeCallbacks)
-        listeners.remove(kind)?.let { locationManager?.removeUpdates(it) }
+        val listener = listeners.remove(kind)
+        val callback = fusedCallbacks.remove(kind)
+        try {
+            listener?.let { locationManager?.removeUpdates(it) }
+            callback?.let {
+                fusedClient?.removeLocationUpdates(it)?.addOnFailureListener { error ->
+                    Log.w(TAG, "Could not remove $kind fused request; late callbacks remain rejected", error)
+                }
+            }
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Location permission revoked during $kind cleanup; late callbacks remain rejected", error)
+        }
         if (kind == Acquisition.INTERACTION) interactionGate.cancel()
         if (kind == Acquisition.ONE_SHOT) {
             if (wakeLock?.isHeld == true) wakeLock?.release()
@@ -161,34 +184,37 @@ class LocationService : Service() {
         if (input == null) return
         val manager = locationManager ?: return
         val requestedNanos = SystemClock.elapsedRealtimeNanos()
+        fun acceptLocation(location: Location, active: Boolean) {
+            if (!active || requestGeneration != generation ||
+                currentInput != input || !permitted(input) || location.provider != input.provider) return
+            val nowNanos = SystemClock.elapsedRealtimeNanos()
+            if (location.elapsedRealtimeNanos < requestedNanos ||
+                location.elapsedRealtimeNanos > nowNanos || location.time <= 0 ||
+                !location.altitude.isFinite() ||
+                !InteractionPliRefreshGate.usable(location.latitude, location.longitude,
+                    location.accuracy, location.hasAccuracy())) {
+                Log.i(TAG, "Ignoring unusable or pre-request ${input.provider} fix")
+                return
+            }
+            val reasons = if (kind == Acquisition.INTERACTION) {
+                interactionGate.consume(location.elapsedRealtimeNanos, nowNanos, true) ?: return
+            } else null
+            if (kind != Acquisition.PERIODIC) cancelRequest(kind)
+            scope.launch {
+                if (!dataRepository.getEnableLocationService.first() ||
+                    requestGeneration != generation || currentInput != input || !permitted(input)) return@launch
+                dataRepository.storeLatestLocation(location)
+                if (!dataRepository.isCurrentLocationInput(location) || requestGeneration != generation) return@launch
+                (application as? com.aitech.weartak_civ.WearTakApplication)
+                    ?.locationDiagnostics?.observeExistingFix(location)
+                dataRepository.locationInputStatus.value = LocationInputStatus.READY
+                if (reasons != null) EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
+                else EventBus.getDefault().post(LocationRcvd())
+            }
+        }
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                if (listeners[kind] !== this || requestGeneration != generation ||
-                    currentInput != input || !permitted(input) || location.provider != input.provider) return
-                val nowNanos = SystemClock.elapsedRealtimeNanos()
-                if (location.elapsedRealtimeNanos < requestedNanos ||
-                    location.elapsedRealtimeNanos > nowNanos || location.time <= 0 ||
-                    !location.altitude.isFinite() ||
-                    !InteractionPliRefreshGate.usable(location.latitude, location.longitude,
-                        location.accuracy, location.hasAccuracy())) {
-                    Log.i(TAG, "Ignoring unusable or pre-request ${input.provider} fix")
-                    return
-                }
-                val reasons = if (kind == Acquisition.INTERACTION) {
-                    interactionGate.consume(location.elapsedRealtimeNanos, nowNanos, true) ?: return
-                } else null
-                if (kind != Acquisition.PERIODIC) cancelRequest(kind)
-                scope.launch {
-                    if (!dataRepository.getEnableLocationService.first() ||
-                        requestGeneration != generation || currentInput != input || !permitted(input)) return@launch
-                    dataRepository.storeLatestLocation(location)
-                    if (!dataRepository.isCurrentLocationInput(location) || requestGeneration != generation) return@launch
-                    (application as? com.aitech.weartak_civ.WearTakApplication)
-                        ?.locationDiagnostics?.observeExistingFix(location)
-                    dataRepository.locationInputStatus.value = LocationInputStatus.READY
-                    if (reasons != null) EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
-                    else EventBus.getDefault().post(LocationRcvd())
-                }
+                acceptLocation(location, listeners[kind] === this)
             }
 
             override fun onProviderDisabled(provider: String) {
@@ -200,7 +226,13 @@ class LocationService : Service() {
             @Deprecated("Required on older Android versions")
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
         }
-        listeners[kind] = listener
+        val fusedCallback = object : LocationCallback() {
+            override fun onLocationResult(result: LocationResult) {
+                result.lastLocation?.let { acceptLocation(it, fusedCallbacks[kind] === this) }
+            }
+        }
+        if (input == LocationInput.FUSED) fusedCallbacks[kind] = fusedCallback
+        else listeners[kind] = listener
         if (kind != Acquisition.PERIODIC) {
             val timeout = Runnable {
                 Log.i(TAG, "$kind ${input.provider} request timed out without a fresh usable fix")
@@ -212,7 +244,29 @@ class LocationService : Service() {
                 InteractionPliRefreshGate.TIMEOUT_MILLIS else 6_000L)
         }
         try {
-            manager.requestLocationUpdates(input.provider, intervalMillis, 0f, listener, Looper.getMainLooper())
+            if (input == LocationInput.FUSED) {
+                val client = checkNotNull(fusedClient) { "Fused client missing after availability check" }
+                val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY,
+                    intervalMillis.coerceAtLeast(1_000L))
+                    .setMinUpdateIntervalMillis(0L)
+                    .setMaxUpdateAgeMillis(0L)
+                    .setWaitForAccurateLocation(true)
+                    .apply {
+                        if (kind != Acquisition.PERIODIC) setDurationMillis(
+                            if (kind == Acquisition.INTERACTION) InteractionPliRefreshGate.TIMEOUT_MILLIS else 6_000L)
+                    }
+                    .build()
+                client.requestLocationUpdates(request, fusedCallback, Looper.getMainLooper())
+                    .addOnFailureListener { error ->
+                        if (fusedCallbacks[kind] !== fusedCallback || requestGeneration != generation) return@addOnFailureListener
+                        Log.w(TAG, "Fused location request failed; no fallback", error)
+                        cancelRequest(kind)
+                        dataRepository.locationInputStatus.value = if (error is SecurityException)
+                            LocationInputStatus.PERMISSION_REQUIRED else LocationInputStatus.REQUEST_FAILED
+                    }
+            } else {
+                manager.requestLocationUpdates(input.provider, intervalMillis, 0f, listener, Looper.getMainLooper())
+            }
         } catch (error: SecurityException) {
             Log.w(TAG, "Selected input permission revoked: ${input.provider}", error)
             cancelRequest(kind)
@@ -293,6 +347,7 @@ class LocationService : Service() {
         if (EventBus.getDefault().isRegistered(this)) EventBus.getDefault().unregister(this)
         dataRepository.locationInputStatus.value = LocationInputStatus.OFF
         locationManager = null
+        fusedClient = null
         _instance = null
         stopForeground(true)
         super.onDestroy()

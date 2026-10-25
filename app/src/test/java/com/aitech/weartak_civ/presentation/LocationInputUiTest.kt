@@ -39,6 +39,32 @@ class LocationInputUiTest {
     @Test fun at498Font11() = verifySelector(498, 1.1f)
     @Test fun at498Font13() = verifySelector(498, 1.3f)
 
+    @Test fun readySelectorShowsAlphabeticalOptionsWithoutRedundantHelperCopy() {
+        val nav = mockk<NavHostController>(relaxed = true)
+        compose.setContent {
+            LocationInputSettingsPage(LocationInput.FUSED, LocationInputStatus.READY, nav) { true }
+        }
+        compose.onNodeWithText("Fused Location").assertIsSelected()
+        compose.onNodeWithText("Internal GNSS").assertIsNotSelected()
+        assertTrue(compose.onNodeWithText("Fused Location").fetchSemanticsNode().positionInRoot.y <
+            compose.onNodeWithText("Internal GNSS").fetchSemanticsNode().positionInRoot.y)
+        compose.onNodeWithText("No other location input is substituted.").assertDoesNotExist()
+        compose.onNodeWithText("Network Only (Legacy)").assertDoesNotExist()
+    }
+
+    @Test fun explicitLegacyChoiceIsTruthfulNotPresentedAsSelectedFused() {
+        val nav = mockk<NavHostController>(relaxed = true)
+        compose.setContent {
+            LocationInputSettingsPage(LocationInput.NETWORK, LocationInputStatus.READY, nav) { true }
+        }
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Current input: Network Only (Legacy). Your saved choice is unchanged."))
+        compose.onNodeWithText("Current input: Network Only (Legacy). Your saved choice is unchanged.").assertIsDisplayed()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Fused Location"))
+        compose.onNodeWithText("Fused Location").assertIsNotSelected()
+        compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText("Internal GNSS"))
+        compose.onNodeWithText("Internal GNSS").assertIsNotSelected()
+    }
+
     private fun verifySelector(pixels: Int, fontScale: Float) {
         val density = 340f / 160
         val selected = mutableStateOf(LocationInput.INTERNAL_GNSS)
@@ -49,7 +75,7 @@ class LocationInputUiTest {
         compose.setContent {
             CompositionLocalProvider(LocalDensity provides Density(density, fontScale)) {
                 Box(Modifier.requiredSize((pixels / density).dp)) {
-                    LocationInputSettingsPage(selected.value, LocationInputStatus.UNAVAILABLE, false, nav) {
+                    LocationInputSettingsPage(selected.value, LocationInputStatus.UNAVAILABLE, nav) {
                         if (fail) false else { selected.value = it; true }
                     }
                 }
@@ -67,15 +93,15 @@ class LocationInputUiTest {
         reveal("Selected input unavailable on this watch")
         reveal("Internal GNSS")
         compose.onNodeWithText("Internal GNSS").assertIsSelected()
-        reveal("LTE/WiFi Derived")
-        compose.onNodeWithText("LTE/WiFi Derived").assertIsNotSelected().performClick()
+        reveal("Fused Location")
+        compose.onNodeWithText("Fused Location").assertIsNotSelected().performClick()
         reveal("Could not save Location Input. Try again.")
         assertEquals(0, pops)
         compose.runOnIdle { fail = false }
-        reveal("LTE/WiFi Derived")
-        compose.onNodeWithText("LTE/WiFi Derived").performClick()
+        reveal("Fused Location")
+        compose.onNodeWithText("Fused Location").performClick()
         compose.waitForIdle()
-        assertEquals(LocationInput.NETWORK, selected.value)
+        assertEquals(LocationInput.FUSED, selected.value)
         assertEquals(1, pops)
     }
 }

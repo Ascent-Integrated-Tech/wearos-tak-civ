@@ -158,7 +158,6 @@ internal fun MetricAlertControls(enabled: Boolean, onToggle: (Boolean) -> Unit, 
             Text(stringResource(R.string.physiological_alerts),
                 modifier = Modifier.semantics { contentDescription = thresholds })
         },
-        secondaryLabel = { Text(thresholds) },
         toggleControl = { Switch(checked = enabled, onCheckedChange = null) },
         modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
     )

@@ -54,7 +54,7 @@ class InteractionIdentityPliTest {
         realRepo.storeCallsign("Current")
         realRepo.storeTeam("Blue")
         realRepo.storeRole("Medic")
-        val fix = Location("gps").apply {
+        val fix = Location("fused").apply {
             latitude = 41.0
             longitude = -87.0
             altitude = 100.0
