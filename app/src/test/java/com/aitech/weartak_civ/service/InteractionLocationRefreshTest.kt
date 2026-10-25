@@ -54,7 +54,9 @@ class InteractionLocationRefreshTest {
 
     class Observer {
         val events = mutableListOf<InteractionLocationRcvd>()
+        val normalEvents = mutableListOf<com.aitech.weartak_civ.events.LocationRcvd>()
         @Subscribe fun receive(event: InteractionLocationRcvd) { events.add(event) }
+        @Subscribe fun receive(event: com.aitech.weartak_civ.events.LocationRcvd) { normalEvents.add(event) }
     }
 
     private fun service(
@@ -86,6 +88,243 @@ class InteractionLocationRefreshTest {
         latitude = 41.0; longitude = -87.0; altitude = 100.0; accuracy = 5f
         time = System.currentTimeMillis()
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+    }
+
+    @Test fun oneShotFixCompletesBothPurposesWithoutSkippingTheirNativeRequests() =
+        sharedGnssCompletion(periodic = false, interactionDeliversFirst = false)
+
+    @Test fun interactionFixCompletesPeriodicPurposeOnceButDoesNotDropImprovedSameTimestampFix() =
+        sharedGnssCompletion(periodic = true, interactionDeliversFirst = true)
+
+    private fun sharedGnssCompletion(periodic: Boolean, interactionDeliversFirst: Boolean) {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val callbacks = mutableListOf<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(callbacks), any<Looper>()) } just Runs
+        val service = service(manager)
+        val originalRepository = MainActivity.dataRepository
+        val repository = spyk(originalRepository)
+        coEvery { repository.storeLatestLocation(any()) } coAnswers {
+            originalRepository.storeLatestLocation(firstArg())
+        }
+        MainActivity.dataRepository = repository
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        val observer = Observer()
+        EventBus.getDefault().register(observer)
+        try {
+            CotDispatchService.actualReportingIntervalSecs = if (periodic) 1 else 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
+            await { callbacks.size == 2 }
+            verify(exactly = 2) { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+                any<LocationListener>(), any<Looper>()) }
+            val fresh = fix()
+            callbacks[if (interactionDeliversFirst) 1 else 0].onLocationChanged(fresh)
+            await { observer.events.size == 1 && observer.normalEvents.size == 1 }
+            coVerify(exactly = 1) { repository.storeLatestLocation(any()) }
+            assertEquals(setOf(PliRefreshReason.MAP_OPENED), observer.events.single().reasons)
+            verify { manager.removeUpdates(callbacks[1]) }
+            if (!periodic) verify { manager.removeUpdates(callbacks[0]) }
+            callbacks[1].onProviderDisabled("gps")
+            callbacks[1].onProviderEnabled("gps")
+            callbacks[1].onLocationChanged(fix())
+            callbacks[0].onLocationChanged(Location(fresh))
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(2, callbacks.size)
+            coVerify(exactly = 1) { repository.storeLatestLocation(any()) }
+            assertEquals(1, observer.events.size)
+            assertEquals(1, observer.normalEvents.size)
+            if (periodic) {
+                val improved = Location(fresh).apply { speed = 2f }
+                callbacks[0].onLocationChanged(improved)
+                await { observer.normalEvents.size == 2 }
+                coVerify(exactly = 2) { repository.storeLatestLocation(any()) }
+                assertEquals(2f, repository.latestLocation.value!!.speed)
+            } else {
+                service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.ROLE_CHANGED))
+                await { callbacks.size == 3 }
+                callbacks[2].onLocationChanged(Location(fresh))
+                await { observer.events.size == 2 }
+                coVerify(exactly = 1) { repository.storeLatestLocation(any()) }
+                assertEquals(1, observer.normalEvents.size)
+                assertEquals(setOf(PliRefreshReason.ROLE_CHANGED), observer.events.last().reasons)
+            }
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            EventBus.getDefault().unregister(observer)
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun sharedFixMustFollowLatestActionAndCannotExtendInteractionTimeoutOrReviveOldCallbacks() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val callbacks = mutableListOf<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(callbacks), any<Looper>()) } just Runs
+        val service = service(manager)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        val observer = Observer()
+        EventBus.getDefault().register(observer)
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
+            await { callbacks.size == 2 }
+            val beforeLatestAction = fix()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.CHAT_SENT))
+            callbacks[0].onLocationChanged(beforeLatestAction)
+            await { observer.normalEvents.size == 1 }
+            assertTrue(observer.events.isEmpty())
+            verify(exactly = 0) { manager.removeUpdates(callbacks[1]) }
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(5))
+            verify { manager.removeUpdates(callbacks[1]) }
+            assertTrue(observer.events.isEmpty())
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.ROLE_CHANGED))
+            await { callbacks.size == 3 }
+            callbacks[0].onLocationChanged(fix())
+            callbacks[1].onLocationChanged(fix())
+            assertTrue(observer.events.isEmpty())
+            callbacks[2].onLocationChanged(fix())
+            await { observer.events.size == 1 }
+            assertEquals(setOf(PliRefreshReason.ROLE_CHANGED), observer.events.single().reasons)
+            assertEquals(1, observer.normalEvents.size)
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            EventBus.getDefault().unregister(observer)
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun fusedFixFansOutOnlyToEligibleSameProviderPurposesWithOriginalDeadlines() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val client = mockk<FusedLocationProviderClient>()
+        val callbacks = mutableListOf<LocationCallback>()
+        val requests = mutableListOf<LocationRequest>()
+        every { client.requestLocationUpdates(capture(requests), capture(callbacks), any<Looper>()) } returns Tasks.forResult(null)
+        every { client.removeLocationUpdates(any<LocationCallback>()) } returns Tasks.forResult(null)
+        val service = service(manager, LocationInput.FUSED, client)
+        val originalRepository = MainActivity.dataRepository
+        val repository = spyk(originalRepository)
+        coEvery { repository.storeLatestLocation(any()) } coAnswers {
+            originalRepository.storeLatestLocation(firstArg())
+        }
+        MainActivity.dataRepository = repository
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        val observer = Observer()
+        EventBus.getDefault().register(observer)
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.SELF_MARKER))
+            await { callbacks.size == 2 }
+            assertEquals(listOf(6_000L, 5_000L), requests.map { it.durationMillis })
+            assertTrue(requests.all { it.maxUpdateAgeMillis == 0L })
+            callbacks[0].onLocationResult(LocationResult.create(listOf(fix("network"))))
+            assertTrue(observer.events.isEmpty())
+            assertTrue(observer.normalEvents.isEmpty())
+            callbacks[0].onLocationResult(LocationResult.create(listOf(fix("fused"))))
+            await { observer.events.size == 1 && observer.normalEvents.size == 1 }
+            coVerify(exactly = 1) { repository.storeLatestLocation(any()) }
+            callbacks.forEach { verify { client.removeLocationUpdates(it) } }
+            callbacks[1].onLocationResult(LocationResult.create(listOf(fix("fused"))))
+            assertEquals(1, observer.events.size)
+            coVerify(exactly = 1) { repository.storeLatestLocation(any()) }
+            verify(exactly = 0) { manager.requestLocationUpdates(any<String>(), any<Long>(), any<Float>(),
+                any<LocationListener>(), any<Looper>()) }
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            EventBus.getDefault().unregister(observer)
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun delayedMainQueueCannotUseSixSecondFixToExtendFiveSecondInteractionDeadline() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val callbacks = mutableListOf<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(callbacks), any<Looper>()) } just Runs
+        val service = service(manager)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        val observer = Observer()
+        EventBus.getDefault().register(observer)
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
+            await { callbacks.size == 2 }
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(Duration.ofMillis(5_100))
+            callbacks[0].onLocationChanged(fix())
+            await { observer.normalEvents.size == 1 }
+            assertTrue(observer.events.isEmpty())
+            verify { manager.removeUpdates(callbacks[1]) }
+            assertEquals(2, callbacks.size)
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            EventBus.getDefault().unregister(observer)
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun sourceChangeWhileSharedStoreIsSuspendedCannotPublishOldCompletion() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val callbacks = mutableListOf<LocationListener>()
+        every { manager.requestLocationUpdates(any<String>(), any<Long>(), any<Float>(),
+            capture(callbacks), any<Looper>()) } just Runs
+        val service = service(manager)
+        val originalRepository = MainActivity.dataRepository
+        val repository = spyk(originalRepository)
+        val entered = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val release = kotlinx.coroutines.CompletableDeferred<Unit>()
+        coEvery { repository.storeLatestLocation(any()) } coAnswers {
+            val received = firstArg<Location>()
+            entered.complete(Unit)
+            release.await()
+            originalRepository.storeLatestLocation(received)
+        }
+        MainActivity.dataRepository = repository
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val observer = Observer()
+        EventBus.getDefault().register(observer)
+        try {
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
+            await { callbacks.size == 1 }
+            callbacks[0].onLocationChanged(fix())
+            await { entered.isCompleted }
+            runBlocking { originalRepository.storeLocationInput(LocationInput.NETWORK) }
+            LocationService::class.java.getDeclaredField("currentInput").apply {
+                isAccessible = true; set(service, LocationInput.NETWORK)
+            }
+            release.complete(Unit)
+            shadowOf(Looper.getMainLooper()).idle()
+            assertNull(originalRepository.latestLocation.value)
+            assertTrue(observer.events.isEmpty())
+            assertTrue(observer.normalEvents.isEmpty())
+        } finally {
+            release.complete(Unit)
+            service.onDestroy()
+            EventBus.getDefault().unregister(observer)
+        }
     }
 
     @Test fun dynamicActivityCadenceDoesNotRestartPendingFixOnSpeedOrUnknown() {

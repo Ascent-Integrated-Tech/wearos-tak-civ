@@ -40,6 +40,7 @@ import com.aitech.weartak_civ.events.InteractionPliRefresh
 import com.aitech.weartak_civ.events.LocationRcvd
 import com.aitech.weartak_civ.events.LocationUpdateRequired
 import com.aitech.weartak_civ.events.PowerManagerEvent
+import com.aitech.weartak_civ.events.PliRefreshReason
 import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
 import com.google.android.gms.location.FusedLocationProviderClient
 import com.google.android.gms.location.LocationCallback
@@ -56,6 +57,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
@@ -71,6 +74,10 @@ class LocationService : Service() {
     private var generation = 0L
     private val listeners = mutableMapOf<Acquisition, LocationListener>()
     private val fusedCallbacks = mutableMapOf<Acquisition, LocationCallback>()
+    private val fixConsumers = mutableMapOf<Acquisition, (Location) -> FixCompletion?>()
+    private val fixCompletionMutex = Mutex()
+    private var lastCompletedFix: Location? = null
+    private var lastNormalFix: Location? = null
     private val requestVersions = mutableMapOf<Acquisition, Long>()
     private val timeouts = mutableMapOf<Acquisition, Runnable>()
     private val interactionGate = InteractionPliRefreshGate()
@@ -82,6 +89,15 @@ class LocationService : Service() {
     private var wakeLockStartedMs = 0L
     private var receiverRegistered = false
     private val binder = LocationServiceBinder()
+
+    private data class FixCompletion(
+        val kind: Acquisition,
+        val generation: Long,
+        val input: LocationInput,
+        val diagnosticContext: Map<DiagnosticMetric, Long>,
+        val durationMillis: Long,
+        val reasons: Set<PliRefreshReason>?
+    )
 
     private val providerChanges = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -150,6 +166,7 @@ class LocationService : Service() {
     }
 
     private fun cancelRequest(kind: Acquisition) {
+        fixConsumers.remove(kind)
         requestVersions[kind] = (requestVersions[kind] ?: 0L) + 1L
         timeouts.remove(kind)?.let(handler::removeCallbacks)
         val listener = listeners.remove(kind)
@@ -182,7 +199,54 @@ class LocationService : Service() {
 
     private fun cancelRequests() {
         generation++
+        lastCompletedFix = null
+        lastNormalFix = null
         Acquisition.entries.forEach(::cancelRequest)
+    }
+
+    private fun completeFix(received: Location) {
+        val location = Location(received)
+        val completions = fixConsumers.values.toList().mapNotNull { it(location) }
+        val first = completions.firstOrNull() ?: return
+        scope.launch {
+            fixCompletionMutex.withLock {
+                if (!dataRepository.getEnableLocationService.first() ||
+                    first.generation != generation || currentInput != first.input || !permitted(first.input)) return@withLock
+                val newFix = lastCompletedFix != location
+                if (newFix) dataRepository.storeLatestLocation(location)
+                if (!dataRepository.isCurrentLocationInput(location) || first.generation != generation ||
+                    currentInput != first.input || !permitted(first.input)) return@withLock
+                if (newFix) {
+                    lastCompletedFix = Location(location)
+                    (application as? com.aitech.weartak_civ.WearTakApplication)
+                        ?.locationDiagnostics?.observeExistingFix(location)
+                }
+                dataRepository.locationInputStatus.value = LocationInputStatus.READY
+                completions.forEach { completion ->
+                    AppDiagnostics.record(DiagnosticEvent.LOCATION_ACCEPTED, completion.diagnosticContext +
+                        (DiagnosticMetric.DURATION_MS to completion.durationMillis))
+                }
+                val normal = completions.any { it.kind != Acquisition.INTERACTION } && lastNormalFix != location
+                if (normal) {
+                    lastNormalFix = lastCompletedFix
+                    if (dynamicReporting) scheduleNextDynamicObservation()
+                }
+                if (first.generation != generation || currentInput != first.input ||
+                    !dataRepository.isCurrentLocationInput(location)) return@withLock
+                if (newFix || normal) {
+                    val now = SystemClock.elapsedRealtimeNanos()
+                    val expected = nextObservationDeadlineNanos.value ?: (now +
+                        PowerManagerService.locationObservationIntervalSeconds(dynamicReporting) * 1_000_000_000L)
+                    speedObservation.value = SpeedObservation(
+                        location, maxOf(now, expected) + ACQUISITION_TIMEOUT_MILLIS * 1_000_000L,
+                    )
+                }
+                if (normal) EventBus.getDefault().post(LocationRcvd())
+                completions.firstOrNull { it.reasons != null }?.reasons?.let { reasons ->
+                    EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
+                }
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -202,68 +266,61 @@ class LocationService : Service() {
         if (input == null) return
         val manager = locationManager ?: return
         val requestedNanos = SystemClock.elapsedRealtimeNanos()
+        val deadlineNanos = when (kind) {
+            Acquisition.PERIODIC -> Long.MAX_VALUE
+            Acquisition.ONE_SHOT -> requestedNanos + ACQUISITION_TIMEOUT_MILLIS * 1_000_000L
+            Acquisition.INTERACTION -> requestedNanos + InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L
+        }
         val diagnosticContext = mapOf(
             DiagnosticMetric.SOURCE to input.ordinal.toLong(),
             DiagnosticMetric.KIND to kind.ordinal.toLong()
         )
         AppDiagnostics.record(DiagnosticEvent.LOCATION_REQUEST, diagnosticContext +
             (DiagnosticMetric.INTERVAL_SECONDS to intervalMillis / 1_000L))
-        fun acceptLocation(location: Location, active: Boolean) {
+        fun acceptLocation(location: Location, active: Boolean): FixCompletion? {
             if (!active || requestGeneration != generation ||
-                currentInput != input || !permitted(input) || location.provider != input.provider) return
+                currentInput != input || !permitted(input) || location.provider != input.provider) return null
             val nowNanos = SystemClock.elapsedRealtimeNanos()
-            if (location.elapsedRealtimeNanos < requestedNanos ||
+            if (nowNanos > deadlineNanos || location.elapsedRealtimeNanos < requestedNanos ||
                 location.elapsedRealtimeNanos > nowNanos || location.time <= 0 ||
                 !location.altitude.isFinite() ||
                 !InteractionPliRefreshGate.usable(location.latitude, location.longitude,
                     location.accuracy, location.hasAccuracy())) {
                 Log.i(TAG, "Ignoring unusable or pre-request ${input.provider} fix")
                 AppDiagnostics.record(DiagnosticEvent.LOCATION_REJECTED, diagnosticContext)
-                return
+                return null
             }
             val reasons = if (kind == Acquisition.INTERACTION) {
-                interactionGate.consume(location.elapsedRealtimeNanos, nowNanos, true) ?: return
+                interactionGate.consume(location.elapsedRealtimeNanos, nowNanos, true) ?: return null
             } else null
             if (kind != Acquisition.PERIODIC) cancelRequest(kind)
-            scope.launch {
-                if (!dataRepository.getEnableLocationService.first() ||
-                    requestGeneration != generation || currentInput != input || !permitted(input)) return@launch
-                dataRepository.storeLatestLocation(location)
-                if (!dataRepository.isCurrentLocationInput(location) || requestGeneration != generation) return@launch
-                (application as? com.aitech.weartak_civ.WearTakApplication)
-                    ?.locationDiagnostics?.observeExistingFix(location)
-                dataRepository.locationInputStatus.value = LocationInputStatus.READY
-                AppDiagnostics.record(DiagnosticEvent.LOCATION_ACCEPTED, diagnosticContext +
-                    (DiagnosticMetric.DURATION_MS to (nowNanos - requestedNanos) / 1_000_000L))
-                if (dynamicReporting && kind != Acquisition.INTERACTION) scheduleNextDynamicObservation()
-                val now = SystemClock.elapsedRealtimeNanos()
-                val expected = nextObservationDeadlineNanos.value ?: (now +
-                    PowerManagerService.locationObservationIntervalSeconds(dynamicReporting) * 1_000_000_000L)
-                speedObservation.value = SpeedObservation(
-                    location, maxOf(now, expected) + ACQUISITION_TIMEOUT_MILLIS * 1_000_000L,
-                )
-                if (reasons != null) EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
-                else EventBus.getDefault().post(LocationRcvd())
-            }
+            return FixCompletion(kind, requestGeneration, input, diagnosticContext,
+                (nowNanos - requestedNanos) / 1_000_000L, reasons)
         }
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
-                acceptLocation(location, listeners[kind] === this)
+                if (listeners[kind] === this) completeFix(location)
             }
 
             override fun onProviderDisabled(provider: String) {
-                if (provider == input.provider && requestGeneration == generation) restartLocationUpdates()
+                if (listeners[kind] === this && provider == input.provider &&
+                    requestGeneration == generation) restartLocationUpdates()
             }
             override fun onProviderEnabled(provider: String) {
-                if (provider == input.provider && requestGeneration == generation) restartLocationUpdates()
+                if (listeners[kind] === this && provider == input.provider &&
+                    requestGeneration == generation) restartLocationUpdates()
             }
             @Deprecated("Required on older Android versions")
             override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) = Unit
         }
         val fusedCallback = object : LocationCallback() {
             override fun onLocationResult(result: LocationResult) {
-                result.lastLocation?.let { acceptLocation(it, fusedCallbacks[kind] === this) }
+                if (fusedCallbacks[kind] === this) result.lastLocation?.let(::completeFix)
             }
+        }
+        fixConsumers[kind] = { location ->
+            acceptLocation(location, if (input == LocationInput.FUSED) fusedCallbacks[kind] === fusedCallback
+                else listeners[kind] === listener)
         }
         if (input == LocationInput.FUSED) fusedCallbacks[kind] = fusedCallback
         else listeners[kind] = listener
