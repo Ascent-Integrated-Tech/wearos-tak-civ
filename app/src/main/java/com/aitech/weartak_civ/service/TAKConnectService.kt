@@ -568,6 +568,7 @@ class TAKConnectService: Service() {
         connectJob?.cancel()
         networkManager = null
         stopForeground(STOP_FOREGROUND_DETACH)
+        AppDiagnostics.flushProcessingWork()
         super.onDestroy()
     }
 
@@ -2256,7 +2257,7 @@ class TAKConnectService: Service() {
             } else {
                 null
             }
-            val result = ingest(envelope)
+            val result = AppDiagnostics.measureProcessing(ProcessingStage.TCP_INGEST) { ingest(envelope) }
             if (diagnostics != null) {
                 Log.d(
                     TAG,
@@ -2292,10 +2293,12 @@ class TAKConnectService: Service() {
                     // has nothing to draw.
                     override suspend fun onInboundCot(envelope: TakServerCotEnvelope): Boolean =
                         runCatching {
-                            PluginCotIngress.offer(
-                                envelope,
-                                (context as WearTakApplication).pluginManager.settingsCoordinator,
-                            )
+                            AppDiagnostics.measureProcessing(ProcessingStage.PLUGIN_OFFER) {
+                                PluginCotIngress.offer(
+                                    envelope,
+                                    (context as WearTakApplication).pluginManager.settingsCoordinator,
+                                )
+                            }
                         }.getOrElse {
                             // Never let the plugin layer break inbound CoT: an unconsumed event
                             // still has a map to reach.
@@ -2327,12 +2330,14 @@ class TAKConnectService: Service() {
                         event: CotUserPositionEvent,
                         envelope: TakServerCotEnvelope
                     ) {
-                        val shouldTrack = dataRepository.applyReceivedUserEvent(
-                            event = event,
-                            source = envelope.sourceServerAddress,
-                            sourceServerId = envelope.sourceServerId,
-                            receivedAt = envelope.receivedAt
-                        )
+                        val shouldTrack = AppDiagnostics.measureProcessing(ProcessingStage.USER_STORE) {
+                            dataRepository.applyReceivedUserEvent(
+                                event = event,
+                                source = envelope.sourceServerAddress,
+                                sourceServerId = envelope.sourceServerId,
+                                receivedAt = envelope.receivedAt
+                            )
+                        }
                         Log.d(
                             TAG,
                                 "Inbound user delivered to map state uid=${event.uid} " +
@@ -2352,13 +2357,15 @@ class TAKConnectService: Service() {
                         event: CotMarkerEvent,
                         envelope: TakServerCotEnvelope
                     ) {
-                        val shouldTrack = dataRepository.receiveMarkerEvent(
-                            event = event,
-                            bloodhoundRepository = bhRepo,
-                            source = envelope.sourceServerAddress,
-                            sourceServerId = envelope.sourceServerId,
-                            receivedAt = envelope.receivedAt
-                        )
+                        val shouldTrack = AppDiagnostics.measureProcessing(ProcessingStage.MARKER_STORE) {
+                            dataRepository.receiveMarkerEvent(
+                                event = event,
+                                bloodhoundRepository = bhRepo,
+                                source = envelope.sourceServerAddress,
+                                sourceServerId = envelope.sourceServerId,
+                                receivedAt = envelope.receivedAt
+                            )
+                        }
                         Log.d(
                             TAG,
                                 "Inbound marker delivered to map state uid=${event.uid} " +
@@ -3573,7 +3580,7 @@ class TAKConnectService: Service() {
             // start a background COT‐reader on the same socket
             val job = connectionScope.launch {
                 try {
-                    BufferedReader(InputStreamReader(socket.inputStream)).use { reader ->
+                    BufferedReader(InputStreamReader(ProcessingInputStream(socket.inputStream))).use { reader ->
                         val framer = CotStreamFramer { reason ->
                             Log.w(
                                 TAG,
@@ -3590,7 +3597,10 @@ class TAKConnectService: Service() {
                             } ?: break
                             lastRxMs.set(System.currentTimeMillis())
 
-                            for (rawXml in framer.append(line)) {
+                            val framed = AppDiagnostics.measureProcessing(
+                                ProcessingStage.TCP_FRAMING, frames = { it.size.toLong() },
+                            ) { framer.append(line) }
+                            for (rawXml in framed) {
                                 val envelope = TakServerCotEnvelope(
                                     sourceServerId = takServerDetail.serverId,
                                     sourceServerAddress = takServerDetail.address,
