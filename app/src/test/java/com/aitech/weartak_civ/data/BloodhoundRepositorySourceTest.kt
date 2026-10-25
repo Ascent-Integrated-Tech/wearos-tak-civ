@@ -23,6 +23,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.assertSame
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
@@ -31,6 +32,46 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class BloodhoundRepositorySourceTest {
+    @Test
+    fun presentationDemandBoundsGuidanceWorkWithoutGatingIncomingTargetsOrActiveTracking() = runBlocking {
+        val repository = BloodhoundRepository(mockk<Context>(relaxed = true))
+        repeat(80) { index ->
+            repository.upsertFromEvent(event(SERVER_A, "Target $index", 100L, uid = "target-$index"))
+        }
+        assertEquals(80, repository.bloodhoundMap.value.size)
+        assertTrue(repository.guidanceTargets().isEmpty())
+        assertTrue(repository.listBhItemsUi.value.isEmpty())
+        repository.activate("target-0")
+        assertEquals(setOf("target-0"), repository.guidanceTargets().keys)
+        val detail = Any()
+        repository.requestPresentation(detail, "target-1")
+        assertEquals(setOf("target-0", "target-1"), repository.guidanceTargets().keys)
+        val picker = Any()
+        repository.requestPresentation(picker)
+        assertEquals(80, repository.guidanceTargets().size)
+        repository.releasePresentation(picker)
+        assertEquals(setOf("target-0", "target-1"), repository.guidanceTargets().keys)
+        repository.releasePresentation(detail)
+        repository.upsertFromEvent(event(SERVER_A, "Fresh detail", 200L, uid = "target-1"))
+        val detailUi = kotlinx.coroutines.withTimeout(5_000) {
+            repository.bloodhoundItemUi("target-1").first { it?.target == "Fresh detail" }
+        }
+        assertEquals("Fresh detail", detailUi?.target)
+        assertTrue(repository.listBhItemsUi.value.isEmpty())
+        repository.upsertFromEvent(event(SERVER_A, "Current active position", 200L, uid = "target-0"))
+        assertEquals("Current active position", repository.guidanceTargets()["target-0"]?.target?.name)
+        assertEquals(SERVER_A, repository.activeTrackingItem()?.sourceServerId)
+        repository.activate("target-2")
+        assertEquals(setOf("target-2"), repository.guidanceTargets().keys)
+        assertEquals("target-2", repository.activeTrackingItem()?.uid)
+        repository.stopTracking("target-2")
+        assertTrue(repository.guidanceTargets().isEmpty())
+        assertEquals(80, repository.bloodhoundMap.value.size)
+        assertEquals(80, kotlinx.coroutines.withTimeout(5_000) {
+            repository.listBhItemsUi.first { it.size == 80 }
+        }.size)
+    }
+
     @Test
     fun compassBatchMatchesSequentialFinalStateWithoutIntermediateTargetMaps() = runBlocking {
         val sequential = BloodhoundRepository(mockk<Context>(relaxed = true))

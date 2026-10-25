@@ -2489,7 +2489,7 @@ fun MainScreen(
     val hasUnreadMessages by dataRepository.hasUnread.collectAsState() // monitor the number of unread messages
     val isAlerting by SosActivity.isAlertingLiveData.observeAsState()
     val activeItem by bhRepo.activeBhItemUi.collectAsState()
-    val northBearing by dataRepository.azimuthTrueDegSmoothed.collectAsState()
+    val northBearing by dataRepository.azimuthTrueDegSmoothed.collectAsStateWithLifecycle()
     val hasUnreadBloodhounds by dataRepository.hasUnreadBloodhounds.collectAsState()
 
     // Get the repo for gunshots

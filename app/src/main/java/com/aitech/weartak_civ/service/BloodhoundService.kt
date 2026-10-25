@@ -39,6 +39,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
@@ -124,6 +125,7 @@ class BloodhoundService: Service() {
         collectActivationReqFlow()
         collectInPosReqFlow()
         collectActiveSelection()
+        collectPresentationDemand()
         scope.launch {
             repo.receivedUserList.collect { users ->
                 bhRepo.refreshUserTargets(users)
@@ -131,6 +133,12 @@ class BloodhoundService: Service() {
             }
         }
         collectLocalMarkerTargets()
+    }
+
+    private fun collectPresentationDemand() {
+        scope.launch {
+            bhRepo.presentationTargets.collect { updateVectors() }
+        }
     }
 
     private fun collectLocalMarkerTargets() {
@@ -180,17 +188,19 @@ class BloodhoundService: Service() {
 
     private fun collectAzimuthFlow() {
         scope.launch {
-            repo.azimuthTrueDegSmoothed.collect { azimuth ->
-                val map = bhRepo.bloodhoundMap.value
+            combine(repo.azimuthTrueDegSmoothed, bhRepo.presentationTargets, bhRepo.activeUid) {
+                azimuth, _, _ -> azimuth
+            }.collect { azimuth ->
+                val map = bhRepo.guidanceTargets()
                 if (azimuth != null) {
                     val needles = map.values.mapNotNull { item ->
                         if (item.bhEvent.remoteAlert?.hasLocation == false) null
                         else LocationVectorCalculator.needleAngle(item.vector.bearing, azimuth)
                             ?.let { item.uid to it }
                     }.toMap()
-                    bhRepo.updateBloodhoundCompassNeedles(needles)
+                    if (needles.isNotEmpty()) bhRepo.updateBloodhoundCompassNeedles(needles)
                 }
-                evaluateActiveTargetProximity()
+                if (bhRepo.activeUid.value != null) evaluateActiveTargetProximity()
             }
         }
     }
@@ -394,7 +404,7 @@ class BloodhoundService: Service() {
             val currentLoc = repo.latestLocation.value ?: return@launch
             bhRepo.updateRouteLocation(TakRoutePoint(currentLoc.latitude, currentLoc.longitude),
                 if (currentLoc.hasAccuracy()) currentLoc.accuracy.toDouble() else 0.0)
-            val map = bhRepo.bloodhoundMap.value
+            val map = bhRepo.guidanceTargets()
             val currentAzimuth = repo.azimuthTrueDegSmoothed.value
 
             map.values.forEach { item ->

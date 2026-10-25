@@ -41,6 +41,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -82,6 +83,12 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Fill
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.aitech.weartak_civ.data.BloodhoundRepository
+import java.io.Closeable
 import androidx.navigation.NavType
 import androidx.navigation.navArgument
 import androidx.wear.compose.material.ChipDefaults.gradientBackgroundChipColors
@@ -192,6 +199,35 @@ class BloodhoundActivity  : ComponentActivity() {
 }
 
 
+internal fun observeBloodhoundPresentationDemand(
+    lifecycle: Lifecycle,
+    repository: BloodhoundRepository,
+    uid: String? = null,
+): Closeable {
+    val consumer = Any()
+    fun update() {
+        if (lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
+            repository.requestPresentation(consumer, uid)
+        else repository.releasePresentation(consumer)
+    }
+    val observer = LifecycleEventObserver { _, _ -> update() }
+    lifecycle.addObserver(observer)
+    update()
+    return Closeable {
+        lifecycle.removeObserver(observer)
+        repository.releasePresentation(consumer)
+    }
+}
+
+@Composable
+private fun TrackBloodhoundPresentationDemand(repository: BloodhoundRepository, uid: String? = null) {
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner, repository, uid) {
+        val demand = observeBloodhoundPresentationDemand(owner.lifecycle, repository, uid)
+        onDispose { demand.close() }
+    }
+}
+
 @SuppressLint("StateFlowValueCalledInComposition")
 @Composable
 fun BloodhoundCivApp(
@@ -209,11 +245,10 @@ fun BloodhoundCivApp(
     val navController = rememberSwipeDismissableNavController()
 
     val licenseKey by dataRepository.getLicense.collectAsState(initial = "License")
-    val uiList by bhRepo.listBhItemsUi.collectAsState(initial = emptyList())
-    val routes by dataRepository.takRoutes.collectAsState()
-    val location by dataRepository.latestLocation.collectAsState()
-    val routeSession by bhRepo.routeFollow.collectAsState()
-    val activeTarget by bhRepo.activeBhItemUi.collectAsState()
+    val routes by dataRepository.takRoutes.collectAsStateWithLifecycle()
+    val location by dataRepository.latestLocation.collectAsStateWithLifecycle()
+    val routeSession by bhRepo.routeFollow.collectAsStateWithLifecycle()
+    val activeTarget by bhRepo.activeBhItemUi.collectAsStateWithLifecycle()
     val routeLocation = location?.let { TakRoutePoint(it.latitude, it.longitude) }
     LaunchedEffect(Unit) {
         dataRepository.requestInteractionPliRefresh(com.aitech.weartak_civ.events.PliRefreshReason.POSITION_VIEWED)
@@ -297,6 +332,8 @@ fun BloodhoundCivApp(
         startDestination = if (isLicenseValid()) "bloodhound_screen" else "invalid_license_screen"
     ) {
         composable("bloodhound_screen" ) {
+            TrackBloodhoundPresentationDemand(bhRepo)
+            val uiList by bhRepo.listBhItemsUi.collectAsStateWithLifecycle()
             BloodhoundScreen(bloodhounds = uiList, navController, exitActivity, context,
                 routes, routeLocation, { navController.navigate(routeDestination(it)) }, routeSession,
                 onMapTarget = { uid ->
@@ -568,27 +605,29 @@ fun BloodhoundScreenDetailed(
 ) {
     val app = context.applicationContext as WearTakApplication
     val bhRepo = app.bhRepo
-    val list = bhRepo.listBhItemsUi.collectAsState().value
+    TrackBloodhoundPresentationDemand(bhRepo, uid)
+    val item by remember(bhRepo, uid) { bhRepo.bloodhoundItemUi(uid) }
+        .collectAsStateWithLifecycle(initialValue = null)
     val actionScope = rememberCoroutineScope()
     if (uid.isBlank()) {
         LaunchedEffect(Unit) { navController.popBackStack() }
         return
     }
 
-    val item = list.firstOrNull { it.uid == uid }
-
-    // 5) if removed (e.g., NPOS), bounce out gracefully
-    if (item == null) {
-        LaunchedEffect(uid) { navController.popBackStack() }
+    val currentItem = item
+    if (currentItem == null) {
+        LaunchedEffect(uid) {
+            if (uid !in bhRepo.bloodhoundMap.value) navController.popBackStack()
+        }
         return
     }
 
-    val bhoundTarget = item.target
-    val bhoundCallsign = item.callsign
-    val bhoundTimeReceived = item.timeReceived
-    val bhoundDistance = item.distance
-    val bhoundOrientation = item.orientation
-    var bhoundBloodhounding = item.bloodhounding
+    val bhoundTarget = currentItem.target
+    val bhoundCallsign = currentItem.callsign
+    val bhoundTimeReceived = currentItem.timeReceived
+    val bhoundDistance = currentItem.distance
+    val bhoundOrientation = currentItem.orientation
+    var bhoundBloodhounding = currentItem.bloodhounding
     val timeUtc = DateTimeFormatter
         .ofPattern("HH:mm 'UTC'")
         .withZone(ZoneOffset.UTC)
@@ -613,20 +652,20 @@ fun BloodhoundScreenDetailed(
             }
             item {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    item.alertCategory?.let { category ->
+                    currentItem.alertCategory?.let { category ->
                         Text(
                             stringResource(R.string.remote_emergency_description, category),
                             color = Color.Yellow,
                             fontSize = 14.sp
                         )
                     }
-                    if (!item.hasLocation) {
+                    if (!currentItem.hasLocation) {
                         Text(stringResource(R.string.remote_emergency_no_location), fontSize = 14.sp)
                     }
-                    if (item.isStale) {
+                    if (currentItem.isStale) {
                         Text(
                             stringResource(
-                                if (item.hasLocation) R.string.remote_emergency_stale_location
+                                if (currentItem.hasLocation) R.string.remote_emergency_stale_location
                                 else R.string.remote_emergency_stale
                             ),
                             color = Color.Yellow,
@@ -638,7 +677,7 @@ fun BloodhoundScreenDetailed(
                         callsign = bhoundCallsign,
                         timeReceived = timeUtc,
                         orientation = bhoundOrientation,
-                        showDirection = item.hasLocation
+                        showDirection = currentItem.hasLocation
                     )
                 }
             }
@@ -647,7 +686,7 @@ fun BloodhoundScreenDetailed(
                     Button(
                         onClick = {
 //                        bloodhoundDefaultList.removeAt(index)
-                            bhRepo.requestInPosition(item.uid)
+                            bhRepo.requestInPosition(currentItem.uid)
 //                        activeBhoundItem.value = null
                             requestBloodhoundComplicationUpdate(context)
                         },
@@ -691,12 +730,12 @@ fun BloodhoundScreenDetailed(
 //            }
                 } else {
                     Button(
-                        enabled = item.hasLocation,
+                        enabled = currentItem.hasLocation,
                         onClick = {
 //                        activeBhoundItem.value = bloodhoundItem
 //                        setActiveBloodhound(index)
 
-                            bhRepo.requestActivateBloodhound(item.uid)
+                            bhRepo.requestActivateBloodhound(currentItem.uid)
                             requestBloodhoundComplicationUpdate(context)
 //                        Log.d(TAG, bloodhoundDefaultList.toString())
                             Log.i(TAG, "Requesting Ack and Activation of bloodhound")
@@ -709,7 +748,7 @@ fun BloodhoundScreenDetailed(
                     ) {
                         Text(
                             text = stringResource(
-                                if (item.isRemoteAlert) R.string.remote_emergency_bloodhound_to_alert
+                                if (currentItem.isRemoteAlert) R.string.remote_emergency_bloodhound_to_alert
                                 else R.string.bloodhound_start
                             ),
                             fontSize = 15.sp,
@@ -724,7 +763,7 @@ fun BloodhoundScreenDetailed(
                 Button(
                     onClick = {
                         actionScope.launch {
-                            bhRepo.removeFromMenu(item.uid)
+                            bhRepo.removeFromMenu(currentItem.uid)
                             requestBloodhoundComplicationUpdate(context)
                             navController.navigate("bloodhound_screen") {
                                 popUpTo("bloodhound_screen") { inclusive = true }
@@ -738,7 +777,7 @@ fun BloodhoundScreenDetailed(
                     ),
                 ) {
                     Text(
-                        text = stringResource(if (item.isRemoteAlert) R.string.remote_emergency_dismiss else R.string.delete),
+                        text = stringResource(if (currentItem.isRemoteAlert) R.string.remote_emergency_dismiss else R.string.delete),
                         fontSize = 15.sp,
                         overflow = TextOverflow.Ellipsis,
                         color = Color.White,
