@@ -524,11 +524,12 @@ guidance still updates the active target for navigation, proximity and Companion
 Stopped/retained pages release their demand, and opening a page or changing the
 active target immediately recomputes using the current location and heading.
 Incoming targets and their source timestamps continue updating offscreen.
-Dashboard collection follows its visible lifecycle. Heading acquisition remains
-available to the map, markers and north complication even without an active target;
-this change does not stop the sensor or alter reporting policy.
+Dashboard collection follows its visible lifecycle. Interactive map/marker views
+and installed compass complications remain heading consumers without an active
+target; active guidance also owns background heading. The listener-demand and
+cached-ambient behavior is described below, independently of reporting policy.
 
-## GitHub pipeline release
+## Performance and heading demand
 
 Incoming CoT parsing reuses thread-safe compiled attribute patterns keyed only by
 the parser's fixed schema names, never incoming XML or attribute values.
@@ -558,6 +559,8 @@ navigation/proximity/Companion behavior. No location/report acquisition,
 permissions, sensor sampling rate, or complication update cadence is changed.
 Diagnostics sensor kind 2 records rotation-listener registration transitions,
 not individual samples or a measured energy saving.
+
+## GitHub pipeline release
 
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
 **TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
