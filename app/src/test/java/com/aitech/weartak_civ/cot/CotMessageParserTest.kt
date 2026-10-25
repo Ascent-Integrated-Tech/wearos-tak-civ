@@ -6,8 +6,40 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.util.concurrent.Executors
 
 class CotMessageParserTest {
+    @Test
+    fun repeatedConcurrentIngressReusesOnlySchemaPatternsWithoutRetainingPayloads() {
+        CotMessageParser.parseUserPositionOrNull(PLI_XML)
+        CotMessageParser.parseMarkerOrNull(MARKER_XML)
+        val patterns = CotMessageParser::class.java.getDeclaredField("attributePatterns").apply {
+            isAccessible = true
+        }.get(null) as Map<*, *>
+        val compiled = patterns.toMap()
+        val workers = Executors.newFixedThreadPool(4)
+        try {
+            val results = (0 until 4).map { worker ->
+                workers.submit {
+                    repeat(100) { index ->
+                        val uid = "transient-$worker-$index"
+                        val xml = PLI_XML.replace("uid='watch-1'", "uid='$uid'")
+                        assertEquals(uid, CotMessageParser.parseUserPositionOrNull(xml)!!.uid)
+                        assertEquals("marker-1", CotMessageParser.parseMarkerOrNull(MARKER_XML)!!.uid)
+                    }
+                }
+            }
+            results.forEach { it.get(20, java.util.concurrent.TimeUnit.SECONDS) }
+        } finally {
+            workers.shutdownNow()
+        }
+        assertEquals(compiled.keys, patterns.keys)
+        assertTrue(patterns.size <= 29)
+        compiled.forEach { (key, pattern) -> org.junit.Assert.assertSame(pattern, patterns[key]) }
+        assertFalse(patterns.toString().contains("transient-"))
+        assertFalse(patterns.toString().contains("41.0"))
+    }
+
     @Test
     fun parsesMarkerFieldsWithoutChangingTheirMeaning() {
         val event = CotMessageParser.parseMarkerOrNull(MARKER_XML)
