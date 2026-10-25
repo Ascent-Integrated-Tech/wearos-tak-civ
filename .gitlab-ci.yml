@@ -175,3 +175,15 @@ publish_github_develop:
     - python ci/publish_github_release.py
   rules:
     - if: '$CI_SERVER_HOST == "git.tak.gov" && $CI_PROJECT_PATH == "core/weartak-core/wearos-tak-civ" && $CI_COMMIT_BRANCH == "develop" && $CI_COMMIT_REF_PROTECTED == "true" && $CI_PIPELINE_SOURCE == "push"'
+
+# Same signed artifact and serialized writer, with a separate personal-only token.
+# The full Python image includes Git; no second Android build/signing job runs.
+publish_personal_github_develop:
+  extends: publish_github_develop
+  image:
+    name: python:3.12-bookworm
+    entrypoint: [""]
+  variables:
+    GIT_DEPTH: "0"
+  script:
+    - python ci/publish_github_release.py --personal
