@@ -144,6 +144,46 @@ class AppDiagnosticsTest {
         assertEquals("not diagnostics", unrelated.readText())
     }
 
+    @Test fun productionCapacityRetainsTwelveHourSixtySecondTrialTrace() {
+        val root = temporary.newFolder()
+        val start = System.currentTimeMillis()
+        var now = start
+        val journal = DiagnosticJournal({ root }, wallClock = { now })
+        val events = listOf(
+            DiagnosticEvent.LOCATION_REQUEST, DiagnosticEvent.WAKE_LOCK,
+            DiagnosticEvent.LOCATION_ACCEPTED, DiagnosticEvent.LOCATION_TIMEOUT,
+            DiagnosticEvent.LOCATION_REJECTED, DiagnosticEvent.LOCATION_FAILURE,
+            DiagnosticEvent.LOCATION_COALESCED, DiagnosticEvent.LOCATION_STOPPED,
+            DiagnosticEvent.WAKE_LOCK, DiagnosticEvent.OBSERVATION_SCHEDULED,
+            DiagnosticEvent.REPORT_POLICY, DiagnosticEvent.SPEED_VALIDITY,
+            DiagnosticEvent.PLI_ATTEMPT, DiagnosticEvent.PLI_RESULT,
+            DiagnosticEvent.BATTERY, DiagnosticEvent.POWER_CHANGED,
+            DiagnosticEvent.CONNECTIVITY, DiagnosticEvent.APP_EVENT
+        )
+        repeat(12 * 60) { minute ->
+            now = start + minute * 60_000L
+            events.forEachIndexed { index, event ->
+                journal.append(DiagnosticRecord(
+                    wallTimeMs = now + index, elapsedMs = minute * 60_000L + index,
+                    event = event, metrics = mapOf(
+                        DiagnosticMetric.SOURCE to 0,
+                        DiagnosticMetric.KIND to 1,
+                        DiagnosticMetric.DURATION_MS to 6_000,
+                        DiagnosticMetric.RESULT to 1,
+                        DiagnosticMetric.COUNT to 1
+                    )
+                ))
+            }
+        }
+        val stored = root.listFiles()!!.filter { it.name.startsWith("events") }
+        assertTrue(stored.size in 2..3)
+        assertTrue(stored.all { it.length() <= 2 * 1024 * 1024L })
+        val retained = JsonParser.parseString(journal.exportJson()).asJsonObject["events"].asJsonArray
+        assertEquals(12 * 60 * events.size, retained.size())
+        assertEquals(0L, retained.first().asJsonObject["elapsedMs"].asLong)
+        assertEquals(719 * 60_000L + events.lastIndex, retained.last().asJsonObject["elapsedMs"].asLong)
+    }
+
     @Test fun storageAndIncompleteExportFailuresAreExplicit() {
         val file = temporary.newFile()
         val unavailable = DiagnosticJournal({ file })

@@ -486,6 +486,10 @@ The dropped-marker list has one scroll owner, a high-contrast heading and an
 explicit **No Dropped Markers** state; Back returns to the existing marker menu.
 The home callsign similarly fits its complete text rather than ellipsizing.
 
+Tapping your own location dot opens its coordinate popup with a **Self Location**
+heading above the unchanged latitude/longitude and MGRS. This identification is
+map-only; it does not add a heading to the dashboard coordinate display.
+
 Nearby visible contacts and pins (within 28 dp of a group anchor on the current
 map projection) share a target-count label. Tap any member icon or its label to
 open a native scrollable **Select Target** list and choose the contact, dropped
@@ -1185,9 +1189,13 @@ file writes and is visible in Android logging and the Diagnostics page; retry
 export or clear after fixing storage. Process termination can lose queued
 events and unflushed aggregate counts.
 
-Storage is three rotating JSONL files, each at most 256 KiB (768 KiB total),
+Storage is three rotating JSONL files, each at most 2 MiB (6 MiB total),
 with up-to-three-day retention enforced on write/export (a file is discarded
-when its oldest record expires). Records include schema,
+when its oldest record expires). Capacity is exercised against a synthetic
+12-hour, 60-second observation trace with request/fix/timeout/lock/report events;
+busier sessions can still rotate away earlier evidence, so retention is not a
+guaranteed recording duration. This capacity does not change event frequency or
+acquisition behavior. Records include schema,
 app version/code/source commit, reporting-policy version, wall-clock milliseconds
 and monotonic elapsed milliseconds. Elapsed time restarts on watch reboot;
 do not subtract elapsed timestamps across boots. `COUNT` includes aggregated
