@@ -29,6 +29,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSensor
 import org.robolectric.shadows.ShadowSensorManager
+import org.robolectric.shadows.ShadowSystemClock
 import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
@@ -67,11 +68,13 @@ class HeartrateLifecycleTest {
     private fun service(): HeartrateService =
         Robolectric.buildService(HeartrateService::class.java).create().get()
 
-    private fun event(type: Int, value: Float): SensorEvent =
-        ShadowSensorManager.createSensorEvent(1, type).apply {
+    private fun event(type: Int, value: Float): SensorEvent {
+        ShadowSystemClock.advanceBy(Duration.ofMillis(1))
+        return ShadowSensorManager.createSensorEvent(1, type).apply {
             values[0] = value
             timestamp = SystemClock.elapsedRealtimeNanos()
         }
+    }
 
     private fun send(listener: SensorEventListener, event: SensorEvent) {
         listener.onAccuracyChanged(event.sensor, 3)
@@ -196,5 +199,50 @@ class HeartrateLifecycleTest {
             send(current, sample)
             assertEquals(invalidated, repo.latestHeartRate.value)
         } finally { second.onDestroy() }
+    }
+
+    @Test fun restartWaitsForActualWornStateButAcceptsFrameworkInitialOnChangeObservation() {
+        val retained = event(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT, 1f)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        val offBody = Robolectric.buildService(OffBodyDetectService::class.java).create().get()
+        val heartRate = service()
+        try {
+            shadowOf(Looper.getMainLooper()).idle()
+            assertNull(repo.latestDeviceWornObservation.value)
+            assertFalse(repo.latestIsDeviceWorn.value)
+            assertEquals(listOf(offBody.sensorEventListener), sensors.listeners)
+            send(offBody.sensorEventListener, retained)
+            assertEquals(true, repo.latestDeviceWornObservation.value)
+            await { sensors.listeners.size == 2 }
+            send(offBody.sensorEventListener, event(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT, 0f))
+            await { sensors.listeners.size == 1 }
+            assertFalse(repo.latestIsDeviceWorn.value)
+            send(offBody.sensorEventListener, retained)
+            assertFalse("An older observation must not overwrite a later off-wrist state", repo.latestIsDeviceWorn.value)
+        } finally {
+            heartRate.onDestroy()
+            offBody.onDestroy()
+        }
+    }
+
+    @Test fun offBodyRejectsImpossibleTimestampsAndRetainedOffWristDoesNotStartHeartRate() {
+        val retained = event(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT, 0f)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+        val offBody = Robolectric.buildService(OffBodyDetectService::class.java).create().get()
+        val heartRate = service()
+        try {
+            send(offBody.sensorEventListener, event(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT, 1f)
+                .apply { timestamp = -1L })
+            send(offBody.sensorEventListener, event(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT, 1f)
+                .apply { timestamp += 1_000_000_000L })
+            assertNull(repo.latestDeviceWornObservation.value)
+            send(offBody.sensorEventListener, retained)
+            assertEquals(false, repo.latestDeviceWornObservation.value)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
+            assertEquals(listOf(offBody.sensorEventListener), sensors.listeners)
+        } finally {
+            heartRate.onDestroy()
+            offBody.onDestroy()
+        }
     }
 }

@@ -77,6 +77,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
 import org.maplibre.compose.camera.CameraPosition
 import org.maplibre.compose.camera.rememberCameraState
+import org.maplibre.compose.layers.Anchor
+import org.maplibre.compose.layers.BackgroundLayer
 import org.maplibre.compose.layers.SymbolLayer
 import org.maplibre.compose.location.LocationPuck
 import org.maplibre.compose.location.LocationPuckColors
@@ -221,7 +223,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.bouncycastle.oer.its.ieee1609dot2.basetypes.Latitude
 import org.bouncycastle.oer.its.ieee1609dot2.basetypes.Longitude
-import org.json.JSONArray
 import org.maplibre.android.style.layers.CircleLayer
 import org.maplibre.spatialk.geojson.MultiLineString
 import org.maplibre.spatialk.geojson.MultiPoint
@@ -1231,31 +1232,28 @@ private fun getMissionRouteColor(
     return missionRouteColors[index]
 }
 
-// MAP STYLE FILTERING
-// Removes hidden style layers before loading the map
-fun buildFilteredStyleJson(context: Context, hiddenLayerIds: Set<String>): String {
-    // Load the original map style from the app assets
-    val raw = context.assets.open("style.json")
-        .bufferedReader().readText()
+@Composable
+internal fun rememberBaseMapStyle(context: Context): BaseStyle.Json = remember(context) {
+    BaseStyle.Json(context.assets.open("style.json").bufferedReader().use { it.readText() })
+}
 
-    // Return the original style when every layer is visible
-    if (hiddenLayerIds.isEmpty()) return raw
-    val json = JSONObject(raw)
-    // Read the complete list of layers from the style
-    val layers = json.getJSONArray("layers")
-    // Store only the layers that should remain visible
-    val filtered = JSONArray()
-    // Copy each visible layer into the filtered style
-    for (i in 0 until layers.length()) {
-        val layer = layers.getJSONObject(i)
-        val id = layer.optString("id")
-        if (id !in hiddenLayerIds) {
-            filtered.put(layer)
+internal fun baseMapLayerIds(style: BaseStyle.Json): Set<String> {
+    val layers = JSONObject(style.json).getJSONArray("layers")
+    return (0 until layers.length()).map { layers.getJSONObject(it).getString("id") }.toSet()
+}
+
+@Composable
+internal fun HiddenBaseMapLayers(baseLayerIds: Set<String>, hiddenLayerIds: Set<String>) {
+    baseLayerIds.filter { it in hiddenLayerIds }.forEach { layerId ->
+        androidx.compose.runtime.key(layerId) {
+            // Replacing just this layer preserves every other native layer and queued update.
+            Anchor.Replace(layerId) {
+                BackgroundLayer(
+                    id = "weartak-hidden-base-$layerId", visible = false
+                )
+            }
         }
     }
-
-    json.put("layers", filtered)
-    return json.toString()
 }
 
 // SHARED LAYER MENU COMPONENTS
@@ -2492,17 +2490,14 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
             mutableStateOf<DpOffset?>(null)
         }
 
-        // Rebuilds the map style when layer visibility changes
-        val styleJson = remember(hiddenLayers) {
-            buildFilteredStyleJson(context, hiddenLayers)
-        }
+        val baseStyle = rememberBaseMapStyle(context)
+        val baseLayerIds = remember(baseStyle) { baseMapLayerIds(baseStyle) }
 
         // Main MapLibre map
         MaplibreMap(
             modifier = Modifier.fillMaxSize(),
 
-            // Uses the map style with hidden layers removed
-            baseStyle = BaseStyle.Json(styleJson),
+            baseStyle = baseStyle,
 
             // Controls the map camera position and zoom
             cameraState = cameraState,
@@ -2585,6 +2580,8 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
                 ClickResult.Pass
             }
         ) {
+            HiddenBaseMapLayers(baseLayerIds, hiddenLayers)
+
             // Displays the location puck when a location is available
             // Guard on the same state LocationPuck reads: it builds an empty FeatureCollection
             // for a null location, which crashes GeoJSON serialization (no/invalid GPS indoors).

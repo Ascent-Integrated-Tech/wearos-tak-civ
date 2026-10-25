@@ -56,6 +56,7 @@ data class LocationDiagnosticSample(
     private fun measuredQuality(): LocationDiagnosticQuality {
         if (providerAvailable == false || error != null) return LocationDiagnosticQuality.UNAVAILABLE
         if (providerAvailable != true) return LocationDiagnosticQuality.UNKNOWN
+        if (source != LocationManager.GPS_PROVIDER) return LocationDiagnosticQuality.UNKNOWN
         if (ageMillis == null || horizontalAccuracyMeters == null ||
             satelliteStatusSupported != true || satelliteCount == null || usedSatelliteCount == null
         ) return LocationDiagnosticQuality.UNKNOWN
@@ -74,10 +75,11 @@ data class LocationDiagnosticSample(
     fun reason(): String = assessmentReason ?: when (measuredQuality()) {
         LocationDiagnosticQuality.UNAVAILABLE -> error ?: if (providerAvailable == false) "Provider unavailable" else "Observation unavailable"
         LocationDiagnosticQuality.UNKNOWN -> when {
+            ageMillis == null -> "No active location fix observed"
+            source != LocationManager.GPS_PROVIDER -> "Fix observed; satellite provenance unavailable for ${source ?: "unknown source"}"
             satelliteStatusSupported == false -> "Satellite status unsupported"
             satelliteStatusSupported == null -> "Waiting for satellite status"
             measurementsSupported != true -> "Raw GNSS measurements unsupported"
-            ageMillis == null -> "No active location fix observed"
             horizontalAccuracyMeters == null -> "Horizontal accuracy unavailable"
             meanCn0DbHz == null -> "Carrier-to-noise unavailable"
             maxAgcDb == null -> "Raw GNSS AGC unavailable"
@@ -238,9 +240,9 @@ class BondedLocationDiagnostics(private val context: Context) {
     private val logDirectory = File(context.filesDir, "location-diagnostics")
     private val gson = Gson()
     private val log = BoundedLocationDiagnosticLog()
-    private val _watch = MutableStateFlow(LocationDiagnosticSample())
+    private val _watch = MutableStateFlow(inactiveSample())
     val watch: StateFlow<LocationDiagnosticSample> = _watch.asStateFlow()
-    private val _phone = MutableStateFlow(LocationDiagnosticSample())
+    private val _phone = MutableStateFlow(inactiveSample())
     val phone: StateFlow<LocationDiagnosticSample> = _phone.asStateFlow()
     @Volatile private var observationEnabled = false
     @Volatile private var session: String? = null
@@ -262,6 +264,12 @@ class BondedLocationDiagnostics(private val context: Context) {
         stop()
         session = sessionId
         observationEnabled = true
+        _watch.value = LocationDiagnosticSample(
+            assessmentReason = "Waiting for an existing watch fix in this diagnostic session"
+        )
+        _phone.value = LocationDiagnosticSample(
+            assessmentReason = "Waiting for a phone snapshot in this diagnostic session"
+        )
         observeGnss()
         record("session_started", "watch", _watch.value)
         record("session_started", "phone", _phone.value)
@@ -294,14 +302,11 @@ class BondedLocationDiagnostics(private val context: Context) {
         usedSatelliteCount = null
         meanCn0DbHz = null
         maxAgcDb = null
-        _phone.value = LocationDiagnosticSample()
+        _phone.value = inactiveSample()
         lastPhoneLoggedKey = null
         lastPhoneSummaryTime = 0L
-        _watch.value = LocationDiagnosticSample(
-            providerAvailable = true,
-            assessedQuality = LocationDiagnosticQuality.UNKNOWN,
-            assessmentReason = "Diagnostics inactive; no active bonded Companion session"
-        )
+        _watch.value = inactiveSample()
+        recoveryHysteresis.update(LocationDiagnosticQuality.UNKNOWN)
     }
 
     fun observeExistingFix(location: Location) {
@@ -434,7 +439,7 @@ class BondedLocationDiagnostics(private val context: Context) {
         val state = recoveryHysteresis.update(candidate)
         val adjusted = sample.copy(
             assessedQuality = state,
-            assessmentReason = if (state == candidate) null else "Recovery pending; quality remains $state"
+            assessmentReason = if (state == candidate) sample.assessmentReason else "Recovery pending; quality remains $state"
         )
         _watch.value = adjusted
         val key = "${state.name}|${sample.reason()}"
@@ -461,7 +466,7 @@ class BondedLocationDiagnostics(private val context: Context) {
         try {
             val callback = object : GnssStatus.Callback() {
                 override fun onSatelliteStatusChanged(status: GnssStatus) {
-                    if (!observationEnabled) return
+                    if (!observationEnabled || gnssStatusCallback !== this) return
                     var used = 0
                     var cn0Total = 0f
                     var cn0Count = 0
@@ -478,16 +483,33 @@ class BondedLocationDiagnostics(private val context: Context) {
                     meanCn0DbHz = if (cn0Count > 0) cn0Total / cn0Count else null
                 }
 
-                override fun onStarted() = updateWatch(_watch.value.copy(providerAvailable = true))
-                override fun onStopped() = updateWatch(
-                    LocationDiagnosticSample(
-                        providerAvailable = true,
-                        satelliteStatusSupported = satelliteCount != null,
-                        measurementsSupported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.N,
-                        assessedQuality = LocationDiagnosticQuality.UNKNOWN,
-                        assessmentReason = "GNSS receiver inactive; waiting for location activity"
-                    )
-                )
+                override fun onStarted() {
+                    if (!observationEnabled || gnssStatusCallback !== this) return
+                    updateWatch(_watch.value.copy(
+                        providerAvailable = true, assessedQuality = null, assessmentReason = null
+                    ))
+                }
+
+                override fun onStopped() {
+                    if (!observationEnabled || gnssStatusCallback !== this) return
+                    val previous = _watch.value
+                    val unavailable = previous.error != null || previous.providerAvailable == false
+                    satelliteCount = null
+                    usedSatelliteCount = null
+                    meanCn0DbHz = null
+                    maxAgcDb = null
+                    updateWatch(_watch.value.copy(
+                        satelliteCount = null, usedSatelliteCount = null, meanCn0DbHz = null,
+                        maxAgcDb = null, satelliteStatusSupported = null,
+                        assessedQuality = if (unavailable) LocationDiagnosticQuality.UNAVAILABLE
+                            else LocationDiagnosticQuality.UNKNOWN,
+                        assessmentReason = when {
+                            unavailable -> previous.reason()
+                            previous.ageMillis == null -> "GNSS receiver inactive; no location fix observed"
+                            else -> "GNSS receiver inactive; existing fix retained"
+                        }
+                    ))
+                }
             }
             gnssStatusCallback = callback
             locationManager.registerGnssStatusCallback(callback, Handler(Looper.getMainLooper()))
@@ -503,7 +525,7 @@ class BondedLocationDiagnostics(private val context: Context) {
             try {
                 val callback = object : GnssMeasurementsEvent.Callback() {
                     override fun onGnssMeasurementsReceived(event: GnssMeasurementsEvent) {
-                        if (!observationEnabled) return
+                        if (!observationEnabled || measurementsCallback !== this) return
                         val agcValues = event.measurements.mapNotNull { measurement ->
                             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
                                 measurement.hasAutomaticGainControlLevelDb()
@@ -513,6 +535,7 @@ class BondedLocationDiagnostics(private val context: Context) {
                     }
 
                     override fun onStatusChanged(status: Int) {
+                        if (!observationEnabled || measurementsCallback !== this) return
                         if (status == STATUS_NOT_SUPPORTED) {
                             _watch.value = _watch.value.copy(measurementsSupported = false)
                         }
@@ -599,6 +622,9 @@ class BondedLocationDiagnostics(private val context: Context) {
         if (!has(key) || isNull(key)) null else optDouble(key).takeIf { it.isFinite() && it >= 0.0 }
 
     companion object {
+        private fun inactiveSample() = LocationDiagnosticSample(
+            assessmentReason = "Diagnostics inactive; no active bonded Companion session"
+        )
         private const val SUMMARY_INTERVAL_MS = 5 * 60 * 1000L
         private const val MAX_DAILY_LOG_BYTES = 256 * 1024L
     }

@@ -39,7 +39,7 @@ class OffBodyDetectService: Service() {
     var permission: Boolean = false
     private var active = false
     private var sensorRegistered = false
-    private var registrationStartedAtNanos = 0L
+    private var lastObservationAtNanos = Long.MIN_VALUE
 
     private val dataRepository : DataRepository
         get() = MainActivity.dataRepository
@@ -84,7 +84,7 @@ class OffBodyDetectService: Service() {
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         offBodySensor = sensorManager.getDefaultSensor(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT)
         if (null != offBodySensor) {
-            registrationStartedAtNanos = android.os.SystemClock.elapsedRealtimeNanos()
+            lastObservationAtNanos = Long.MIN_VALUE
             sensorRegistered = sensorManager.registerListener(sensorEventListener, offBodySensor, SensorManager.SENSOR_DELAY_NORMAL)
             if (sensorRegistered) Log.d(TAG, "OffBody Sensor callback registered")
             else Log.e(TAG, "OffBody listener registration refused; worn state unknown")
@@ -110,8 +110,14 @@ class OffBodyDetectService: Service() {
         }
 
         override fun onSensorChanged(event: SensorEvent) {
-            if (!active || !sensorRegistered || event.timestamp < registrationStartedAtNanos) return
+            if (!active || !sensorRegistered) return
             if (event.sensor.type == Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT) {
+                // On-change sensors deliver their current activation's retained value to new listeners.
+                if (event.timestamp < 0L || event.timestamp <= lastObservationAtNanos ||
+                    event.timestamp > android.os.SystemClock.elapsedRealtimeNanos()) {
+                    Log.w(TAG, "Ignoring invalid or out-of-order off-body observation")
+                    return
+                }
                 offBodyDataFloat = event.values[0]
                 Log.d(TAG, "OffBodyDetectService onSensorChanged(): accuracy= $accuracyVal, offbody= $offBodyDataFloat")
                 if (!offBodyDataFloat.isFinite() ||
@@ -120,6 +126,7 @@ class OffBodyDetectService: Service() {
                     Log.w(TAG, "Ignoring invalid off-body sensor value")
                     return
                 }
+                lastObservationAtNanos = event.timestamp
                 if (Math.abs(offBodyDataFloat - 1.0) > TOLERANCE) {
                     runBlocking {
                         dataRepository.storeLatestIsDeviceWorn(false, source = "offbody-sensor")

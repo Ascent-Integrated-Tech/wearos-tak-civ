@@ -399,7 +399,7 @@ private fun DebugLocationDiagnosticsPage(
 }
 
 @Composable
-private fun DiagnosticSummary(label: String, sample: LocationDiagnosticSample) {
+internal fun DiagnosticSummary(label: String, sample: LocationDiagnosticSample) {
     val ageText = sample.ageMillis?.let { "${it / 1000}s" } ?: "unknown"
     val accuracyText = sample.horizontalAccuracyMeters?.let { "%.1f m".format(it) } ?: "unknown"
     val satellitesText = if (sample.satelliteStatusSupported == true) {
@@ -413,6 +413,9 @@ private fun DiagnosticSummary(label: String, sample: LocationDiagnosticSample) {
             textAlign = TextAlign.Center,
             color = MaterialTheme.colors.primary
         )
+        sample.source?.let {
+            Text("Source: $it", fontSize = 10.sp, textAlign = TextAlign.Center)
+        }
         Text(
             "Age $ageText; accuracy $accuracyText; $satellitesText",
             fontSize = 10.sp,
