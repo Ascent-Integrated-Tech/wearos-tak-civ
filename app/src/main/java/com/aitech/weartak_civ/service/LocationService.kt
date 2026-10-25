@@ -79,6 +79,7 @@ class LocationService : Service() {
     private var acquisitionIntervalMillis = 0L
     private var observationPowerPolicy = false to false
     private var wakeLock: PowerManager.WakeLock? = null
+    private var wakeLockStartedMs = 0L
     private var receiverRegistered = false
     private val binder = LocationServiceBinder()
 
@@ -153,6 +154,8 @@ class LocationService : Service() {
         timeouts.remove(kind)?.let(handler::removeCallbacks)
         val listener = listeners.remove(kind)
         val callback = fusedCallbacks.remove(kind)
+        if (listener != null || callback != null) AppDiagnostics.record(DiagnosticEvent.LOCATION_STOPPED,
+            mapOf(DiagnosticMetric.KIND to kind.ordinal.toLong()))
         try {
             listener?.let { locationManager?.removeUpdates(it) }
             callback?.let {
@@ -165,7 +168,14 @@ class LocationService : Service() {
         }
         if (kind == Acquisition.INTERACTION) interactionGate.cancel()
         if (kind == Acquisition.ONE_SHOT) {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
+            wakeLock?.let { lock ->
+                val held = lock.isHeld
+                if (held) lock.release()
+                AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK, mapOf(
+                    DiagnosticMetric.ACTIVE to 0L, DiagnosticMetric.RESULT to if (held) 1L else 0L,
+                    DiagnosticMetric.DURATION_MS to (SystemClock.elapsedRealtime() - wakeLockStartedMs)
+                        .coerceIn(0, ACQUISITION_TIMEOUT_MILLIS)))
+            }
             wakeLock = null
         }
     }
@@ -192,6 +202,12 @@ class LocationService : Service() {
         if (input == null) return
         val manager = locationManager ?: return
         val requestedNanos = SystemClock.elapsedRealtimeNanos()
+        val diagnosticContext = mapOf(
+            DiagnosticMetric.SOURCE to input.ordinal.toLong(),
+            DiagnosticMetric.KIND to kind.ordinal.toLong()
+        )
+        AppDiagnostics.record(DiagnosticEvent.LOCATION_REQUEST, diagnosticContext +
+            (DiagnosticMetric.INTERVAL_SECONDS to intervalMillis / 1_000L))
         fun acceptLocation(location: Location, active: Boolean) {
             if (!active || requestGeneration != generation ||
                 currentInput != input || !permitted(input) || location.provider != input.provider) return
@@ -202,6 +218,7 @@ class LocationService : Service() {
                 !InteractionPliRefreshGate.usable(location.latitude, location.longitude,
                     location.accuracy, location.hasAccuracy())) {
                 Log.i(TAG, "Ignoring unusable or pre-request ${input.provider} fix")
+                AppDiagnostics.record(DiagnosticEvent.LOCATION_REJECTED, diagnosticContext)
                 return
             }
             val reasons = if (kind == Acquisition.INTERACTION) {
@@ -216,6 +233,8 @@ class LocationService : Service() {
                 (application as? com.aitech.weartak_civ.WearTakApplication)
                     ?.locationDiagnostics?.observeExistingFix(location)
                 dataRepository.locationInputStatus.value = LocationInputStatus.READY
+                AppDiagnostics.record(DiagnosticEvent.LOCATION_ACCEPTED, diagnosticContext +
+                    (DiagnosticMetric.DURATION_MS to (nowNanos - requestedNanos) / 1_000_000L))
                 if (dynamicReporting && kind != Acquisition.INTERACTION) scheduleNextDynamicObservation()
                 val now = SystemClock.elapsedRealtimeNanos()
                 val expected = nextObservationDeadlineNanos.value ?: (now +
@@ -251,6 +270,8 @@ class LocationService : Service() {
         if (kind != Acquisition.PERIODIC) {
             val timeout = Runnable {
                 Log.i(TAG, "$kind ${input.provider} request timed out without a fresh usable fix")
+                AppDiagnostics.record(DiagnosticEvent.LOCATION_TIMEOUT, diagnosticContext +
+                    (DiagnosticMetric.DURATION_MS to (SystemClock.elapsedRealtimeNanos() - requestedNanos) / 1_000_000L))
                 cancelRequest(kind)
                 dataRepository.locationInputStatus.value = LocationInputStatus.REQUEST_FAILED
                 if (dynamicReporting && kind == Acquisition.ONE_SHOT)
@@ -277,6 +298,7 @@ class LocationService : Service() {
                     .addOnFailureListener { error ->
                         if (fusedCallbacks[kind] !== fusedCallback || requestGeneration != generation) return@addOnFailureListener
                         Log.w(TAG, "Fused location request failed; no fallback", error)
+                        AppDiagnostics.record(DiagnosticEvent.LOCATION_FAILURE, diagnosticContext)
                         cancelRequest(kind)
                         dataRepository.locationInputStatus.value = if (error is SecurityException)
                             LocationInputStatus.PERMISSION_REQUIRED else LocationInputStatus.REQUEST_FAILED
@@ -288,10 +310,14 @@ class LocationService : Service() {
             }
         } catch (error: SecurityException) {
             Log.w(TAG, "Selected input permission revoked: ${input.provider}", error)
+            AppDiagnostics.record(DiagnosticEvent.LOCATION_FAILURE, diagnosticContext +
+                (DiagnosticMetric.RESULT to 1L))
             cancelRequest(kind)
             dataRepository.locationInputStatus.value = LocationInputStatus.PERMISSION_REQUIRED
         } catch (error: IllegalArgumentException) {
             Log.w(TAG, "Selected input unavailable: ${input.provider}", error)
+            AppDiagnostics.record(DiagnosticEvent.LOCATION_FAILURE, diagnosticContext +
+                (DiagnosticMetric.RESULT to 2L))
             cancelRequest(kind)
             dataRepository.locationInputStatus.value = LocationInputStatus.UNAVAILABLE
         }
@@ -305,7 +331,10 @@ class LocationService : Service() {
                 cancelRequest(Acquisition.INTERACTION)
                 return@launch
             }
-            if (!interactionGate.request(event.reason, SystemClock.elapsedRealtimeNanos())) return@launch
+            if (!interactionGate.request(event.reason, SystemClock.elapsedRealtimeNanos())) {
+                AppDiagnostics.record(DiagnosticEvent.LOCATION_COALESCED)
+                return@launch
+            }
             requestUpdates(Acquisition.INTERACTION)
         }
     }
@@ -342,6 +371,8 @@ class LocationService : Service() {
     private suspend fun scheduleNextDynamicObservation() {
         if (!isRunning.get() || !dynamicReporting || !dataRepository.getEnableLocationService.first()) return
         val intervalMillis = PowerManagerService.locationObservationIntervalSeconds(true) * 1_000L
+        AppDiagnostics.record(DiagnosticEvent.OBSERVATION_SCHEDULED,
+            mapOf(DiagnosticMetric.INTERVAL_SECONDS to intervalMillis / 1_000L))
         nextObservationDeadlineNanos.value = SystemClock.elapsedRealtimeNanos() + intervalMillis * 1_000_000L
         if (intervalMillis < MAX_PERIODIC_GPS_UPDATE_INTERVAL * 1_000L) {
             if (!periodic || intervalMillis != acquisitionIntervalMillis) {
@@ -368,6 +399,9 @@ class LocationService : Service() {
                 if (!inputAvailable()) return@launch
                 val power = getSystemService(POWER_SERVICE) as PowerManager
                 wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "id:gps").apply { acquire(6_000) }
+                wakeLockStartedMs = SystemClock.elapsedRealtime()
+                AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK, mapOf(
+                    DiagnosticMetric.ACTIVE to 1L, DiagnosticMetric.DURATION_MS to 6_000L))
                 requestUpdates(Acquisition.ONE_SHOT)
             }
         }

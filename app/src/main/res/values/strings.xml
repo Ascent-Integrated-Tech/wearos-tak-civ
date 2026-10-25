@@ -942,4 +942,23 @@
     <string name="bloodhound_picker_start_title">Start Bloodhound</string>
     <string name="bloodhound_picker_remove">Remove %1$s from watch</string>
     <string name="companion_route_sync_failed">Route navigation could not synchronize with the phone.</string>
+    <string name="app_diagnostics">Diagnostics</string>
+    <string name="app_diagnostics_description">Records bounded, private WearTAK event metadata on this watch. Stays on until switched off, even when developer menus are hidden. No automatic uploads or extra GPS or sensor requests.</string>
+    <string name="app_diagnostics_export">Export logs</string>
+    <string name="app_diagnostics_clear">Clear logs</string>
+    <string name="app_diagnostics_cleared">Logs cleared</string>
+    <string name="app_diagnostics_exported">Export complete</string>
+    <string name="app_diagnostics_saved">Preference saved</string>
+    <string name="app_diagnostics_failed">Diagnostics storage failed. Check available storage and retry. Original logs may still be retrieved with ADB.</string>
+    <string name="app_diagnostics_no_picker">No export picker available. Retrieve the local logs with ADB.</string>
+    <string name="debug_build">Build</string>
+    <string name="debug_git">Git</string>
+    <string name="debug_ip">IP address</string>
+    <string name="debug_port">Port</string>
+    <string name="debug_show_qr">Show QR</string>
+    <string name="debug_no_ip">No IP</string>
+    <string name="debug_ssid">SSID</string>
+    <string name="debug_transport">Transport</string>
+    <string name="debug_version">Version</string>
+    <string name="debug_version_code">Version code</string>
 </resources>

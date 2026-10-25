@@ -63,6 +63,8 @@ class DebugStayAwakeService : Service() {
             return START_NOT_STICKY
         }
         running = true
+        AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK,
+            mapOf(DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 1L))
         mutableActive.value = true
         Log.i(TAG, "Debug stay awake running; enabled intent persists until explicitly stopped")
         return START_STICKY
@@ -127,6 +129,7 @@ class DebugStayAwakeService : Service() {
     }
 
     private fun releaseLocks() {
+        val hadLocks = wifiLock != null || cpuLock != null || screenLock != null
         wifiRequestCallback?.let { callback ->
             wifiRequestCallback = null
             try {
@@ -141,6 +144,8 @@ class DebugStayAwakeService : Service() {
         wifiLock = null
         cpuLock = null
         screenLock = null
+        if (hadLocks) AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK,
+            mapOf(DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 0L))
         running = false
         mutableActive.value = false
     }

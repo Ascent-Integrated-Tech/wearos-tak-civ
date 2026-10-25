@@ -4855,7 +4855,6 @@ class DataRepository(private val context: Context) {
         }
     }
 
-    // NOTE: Store as false on every app boot!
     suspend fun storeEnableWearTakDevMode(enable: Boolean) {
         context.dataStore.edit { prefs ->
             prefs[ENABLE_WEARTAK_DEV_MODE] = enable

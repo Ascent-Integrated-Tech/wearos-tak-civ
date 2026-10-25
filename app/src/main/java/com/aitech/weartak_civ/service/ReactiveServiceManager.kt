@@ -508,6 +508,8 @@ class ReactiveServiceManager : Service() {
             startService(intent)
         }
         registry.setServiceRunning(t, true)
+        AppDiagnostics.record(DiagnosticEvent.SERVICE_REQUEST, mapOf(
+            DiagnosticMetric.KIND to t.ordinal.toLong(), DiagnosticMetric.ACTIVE to 1L))
     }
 
     private fun stopOne(t: ServiceType) {
@@ -515,6 +517,8 @@ class ReactiveServiceManager : Service() {
         Log.i(TAG, "ReactiveServiceManager Stopping: ${t.name}")
         stopService(Intent(this, cls))
         registry.setServiceRunning(t, false)
+        AppDiagnostics.record(DiagnosticEvent.SERVICE_REQUEST, mapOf(
+            DiagnosticMetric.KIND to t.ordinal.toLong(), DiagnosticMetric.ACTIVE to 0L))
     }
 
     private fun stopAll() {

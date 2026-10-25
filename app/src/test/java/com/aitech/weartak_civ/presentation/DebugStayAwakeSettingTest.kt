@@ -40,6 +40,7 @@ class DebugStayAwakeSettingTest {
                 onBack = {}, onShowQrCode = {}, onShowLocationDiagnostics = {}
             )
         }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Stay awake"))
         compose.onNodeWithText("Stay awake").assertIsDisplayed()
         compose.onAllNodes(isToggleable()).assertCountEquals(1)
         compose.onNode(isToggleable()).assertIsOff()

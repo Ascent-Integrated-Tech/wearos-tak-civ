@@ -53,6 +53,7 @@ class ChatCommandProcessor(
     suspend fun handle(request: ChatCommandRequest): Boolean {
         val parsed = ChatCommandParser.parse(request.text)
         if (parsed is ChatCommandParse.NotACommand) return false
+        com.aitech.weartak_civ.service.AppDiagnostics.record(com.aitech.weartak_civ.service.DiagnosticEvent.COMMAND)
         if (!isEnabled()) return request.text.trimStart().let {
             it.startsWith("${ChatCommandParser.PREFIX}usep12", true) ||
                 it.startsWith("${ChatCommandParser.PREFIX}setpdl", true)
@@ -97,6 +98,8 @@ class ChatCommandProcessor(
             ChatCommandResult(false, "Command failed")
         }
         audit("command ${command.name} from ${request.senderCallsign}: ${if (result.ok) "ok" else "failed"}")
+        com.aitech.weartak_civ.service.AppDiagnostics.record(com.aitech.weartak_civ.service.DiagnosticEvent.COMMAND,
+            mapOf(com.aitech.weartak_civ.service.DiagnosticMetric.RESULT to if (result.ok) 1L else 0L))
         try {
             reply(request, result.message)
         } finally {
