@@ -231,7 +231,7 @@ class DittoService : Service() {
         ioScope.launch {
             try {
                 val raw = evt.cotXml
-                Log.v(TAG, "Publishing Ditto document collection=${evt.collection}")
+                logVerbose { "Publishing Ditto document collection=${evt.collection}" }
                 if (evt.collection == "chat") {
                     publishDocument("chat", DittoChatDocument.encode(raw, localPeerKeyString))
                     return@launch
@@ -374,7 +374,7 @@ class DittoService : Service() {
 
                 // 5) Upsert into Ditto
                 if (publishDocument(evt.collection, doc)) {
-                    Log.v(TAG, "Wrote to ${evt.collection}: $doc")
+                    logVerbose { "Wrote to ${evt.collection}: $doc" }
                 }
 
             } catch (t: Throwable) {
@@ -572,7 +572,7 @@ class DittoService : Service() {
                 }
                 writeDocument("track", trackDocument)
                 changeCounterTrackDocument++
-                Log.v(TAG, "Wrote to track: $trackDocument")
+                logVerbose { "Wrote to track: $trackDocument" }
             } catch (t: Throwable) {
                 Log.e(TAG, "Ditto write failed", t)
             }
@@ -646,6 +646,10 @@ class DittoService : Service() {
 
     companion object {
         private val TAG = "WearTAK-" + DittoService::class.java.simpleName
+        internal inline fun logVerbose(message: () -> String) {
+            if (Log.isLoggable(TAG, Log.VERBOSE)) Log.v(TAG, message())
+        }
+
         private val DITTO_SERVICE_NOTIFICATION_ID = 3333
         val isRunning: AtomicBoolean = AtomicBoolean(false)
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds

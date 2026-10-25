@@ -530,6 +530,19 @@ this change does not stop the sensor or alter reporting policy.
 
 ## GitHub pipeline release
 
+Incoming CoT parsing reuses thread-safe compiled attribute patterns keyed only by
+the parser's fixed schema names, never incoming XML or attribute values.
+The ingestor also reuses each immutable message's type/chat classification.
+These changes avoid repeated pattern compilation and scans without suppressing
+messages, changing parser acceptance or altering command/plugin/transport order.
+They do not change logging policy, location acquisition or reporting cadence.
+
+Ditto document verbose-log messages format their payload only when Android's
+existing tag/level check enables `VERBOSE` for `WearTAK-DittoService`. Disabled
+verbose logging no longer stringifies whole documents. Enabled verbose messages,
+warnings/errors, the opt-in Logging journal and all publication/retry/gating
+behavior remain unchanged.
+
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
 **TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
 as stable builds, not prereleases. See [CI release setup and retention](ci/README.md)

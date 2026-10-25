@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.cot
 
 import java.io.StringReader
 import java.time.Instant
+import java.util.concurrent.ConcurrentHashMap
 import javax.xml.XMLConstants
 import javax.xml.parsers.DocumentBuilderFactory
 import org.w3c.dom.Element
@@ -460,9 +461,14 @@ object CotMessageParser {
 
     private fun eventAttribute(xml: String, name: String): String? = extractAttribute(xml, "event", name)
 
+    // Only private, compiled schema names become keys; never retain incoming XML or values.
+    private val attributePatterns = ConcurrentHashMap<Pair<String, String>, Regex>()
+
     private fun extractAttribute(xml: String, elementName: String, attributeName: String): String? {
-        val pattern = """<${Regex.escape(elementName)}\b[^>]*?\b${Regex.escape(attributeName)}\s*=\s*(['"])(.*?)\1"""
-            .toRegex(RegexOption.DOT_MATCHES_ALL)
+        val pattern = attributePatterns.computeIfAbsent(elementName to attributeName) { (element, attribute) ->
+            """<${Regex.escape(element)}\b[^>]*?\b${Regex.escape(attribute)}\s*=\s*(['"])(.*?)\1"""
+                .toRegex(RegexOption.DOT_MATCHES_ALL)
+        }
         val value = pattern.find(xml)?.groupValues?.getOrNull(2) ?: return null
         if ('&' !in value) return value
         val element = parseDocumentOrNull(xml)?.getElementsByTagName(elementName)?.item(0) as? Element

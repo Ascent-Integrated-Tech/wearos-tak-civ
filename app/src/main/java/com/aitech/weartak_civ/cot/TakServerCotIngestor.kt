@@ -102,16 +102,18 @@ class TakServerCotIngestor(
             return TakServerCotIngestResult.MALFORMED
         }
 
-        if (!CotMessageParser.isChatMessage(rawXml) && sink.onInboundCot(envelope)) {
+        val isChat = CotMessageParser.isChatMessage(rawXml)
+        if (!isChat && sink.onInboundCot(envelope)) {
             return TakServerCotIngestResult.CONFIGURATION
         }
-        if (CotMessageParser.eventTypeOrNull(rawXml) == "t-x-d-d") {
+        val eventType = CotMessageParser.eventTypeOrNull(rawXml)
+        if (eventType == "t-x-d-d") {
             val deletion = CotMessageParser.parseDeletionOrNull(rawXml) ?: return TakServerCotIngestResult.MALFORMED
             if (deletion.uid != deviceUid()) sink.onDelete(deletion, envelope)
             return TakServerCotIngestResult.DELETE
         }
 
-        if (dataPackageHandler != null && CotMessageParser.eventTypeOrNull(rawXml) == "b-f-t-r") {
+        if (dataPackageHandler != null && eventType == "b-f-t-r") {
             dataPackageHandler.invoke(
                 TakDataPackageRequest.parse(rawXml, envelope.sourcePeerAddress),
                 envelope
@@ -119,7 +121,7 @@ class TakServerCotIngestor(
             return TakServerCotIngestResult.DATA_PACKAGE
         }
 
-        if (chatCommandHandler != null && CotMessageParser.isChatMessage(rawXml)) {
+        if (chatCommandHandler != null && isChat) {
             val candidate = CotMessageParser.parseChatRooms(rawXml, deviceUid(), deviceCallsign(), envelope.sourceServerId, envelope.receivedAt)
                 .asSequence()
                 .flatMap { room -> room.messageList.asSequence().map { room to it } }
@@ -145,14 +147,14 @@ class TakServerCotIngestor(
             }
         }
 
-        if (CotMessageParser.isChatMessage(rawXml) && sink.onInboundCot(envelope)) {
+        if (isChat && sink.onInboundCot(envelope)) {
             return TakServerCotIngestResult.CONFIGURATION
         }
 
         // Check whether the incoming message is a chat
         // Only process chats when chat is enabled and the message is for this device
         if (isChatEnabled() &&
-            CotMessageParser.isChatMessage(rawXml) &&
+            isChat &&
             CotMessageParser.isChatForRecipient(rawXml, deviceUid(), deviceCallsign())) {
 
             // Parse the chat message and find the rooms or conversations it belongs to
@@ -212,7 +214,7 @@ class TakServerCotIngestor(
 
         // Check whether the message is a TAK channel change event
         // Channel change messages use the event type t-x-g-c
-        if (CotMessageParser.eventTypeOrNull(rawXml) == CHANNEL_CHANGE_EVENT_TYPE) {
+        if (eventType == CHANNEL_CHANGE_EVENT_TYPE) {
 
             // Notify the channel handler that a change was received
             sink.onChannelChanged(envelope)
@@ -224,7 +226,7 @@ class TakServerCotIngestor(
         // Check whether the message contains a TAK route
         // Route CoT messages use the event type b-m-r
         // These messages contain the points needed to draw a route on the map
-        if (CotMessageParser.eventTypeOrNull(rawXml) == ROUTE_EVENT_TYPE) {
+        if (eventType == ROUTE_EVENT_TYPE) {
 
             // Parse the route XML into a TakRoute object
             // Extract the route details and its ordered list of points
@@ -257,7 +259,7 @@ class TakServerCotIngestor(
 
         // Check whether the message contains an emergency event
         // Emergency CoT uses specific event types recognized by the parser
-        if (CotMessageParser.eventTypeOrNull(rawXml)?.let(CotMessageParser::isEmergencyType) == true) {
+        if (eventType?.let(CotMessageParser::isEmergencyType) == true) {
 
             // Parse the emergency details from the XML
             val event = CotMessageParser.parseEmergencyOrNull(rawXml)
@@ -320,9 +322,6 @@ class TakServerCotIngestor(
             return TakServerCotIngestResult.MARKER
         }
 
-
-        // Get the CoT event type if one is available
-        val eventType = CotMessageParser.eventTypeOrNull(rawXml)
 
         // Check whether the message claims to be a supported user or marker type
         // Reaching this point means the earlier parsers could not process it
