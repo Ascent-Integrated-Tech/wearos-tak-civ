@@ -1,6 +1,10 @@
 package com.aitech.weartak_civ.service
 
+import android.Manifest
 import android.content.Context
+import android.location.GnssStatus
+import android.location.Location
+import android.os.SystemClock
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import kotlinx.coroutines.runBlocking
@@ -14,6 +18,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 
 @RunWith(RobolectricTestRunner::class)
 class BondedLocationDiagnosticsTest {
@@ -70,6 +75,70 @@ class BondedLocationDiagnosticsTest {
 
         assertFalse(diagnostics.acceptPhoneSnapshot(JSONObject(), session))
         assertEquals(LocationDiagnosticQuality.UNKNOWN, diagnostics.watch.value.quality())
+    }
+
+    @Test
+    fun inactiveDiagnosticsDoNotPretendToWaitForSatellitesOrObserveOperationalFixes() {
+        val diagnostics = BondedLocationDiagnostics(RuntimeEnvironment.getApplication())
+        val inactiveWatch = diagnostics.watch.value
+        val inactivePhone = diagnostics.phone.value
+        assertEquals("Diagnostics inactive; no active bonded Companion session", inactiveWatch.reason())
+        assertEquals(inactiveWatch.reason(), inactivePhone.reason())
+        assertNull(inactiveWatch.providerAvailable)
+        diagnostics.observeExistingFix(Location("gps").apply {
+            accuracy = 5f
+            elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+        })
+        assertEquals(inactiveWatch, diagnostics.watch.value)
+        assertEquals(inactivePhone, diagnostics.phone.value)
+    }
+
+    @Test
+    fun fusedFixIsNotAssessedUsingUnrelatedSatelliteMeasurements() {
+        val sample = goodObservation().copy(source = "fused")
+        assertEquals(LocationDiagnosticQuality.UNKNOWN, sample.quality())
+        assertEquals("Fix observed; satellite provenance unavailable for fused", sample.reason())
+        assertEquals(2_000L, sample.ageMillis)
+        assertEquals(8f, sample.horizontalAccuracyMeters)
+    }
+
+    @Test
+    fun sessionsClearOldProvenanceAndFenceLateGnssCallbacks() {
+        val app = RuntimeEnvironment.getApplication()
+        shadowOf(app).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val diagnostics = BondedLocationDiagnostics(app)
+        val firstSession = LocationDiagnosticsProtocol.newSession()
+        diagnostics.start(firstSession)
+        val callbackField = BondedLocationDiagnostics::class.java
+            .getDeclaredField("gnssStatusCallback").apply { isAccessible = true }
+        val oldCallback = callbackField.get(diagnostics) as GnssStatus.Callback
+        diagnostics.observeExistingFix(Location("fused").apply {
+            accuracy = 7f
+            elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
+        })
+        assertEquals("fused", diagnostics.watch.value.source)
+        oldCallback.onStopped()
+        assertEquals("fused", diagnostics.watch.value.source)
+        assertEquals(7f, diagnostics.watch.value.horizontalAccuracyMeters)
+        assertEquals("GNSS receiver inactive; existing fix retained", diagnostics.watch.value.reason())
+        diagnostics.stop()
+        val stopped = diagnostics.watch.value
+        oldCallback.onStarted()
+        oldCallback.onStopped()
+        assertEquals(stopped, diagnostics.watch.value)
+        assertEquals(stopped.reason(), diagnostics.phone.value.reason())
+
+        diagnostics.start(LocationDiagnosticsProtocol.newSession())
+        try {
+            val waiting = diagnostics.watch.value
+            assertEquals("Waiting for an existing watch fix in this diagnostic session", waiting.reason())
+            assertEquals("Waiting for a phone snapshot in this diagnostic session", diagnostics.phone.value.reason())
+            assertNull(waiting.source)
+            assertNull(waiting.ageMillis)
+            oldCallback.onStarted()
+            oldCallback.onStopped()
+            assertEquals(waiting, diagnostics.watch.value)
+        } finally { diagnostics.stop() }
     }
 
     @Test

@@ -446,6 +446,15 @@ these settings messages do not make it watch-source PLI or supply watch `takv`.
 Companion observation/conversion requires a separate phone-side update. Passing
 local tests does not establish phone consumption or server/ATAK receipt.
 
+### Map layer visibility
+
+The Layers menu preserves saved visibility choices without reloading the native
+map style. Hidden base layers are replaced individually by invisible layers and
+restored when shown again; marker/contact/route overlays and the camera retain
+their current ownership. This avoids invalidating queued overlay filter updates
+when toggling layers. Unknown layer IDs from older saved settings are ignored,
+not deleted.
+
 ### WEARTAK-121: Bloodhound to a map user
 
 From Home, tap the compass/Bloodhound target to open the picker, including while
@@ -590,6 +599,8 @@ The app requests permissions at runtime. On a physical device, grant only the pe
 The **Bonded Location Diagnostics** switch is in Developer Preferences and is persisted independently of Developer Mode. Diagnostics run only after a versioned capability exchange over the authenticated, bonded, ready single-watch Companion BLE session; setup and gateway routes do not enable observation. Disabling the switch sends a session-scoped stop so both devices unregister diagnostics-only callbacks. An unsupported Companion peer receives no repeated capability probes, and a new connection negotiates a new session.
 
 The watch observes fixes already delivered to WearTAK and registers GNSS status/raw-measurement callbacks only for an accepted diagnostics session. It does not request an additional location stream, change the authoritative PLI, or publish diagnostic data as CoT. The phone observes passive platform fixes plus GNSS callbacks; it does not take over ATAK location authority. Permission failures, disabled providers, inactive receivers, and unsupported callback data remain visible as Unavailable or Unknown rather than being treated as good. Quality states are conservative and are not a determination of jamming or spoofing.
+
+Without an accepted session, both readouts explicitly show diagnostics inactive; this does not mean operational location or PLI is unavailable. Each new session waits for its own watch fix and phone snapshot, and displays the actual observed provider. Fused/network fixes retain their age and accuracy but are not graded using unrelated GNSS satellite measurements. Stopping the GNSS receiver does not erase an already observed fix or relabel it as satellite-derived.
 
 The Developer Preferences diagnostics page shows watch and phone quality separately and provides diagnostic-only Entry/Exit markers, JSON export, and Clear. Local daily summaries retain no exact coordinates, device identifiers, or raw satellite identifiers; logs are bounded to 256 KiB per day and seven days of retention. Diagnostic messages are versioned, session-fenced, size-limited, rate-limited, and best-effort behind operational BLE traffic.
 
@@ -1364,6 +1375,14 @@ these manager-owned sensors. Refused registration and returned permission are
 reconciled every five seconds only while collection is allowed; missing heart
 rate is not treated as off-wrist and does not trigger a synthetic reading or
 silence-based restart. Destroyed and pre-registration callbacks are rejected.
+
+The off-body on-change sensor is different from a biometric sample: Android may
+deliver its current activation's retained wear observation when a new listener
+registers. That real binary observation is accepted even if its original
+timestamp predates this listener's registration. Impossible timestamps and
+duplicate/older observations are rejected, so an older worn callback cannot
+overwrite a later off-wrist observation. No callback still means unknown, not
+worn; the stricter heart-rate sample freshness gate is unchanged.
 
 The home location-status icon opens existing reporting-rate settings without
 toggling location. Stay awake retains its label and real on/off control without
