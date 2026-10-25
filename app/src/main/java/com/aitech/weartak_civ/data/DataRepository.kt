@@ -2682,7 +2682,7 @@ class DataRepository(private val context: Context) {
                 eventTime = event.time,
                 receivedAt = receivedAt
             )
-            Log.d(
+            if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(
                 TAG,
                 "Map state marker stale uid=${event.uid} sourceServerId=$sourceServerId eventTime=${event.time} " +
                     "receivedAt=$receivedAt removed=${removed != null} " +
@@ -2720,7 +2720,7 @@ class DataRepository(private val context: Context) {
             pruneGenericMarkers(now)
             startGenericExpiry()
         }
-        Log.d(
+        if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(
             TAG,
             "Map state marker upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
                 "eventTime=${event.time} stale=${event.stale} receivedAt=$receivedAt applied=${result.applied} " +

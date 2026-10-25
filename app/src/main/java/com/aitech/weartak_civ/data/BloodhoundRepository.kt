@@ -720,7 +720,7 @@ class BloodhoundRepository(
         }
         val result = bloodhoundStore.upsertWithResult(updated)
         publishVisibleBloodhounds()
-        Log.d(
+        if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(
             TAG,
             "Map state bloodhound upsert uid=${e.uid} sourceServerId=${e.sourceServerId} " +
                 "eventTime=${e.mapItem.cotEvent.time} receivedAt=${e.receivedAt} " +
