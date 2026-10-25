@@ -215,6 +215,9 @@ private const val DEFAULT_COMMUNITY_PDL =
     BuildConfig.DITTO_COMMUNITY_IDENTITY
 
 class DataRepository(private val context: Context) {
+    internal val headingComplications = HeadingComplicationDemand(
+        context.getSharedPreferences("heading-complications", Context.MODE_PRIVATE)
+    )
     internal val chatCommandHandler by lazy {
         com.aitech.weartak_civ.service.ChatCommandRuntime.build(context, this)
     }
@@ -1481,6 +1484,8 @@ class DataRepository(private val context: Context) {
     fun updateMagAzimuthTrue(angleTrueDeg: Double?) {
         _magAzTrueDeg.value = angleTrueDeg?.let(LocationVectorCalculator::normalize0to360)
     }
+
+    internal val magneticHeadingSubscriptions get() = _magAzTrueDeg.subscriptionCount
 
     val autoUseGps: StateFlow<Boolean> =
         latestLocation

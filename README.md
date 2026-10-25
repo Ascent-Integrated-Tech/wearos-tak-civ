@@ -543,6 +543,22 @@ verbose logging no longer stringifies whole documents. Enabled verbose messages,
 warnings/errors, the opt-in Logging journal and all publication/retry/gating
 behavior remain unchanged.
 
+Rotation-sensor acquisition is demand-driven, not implied by the core movement
+service running. Interactive dashboard/map/marker and Bloodhound views use their
+existing lifecycle-owned heading subscriptions; an idle Bloodhound service no
+longer keeps a heading subscription. Installed compass complication slots retain
+independent ownership across process restart and removal, and keep the fused
+heading projection subscribed while interactive. Existing subscribed-flow
+cleanup delays still apply after the final view closes.
+Display-off and noninteractive ambient/AOD compass rendering use the last cached
+bearing, **not live heading**. Rotation resumes on interactive demand, with
+smoothing reset and pre-registration callbacks rejected. Active Bloodhound
+guidance remains a background consumer regardless of screen state, preserving
+navigation/proximity/Companion behavior. No location/report acquisition,
+permissions, sensor sampling rate, or complication update cadence is changed.
+Diagnostics sensor kind 2 records rotation-listener registration transitions,
+not individual samples or a measured energy saving.
+
 Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
 **TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
 as stable builds, not prereleases. See [CI release setup and retention](ci/README.md)
