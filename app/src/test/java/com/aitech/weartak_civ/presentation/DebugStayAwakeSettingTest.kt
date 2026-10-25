@@ -1,6 +1,9 @@
 package com.aitech.weartak_civ.presentation
 
 import android.app.Application
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import com.aitech.weartak_civ.service.DebugStayAwakePreferences
@@ -27,11 +30,41 @@ class DebugStayAwakeSettingTest {
         app.getSharedPreferences("debug_stay_awake", Application.MODE_PRIVATE).edit().clear().commit()
     }
 
-    @Test fun smallRoundHasOneToggleWithoutHelperText() = verifyTopSplitChip()
+    @Test fun smallRoundHasSimpleTopTogglesWithoutHelperText() = verifyTopSplitChip()
 
     @Test
     @Config(qualifiers = "w227dp-h227dp-round")
-    fun largerRoundHasOneToggleWithoutHelperText() = verifyTopSplitChip()
+    fun largerRoundHasSimpleTopTogglesWithoutHelperText() = verifyTopSplitChip()
+
+    @Test fun diagnosticsToggleAndLogActionsRemainDistinctFromStayAwake() {
+        var enabled by mutableStateOf(false)
+        var changes = 0
+        var openedLogs = 0
+        compose.setContent {
+            DebugInformationPage(
+                DebugDisplayInfo("test", 1, "debug", "test", "test", "WIFI", "test", "N/A", 8000),
+                onBack = {}, onShowQrCode = {}, onShowLocationDiagnostics = {},
+                onShowDiagnostics = { openedLogs++ }, diagnosticsEnabled = enabled,
+                onDiagnosticsEnabledChange = { enabled = it; changes++ }
+            )
+        }
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Diagnostics"))
+        compose.onNodeWithText("Diagnostics").assertIsOff().performClick()
+        compose.onNodeWithText("Diagnostics").assertIsOn()
+        compose.runOnIdle {
+            assertTrue(enabled)
+            assertEquals(1, changes)
+            assertFalse(DebugStayAwakePreferences(app).enabled)
+        }
+        compose.onNodeWithText(app.getString(com.aitech.weartak_civ.R.string.app_diagnostics_description))
+            .assertDoesNotExist()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Diagnostic logs"))
+        compose.onNodeWithText("Diagnostic logs").performClick()
+        compose.runOnIdle {
+            assertEquals(1, openedLogs)
+            assertEquals(1, changes)
+        }
+    }
 
     private fun verifyTopSplitChip() {
         compose.setContent {
@@ -42,20 +75,20 @@ class DebugStayAwakeSettingTest {
         }
         compose.onNode(hasScrollAction()).performScrollToNode(hasText("Stay awake"))
         compose.onNodeWithText("Stay awake").assertIsDisplayed()
-        compose.onAllNodes(isToggleable()).assertCountEquals(1)
-        compose.onNode(isToggleable()).assertIsOff()
+        val stayAwake = compose.onNodeWithText("Stay awake")
+        stayAwake.assertIsOff()
         compose.onNodeWithText("Resume after update").assertDoesNotExist()
-        compose.onNode(isToggleable()).performClick()
+        stayAwake.performClick()
         compose.waitUntil { DebugStayAwakePreferences(app).enabled }
-        compose.onNode(isToggleable()).assertIsOn()
+        stayAwake.assertIsOn()
         compose.onNodeWithText("Enabled, not running").assertDoesNotExist()
         val start = shadowOf(app).nextStartedService
         assertEquals(DebugStayAwakeService::class.java.name, start?.component?.className)
         assertEquals(DebugStayAwakeService.ACTION_RESTORE, start?.action)
         assertNull(shadowOf(app).nextStartedService)
-        compose.onNode(isToggleable()).performClick()
+        stayAwake.performClick()
         compose.waitUntil { !DebugStayAwakePreferences(app).enabled }
-        compose.onNode(isToggleable()).assertIsOff()
+        stayAwake.assertIsOff()
         val stopped = shadowOf(app).nextStoppedService
         assertEquals(DebugStayAwakeService::class.java.name, stopped?.component?.className)
     }

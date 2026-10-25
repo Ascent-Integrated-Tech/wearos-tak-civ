@@ -945,6 +945,7 @@
     <string name="bloodhound_picker_remove">Remove %1$s from watch</string>
     <string name="companion_route_sync_failed">Route navigation could not synchronize with the phone.</string>
     <string name="app_diagnostics">Diagnostics</string>
+    <string name="app_diagnostics_logs">Diagnostic logs</string>
     <string name="app_diagnostics_description">Records bounded, private WearTAK event metadata on this watch. Stays on until switched off, even when developer menus are hidden. No automatic uploads or extra GPS or sensor requests.</string>
     <string name="app_diagnostics_export">Export logs</string>
     <string name="app_diagnostics_clear">Clear logs</string>

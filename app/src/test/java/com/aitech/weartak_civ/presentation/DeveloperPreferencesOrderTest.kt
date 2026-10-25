@@ -14,11 +14,11 @@ class DeveloperPreferencesOrderTest {
             DeveloperEntry(DeveloperEntryId.BUILD, "Build", "release")
         )
         val sorted = sortedDeveloperEntries(entries, Locale.ENGLISH)
-        assertEquals(listOf("Build", "Diagnostics", "Location Diagnostics", "Stay awake", "Version"),
+        assertEquals(listOf("Diagnostics", "Stay awake", "Build", "Location Diagnostics", "Version"),
             sorted.map { it.label })
         assertEquals(entries.toSet(), sorted.toSet())
-        assertEquals(DeveloperEntryId.DIAGNOSTICS, sorted[1].id)
-        assertEquals("release", sorted.first().value)
+        assertEquals(DeveloperEntryId.DIAGNOSTICS, sorted.first().id)
+        assertEquals("release", sorted[2].value)
     }
 
     @Test fun localizedLabelsDetermineOrderRatherThanEnglishOrEnumPosition() {
@@ -27,9 +27,9 @@ class DeveloperPreferencesOrderTest {
             DeveloperEntry(DeveloperEntryId.STAY_AWAKE, "Z"),
             DeveloperEntry(DeveloperEntryId.BUILD, "A")
         )
-        assertEquals(listOf("A", "Z", "\u00c4"),
+        assertEquals(listOf("Z", "\u00c4", "A"),
             sortedDeveloperEntries(entries, Locale.forLanguageTag("sv")).map { it.label })
-        assertEquals(listOf("A", "\u00c4", "Z"),
+        assertEquals(listOf("\u00c4", "Z", "A"),
             sortedDeveloperEntries(entries, Locale.GERMAN).map { it.label })
     }
 }

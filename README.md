@@ -1,6 +1,6 @@
-# WearTAK-CIV
+# WearTAK-WearOS
 
-WearTAK-CIV is a standalone Wear OS application that connects a watch to the Team Awareness Kit (TAK) ecosystem. It is designed to collect location and on-watch sensor data, publish Cursor-on-Target (CoT) events, and provide a watch-native interface for operational awareness and alerts.
+WearTAK-WearOS is a standalone Wear OS application that connects a watch to the Team Awareness Kit (TAK) ecosystem. It is designed to collect location and on-watch sensor data, publish Cursor-on-Target (CoT) events, and provide a watch-native interface for operational awareness and alerts.
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
@@ -1179,16 +1179,19 @@ in-place updates until explicitly disabled. It is not an authenticated admin
 session: phone-managed restrictions, network locking, licensing, platform
 permissions and Knox authorization remain independent and unchanged. Hiding
 the menus immediately removes access to their pages, not those restrictions.
-The unlock gesture no longer changes airplane mode. Developer entries are sorted by their current localized visible labels, with
-the title and Back navigation kept outside the sorted entries.
+The unlock gesture no longer changes airplane mode. **Diagnostics** and **Stay awake**
+are simple toggle rows at the top, alphabetized within that group, without helper text.
+The remaining developer entries are sorted by their current localized visible labels,
+with the title and Back navigation kept outside the sorted entries.
 
-Open **Developer Preferences > Diagnostics**, then switch **Diagnostics** on
+Open **Developer Preferences** and switch **Diagnostics** on
 before a normal unplugged session. This is one app-wide, default-off recording
 preference, not a battery-only switch. Its choice survives app/watch restarts and
 updates. Recording resumes when Android next runs WearTAK; it does not launch
 the app or override force-stop, suspension or battery restrictions. Hiding the
 developer menus does not turn off Diagnostics or erase evidence. Re-enable
-the menus and explicitly switch **Diagnostics** off to stop it. **Clear logs**
+the menus and explicitly switch **Diagnostics** off to stop it. **Diagnostic logs**
+retains the export and clear actions; **Clear logs**
 deletes only this recorder's files, without changing the preference; switching
 off alone preserves recorded evidence. Uninstall/app-data clearing removes it.
 Existing Bonded Location Diagnostics remains a separate, unchanged feature;
@@ -2025,7 +2028,7 @@ adb shell run-as com.aitech.weartak_civ ls files
 
 ## Security and data handling
 
-WearTAK-CIV handles potentially sensitive location, health, communications, and credential data. Treat device logs, exported app files, managed configurations, and build artifacts accordingly. Configure secure TAK endpoints and credentials appropriate to your deployment, and review required Android permissions before field use.
+WearTAK-WearOS handles potentially sensitive location, health, communications, and credential data. Treat device logs, exported app files, managed configurations, and build artifacts accordingly. Configure secure TAK endpoints and credentials appropriate to your deployment, and review required Android permissions before field use.
 
 ## Contributing
 

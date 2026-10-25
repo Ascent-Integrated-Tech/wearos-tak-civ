@@ -50,6 +50,7 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.foundation.lazy.ScalingLazyColumn
 import androidx.wear.compose.foundation.lazy.items
 import androidx.wear.compose.material.Button
@@ -103,14 +104,19 @@ private data class DebugRow(
 )
 
 internal enum class DeveloperEntryId {
-    BUILD, DIAGNOSTICS, GIT, IP, LOCATION, PORT, QR, SSID, STAY_AWAKE, TRANSPORT, VERSION, VERSION_CODE
+    BUILD, DIAGNOSTICS, DIAGNOSTICS_LOGS, GIT, IP, LOCATION, PORT, QR, SSID, STAY_AWAKE, TRANSPORT, VERSION, VERSION_CODE
 }
 
 internal data class DeveloperEntry(val id: DeveloperEntryId, val label: String, val value: String = "")
 
 internal fun sortedDeveloperEntries(entries: List<DeveloperEntry>, locale: Locale): List<DeveloperEntry> {
     val collator = Collator.getInstance(locale)
-    return entries.sortedWith { left, right -> collator.compare(left.label, right.label) }
+    fun group(entry: DeveloperEntry) =
+        if (entry.id == DeveloperEntryId.DIAGNOSTICS || entry.id == DeveloperEntryId.STAY_AWAKE) 0 else 1
+    return entries.sortedWith { left, right ->
+        group(left).compareTo(group(right)).takeIf { it != 0 }
+            ?: collator.compare(left.label, right.label)
+    }
 }
 
 @Composable
@@ -148,6 +154,14 @@ private fun DebugScreen(
     var showAppDiagnostics by remember { mutableStateOf(false) }
     var exportStatus by remember { mutableStateOf("") }
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val appDiagnostics = (context.applicationContext as WearTakApplication).diagnostics
+    val appDiagnosticsEnabled by appDiagnostics.enabled.collectAsStateWithLifecycle()
+    val appDiagnosticsFailed by appDiagnostics.storageFailed.collectAsStateWithLifecycle()
+    LaunchedEffect(appDiagnosticsFailed) {
+        if (appDiagnosticsFailed)
+            Toast.makeText(context, R.string.app_diagnostics_failed, Toast.LENGTH_LONG).show()
+    }
     val diagnosticsEnabled by dataRepository.getBondedLocationDiagnosticsEnabled.collectAsState(initial = false)
     val diagnostics = (context.applicationContext as WearTakApplication).locationDiagnostics
     val watchSample by diagnostics.watch.collectAsState()
@@ -211,7 +225,7 @@ private fun DebugScreen(
         ) {
             if (showAppDiagnostics) {
                 AppDiagnosticsPage(
-                    diagnostics = (context.applicationContext as WearTakApplication).diagnostics,
+                    diagnostics = appDiagnostics,
                     onBack = { showAppDiagnostics = false }
                 )
             } else if (showLocationDiagnostics) {
@@ -244,7 +258,19 @@ private fun DebugScreen(
                         showQrCode = true
                     },
                     onShowLocationDiagnostics = { showLocationDiagnostics = true },
-                    onShowDiagnostics = { showAppDiagnostics = true }
+                    onShowDiagnostics = { showAppDiagnostics = true },
+                    diagnosticsEnabled = appDiagnosticsEnabled,
+                    onDiagnosticsEnabledChange = { value ->
+                        scope.launch {
+                            try {
+                                withContext(Dispatchers.IO) { appDiagnostics.setEnabled(value) }
+                            } catch (error: IOException) {
+                                Toast.makeText(context, R.string.app_diagnostics_failed, Toast.LENGTH_LONG).show()
+                            } catch (error: SecurityException) {
+                                Toast.makeText(context, R.string.app_diagnostics_failed, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    }
                 )
             }
         }
@@ -257,12 +283,15 @@ internal fun DebugInformationPage(
     onBack: () -> Unit,
     onShowQrCode: () -> Unit,
     onShowLocationDiagnostics: () -> Unit,
-    onShowDiagnostics: () -> Unit = {}
+    onShowDiagnostics: () -> Unit = {},
+    diagnosticsEnabled: Boolean = false,
+    onDiagnosticsEnabledChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val entries = sortedDeveloperEntries(listOf(
         DeveloperEntry(DeveloperEntryId.BUILD, stringResource(R.string.debug_build), debugInfo.buildType),
         DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, stringResource(R.string.app_diagnostics)),
+        DeveloperEntry(DeveloperEntryId.DIAGNOSTICS_LOGS, stringResource(R.string.app_diagnostics_logs)),
         DeveloperEntry(DeveloperEntryId.GIT, stringResource(R.string.debug_git), "${debugInfo.gitBranch}@${debugInfo.gitCommit}"),
         DeveloperEntry(DeveloperEntryId.IP, stringResource(R.string.debug_ip), debugInfo.ipAddress),
         DeveloperEntry(DeveloperEntryId.LOCATION, stringResource(R.string.companion_location_diagnostics)),
@@ -300,10 +329,15 @@ internal fun DebugInformationPage(
         items(entries, key = { it.id }) { entry ->
             when (entry.id) {
                 DeveloperEntryId.STAY_AWAKE -> DebugStayAwakeSetting()
-                DeveloperEntryId.DIAGNOSTICS, DeveloperEntryId.LOCATION, DeveloperEntryId.QR ->
+                DeveloperEntryId.DIAGNOSTICS -> WearTAKToggleChip(
+                    title = entry.label,
+                    checkedLive = diagnosticsEnabled,
+                    onCheckedChange = onDiagnosticsEnabledChange
+                )
+                DeveloperEntryId.DIAGNOSTICS_LOGS, DeveloperEntryId.LOCATION, DeveloperEntryId.QR ->
                     Button(
                         onClick = when (entry.id) {
-                            DeveloperEntryId.DIAGNOSTICS -> onShowDiagnostics
+                            DeveloperEntryId.DIAGNOSTICS_LOGS -> onShowDiagnostics
                             DeveloperEntryId.LOCATION -> onShowLocationDiagnostics
                             else -> onShowQrCode
                         },
@@ -323,7 +357,6 @@ internal fun DebugInformationPage(
 private fun AppDiagnosticsPage(diagnostics: AppDiagnostics, onBack: () -> Unit) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val enabled by diagnostics.enabled.collectAsState()
     val failed by diagnostics.storageFailed.collectAsState()
     var status by remember { mutableStateOf("") }
     var busy by remember { mutableStateOf(false) }
@@ -360,16 +393,8 @@ private fun AppDiagnosticsPage(diagnostics: AppDiagnostics, onBack: () -> Unit) 
         verticalArrangement = Arrangement.spacedBy(5.dp)
     ) {
         item {
-            WearTAKToggleChip(
-                title = stringResource(R.string.app_diagnostics),
-                checkedLive = enabled,
-                onCheckedChange = { value ->
-                    action(R.string.app_diagnostics_saved, exclusive = false) { diagnostics.setEnabled(value) }
-                }
-            )
-        }
-        item {
-            Text(stringResource(R.string.app_diagnostics_description), fontSize = 11.sp, textAlign = TextAlign.Center)
+            Text(stringResource(R.string.app_diagnostics_logs), fontSize = 15.sp,
+                fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
         }
         if (failed || status.isNotEmpty()) item {
             Text(if (failed) stringResource(R.string.app_diagnostics_failed) else status,
