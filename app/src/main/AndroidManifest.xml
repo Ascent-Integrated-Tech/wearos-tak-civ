@@ -420,12 +420,10 @@
             android:exported="false"
             android:foregroundServiceType="specialUse"
             android:stopWithTask="false" />
-        <!-- Phase 1 testing: CEPSimulationService is registered but only activates when
-             CEPSimulationService.IN_TESTING = true is set in the companion object.
-             Safe to keep in production manifests — the service is a no-op by default. -->
+        <!-- Simulation is available only in explicitly enabled test builds. -->
         <service
             android:name=".service.CEPSimulationService"
-            android:enabled="true"
+            android:enabled="${cepSimulationEnabled}"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|dataSync"
             android:stopWithTask="false" />

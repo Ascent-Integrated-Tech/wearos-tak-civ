@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.service
 
 import android.app.Service
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 
 /**
@@ -45,9 +46,10 @@ class ServiceRegistry() {
         ServiceType.AUDIO_CAP to AudioCaptureService::class.java,
         ServiceType.ONNX_GUNSHOT to GunshotOnnxService::class.java,
         ServiceType.ONNX_UAS to UasOnnxService::class.java,
-        ServiceType.CRM_INFERENCE to CrmInferenceService::class.java,
+        ServiceType.CRM_INFERENCE to CrmInferenceService::class.java
+    ) + if (BuildConfig.CEP_SIMULATION) mapOf(
         ServiceType.CEP_SIMULATION to CEPSimulationService::class.java
-    )
+    ) else emptyMap()
 
     private val serviceRunningStateMap = mapOf(
         ServiceType.WEATHER to WeatherService.isRunning,
@@ -73,9 +75,10 @@ class ServiceRegistry() {
         ServiceType.AUDIO_CAP to AudioCaptureService.isRunning,
         ServiceType.ONNX_GUNSHOT to GunshotOnnxService.isRunning,
         ServiceType.ONNX_UAS to UasOnnxService.isRunning,
-        ServiceType.CRM_INFERENCE to CrmInferenceService.isRunning,
+        ServiceType.CRM_INFERENCE to CrmInferenceService.isRunning
+    ) + if (BuildConfig.CEP_SIMULATION) mapOf(
         ServiceType.CEP_SIMULATION to CEPSimulationService.isRunning
-    )
+    ) else emptyMap()
 
     /**
      * Get the Service class for a given ServiceType

@@ -14,6 +14,7 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 import io.mockk.mockk
+import com.aitech.weartak_civ.presentation.MainActivity
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -24,6 +25,7 @@ class ServiceConfigurationPermissionWarningTest {
     @Test
     fun dynamicMotionDemandDoesNotEnablePhysiologyOrRequireBodySensors() = runBlocking {
         val app = RuntimeEnvironment.getApplication()
+        MainActivity.device_uid = "configuration-test-watch"
         val repo = DataRepository(app)
         val configuration = ServiceConfiguration(app, repo, mockk(relaxed = true))
         repo.storeEnablePhysiologicalServices(false)

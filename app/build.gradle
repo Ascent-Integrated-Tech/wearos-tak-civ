@@ -171,6 +171,7 @@ android {
             signingConfig signingConfigs.debug
             def cepSimulation = project.findProperty("CEP_SIMULATION") ?: "false"
             buildConfigField("Boolean", "CEP_SIMULATION", cepSimulation.toString())
+            manifestPlaceholders.cepSimulationEnabled = cepSimulation.toString()
             def cepTestAlerts = project.findProperty("CEP_TEST_ALERTS") ?: "false"
             buildConfigField("Boolean", "CEP_TEST_ALERTS", cepTestAlerts.toString())
         }
@@ -181,6 +182,7 @@ android {
             signingConfig signingConfigs.release
             def cepSimulation = "false"
             buildConfigField("Boolean", "CEP_SIMULATION", cepSimulation.toString())
+            manifestPlaceholders.cepSimulationEnabled = cepSimulation
             def cepTestAlerts = "false"
             buildConfigField("Boolean", "CEP_TEST_ALERTS", cepTestAlerts.toString())
         }
