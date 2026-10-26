@@ -1427,6 +1427,14 @@ class MainActivity : ComponentActivity() {
         }
          */
 
+        val managedNetwork = try {
+            ManagedNetworkToggles.parse(appRestrictions)
+        } catch (error: IllegalArgumentException) {
+            Log.e(TAG, "Invalid managed network configuration; update rejected", error)
+            Toast.makeText(this, R.string.invalid_managed_network_configuration, Toast.LENGTH_LONG).show()
+            return
+        }
+
         // Store previous license before getting new license and validating it
         val prevLicenseIsValid = isLicenseValid()
         // Get the new settings from the restrictions manager or null, so that we only change dataRepository if there are changes
@@ -1435,29 +1443,10 @@ class MainActivity : ComponentActivity() {
         val teamsColors = appRestrictions.getString("custom_teams_colors", null)
         val categoryRolesJsonStr = appRestrictions.getString("custom_roles", null)
 
-        val dataEndpoints = appRestrictions.getStringArray("select_data_endpoints")
-        var enableTakEndpointConfigUpdate = false
-        var enableEsriEndpointConfigUpdate = false
-        var enableTabletCommandEndpointConfigUpdate = false
-        Log.d(TAG, "Send to data endpoints (${dataEndpoints?.size}): ${dataEndpoints?.joinToString(", ")}")
-        if (null != dataEndpoints) {
-            for (endpoint in dataEndpoints) {
-                if ("ESRI" == endpoint) {
-                    enableEsriEndpointConfigUpdate = true
-                } else if ("Tablet Command" == endpoint) {
-                    enableTabletCommandEndpointConfigUpdate = true
-                } else if ("TAK" == endpoint) {
-                    enableTakEndpointConfigUpdate = true
-                }
-            }
-        }
-        // TODO: Do we need this below
-        /*
-        if (!enableEsriEndpointConfigUpdate && !enableTakEndpointConfigUpdate) {
-            enableTakEndpointConfigUpdate = true
-        }
-
-         */
+        val enableTakEndpointConfigUpdate = managedNetwork.tak ?: enableTakEndpoint
+        val enableEsriEndpointConfigUpdate = managedNetwork.esri ?: enableEsriEndpoint
+        val enableTabletCommandEndpointConfigUpdate =
+            managedNetwork.tabletCommand ?: enableTabletCommandEndpoint
 
         var serverEnableTAKConnectService: Boolean = true
         var serverName: String? = null
@@ -1597,21 +1586,21 @@ class MainActivity : ComponentActivity() {
         val enableSkinTempServiceConfigUpdate =
             appRestrictions.getBoolean("skin_temp_service_enabled", enableSkinTempService)
         val enableDittoServiceConfigUpdate =
-            appRestrictions.getBoolean("ditto_service_enabled", enableDittoService)
+            managedNetwork.ditto ?: enableDittoService
         val enableBloodhoundProximityVibrationConfigUpdate = appRestrictions.getBoolean("enable_bloodhound_proximity_vibration", enableBloodhoundProximityVibration)
         val bloodhoundProximityRadiusMetersConfigUpdate = appRestrictions.getInt("bloodhound_proximity_radius_meters", bloodhoundProximityRadiusMeters)
         val bloodhoundProximityIntensityConfigUpdate = appRestrictions.getString("bloodhound_proximity_intensity", bloodhoundProximityIntensity) ?: bloodhoundProximityIntensity
         val enableBleBeaconServiceConfigUpdate =
             appRestrictions.getBoolean("ble_beacon_service_enabled", enableBleBeaconService)
         val enableHailServiceConfigUpdate = appRestrictions.getBoolean("hail_service_enabled", enableHailService)
-        val enableSitxServiceConfigUpdate = appRestrictions.getBoolean("sitx_service_enabled", enableSitxService)
+        val enableSitxServiceConfigUpdate = managedNetwork.sitx ?: enableSitxService
         val enableImmersionAlertsConfigUpdate = appRestrictions.getBoolean("enable_immersion_alerts", enableImmersionAlerts)
         val enableLowAtmPressureAlertConfigUpdate = appRestrictions.getBoolean("enable_low_atm_pressure_alert", enableLowAtmPressureAlert)
         val enableHighAtmPressureAlertConfigUpdate = appRestrictions.getBoolean("enable_high_atm_pressure_alert", enableHighAtmPressureAlert)
         val lowAtmPressureAlertThresholdConfigUpdate = appRestrictions.getInt("low_atm_pressure_alert_threshold", lowAtmPressureAlertThreshold)
         val highAtmPressureAlertThresholdConfigUpdate = appRestrictions.getInt("high_atm_pressure_alert_threshold", highAtmPressureAlertThreshold)
         val enableBatdokCotConfigUpdate = appRestrictions.getBoolean("batdok_enabled", enableBatdokCot)
-        val enableMulticastConfigUpdate = appRestrictions.getBoolean("multicast_service_enabled", enableMulticastOnWifi)
+        val enableMulticastConfigUpdate = managedNetwork.multicast ?: enableMulticastOnWifi
         val enableGeofenceServiceConfigUpdate = appRestrictions.getBoolean("geofence_service_enabled", enableGeofenceService)
 
         cfgUpdateMap[ServiceType.LOCATION] = enableLocationServiceConfigUpdate
@@ -1640,7 +1629,7 @@ class MainActivity : ComponentActivity() {
         val dittoAuthTokenConfigUpdate = appRestrictions.getString("ditto_auth_token", "")
 
         val companionServiceSetting = resolveManagedCompanionServiceSetting(
-            managedOverride = appRestrictions.getNullableBoolean("enable_companion_plugin"),
+            managedOverride = managedNetwork.companion,
             persistedValue = enableCompanionAppService
         )
         val enableCompanionAppServiceConfigUpdate = companionServiceSetting.enabled
@@ -1811,7 +1800,7 @@ class MainActivity : ComponentActivity() {
                 esriReportingUpdateInterval = esriReportingIntervalConfigUpdate
                 dataRepository.storeEsriReportingUpdateInterval(esriReportingIntervalConfigUpdate)
             }
-            if (enableEsriEndpointConfigUpdate != enableEsriEndpoint) {
+            if (managedNetwork.esri != null && enableEsriEndpointConfigUpdate != enableEsriEndpoint) {
                 enableEsriEndpoint = enableEsriEndpointConfigUpdate
                 dataRepository.storeEnableEsriEndpoint(enableEsriEndpointConfigUpdate)
             }
@@ -1830,7 +1819,7 @@ class MainActivity : ComponentActivity() {
                     tabletCommandReportingIntervalConfigUpdate
                 )
             }
-            if (enableTabletCommandEndpointConfigUpdate != enableTabletCommandEndpoint) {
+            if (managedNetwork.tabletCommand != null && enableTabletCommandEndpointConfigUpdate != enableTabletCommandEndpoint) {
                 enableTabletCommandEndpoint = enableTabletCommandEndpointConfigUpdate
                 dataRepository.storeEnableTabletCommandEndpoint(
                     enableTabletCommandEndpointConfigUpdate
@@ -1902,13 +1891,11 @@ class MainActivity : ComponentActivity() {
             )
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
             dataRepository.storeManagedNetworkToggles(
-                tak = enableTakEndpointConfigUpdate,
-                multicast = enableMulticastConfigUpdate,
-                sitx = enableSitxServiceConfigUpdate,
-                ditto = enableDittoServiceConfigUpdate,
-                companion = enableCompanionAppServiceConfigUpdate.takeIf {
-                    companionServiceSetting.persistManagedOverride
-                }
+                tak = managedNetwork.tak,
+                multicast = managedNetwork.multicast,
+                sitx = managedNetwork.sitx,
+                ditto = managedNetwork.ditto,
+                companion = managedNetwork.companion
             )
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             if (constantReportingInterval != constantReportingIntervalConfigUpdate) {

@@ -1463,10 +1463,18 @@ fun WearTAKSettingsNav(
             val companionStatus = companionPluginStatus(enableCompanionAppService)
             val enabledLabel = stringResource(R.string.enabled)
             val disabledLabel = stringResource(R.string.disabled)
+            val takIndicator = TakServerIndicator.resolve(
+                hasServer = takServerList.isNotEmpty(),
+                masterEnabled = enableTakEndpoint,
+                anyConnected = takServerList.any { it.isEnabled && it.serverId in connected }
+            )
             val rows = (listOf(
                 NetworkConnectivityRow("tak", stringResource(R.string.tak_servers),
-                    androidx.compose.ui.res.pluralStringResource(R.plurals.network_server_count,
-                        takServerList.size, takServerList.count { it.serverId in connected }, takServerList.size),
+                    stringResource(R.string.tak_status_with_count, stringResource(takIndicator.label),
+                        androidx.compose.ui.res.pluralStringResource(R.plurals.network_server_count,
+                            takServerList.size,
+                            if (enableTakEndpoint) takServerList.count { it.isEnabled && it.serverId in connected } else 0,
+                            takServerList.size)),
                     enableTakEndpoint, settingsVm::storeEnableTakEndpoint),
                 NetworkConnectivityRow("multicast", stringResource(R.string.tak_sa_multicast),
                     if (enableMulticast) enabledLabel else disabledLabel,
@@ -1500,6 +1508,15 @@ fun WearTAKSettingsNav(
                             onCheckedChange = row.toggle,
                             title = row.title,
                             description = row.subtitle,
+                            appIcon = {
+                                if (row.key == "tak") {
+                                    Image(
+                                        painter = painterResource(takIndicator.drawable),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(25.dp)
+                                    )
+                                }
+                            },
                             enabled = !networkPreferencesLocked && !phoneManagedSettings
                         )
                     }

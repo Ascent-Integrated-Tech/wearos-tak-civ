@@ -4,6 +4,27 @@ WearTAK-WearOS is a standalone Wear OS application that connects a watch to the 
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
+### TAK master switch and upgrades
+
+The TAK Servers master switch defaults to on, including upgrades with no saved
+servers. Accepted local switch changes are saved atomically with an explicit-choice
+marker; locked/rejected changes do not create a choice. A one-time upgrade repair
+restores on for unmarked legacy values. Legacy `false` has no provenance: an old
+user-selected off cannot be distinguished from the automatic managed-config write,
+so both recover to on. Choices saved with the marker survive subsequent upgrades.
+Managed network settings remain authoritative and do not erase the saved local
+choice marker. Missing restrictions leave existing switches unchanged; an explicitly
+empty endpoint selection disables TAK. Invalid network restrictions reject the
+update with an error log and an administrator-facing message.
+
+In **Network Preferences**, the existing TAK Servers quick-glance switch row reuses
+the main-screen TAK artwork: green/check means at least one TAK server connected,
+yellow/signal means configured but switched off or not connected, and red/X means
+no server configured, even when the master is on. Its text and accessibility label
+describe the state independently of color; the server count and switch remain.
+The main-screen aggregate transport indicator and watchface complications are
+unchanged.
+
 ### Received CoT marker symbols
 
 TAK and Companion marker ingress accept generic `a-<affiliation>-...` atom types,

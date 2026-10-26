@@ -1,4 +1,10 @@
 <resources>
+    <string name="invalid_managed_network_configuration">Invalid managed network configuration. Settings were not applied. Contact your administrator.</string>
+    <string name="tak_status_no_server">No server configured</string>
+    <string name="tak_status_off">Switched off</string>
+    <string name="tak_status_not_connected">Not connected</string>
+    <string name="tak_status_connected">Connected</string>
+    <string name="tak_status_with_count">%1$s · %2$s</string>
     <string name="notification_weartak_active">WearTAK active</string>
     <string name="notification_background_services">Background services</string>
     <plurals name="notification_services_running">
