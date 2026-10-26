@@ -24,6 +24,7 @@ import androidx.lifecycle.MutableLiveData
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.data.CrmDataRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.events.IsDeviceWornEvent
@@ -177,7 +178,8 @@ class SkinTempService : Service() {
     private lateinit var backgroundHandler: Handler
     private var isHandlerRunning = false
     private var deviceWorn: Boolean = false
-    private var isHrRunning = false
+    @Volatile private var isHrRunning = false
+    private var hrGeneration = 0L
 
     // Running flags for trackers
     @Volatile private var spo2Running: Boolean = false
@@ -242,6 +244,10 @@ class SkinTempService : Service() {
 	private val NN_MIN_MS = 300
 	private val NN_MAX_MS = 2000
 	@Volatile private var lastNonZeroRmssdMs: Double = 0.0
+    private var lastRmssdElapsedMs = 0L
+    private var lastRmssdWallMs = 0L
+    private var lastHrvEmittedElapsedMs = 0L
+    private val HRV_FRESHNESS_MS = 120_000L
 
     // ---- Strict measurement state machine for SpO2 → PPG ----
     private enum class MeasurementState { IDLE, SPO2_RUNNING, PPG_RUNNING }
@@ -278,11 +284,13 @@ class SkinTempService : Service() {
                 Log.e(TAG, "Failed to init SpO2 tracker", t)
             }
             // Initialize HR continuous tracker
-            try {
-                hrTracker = healthService.getHealthTracker(HealthTrackerType.HEART_RATE_CONTINUOUS)
-                Log.i(TAG, "HR tracker initialized (HEART_RATE_CONTINUOUS)")
-            } catch (t: Throwable) {
-                Log.e(TAG, "Failed to init HR tracker", t)
+            if (BuildConfig.SAMSUNG_HRV_ENABLED) {
+                try {
+                    hrTracker = healthService.getHealthTracker(HealthTrackerType.HEART_RATE_CONTINUOUS)
+                    Log.i(TAG, "HRV tracker initialized (HEART_RATE_CONTINUOUS)")
+                } catch (error: Exception) {
+                    Log.e(TAG, "Failed to init HRV tracker", error)
+                }
             }
             // PPG capability detection with fallbacks
             initPpgCapability()
@@ -323,7 +331,8 @@ class SkinTempService : Service() {
             stopSkinTracker(true)
             stopSpo2Tracker()
             stopPpgTracker()
-            stopHrTracker(true)
+            stopHrTracker()
+            AppDiagnostics.updateSamsungHrContinuousRunning(false)
             stopEmitLoop()
         }
     }
@@ -384,6 +393,7 @@ class SkinTempService : Service() {
     // ---- HEART RATE CONTINUOUS + IBI listener ----
     private val hrEventListener = object : HealthTracker.TrackerEventListener {
         override fun onDataReceived(dataPoints: List<DataPoint>) {
+            if (!BuildConfig.SAMSUNG_HRV_ENABLED || !deviceWorn || !isHrRunning) return
             lastCallbackElapsed = SystemClock.elapsedRealtime()
             var batchMostRecentHr = 0
             var batchMostRecentHrStatus = Int.MIN_VALUE
@@ -428,12 +438,16 @@ class SkinTempService : Service() {
                         "IBI=$effectiveIbi (raw=$batchMostRecentIbi lastNonZero=$lastNonZeroIbi) reason=$reason"
             )*/
 			// Update NN buffer with newly received (valid) intervals and compute RMSSD (mirror WEAR-383)
-			addValidNnIntervals(firstIbiList, firstIbiStatusList)
-			val rmssd = computeRmssdMs()
-			if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) {
-				lastNonZeroRmssdMs = rmssd
-			}
-			val effectiveRmssd = if (rmssd != null && rmssd > 0.0 && !rmssd.isNaN()) rmssd else lastNonZeroRmssdMs
+            synchronized(nnBuffer) {
+                if (!deviceWorn || !isHrRunning) return
+                if (!addValidNnIntervals(firstIbiList, firstIbiStatusList)) return@synchronized
+                val rmssd = computeRmssdMs()
+                if (rmssd != null && rmssd > 0.0 && rmssd.isFinite()) {
+                    lastNonZeroRmssdMs = rmssd
+                    lastRmssdElapsedMs = SystemClock.elapsedRealtime()
+                    lastRmssdWallMs = System.currentTimeMillis()
+                }
+            }
 			//Log.i(TAG, "HRV-RMSSD: rmssdMs=${"%.1f".format(effectiveRmssd)} nnCount=${nnBuffer.size} source=$reason")
         }
 
@@ -1073,26 +1087,66 @@ class SkinTempService : Service() {
 
     // ---- HR tracker lifecycle + screen-off flush helpers ----
     private fun startHrTracker() {
-        if (!::hrTracker.isInitialized || isHrRunning) return
-        isHrRunning = true
-        backgroundHandler.post { hrTracker.setEventListener(hrEventListener) }
-        Log.i(TAG, "HR tracker started (HEART_RATE_CONTINUOUS)")
+        if (!BuildConfig.SAMSUNG_HRV_ENABLED || !deviceWorn || !::hrTracker.isInitialized) return
+        val generation = synchronized(nnBuffer) {
+            if (isHrRunning) return
+            isHrRunning = true
+            ++hrGeneration
+        }
+        backgroundHandler.post {
+            synchronized(nnBuffer) {
+                if (!isHrRunning || !deviceWorn || hrGeneration != generation) return@post
+                try {
+                    hrTracker.setEventListener(hrEventListener)
+                    AppDiagnostics.updateSamsungHrContinuousRunning(true)
+                    Log.i(TAG, "HRV tracker started (HEART_RATE_CONTINUOUS)")
+                } catch (error: Exception) {
+                    isHrRunning = false
+                    disableScreenOffFlushLoop()
+                    Log.e(TAG, "Failed to start HRV tracker", error)
+                }
+            }
+        }
     }
 
-    private fun stopHrTracker(clearQueue: Boolean = false) {
-        if (!isHrRunning) return
-        isHrRunning = false
-        disableScreenOffFlushLoop()
-        backgroundHandler.post {
-            try { hrTracker.unsetEventListener() } catch (_: Throwable) {}
-            if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
+    private fun stopHrTracker() {
+        val generation = synchronized(nnBuffer) {
+            isHrRunning = false
+            nnBuffer.clear()
+            lastNonZeroRmssdMs = 0.0
+            lastRmssdElapsedMs = 0L
+            lastRmssdWallMs = 0L
+            lastHrvEmittedElapsedMs = 0L
+            ++hrGeneration
         }
-        Log.i(TAG, "HR tracker stopped")
+        disableScreenOffFlushLoop()
+        if (!::hrTracker.isInitialized) return
+        backgroundHandler.post {
+            synchronized(nnBuffer) {
+                if (isHrRunning || hrGeneration != generation) return@post
+                try {
+                    hrTracker.unsetEventListener()
+                    AppDiagnostics.updateSamsungHrContinuousRunning(false)
+                    Log.i(TAG, "HRV tracker stopped")
+                } catch (error: Exception) {
+                    Log.e(TAG, "Failed to stop HRV tracker", error)
+                }
+            }
+        }
+    }
+
+    internal fun latestHrvPayload(nowElapsedMs: Long): HrvPayload? = synchronized(nnBuffer) {
+        if (!BuildConfig.SAMSUNG_HRV_ENABLED || !isHrRunning || !deviceWorn ||
+            lastRmssdElapsedMs <= lastHrvEmittedElapsedMs ||
+            nowElapsedMs - lastRmssdElapsedMs !in 0..HRV_FRESHNESS_MS ||
+            lastNonZeroRmssdMs <= 0.0 || !lastNonZeroRmssdMs.isFinite()) return null
+        HrvPayload(rmssd_ms = lastNonZeroRmssdMs, ts = lastRmssdWallMs)
     }
 
 	// ---- HRV helpers (mirrors WEAR-383) ----
-	private fun addValidNnIntervals(ibiList: List<Int>?, ibiStatusList: List<Int>?) {
-		if (ibiList.isNullOrEmpty()) return
+	private fun addValidNnIntervals(ibiList: List<Int>?, ibiStatusList: List<Int>?): Boolean {
+		if (ibiList.isNullOrEmpty()) return false
+        var added = false
 		val hasStatus = !ibiStatusList.isNullOrEmpty() && ibiStatusList.size == ibiList.size
 		for (i in ibiList.indices) {
 			val ibi = ibiList[i]
@@ -1100,8 +1154,10 @@ class SkinTempService : Service() {
 			if (!statusOk) continue
 			if (ibi < NN_MIN_MS || ibi > NN_MAX_MS) continue
 			nnBuffer.addLast(ibi)
+            added = true
 			while (nnBuffer.size > MAX_NN_BUFFER) nnBuffer.removeFirst()
 		}
+        return added
 	}
 
 	private fun computeRmssdMs(): Double? {
@@ -1122,14 +1178,14 @@ class SkinTempService : Service() {
 
     private val hrFlushRunnable = object : Runnable {
         override fun run() {
-            if (!screenOffFlushEnabled || !deviceWorn || !isHrRunning) return
+            if (!BuildConfig.SAMSUNG_HRV_ENABLED || !screenOffFlushEnabled || !deviceWorn || !isHrRunning) return
             flushHr("screen_off_timer")
             backgroundHandler.postDelayed(this, SCREEN_OFF_FLUSH_INTERVAL_MS)
         }
     }
 
     private fun enableScreenOffFlushLoop() {
-        if (screenOffFlushEnabled) return
+        if (!BuildConfig.SAMSUNG_HRV_ENABLED || !deviceWorn || !isHrRunning || screenOffFlushEnabled) return
         screenOffFlushEnabled = true
         Log.w(TAG, "SCREEN-OFF FLUSH: ENABLED intervalMs=$SCREEN_OFF_FLUSH_INTERVAL_MS")
         backgroundHandler.removeCallbacks(hrFlushRunnable)
@@ -1144,7 +1200,7 @@ class SkinTempService : Service() {
     }
 
     private fun flushHr(reason: String) {
-        if (!::hrTracker.isInitialized) return
+        if (!BuildConfig.SAMSUNG_HRV_ENABLED || !isHrRunning || !deviceWorn || !::hrTracker.isInitialized) return
         Log.i(TAG, "FLUSH-REQUEST: reason=$reason t=${SystemClock.elapsedRealtime()}")
         try { hrTracker.flush() } catch (t: Throwable) { Log.e(TAG, "flushHr failed reason=$reason", t) }
     }
@@ -1426,7 +1482,7 @@ class SkinTempService : Service() {
         stopSkinTracker(true)
         stopSpo2Tracker()
         stopPpgTracker()
-        stopHrTracker(true)
+        stopHrTracker()
         if (::spo2Sequencer.isInitialized) {
             spo2Sequencer.reset(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ResetReason.SERVICE_STOP)
             lastSpo2InvalidReason = ResetReason.SERVICE_STOP.name
@@ -1443,6 +1499,7 @@ class SkinTempService : Service() {
         crmRepo.updateSamplingState(CrmSamplingState.IDLE)
         pushColdInputsOkFlag()
         healthService.disconnectService()
+        AppDiagnostics.updateSamsungHrContinuousRunning(false)
         handlerThread.quitSafely()
         stopForegroundServiceCompat()
     }
@@ -1484,7 +1541,7 @@ class SkinTempService : Service() {
                 ppgRedSustainedAtPauseMs = 0L
                 ppgPauseStartedAtMs = 0L
                 clearSpo2RepositoryStateAsync()
-                stopHrTracker(true)
+                stopHrTracker()
                 stopSkinTracker(true)     // shut it down
                 stopSpo2Tracker()
                 stopPpgTracker()
@@ -1636,13 +1693,17 @@ class SkinTempService : Service() {
                 }
             }
 			// Emit latest HRV (RMSSD) if available
-			if (lastNonZeroRmssdMs > 0.0 && lastNonZeroRmssdMs.isFinite()) {
+            latestHrvPayload(SystemClock.elapsedRealtime())?.let { hrv ->
 				CepBus.emit(
 					CepEvent(
 						topic = Topics.HRV,
-						payload = HrvPayload(rmssd_ms = lastNonZeroRmssdMs)
+                        payload = hrv,
+                        ts = hrv.ts
 					)
 				)
+                synchronized(nnBuffer) {
+                    if (lastRmssdWallMs == hrv.ts) lastHrvEmittedElapsedMs = lastRmssdElapsedMs
+                }
 			}
             lastPpgAmplitude?.let { amp ->
                 CepBus.emit(

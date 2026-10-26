@@ -11,6 +11,7 @@ import kotlin.math.max
 object DerivedEval {
 
     private const val TAG = "CEP"
+    private val numericOperators = listOf("key", "div", "mul", "sub", "add", "max", "min", "sum", "case")
 
     private inline fun logDerived(id: String, value: Any?) {
         // Avoid noise in release builds
@@ -104,6 +105,11 @@ object DerivedEval {
         evalNumber(expr, fs, def.maxAgeSec)?.let { num ->
             logDerived(id, num)
             fs.putDerived(id, num, tsMs)
+            return
+        }
+        // Missing numeric inputs must not fall through to legacy false (coerced to zero).
+        if (numericOperators.any(expr::has)) {
+            fs.clear(id)
             return
         }
 
