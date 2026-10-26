@@ -249,7 +249,7 @@ internal class TakDataPackageClient(
 
     fun downloadRoutes(offer: TakDataPackageRequest, serverId: String): List<TakRoute> {
         val request = Request.Builder().url(downloadUrl(offer)).get().build()
-        client.newCall(request).withSessionResponse(session) { response ->
+        (session?.route(client) ?: client).newCall(request).withSessionResponse(session) { response ->
             if (!response.isSuccessful) throw IOException("Package download HTTP ${response.code}")
             val body = response.body ?: throw IOException("Empty package response")
             if (body.contentLength() > MAX_DATA_PACKAGE_BYTES) throw IOException("Oversized package response")

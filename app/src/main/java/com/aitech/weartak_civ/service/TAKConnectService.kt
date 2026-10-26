@@ -71,6 +71,7 @@ import com.aitech.weartak_civ.events.NwConnEvent.Companion.WIFI
 import com.aitech.weartak_civ.events.TakChatEvent
 import com.aitech.weartak_civ.integration.plugin.PluginCotIngress
 import com.aitech.weartak_civ.manager.NetworkManager
+import com.aitech.weartak_civ.manager.TakNetworkPreference
 import com.aitech.weartak_civ.manager.MulticastWifiRequest
 import kotlinx.coroutines.flow.StateFlow
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -163,12 +164,22 @@ import com.aitech.weartak_civ.data.takserver.withSessionResponse
 class TAKConnectService: Service() {
     var networkManager: NetworkManager? = null
     private var multicastWifiRequest: MulticastWifiRequest? = null
+    private var offBodyScheduler: OffBodyTakScheduler? = null
+    private var takNetworkPreference: TakNetworkPreference? = null
+
+    private fun updateOffBodyPolicy() {
+        offBodyScheduler?.update(dataRepository.latestDeviceWornObservation.value,
+            takEndpointEnabled && !dataRepository.isCompanionConnected.value &&
+                takNetworkPreference?.network?.value != null &&
+                takServerDetails.any { it.isEnabled && !it.duplicateEndpointSuppressed })
+    }
 
     class ConnectionAttempt(val generation: Long) {
         val outputMutex = Mutex()
         val sessionId: String = java.util.UUID.randomUUID().toString()
         var job: Job? = null
         var socket: SSLSocket? = null
+        var rawSocket: java.net.Socket? = null
         var connectedAtMs: Long = 0L
         var httpSession: TakHttpSession? = null
     }
@@ -222,6 +233,8 @@ class TAKConnectService: Service() {
         super.onCreate()
         synchronized(serviceLifecycleLock) {
             activeService?.let { previous ->
+                previous.offBodyScheduler?.stop()
+                previous.takNetworkPreference?.stop()
                 previous.scope.cancel()
                 previous.multicastWifiRequest?.close()
                 if (EventBus.getDefault().isRegistered(previous)) {
@@ -242,7 +255,38 @@ class TAKConnectService: Service() {
             importance = NotificationManager.IMPORTANCE_LOW
         )
 
+        takNetworkPreference = TakNetworkPreference(this).also { it.start() }
+        offBodyScheduler = OffBodyTakScheduler(this,
+            connect = { connectToTakServers() },
+            disconnect = { closeTakServerSockets(); resetTakServerConnectionDetails() })
+        updateOffBodyPolicy()
         setFromDatastore()
+        updateOffBodyPolicy()
+        scope.launch(Dispatchers.Main.immediate) {
+            var previousNetwork = takNetworkPreference?.network?.value
+            combine(dataRepository.latestDeviceWornObservation,
+                dataRepository.getEnableTakEndpoint,
+                dataRepository.isCompanionConnected,
+                requireNotNull(takNetworkPreference).network) { _, enabled, _, network ->
+                enabled to network
+            }.collect { (enabled, network) ->
+                takEndpointEnabled = enabled
+                if (network != previousNetwork) {
+                    previousNetwork = network
+                    isNetworkConnected = network != null
+                    isWifiConnected = network?.let {
+                        getSystemService(ConnectivityManager::class.java).getNetworkCapabilities(it)
+                            ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+                    } == true
+                    closeTakServerSockets()
+                    resetTakServerConnectionDetails()
+                    AppDiagnostics.record(DiagnosticEvent.OFF_BODY_TAK,
+                        mapOf(DiagnosticMetric.MODE to 3L))
+                    updateOffBodyPolicy()
+                    if (network != null) connectToTakServers()
+                } else updateOffBodyPolicy()
+            }
+        }
         startTakServerConfigurationCollector()
         scope.launch {
             dataRepository.getEnableTakEndpoint.distinctUntilChanged().collect { enabled ->
@@ -557,6 +601,7 @@ class TAKConnectService: Service() {
             "Provisioned TAK configuration refreshed servers=${refreshed.size} replaced=$replacedCount"
         )
 
+        updateOffBodyPolicy()
         val companionConnected = dataRepository.isCompanionConnected.value
         refreshed
             .filter { detail ->
@@ -572,8 +617,12 @@ class TAKConnectService: Service() {
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
         Log.d(TAG, "TAKConnectService onStartCommand()")
         networkManager = NetworkManager.getInstance()
-        isNetworkConnected = networkManager?.isNetworkConnected() ?: false
-        isWifiConnected = networkManager?.isWifiConnected() ?: false
+        val selected = takNetworkPreference?.network?.value
+        isNetworkConnected = selected != null || networkManager?.isNetworkConnected() == true
+        isWifiConnected = if (selected != null) {
+            getSystemService(ConnectivityManager::class.java).getNetworkCapabilities(selected)
+                ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI) == true
+        } else networkManager?.isWifiConnected() ?: false
         // Connecting to tak server is handled by the endpoint gate logic. If companion app is not connected, connectToTakServers() will fire there.
         if (isNetworkConnected) {
             Log.d(TAG, "TAKConnectService onStartCommand(): net=$isNetworkConnected wifi=$isWifiConnected")
@@ -592,6 +641,8 @@ class TAKConnectService: Service() {
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
+        offBodyScheduler?.stop()
+        takNetworkPreference?.stop()
         scope.cancel()
         multicastWifiRequest?.close()
         synchronized(serviceLifecycleLock) {
@@ -625,9 +676,13 @@ class TAKConnectService: Service() {
 
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onNwConnEvent(event: NwConnEvent) {
-        val currIsConn = event.isConn
+        val selected = takNetworkPreference?.network?.value
+        val currIsConn = if (takNetworkPreference != null) selected != null else event.isConn
         val currTransport = event.transport
-        val currIsWifi = (currTransport == WIFI)
+        val currIsWifi = if (takNetworkPreference != null) selected?.let {
+            getSystemService(ConnectivityManager::class.java).getNetworkCapabilities(it)
+                ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        } == true else currTransport == WIFI
         Log.d(TAG, "onNwConnEvent received NwConnEvent (isConn, isWifi)=($currIsConn, $currIsWifi) w/ previous ($isNetworkConnected, $isWifiConnected)")
         if (currIsConn) { // Network is connected
             if (currIsConn != isNetworkConnected) { // Previously network was NOT connected. So now reconnect to TAK
@@ -849,6 +904,8 @@ class TAKConnectService: Service() {
         } catch (e: Exception) {
             Log.w(TAG, "ERROR in MessageEvent ($message) w/ $addlIntInfo: ${e.message}")
             Log.w(TAG, "${e.printStackTrace()}")
+        } finally {
+            updateOffBodyPolicy()
         }
     }
 
@@ -947,6 +1004,9 @@ class TAKConnectService: Service() {
         val isAnyTakConnectingLiveData = MutableLiveData<Boolean>(false)
 
         @Volatile var serviceStopping: Boolean = false
+
+        private fun offBodyAllowsConnection(): Boolean =
+            activeService?.offBodyScheduler?.allows() ?: true
         @Volatile var takEndpointEnabled: Boolean = true
         private val serviceLifecycleLock = Any()
         private var activeService: TAKConnectService? = null
@@ -2155,6 +2215,7 @@ class TAKConnectService: Service() {
             attempt: ConnectionAttempt? = null
         ): Boolean =
             takEndpointEnabled && detail.isEnabled &&
+                offBodyAllowsConnection() &&
                 !dataRepository.isCompanionConnected.value &&
                 detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT &&
                 (attempt == null || isCurrent(detail, attempt))
@@ -2512,6 +2573,9 @@ class TAKConnectService: Service() {
                         detail.runtime.generation == attempt.generation &&
                         !detail.runtime.terminated &&
                         !serviceStopping && takEndpointEnabled && detail.isEnabled &&
+                        offBodyAllowsConnection() &&
+                        (activeService?.takNetworkPreference == null ||
+                            attempt.httpSession?.network == activeService?.takNetworkPreference?.network?.value) &&
                         !dataRepository.isCompanionConnected.value
             }
         }
@@ -2576,7 +2640,7 @@ class TAKConnectService: Service() {
             val oldSockets: MutableList<SSLSocket> = mutableListOf()
             val attempt: ConnectionAttempt
             synchronized(detail.runtime.lock) {
-                if (!takEndpointEnabled || serviceStopping || detail.runtime.terminated ||
+                if (!offBodyAllowsConnection() || !takEndpointEnabled || serviceStopping || detail.runtime.terminated ||
                     !detail.isEnabled || !isNetworkConnected ||
                     detail.duplicateEndpointSuppressed) {
                     recordConnection(detail, ConnectionTransition.SKIPPED, connectionGateReason(detail))
@@ -2598,7 +2662,9 @@ class TAKConnectService: Service() {
                 detail.runtime.generation++
                 attempt = ConnectionAttempt(detail.runtime.generation)
                 detail.runtime.currentAttempt = attempt
-                attempt.httpSession = TakHttpSession { isCurrent(detail, attempt) }
+                attempt.httpSession = TakHttpSession(activeService?.takNetworkPreference?.network?.value) {
+                    isCurrent(detail, attempt)
+                }
                 detail.runtime.connectJob = null
                 detail.runtime.readerJob = null
                 detail.connectionStatus.set(TAK_SERVER_OBTAINING_CLIENT_CERT)
@@ -2616,7 +2682,7 @@ class TAKConnectService: Service() {
                 status == TAK_SERVER_CONNECTED_COT_PORT
 
         private fun invalidateConnection(detail: TakServerDetail, terminate: Boolean = false) {
-            val sockets: MutableList<SSLSocket> = mutableListOf()
+            val sockets: MutableList<java.net.Socket> = mutableListOf()
             synchronized(detail.runtime.lock) {
                 serverRegistration.publish(
                     detail.serverId, detail, TakServerRegistration.Status.FAILED,
@@ -2624,6 +2690,7 @@ class TAKConnectService: Service() {
                 )
                 detail.runtime.generation++
                 detail.runtime.currentAttempt?.httpSession?.cancel()
+                detail.runtime.currentAttempt?.rawSocket?.let { sockets.add(it) }
                 if (terminate) detail.runtime.terminated = true
                 detail.runtime.connectJob?.cancel()
                 detail.runtime.readerJob?.cancel()
@@ -2656,6 +2723,7 @@ class TAKConnectService: Service() {
             serviceStopping || !connectionScope.isActive -> ConnectionReason.SERVICE_STOPPED
             detail.runtime.terminated -> ConnectionReason.TERMINATED
             !takEndpointEnabled || !detail.isEnabled -> ConnectionReason.DISABLED
+            !offBodyAllowsConnection() -> ConnectionReason.OFF_BODY
             !isNetworkConnected -> ConnectionReason.NO_NETWORK
             detail.duplicateEndpointSuppressed -> ConnectionReason.DUPLICATE
             else -> fallback
@@ -2825,7 +2893,7 @@ class TAKConnectService: Service() {
                     .build()
 
                 Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
-                client.newCall(request).withSessionResponse(session) { response ->
+                (session?.route(client) ?: client).newCall(request).withSessionResponse(session) { response ->
                     if (!response.isSuccessful) {
                         throw com.aitech.weartak_civ.data.takserver.TakEnrollmentException(
                             TakConnectionFailure(TakEnrollmentStage.CONFIG,
@@ -2910,7 +2978,7 @@ class TAKConnectService: Service() {
                     .post(body)
                     .build()
 
-                client.newCall(request).withSessionResponse(session) { response ->
+                (session?.route(client) ?: client).newCall(request).withSessionResponse(session) { response ->
                     if (!response.isSuccessful) {
                         throw com.aitech.weartak_civ.data.takserver.TakEnrollmentException(
                             TakConnectionFailure(TakEnrollmentStage.SIGN,
@@ -3135,7 +3203,7 @@ class TAKConnectService: Service() {
                 )
                 return
             }
-            if (dataRepository.isCompanionConnected.value ||
+            if (!offBodyAllowsConnection() || dataRepository.isCompanionConnected.value ||
                 !takEndpointEnabled || serviceStopping || takServerDetail.runtime.terminated || !takServerDetail.isEnabled ||
                 !connectionScope.isActive) {
                 recordConnection(takServerDetail, ConnectionTransition.SKIPPED, connectionGateReason(takServerDetail))
@@ -3460,7 +3528,27 @@ class TAKConnectService: Service() {
                     Log.d(TAG, "Going to createSocket and startHandshake")
                     // Create the socket and connect
                     val socketFactory = sslContext.socketFactory
-                    val socket = socketFactory.createSocket(takServer, port) as SSLSocket
+                    val route = attempt.httpSession?.network
+                    val socket = if (route == null) {
+                        socketFactory.createSocket(takServer, port) as SSLSocket
+                    } else {
+                        val raw = route.socketFactory.createSocket()
+                        synchronized(takServerDetail.runtime.lock) {
+                            if (!isCurrent(takServerDetail, attempt)) {
+                                raw.close()
+                                return
+                            }
+                            attempt.rawSocket = raw
+                        }
+                        try {
+                            val address = route.getAllByName(takServer).first()
+                            raw.connect(java.net.InetSocketAddress(address, port), 15_000)
+                            socketFactory.createSocket(raw, takServer, port, true) as SSLSocket
+                        } catch (error: Exception) {
+                            raw.close()
+                            throw error
+                        }
+                    }
                     synchronized(takServerDetail.runtime.lock) {
                         if (!isCurrent(takServerDetail, attempt)) {
                             recordConnection(takServerDetail, ConnectionTransition.SKIPPED,
@@ -3584,7 +3672,7 @@ class TAKConnectService: Service() {
         }
 
         fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
-            if (!takEndpointEnabled || dataRepository.isCompanionConnected.value) return
+            if (!offBodyAllowsConnection() || !takEndpointEnabled || dataRepository.isCompanionConnected.value) return
             //Log.d(TAG, "sendData called")
             val socket: SSLSocket
             val attempt: ConnectionAttempt

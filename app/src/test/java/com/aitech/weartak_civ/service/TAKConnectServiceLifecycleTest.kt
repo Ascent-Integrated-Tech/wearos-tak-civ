@@ -2,6 +2,8 @@ package com.aitech.weartak_civ.service
 
 import android.app.Application
 import android.net.Network
+import android.os.Looper
+import org.robolectric.Shadows.shadowOf
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.takserver.TakConnectionFailure
@@ -58,6 +60,7 @@ class TAKConnectServiceLifecycleTest {
     private var previousRunning = false
     private val companionConnected = MutableStateFlow(false)
     private val takEnabled = MutableStateFlow(true)
+    private val worn = MutableStateFlow<Boolean?>(null)
 
     @Before
     fun setUp() {
@@ -74,6 +77,7 @@ class TAKConnectServiceLifecycleTest {
         )
         every { repository.getEnableEsriEndpoint } returns flowOf(false)
         every { repository.getEnableTakEndpoint } returns takEnabled
+        every { repository.latestDeviceWornObservation } returns worn
         every { repository.getEsriEndpoint } returns flowOf("")
         every { repository.takServerConfigurationRefreshes } returns emptyFlow()
         every { repository.geofenceServiceEnabled } returns MutableStateFlow(false)
@@ -105,6 +109,44 @@ class TAKConnectServiceLifecycleTest {
         TAKConnectService.isRunning.set(previousRunning)
         TAKConnectService.takEndpointEnabled = true
         unmockkAll()
+    }
+
+    @Test
+    fun offWristInvalidatesTcpHttpAndRetriesAndWornImmediatelyRestoresAdmission() {
+        createService()
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        val socket = mockk<SSLSocket>(relaxed = true)
+        val raw = mockk<java.net.Socket>(relaxed = true)
+        val call = mockk<okhttp3.Call>(relaxed = true)
+        val session = com.aitech.weartak_civ.data.takserver.TakHttpSession { true }
+        session.register(call)
+        val attempt = TAKConnectService.ConnectionAttempt(detail.runtime.generation)
+        attempt.httpSession = session
+        attempt.rawSocket = raw
+        attempt.socket = socket
+        detail.runtime.currentAttempt = attempt
+        detail.secureSocket = socket
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+        val retry = Job()
+        detail.runtime.retryJob = retry
+        worn.value = false
+        shadowOf(Looper.getMainLooper()).idle()
+        verify { socket.close(); raw.close(); call.cancel() }
+        assertTrue(retry.isCancelled)
+        assertNull(detail.runtime.currentAttempt)
+        assertFalse(TAKConnectService.missionConnectionReady(detail))
+
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) } throws
+            TakEnrollmentException(TakConnectionFailure(
+                TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401))
+        TAKConnectService.isNetworkConnected = true
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        assertNull(detail.runtime.currentAttempt)
+        worn.value = true
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(timeout = 5_000) { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) }
     }
 
     @Test

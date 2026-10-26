@@ -314,6 +314,50 @@ class TakTransientRecoveryTest {
         verify(exactly = 0) { TAKConnectService.deleteFile(any()) }
     }
 
+    @Test fun selectedNetworkBindsTcpDnsAndTlsToTheSameRoute() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        val socket = mockTlsSocket()
+        val factory = SSLContext.getInstance("TLSv1.3").socketFactory
+        val network = mockk<android.net.Network>()
+        val sockets = mockk<javax.net.SocketFactory>()
+        val raw = mockk<java.net.Socket>(relaxed = true)
+        val address = java.net.InetAddress.getByAddress(byteArrayOf(10, 0, 0, 1))
+        every { network.socketFactory } returns sockets
+        every { sockets.createSocket() } returns raw
+        every { network.getAllByName(detail.address) } returns arrayOf(address)
+        every { factory.createSocket(raw, detail.address, detail.port, true) } returns socket
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        detail.runtime.currentAttempt!!.httpSession =
+            com.aitech.weartak_civ.data.takserver.TakHttpSession(network) { true }
+        runCurrent()
+        verify(exactly = 1) { network.getAllByName(detail.address) }
+        verify { raw.connect(java.net.InetSocketAddress(address, detail.port), 15_000) }
+        verify { factory.createSocket(raw, detail.address, detail.port, true); socket.startHandshake() }
+        verify(exactly = 0) { factory.createSocket(any<String>(), any<Int>()) }
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT, detail.connectionStatus.get())
+    }
+
+    @Test fun selectedRouteDnsFailureClosesRawSocketWithoutDefaultDnsFallback() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        val socket = mockTlsSocket()
+        val network = mockk<android.net.Network>()
+        val sockets = mockk<javax.net.SocketFactory>()
+        val raw = mockk<java.net.Socket>(relaxed = true)
+        every { network.socketFactory } returns sockets
+        every { sockets.createSocket() } returns raw
+        every { network.getAllByName(detail.address) } throws java.net.UnknownHostException()
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        detail.runtime.currentAttempt!!.httpSession =
+            com.aitech.weartak_civ.data.takserver.TakHttpSession(network) { true }
+        runCurrent()
+        verify { raw.close() }
+        verify(exactly = 0) { socket.startHandshake() }
+        detail.runtime.retryJob?.cancel()
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+    }
+
     private fun mockTlsSocket(): SSLSocket {
         mockkObject(TAKConnectService.Companion, recordPrivateCalls = true)
         every { TAKConnectService.loadKeyStore(any(), any(), any()) } answers {
