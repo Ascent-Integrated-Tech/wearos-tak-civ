@@ -191,7 +191,8 @@ internal object PeerPackageTrustManager : X509TrustManager {
 internal class TakDataPackageClient(
     private val address: String,
     internal val client: OkHttpClient,
-    private val peerUrl: HttpUrl? = null
+    private val peerUrl: HttpUrl? = null,
+    private val session: TakHttpSession? = null
 ) {
     companion object {
         internal fun peer(offer: TakDataPackageRequest, peerAddress: String,
@@ -222,7 +223,8 @@ internal class TakDataPackageClient(
         address: String,
         sslContext: SSLContext,
         trustManager: X509TrustManager,
-        hostnameVerifier: HostnameVerifier
+        hostnameVerifier: HostnameVerifier,
+        session: TakHttpSession? = null
     ) : this(
         address,
         OkHttpClient.Builder()
@@ -233,7 +235,8 @@ internal class TakDataPackageClient(
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(15, TimeUnit.SECONDS)
             .callTimeout(30, TimeUnit.SECONDS)
-            .build()
+            .build(),
+        session = session
     )
 
     internal fun downloadUrl(offer: TakDataPackageRequest): HttpUrl =
@@ -246,7 +249,7 @@ internal class TakDataPackageClient(
 
     fun downloadRoutes(offer: TakDataPackageRequest, serverId: String): List<TakRoute> {
         val request = Request.Builder().url(downloadUrl(offer)).get().build()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withSessionResponse(session) { response ->
             if (!response.isSuccessful) throw IOException("Package download HTTP ${response.code}")
             val body = response.body ?: throw IOException("Empty package response")
             if (body.contentLength() > MAX_DATA_PACKAGE_BYTES) throw IOException("Oversized package response")

@@ -4,6 +4,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class TakMulticastEndpointsTest {
+    @Test fun demandAndReceiverEndpointValidationAgreeOnIpv4MulticastAndPorts() {
+        assertEquals(true, TakMulticastEndpoints.isValidConfiguredEndpoint("239.2.3.1", 6969))
+        for ((address, port) in listOf(null to 6969, "" to 6969, "192.0.2.1" to 6969,
+            "ff02::1" to 6969, "239.2.3.1" to 0, "239.2.3.1" to 65536, "239.2.3.1" to null)) {
+            assertEquals(false, TakMulticastEndpoints.isValidConfiguredEndpoint(address, port))
+        }
+    }
+
     @Test
     fun advertisesUdpChatOnlyInMulticastPositionCopy() {
         val xml = "<event uid='watch-1' type='a-f-G-U-C'><detail><contact callsign='WATCH' endpoint=\"*:-1:stcp\"/></detail></event>"

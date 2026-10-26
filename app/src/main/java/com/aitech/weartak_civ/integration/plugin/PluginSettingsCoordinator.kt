@@ -10,6 +10,7 @@ import com.weartak.plugin.sdk.model.PluginCapabilitiesParcel
 import com.weartak.plugin.sdk.model.SettingsApplyMode
 import com.weartak.plugin.sdk.model.SettingsApplyResultParcel
 import com.weartak.plugin.sdk.model.SettingsSchemaParcel
+import com.weartak.plugin.sdk.model.SettingsFieldTypes
 import com.weartak.plugin.sdk.validation.ContractValidationResult
 import com.weartak.plugin.sdk.validation.SettingsApplyValidator
 import com.weartak.plugin.sdk.validation.SettingsSchemaContractValidator
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -43,6 +45,25 @@ class PluginSettingsCoordinator(
     private val outboundCotReadyRoutesState = MutableStateFlow<Map<String, Long>>(emptyMap())
     val outboundCotReadyRoutes = outboundCotReadyRoutesState.asStateFlow()
     private var outboundCotGeneration = 0L
+    data class ConnectivityToggle(val enabled: Boolean, val binding: IWearTakPlugin)
+    private val connectivityTogglesState = MutableStateFlow<Map<String, ConnectivityToggle>>(emptyMap())
+    val connectivityToggles = connectivityTogglesState.asStateFlow()
+
+    fun setConnectivityEnabled(pluginId: String, expected: ConnectivityToggle, enabled: Boolean): SettingsApplyResultParcel {
+        if (pluginRefs[pluginId] !== expected.binding || connectivityToggles.value[pluginId] != expected) {
+            return connectivityRejected("Plugin connection changed")
+        }
+        return applyPluginSettings(pluginId, Bundle().apply {
+            putBoolean(PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT, enabled)
+        })
+    }
+
+    private fun connectivityRejected(message: String) = SettingsApplyResultParcel(
+        success = false,
+        errors = listOf(com.weartak.plugin.sdk.model.SettingsValidationErrorParcel(
+            code = "connectivity.unavailable", message = message
+        ))
+    )
 
     fun registerPlugin(pluginId: String, plugin: IWearTakPlugin) {
         pluginRefs[pluginId] = plugin
@@ -86,6 +107,12 @@ class PluginSettingsCoordinator(
 
         scope.launch {
             for ((pluginId, plugin) in targets) {
+                if (fieldId == PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT &&
+                    (pluginRefs[pluginId] !== plugin ||
+                        cache[pluginId]?.schema?.fields?.none {
+                            it.fieldId == fieldId && it.fieldType == SettingsFieldTypes.TOGGLE
+                        } != false ||
+                        cache[pluginId]?.values?.getBoolean(fieldId, false) != true)) continue
                 runCatching { plugin.invokeMainUiAction(actionId, args) }
                     .onFailure { Log.w(TAG, "action $actionId failed for $pluginId: ${it.message}") }
             }
@@ -221,6 +248,11 @@ class PluginSettingsCoordinator(
         incoming: Bundle,
         applyMode: Int = SettingsApplyMode.PARTIAL_PATCH,
     ): SettingsApplyResultParcel {
+        if (incoming.containsKey(PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT) &&
+            runBlocking { app.repo.networkSettingsLocked.first() }) {
+            Log.w(TAG, "Connectivity settings rejected while network settings are locked")
+            return connectivityRejected("Network settings are locked")
+        }
         val plugin = pluginRefs[pluginId]
             ?: return SettingsApplyResultParcel(
                 success = false,
@@ -267,7 +299,17 @@ class PluginSettingsCoordinator(
             PluginDiagnostics.recordSettingsApply(pluginId, local)
             return local
         }
+        if (pluginRefs[pluginId] !== plugin || cache[pluginId] !== state) {
+            return connectivityRejected("Plugin settings changed")
+        }
+        if (incoming.containsKey(PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT) &&
+            runBlocking { app.repo.networkSettingsLocked.first() }) {
+            return connectivityRejected("Network settings are locked")
+        }
         val remote = invokePluginApply(plugin, incoming, applyMode)
+        if (pluginRefs[pluginId] !== plugin || cache[pluginId] !== state) {
+            return connectivityRejected("Plugin connection changed")
+        }
         if (remote.success) {
             updateCache(
                 pluginId,
@@ -429,6 +471,14 @@ class PluginSettingsCoordinator(
     }
 
     private fun updateOutboundCotAvailability() = synchronized(outboundCotReadyRoutesState) {
+        connectivityTogglesState.value = cache.entries.mapNotNull { (id, state) ->
+            val plugin = pluginRefs[id] ?: return@mapNotNull null
+            if (!state.settingsSupported || state.schema.fields.none {
+                it.fieldId == PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT &&
+                    it.fieldType == SettingsFieldTypes.TOGGLE
+            }) return@mapNotNull null
+            id to ConnectivityToggle(state.values.getBoolean(PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT, false), plugin)
+        }.toMap()
         val ready = cache.entries.filter { (pluginId, state) ->
             pluginRefs.containsKey(pluginId) &&
                 state.schema.fields.any { it.fieldId == PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT } &&

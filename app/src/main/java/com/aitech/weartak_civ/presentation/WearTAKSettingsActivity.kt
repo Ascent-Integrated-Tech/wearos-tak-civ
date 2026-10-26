@@ -381,6 +381,7 @@ fun WearTAKSettingsNav(
     val takServerList by settingsVm.savedTakServerList.collectAsState()
 
     val enableMulticast by settingsVm.savedEnableMulticast.collectAsState()
+    val enableTakEndpoint by settingsVm.savedEnableTakEndpoint.collectAsState()
     val multicastAddress by settingsVm.savedMulticastAddress.collectAsState()
     val multicastProtocol by settingsVm.savedMulticastProtocol.collectAsState()
     val multicastPort by settingsVm.savedMulticastPort.collectAsState()
@@ -1453,9 +1454,56 @@ fun WearTAKSettingsNav(
 
         //Network Settings vvv
         composable("network_preferences") {
+            val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
+            val connected = runtimeDetails.map { detail ->
+                val status by detail.connectionStatusLiveData.observeAsState(TAK_SERVER_DISCONNECTED_STRING)
+                detail.serverId.takeIf { status == TAK_SERVER_CONNECTED_STRING }
+            }.filterNotNull().toSet()
+            val pluginToggles by pluginVm.connectivityToggles.collectAsStateWithLifecycle()
+            val companionStatus = companionPluginStatus(enableCompanionAppService)
+            val enabledLabel = stringResource(R.string.enabled)
+            val disabledLabel = stringResource(R.string.disabled)
+            val rows = (listOf(
+                NetworkConnectivityRow("tak", stringResource(R.string.tak_servers),
+                    androidx.compose.ui.res.pluralStringResource(R.plurals.network_server_count,
+                        takServerList.size, takServerList.count { it.serverId in connected }, takServerList.size),
+                    enableTakEndpoint, settingsVm::storeEnableTakEndpoint),
+                NetworkConnectivityRow("multicast", stringResource(R.string.tak_sa_multicast),
+                    if (enableMulticast) enabledLabel else disabledLabel,
+                    enableMulticast, settingsVm::storeEnableMulticast),
+                NetworkConnectivityRow("sitx", stringResource(R.string.sitx_tak),
+                    when {
+                        sitxGroupStatus == SitxGroupStatus.CONNECTED && sitxGroup != null ->
+                            stringResource(R.string.network_connected_group, sitxGroup!!.name)
+                        sitxGroup != null -> stringResource(R.string.network_disconnected_group, sitxGroup!!.name)
+                        else -> stringResource(R.string.network_no_group)
+                    }, enableSitx, settingsVm::storeEnableSitx),
+                NetworkConnectivityRow("ditto", stringResource(R.string.ditto),
+                    stringResource(dittoPdlSubtitle(dittoPdlSource, dittoCustomPdl.isNotBlank())),
+                    enableDittoService, settingsVm::storeEnableDittoService),
+                NetworkConnectivityRow("companion", stringResource(R.string.companion_app),
+                    companionStatus, enableCompanionAppService, settingsVm::storeEnableCompanionAppService)
+            ) + pluginList.mapNotNull { plugin ->
+                val toggle = pluginToggles[plugin.packageName] ?: return@mapNotNull null
+                if (!plugin.isLoaded) return@mapNotNull null
+                NetworkConnectivityRow("plugin:${plugin.packageName}", plugin.title,
+                    if (toggle.enabled) enabledLabel else disabledLabel, toggle.enabled,
+                    { pluginVm.setConnectivityEnabled(plugin.packageName, toggle, it) })
+            }).alphabetizedConnections(context.resources.configuration.locales[0])
             WearTAKPageWithBackArrow(
                 "Network Preferences",
                 columnContent = {
+                    item { Text(stringResource(R.string.network_enabled_not_connected)) }
+                    itemsIndexed(rows, key = { _, row -> row.key }) { _, row ->
+                        WearTAKToggleChip(
+                            checkedLive = row.checked,
+                            onCheckedChange = row.toggle,
+                            title = row.title,
+                            description = row.subtitle,
+                            enabled = !networkPreferencesLocked && !phoneManagedSettings
+                        )
+                    }
+                    item { HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp)) }
                     item {
                         if (phoneManagedSettings) {
                             WearTAKLockedTitleChip(
@@ -3076,12 +3124,7 @@ fun WearTAKSettingsNav(
                                     WearTAKSplitToggleChip(
                                         appIcon = { BuiltInPluginBrandIcon(entry.kind) },
                                         title = entry.title,
-                                        label = when (dittoPdlSource) {
-                                            DittoPdlSource.COMMUNITY -> stringResource(R.string.ditto_community_subtitle)
-                                            DittoPdlSource.CUSTOM -> dittoCustomPdl.ifBlank {
-                                                stringResource(R.string.no_custom_pdl_saved)
-                                            }
-                                        },
+                                        label = stringResource(dittoPdlSubtitle(dittoPdlSource, dittoCustomPdl.isNotBlank())),
                                         checked = enableDittoService,
                                         onCheckedChange = { settingsVm.storeEnableDittoService(it) },
                                         onClick = { navController.navigate("ditto_pdl") }
@@ -3726,6 +3769,7 @@ fun WearTAKToggleChip(
     appIcon: @Composable () -> Unit = {}, //Optional icon
     title: String, //Upper text of chip
     description: String = "", //Lower text of chip; omitted when empty
+    enabled: Boolean = true,
 ) {
     ToggleChip(
         modifier = Modifier
@@ -3745,11 +3789,11 @@ fun WearTAKToggleChip(
             Switch(
                 checked = checkedLive == true,
                 onCheckedChange = null,
-                enabled = true,
+                enabled = enabled,
             )
         },
         onCheckedChange = onCheckedChange,
-        enabled = true,
+        enabled = enabled,
     )
 }
 

@@ -79,7 +79,7 @@ is not used for this override. Missing, empty, or whitespace-only values retain 
 subtitle. This changes only the menu subtitle: the info popup still shows the actual loading status,
 and the toggle, tap-to-open, and swipe remove/info actions are unchanged.
 
-WearTAK Companion is a built-in split chip in Plugins, not Network Preferences,
+WearTAK Companion has a built-in split chip in Plugins and an enable switch in Network Preferences,
 with the same icon as the ATAK-side WearTAK Companion plugin.
 Its switch uses the existing saved enable setting and service policies. Turning
 it off stops Companion BLE advertising, pending starts, refreshes, and its GATT
@@ -1285,6 +1285,66 @@ failures do not delete valid cached certificates or force re-enrollment. Recover
 uses delayed jobs, not a polling loop; existing established-session drop backoff
 is unchanged.
 
+### Network transport checklist
+
+Network Preferences starts with native enable switches sorted by the current
+locale's visible labels, including eligible installed, bound connectivity plugins.
+Checked means saved **enabled intent**, not a connected session; changes apply
+immediately, with no Apply button. Existing individual configuration pages remain
+below. The native rows are Ditto Edge Sync, Sit(x) TAK, TAK SA Multicast, TAK Servers
+and WearTAK Companion. No unfunded goTenna, Somewear or Everywhere placeholder,
+HTTP integration, SMS alert or Data Sync feature is presented as a transport.
+
+TAK Servers shows live connected/configured totals (for example, **3/5 Servers**).
+Its master switch defaults on. Turning it off cancels all server connection
+generations, sockets, readers, pending retries and associated enrollment/channel/
+mission/package HTTP calls, without erasing per-server enable selections,
+credentials or certificates. The TAK foreground service, multicast and shared
+coroutine scope stay alive. Turning it on resumes eligible servers under existing
+network and companion-exclusive routing gates.
+
+Sit(x) shows the selected group and actual connection state. Ditto shows only
+**Community**, **Custom PDL** or **None**; the same safe subtitle is used in Plugins.
+The PDL itself is never displayed as a subtitle. Network/phone-management locks are
+rechecked by setting writers, not only by the visible switches. Trusted Android
+managed configuration remains authoritative and can update the locked transport
+settings atomically.
+
+External rows require an installed, bound plugin whose validated settings schema
+declares the functional Boolean `forwardOutboundCot` field. Disabled forwarding
+still appears and can be enabled; stale/unbound plugin callbacks are rejected.
+An unloaded plugin has no trusted live schema and is not guessed from its name.
+A future implemented Somewear plugin appears automatically when it meets that
+contract; the unfunded built-in placeholder does not.
+
+With existing opt-in Logging enabled, `CONNECTIVITY_PATH` records numeric state
+changes, an initial snapshot, five-minute snapshots and charging/unplug-boundary
+snapshots. `KIND` identifies TAK=0, Ditto=1, Sit(x)=2, Multicast=3, Companion=4,
+and aggregate bound connectivity plugins=5. `ENABLED` records intent (an enabled
+plugin count for the aggregate); `ACTIVE` records actual sync/route availability,
+not evidence of payload traffic or peer presence. TAK records `CONNECTED_COUNT`
+and `CONFIGURED_COUNT`. Ditto `MODE` is None=0, Community=1, Custom PDL=2.
+Sit(x) records only `GROUP_SELECTED`, not the group name. Multicast `REQUESTED`
+comes from the actual local Wi-Fi request, not the preference alone;
+`IDLE_RELEASED` marks the ten-minute inactivity release. `LOCK_HELD` is now always
+zero because multicast no longer takes a high-performance Wi-Fi power lock.
+Plugin records contain counts,
+not package names. No hosts, credentials, raw PDLs, group names or peer identifiers
+enter these records. Logging off cancels snapshot subscriptions and timers.
+These additions do not retroactively add evidence to earlier or ongoing trials.
+
+Multicast only requests local Wi-Fi when enabled, the companion is disconnected
+and the configured address resolves to a valid IPv4 multicast group with a valid
+UDP port, matching receiver eligibility. Its request is released after ten minutes
+without a non-self multicast packet. The receiver remains passive whenever Wi-Fi
+is otherwise connected. Re-enabling multicast, changing its address/port, or a
+companion routing change re-arms demand; ordinary network callbacks do not, and
+there is no polling or periodic reacquisition. Incoming peer packets extend an
+existing demand window but do not reacquire an idle-released request. The receiver's
+separate multicast filtering lock is retained; the removed high-performance power
+lock is not needed for packet reception. No normal-connected battery saving is
+claimed without a controlled measurement.
+
 ### Persistent developer menus and Logging
 
 Tap the version eight times in **Preferences** to unlock **Admin Preferences**
@@ -1517,17 +1577,17 @@ Multicast status indicates that the sender and all receivers are ready, not that
 has been discovered. The Wi-Fi access point must permit multicast between clients.
 Multicast tracks local Wi-Fi independently of Android's default internet connection,
 so cellular routing changes do not stop receivers on a connected radio Wi-Fi network.
-While multicast is enabled, WearTAK requests local Wi-Fi so Wear OS does not shut it down
-for lack of network demand, and holds a high-performance Wi-Fi lock to reduce radio
-power-saving interruptions where supported by the OS. The request does not require
-internet. Both the request and lock are released when multicast is disabled or the TAK
-connection service stops. This uses the existing multicast toggle, increases battery use,
-and does not keep the screen or CPU awake. It does not pin an SSID/BSSID, prevent roaming,
+When multicast has an eligible configured endpoint and no companion route, WearTAK
+requests local Wi-Fi for a bounded demand window without a high-performance power
+lock or internet requirement. Ten minutes without non-self packets releases demand;
+changing multicast configuration, re-enabling it, or a companion routing change
+re-arms the window. Otherwise reception is passive on Wi-Fi that remains available.
+The request is also released when multicast is disabled or the TAK connection service
+stops. This uses the existing multicast toggle and does not keep the screen or CPU
+awake. It does not pin an SSID/BSSID, prevent roaming,
 override OS power restrictions, or guarantee screen-off delivery. Multicast sockets remain
 bound to the Wi-Fi network and are recreated when that network changes.
-On Android 14 and newer, the OS maps high-performance locks to low-latency mode,
-which only takes effect with the screen on and the app in the foreground. The active
-local Wi-Fi request still remains in place with the screen off; this is not an OS
+The active demand window can remain in place with the screen off; this is not an OS
 power-policy bypass. Connection loss, validation/suspension capability changes and
 interface changes are logged without including SSIDs, credentials or IP addresses.
 Reception supports both XML CoT and binary TAK Protocol v1 datagrams, including GeoChat

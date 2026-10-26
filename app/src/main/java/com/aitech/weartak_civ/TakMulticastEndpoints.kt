@@ -1,6 +1,9 @@
 package com.aitech.weartak_civ
 
 import com.aitech.weartak_civ.cot.CotMessageParser
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.UnknownHostException
 
 data class MulticastEndpoint(val address: String, val port: Int) {
     init {
@@ -12,6 +15,16 @@ data class MulticastEndpoint(val address: String, val port: Int) {
 }
 
 object TakMulticastEndpoints {
+    fun isValidConfiguredEndpoint(address: String?, port: Int?): Boolean {
+        if (address.isNullOrBlank() || port == null || port !in 1..65535) return false
+        return try {
+            val group = InetAddress.getByName(address)
+            group is Inet4Address && group.isMulticastAddress
+        } catch (_: UnknownHostException) {
+            false
+        }
+    }
+
     val chat = MulticastEndpoint("224.10.10.1", 17012)
     // ATAK uses port 6969 for non-chat CoT sent to a discovered UDP contact.
     val directCot = MulticastEndpoint(chat.address, 6969)

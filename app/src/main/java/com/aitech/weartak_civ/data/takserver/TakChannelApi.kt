@@ -128,6 +128,7 @@ internal class TakChannelApi(
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .build(),
+    private val session: TakHttpSession? = null,
 ) {
     fun loadGroups(
         sendLatestSa: Boolean,
@@ -240,7 +241,7 @@ internal class TakChannelApi(
         }
         val startedAtNanos = System.nanoTime()
         try {
-            return client.newCall(request).execute().use { response ->
+            return client.newCall(request).withSessionResponse(session) { response ->
                 val body = response.body?.string().orEmpty()
                 val durationMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
                 Log.i(

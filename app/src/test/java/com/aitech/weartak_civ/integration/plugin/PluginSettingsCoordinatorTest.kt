@@ -32,6 +32,7 @@ class PluginSettingsCoordinatorTest {
     private lateinit var app: WearTakApplication
     private lateinit var coordinator: PluginSettingsCoordinator
     private lateinit var fakePlugin: FakeWearTakPlugin
+    private val networkLocked = MutableStateFlow(false)
 
     @Before
     fun setUp() {
@@ -40,6 +41,7 @@ class PluginSettingsCoordinatorTest {
         val repo = mockk<DataRepository>(relaxed = true)
         every { app.repo } returns repo
         every { repo.getCallsign } returns flowOf("TEST")
+        every { repo.networkSettingsLocked } returns networkLocked
         every { repo.getTeam } returns flowOf("Cyan")
         every { repo.getRole } returns flowOf("Member")
         every { repo.reportingUpdateIntervalSecs } returns MutableStateFlow(60)
@@ -147,6 +149,30 @@ class PluginSettingsCoordinatorTest {
         )
 
         assertTrue(fakePlugin.mainUiActions.isEmpty())
+    }
+
+    @Test
+    fun connectivityIncludesDisabledFunctionalPluginsAndRechecksLocksAndBinding() {
+        val id = "com.plugin.settings"
+        val field = PluginCotEgress.SETTING_FORWARD_OUTBOUND_COT
+        coordinator.onPluginConnected(id, fakePlugin)
+        assertTrue(coordinator.connectivityToggles.value.isEmpty())
+        fakePlugin.setSettingsSchemaForTest(SettingsSchemaParcel(fields = listOf(
+            SettingsFieldParcel(fieldId = field, label = "Forward CoT", fieldType = SettingsFieldTypes.TOGGLE)
+        )))
+        coordinator.onPluginSettingsSchemaChanged(id)
+        val toggle = coordinator.connectivityToggles.value.getValue(id)
+        assertFalse(toggle.enabled)
+        networkLocked.value = true
+        assertFalse(coordinator.setConnectivityEnabled(id, toggle, true).success)
+        assertFalse(coordinator.outboundCotAvailable.value)
+        networkLocked.value = false
+        assertTrue(coordinator.setConnectivityEnabled(id, toggle, true).success)
+        assertTrue(coordinator.connectivityToggles.value.getValue(id).enabled)
+        coordinator.unregisterPlugin(id)
+        assertTrue(coordinator.connectivityToggles.value.isEmpty())
+        coordinator.onPluginConnected(id, FakeWearTakPlugin(id))
+        assertFalse(coordinator.setConnectivityEnabled(id, toggle, true).success)
     }
 
     @Test

@@ -3,6 +3,12 @@ package com.aitech.weartak_civ.integration.plugin
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import com.aitech.weartak_civ.WearTakApplication
+import androidx.lifecycle.viewModelScope
+import android.widget.Toast
+import com.aitech.weartak_civ.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PluginViewModel(
     application: Application
@@ -14,6 +20,17 @@ class PluginViewModel(
     val plugins = repository.plugins
     val selectedPlugin = repository.selectedPlugin
     val operationOutcome = repository.operationOutcome
+    private val coordinator = (application as WearTakApplication).pluginManager.settingsCoordinator
+    val connectivityToggles = coordinator.connectivityToggles
+
+    fun setConnectivityEnabled(id: String, expected: PluginSettingsCoordinator.ConnectivityToggle, enabled: Boolean) {
+        viewModelScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                coordinator.setConnectivityEnabled(id, expected, enabled)
+            }
+            if (!result.success) Toast.makeText(getApplication(), R.string.network_toggle_failed, Toast.LENGTH_LONG).show()
+        }
+    }
 
     fun refresh() = repository.refresh()
     fun refreshBindings() = repository.refreshBindings()
