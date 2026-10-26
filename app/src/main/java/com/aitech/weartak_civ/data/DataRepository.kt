@@ -4454,8 +4454,14 @@ class DataRepository(
             val index = matches.singleOrNull()
             val id = index?.let { servers[it].serverId } ?: TakServerId.ensureUnique(
                 null, servers.mapNotNullTo(mutableSetOf(), TakServerItem::serverId))
-            val item = TakServerItem(index?.let { servers[it].isEnabled } ?: true,
-                name, address, port, false, username, password, "", "", id)
+            val existing = index?.let { servers[it] }
+            val item = if (existing == null) {
+                TakServerItem(true, name, address, port, false, username, password, "", "", id)
+            } else {
+                existing.copy(name = name, address = address, port = port, username = username,
+                    password = password, p12Cert = if (existing.isP12Cert) existing.p12Cert else "",
+                    p12CertPassword = if (existing.isP12Cert) existing.p12CertPassword else "")
+            }
             if (index == null) servers.add(item) else servers[index] = item
             // Policy can change while migration/decryption suspends.
             if (phoneManagedSettingsLocked.first() || getNetworkPreferencesLocked.first()) {

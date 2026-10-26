@@ -28,6 +28,16 @@ immediately through the same encrypted storage and certificate flow as the UI.
 Existing transport/master-enable, connectivity and companion gates still apply;
 this command does not override a disabled transport or managed policy.
 
+Updates preserve certificate mode. For `isP12Cert` servers, the existing P12 and
+its password are retained; supplied username/password are saved but do not switch
+the server out of certificate authentication. For enrollment-mode servers, cached
+P12 fields are cleared so normal registration can refresh the certificate. This
+matches the certificate handling in `WearTAKSettingsActivity.kt`'s
+`edit_server_screen` confirmation (`changedTakServerDetail`): the P12 branch
+preserves certificate fields, while the enrollment branch explicitly clears
+`p12Cert` and `p12CertPassword`. The UI hides username/password fields in P12 mode;
+chat still saves the explicitly supplied credentials without discarding the P12.
+
 Replies are `Server <name> added` or `Server <name> updated`, confirming durable
 storage, **not** successful certificate enrollment or connection. Failures use
 credential-free reasons. The credential-free path posts the existing on-watch

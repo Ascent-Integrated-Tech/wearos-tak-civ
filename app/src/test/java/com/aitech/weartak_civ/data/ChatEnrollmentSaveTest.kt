@@ -65,6 +65,28 @@ class ChatEnrollmentSaveTest {
         assertFalse(repo.getEnableTakEndpoint.first()) // Adding a server does not overwrite a toggle choice.
     }
 
+    @Test fun p12UpdatePreservesCertificateModeAndEveryUneditedField() = runBlocking {
+        repo.storeTakServerList(listOf(DataRepository.TakServerItem(
+            false, "Ops", "host.example", 8089, true, "old-user", "old-password",
+            "c3ludGhldGljLWNlcnRpZmljYXRl", "certificate-password", "stable-p12-id")))
+        val before = repo.awaitTakServerList().single()
+        assertEquals(DataRepository.ChatEnrollmentStatus.UPDATED,
+            repo.saveChatEnrollment("OPS", "other.example", 8090, "new-user", "new-password").status)
+        assertEquals(before.copy(name = "OPS", address = "other.example", port = 8090,
+            username = "new-user", password = "new-password"), repo.awaitTakServerList().single())
+    }
+
+    @Test fun enrollmentModeUpdateClearsCachedCertificateLikeUiCredentialEdit() = runBlocking {
+        repo.storeTakServerList(listOf(DataRepository.TakServerItem(
+            true, "Ops", "host.example", 8089, false, "old-user", "old-password",
+            "c3ludGhldGljLWNlcnRpZmljYXRl", "certificate-password", "stable-enrollment-id")))
+        val before = repo.awaitTakServerList().single()
+        assertEquals(DataRepository.ChatEnrollmentStatus.UPDATED,
+            repo.saveChatEnrollment("Ops", "host.example", 8089, "new-user", "new-password").status)
+        assertEquals(before.copy(username = "new-user", password = "new-password",
+            p12Cert = "", p12CertPassword = ""), repo.awaitTakServerList().single())
+    }
+
     @Test fun conflictingNameAndEndpointChangeNothing() = runBlocking {
         repo.saveChatEnrollment("One", "one.example", 8089, "u", "p")
         repo.saveChatEnrollment("Two", "two.example", 8089, "u", "p")
