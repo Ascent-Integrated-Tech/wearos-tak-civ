@@ -159,6 +159,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.data.takserver.TakHttpSession
+import com.aitech.weartak_civ.data.takserver.TakConnectionCloser
 import com.aitech.weartak_civ.data.takserver.withSessionResponse
 
 class TAKConnectService: Service() {
@@ -2671,7 +2672,7 @@ class TAKConnectService: Service() {
                 detail.connectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
                 recordConnection(detail, ConnectionTransition.START, generation = attempt.generation)
             }
-            oldSockets.distinct().forEach { runCatching { it.close() } }
+            TakConnectionCloser.close(oldSockets)
             return attempt
         }
 
@@ -2712,7 +2713,8 @@ class TAKConnectService: Service() {
                 recordConnection(detail, ConnectionTransition.INVALIDATED,
                     if (terminate) ConnectionReason.TERMINATED else connectionGateReason(detail, ConnectionReason.RESET))
             }
-            sockets.distinct().forEach { runCatching { it.close() } }
+            // TLS close writes close_notify; never run it on the caller (often main).
+            TakConnectionCloser.close(sockets)
             recordConnectionCounts()
         }
 
@@ -3240,6 +3242,8 @@ class TAKConnectService: Service() {
                     .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 val job = connectionScope.launch {
                     try {
+                        // Previous generation's sockets/HTTP pool must be closed before reconnecting.
+                        TakConnectionCloser.awaitPendingCloses()
                         if (!isCurrent(takServerDetail, attempt)) return@launch
                         isAnyTakConnecting = true; isAnyTakConnectingLiveData.postValue(true)
                         takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINING_CLIENT_CERT)

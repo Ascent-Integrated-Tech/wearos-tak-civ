@@ -176,6 +176,10 @@ object Utils {
     /**
      * Starts this Service in the foreground. Routine services share the coordinated
      * WearTAK active card; dedicated services keep their own channel and notification.
+     * If Android refuses promotion (API 31+ background-start restriction), the service stops
+     * itself instead of crashing; ReactiveServiceManager restarts it on a later reconcile.
+     *
+     * @return false when foreground promotion was refused and the service is stopping.
      *
      * @param notificationId  the ID for startForeground(...)
      * @param iconRes         small icon resource (default = R.drawable.weartak_logo)
@@ -192,9 +196,12 @@ object Utils {
         channelId: String = "${this.javaClass.simpleName}_channel",
         channelName: String = "${this.javaClass.simpleName} Background Channel",
         importance: Int
-    ) {
-        if (com.aitech.weartak_civ.service.RoutineServiceNotification.startIfRoutine(this)) return
+    ): Boolean {
         val tag = this.javaClass.simpleName
+        com.aitech.weartak_civ.service.RoutineServiceNotification.startIfRoutine(this)?.let { started ->
+            if (!started) refuseForeground(tag)
+            return started
+        }
         Log.d(tag, "Starting $tag as ForegroundService")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -220,7 +227,18 @@ object Utils {
             startForeground(notificationId, notification)
         } catch (e: NullPointerException) {
             Log.e(tag, "Failed to set $tag as ForegroundService", e)
+        } catch (e: RuntimeException) {
+            if (!com.aitech.weartak_civ.service.RoutineServiceNotification.isForegroundStartRefusal(e)) throw e
+            Log.w(tag, "Foreground start refused for $tag", e)
+            refuseForeground(tag)
+            return false
         }
+        return true
+    }
+
+    private fun Service.refuseForeground(tag: String) {
+        Log.w(tag, "Stopping $tag: foreground start not allowed now; manager will retry")
+        stopSelf()
     }
 
     fun Service.stopForegroundServiceCompat() {

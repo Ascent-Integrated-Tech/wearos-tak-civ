@@ -105,7 +105,8 @@ class ActivityRecognitionService : Service() {
         Log.i(TAG, "ActivityRecognitionService onCreate()")
         //writeToLogFileLocation(logFile, logStr)
         activityRecognitionClient = ActivityRecognition.getClient(this)
-        startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)
+        // Refused foreground promotion: the service is stopping; register nothing.
+        if (!startForegroundServiceCompat(NOTIF_ID, importance = android.app.NotificationManager.IMPORTANCE_LOW)) return
 
         // Instead of a BroadcastReceiver, send the Intent back to this Service:
         val intent = Intent(this, ActivityRecognitionService::class.java).setAction(ACTION_RECOGNITION)

@@ -115,7 +115,13 @@ class CEPSimulationService : Service() {
             return
         }
         createNotificationChannel()
-        startForeground(NOTIF_ID, buildNotification("Idle"))
+        try {
+            startForeground(NOTIF_ID, buildNotification("Idle"))
+        } catch (error: RuntimeException) {
+            if (!RoutineServiceNotification.isForegroundStartRefusal(error)) throw error
+            Log.w("CEPSimulationService", "Foreground start refused; stopping", error)
+            stopSelf()
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
