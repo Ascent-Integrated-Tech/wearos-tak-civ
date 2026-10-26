@@ -4,6 +4,7 @@ import android.app.Application
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothGatt
+import android.bluetooth.BluetoothGattCharacteristic
 import android.bluetooth.BluetoothGattServer
 import android.bluetooth.BluetoothGattServerCallback
 import android.bluetooth.BluetoothProfile
@@ -274,11 +275,17 @@ class CompanionAdvertisingRecoveryTest {
         callback().onStartSuccess(null)
         val peer = mockk<BluetoothDevice>(relaxed = true)
         every { peer.address } returns "AA:BB"
+        every { peer.bondState } returns BluetoothDevice.BOND_BONDED
+        val rx = UUID.fromString("0000a11c-0000-1000-8000-00805f9b34fb")
+        every { cap.RX_FROM_COMPANION_UUID } returns rx
         val gattCallback = CompanionAppService::class.java.getDeclaredField("gattServerCallback").run {
             isAccessible = true
             get(service) as BluetoothGattServerCallback
         }
         gattCallback.onConnectionStateChange(peer, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
+        gattCallback.onCharacteristicWriteRequest(peer, 1,
+            BluetoothGattCharacteristic(rx, BluetoothGattCharacteristic.PROPERTY_WRITE, 0),
+            false, false, 0, byteArrayOf())
         idle(2)
         gattCallback.onConnectionStateChange(peer, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_DISCONNECTED)
         callback().onStartSuccess(null)

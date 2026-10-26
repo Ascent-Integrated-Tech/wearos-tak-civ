@@ -88,6 +88,7 @@ class CompanionAppService : Service() {
     private val NOTIFY_CHUNK_DELAY_MS = 12L // tune 8–20ms
 
     @Volatile private var activeAddr: String? = null
+    private val linkMtus = java.util.concurrent.ConcurrentHashMap<String, Int>()
     private fun isActive(device: BluetoothDevice): Boolean =
         activeAddr != null && device.address == activeAddr
 
@@ -1411,13 +1412,34 @@ class CompanionAppService : Service() {
             bondStatus(device) == BluetoothDevice.BOND_BONDED
 
         @SuppressLint("MissingPermission")
+        private fun claimCompanion(device: BluetoothDevice): Boolean {
+            if (!serviceJob.isActive) return false
+            if (isActive(device)) return true
+            if (activeAddr != null || !linkMtus.containsKey(device.address)) return false
+
+            activeAddr = device.address
+            connectedDevice = device
+            repo.setCompanionAppDisconnected()
+            advanceCompanionGeneration()
+            rxBuf.clear()
+            resetNegotiatedMtu()
+            negotiatedMtu = linkMtus[device.address] ?: DEFAULT_ATT_MTU
+            stopAdvertising()
+            capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.CONNECTED)
+            armHandshakeWatchdog("Companion service used by ${device.address}")
+            return true
+        }
+
+        @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(device: BluetoothDevice, status: Int, newState: Int) {
             super.onConnectionStateChange(device, status, newState)
+            if (!serviceJob.isActive) return
 
             Log.d(TAG, "onConnectionStateChange: dev=${device.address} status=$status newState=$newState")
-            if (status != BluetoothGatt.GATT_SUCCESS && newState != BluetoothProfile.STATE_CONNECTED) {
-                if (activeAddr != null && !isActive(device)) {
-                    Log.w(TAG, "Ignoring connection error from stale device=${device.address}")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                linkMtus.remove(device.address)
+                if (!isActive(device)) {
+                    Log.d(TAG, "Ignoring connection error from non-Companion device=${device.address}")
                     return
                 }
                 Log.w(TAG, "Connection error status=$status, resetting BLE state")
@@ -1438,30 +1460,13 @@ class CompanionAppService : Service() {
 
             when (newState) {
                 BluetoothProfile.STATE_CONNECTED -> {
-                    val current = activeAddr
-                    if (current != null && current != device.address) {
-                        Log.w(TAG, "Rejecting ${device.address}; already active=$current")
-                        gattServer?.cancelConnection(device)
-                        return
-                    }
-
-                    activeAddr = device.address
-                    repo.setCompanionAppDisconnected()
-                    connectedDevice = device
-                    advanceCompanionGeneration()
-                    rxBuf.clear()
-
-                    // reset per-session flags
-                    negotiatedMtu = DEFAULT_ATT_MTU
-                    notificationsEnabled = false
-                    helloSentForConnection = false
-
-                    stopAdvertising()
-                    capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.CONNECTED)
-                    armHandshakeWatchdog("connected ${device.address}")
+                    // Android reports shared LE links, including links owned by Ditto.
+                    linkMtus.putIfAbsent(device.address, DEFAULT_ATT_MTU)
+                    Log.d(TAG, "LE link available; awaiting Companion service use by ${device.address}")
                 }
 
                 BluetoothProfile.STATE_DISCONNECTED -> {
+                    linkMtus.remove(device.address)
                     if (!isActive(device)) {
                         Log.w(TAG, "Ignoring DISCONNECTED from stale device=${device.address} active=$activeAddr")
                         return
@@ -1519,25 +1524,17 @@ class CompanionAppService : Service() {
                 value
             )
 
-            // Respond immediately so the companion doesn't block on the write.
+            val status = when {
+                characteristic.uuid != capRepo.RX_FROM_COMPANION_UUID -> BluetoothGatt.GATT_FAILURE
+                !isBonded(device) -> BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION
+                !claimCompanion(device) -> BluetoothGatt.GATT_FAILURE
+                else -> BluetoothGatt.GATT_SUCCESS
+            }
             if (responseNeeded) {
-                val status = when {
-                    characteristic.uuid != capRepo.RX_FROM_COMPANION_UUID -> BluetoothGatt.GATT_FAILURE
-                    !isActive(device) -> BluetoothGatt.GATT_FAILURE
-                    !isBonded(device) -> BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION
-                    else -> BluetoothGatt.GATT_SUCCESS
-                }
-
                 gattServer?.sendResponse(device, requestId, status, offset, null)
             }
-
-            if (characteristic.uuid != capRepo.RX_FROM_COMPANION_UUID) return
-            if (!isActive(device)) {
-                Log.w(TAG, "Ignoring write from stale device=${device.address} active=$activeAddr")
-                return
-            }
-            if (!isBonded(device)) {
-                Log.w(TAG, "Ignoring write from unbonded device=${device.address} bond=${bondStatus(device)}")
+            if (status != BluetoothGatt.GATT_SUCCESS) {
+                Log.w(TAG, "Companion RX rejected: device=${device.address} status=$status active=$activeAddr")
                 return
             }
 
@@ -1551,7 +1548,7 @@ class CompanionAppService : Service() {
 
         }
 
-        @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+        @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
         override fun onDescriptorWriteRequest(
             device: BluetoothDevice,
             requestId: Int,
@@ -1575,12 +1572,6 @@ class CompanionAppService : Service() {
                 return
             }
 
-            // Only accept from active device
-            if (device != connectedDevice) {
-                Log.i(TAG, "CCCD write ignored: device ${device.address} != connected ${connectedDevice?.address}")
-                respond(BluetoothGatt.GATT_FAILURE)
-                return
-            }
             if (!isBonded(device)) {
                 Log.i(TAG, "CCCD write ignored: device ${device.address} is not bonded")
                 respond(BluetoothGatt.GATT_INSUFFICIENT_AUTHENTICATION)
@@ -1594,11 +1585,14 @@ class CompanionAppService : Service() {
                 return
             }
 
-            // Persist descriptor value (helps some stacks)
-            descriptor.value = value
-
             val enableNoti = value.contentEquals(BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE)
             val disableNoti = value.contentEquals(BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE)
+            if ((!enableNoti && !disableNoti) || preparedWrite || offset != 0 ||
+                (enableNoti && !claimCompanion(device)) || (disableNoti && !isActive(device))) {
+                respond(BluetoothGatt.GATT_FAILURE)
+                return
+            }
+            descriptor.value = value
 
             Log.d(TAG, "CCCD write from ${device.address}, enable=$enableNoti disable=$disableNoti")
 
@@ -1637,8 +1631,9 @@ class CompanionAppService : Service() {
 
         @SuppressLint("MissingPermission")
         override fun onMtuChanged(device: BluetoothDevice, mtu: Int) {
+            linkMtus.computeIfPresent(device.address) { _, _ -> mtu }
             if (!isActive(device)) {
-                Log.w(TAG, "Ignoring MTU from stale device=${device.address} active=$activeAddr")
+                Log.d(TAG, "MTU recorded for unclaimed LE link ${device.address}")
                 return
             }
             negotiatedMtu = mtu
@@ -1654,6 +1649,7 @@ class CompanionAppService : Service() {
         // Drop local flags immediately
         activeAddr = null
         connectedDevice = null
+        linkMtus.clear()
         notificationsEnabled = false
         negotiatedMtu = DEFAULT_ATT_MTU
         helloSentForConnection = false
