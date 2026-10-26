@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.service
 
 import android.Manifest
 import android.app.Application
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.ReactiveServiceManager.ServiceType
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -72,7 +73,7 @@ class ReactiveServiceStartOrderTest {
         val started = reconcile()
 
         assertEquals(CompanionAppService::class.java.name, started.first())
-        assertEquals(6, started.size)
+        assertEquals(if (BuildConfig.CEP_SIMULATION) 6 else 5, started.size)
     }
 
     @Test fun otherServicesKeepDependencyOrderAfterCompanion() {

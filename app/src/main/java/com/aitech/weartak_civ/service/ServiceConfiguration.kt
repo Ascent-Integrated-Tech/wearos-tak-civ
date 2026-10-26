@@ -13,6 +13,7 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.LicenseManager.isLicenseValid
@@ -119,10 +120,9 @@ class ServiceConfiguration(
         ServiceType.REPORTING_INTERVAL,
         ServiceType.MOVEMENT_DETECTION,
         ServiceType.BATTERY,
-        ServiceType.CEP_SIMULATION,
-
 //        ServiceType.BATTERY_ALERTS -> dataRepository.getEnableBatteryAlerts.distinctUntilChanged()
         ServiceType.POWER_MGR -> flowOf(true).distinctUntilChanged()
+        ServiceType.CEP_SIMULATION -> flowOf(BuildConfig.CEP_SIMULATION)
         ServiceType.OFF_BODY_DETECT -> flowOf(true).distinctUntilChanged()
         ServiceType.COMPANION_APP -> dataRepository.getEnableCompanionAppService.distinctUntilChanged()
         ServiceType.PRESSURE -> combine(

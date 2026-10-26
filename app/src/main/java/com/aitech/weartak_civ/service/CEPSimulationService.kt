@@ -72,6 +72,7 @@ class CEPSimulationService : Service() {
         const val SIM_TARGET_SPO2_ALL = "SPO2_ALL"
 
         fun start(ctx: Context, target: String = SIM_TARGET_ALL_MAIN) {
+            if (!BuildConfig.CEP_SIMULATION) return
             val i = Intent(ctx, CEPSimulationService::class.java).apply {
                 action = ACTION_START
                 putExtra(EXTRA_SIMULATION_TARGET, target)
@@ -82,6 +83,7 @@ class CEPSimulationService : Service() {
         fun startScenario(ctx: Context, scenario: String) = start(ctx, scenario)
         fun startSpo2Scenario(ctx: Context, scenario: String) = start(ctx, scenario)
         fun stop(ctx: Context) {
+            if (!BuildConfig.CEP_SIMULATION) return
             val i = Intent(ctx, CEPSimulationService::class.java).apply { action = ACTION_STOP }
             ctx.startService(i)
         }
@@ -89,8 +91,8 @@ class CEPSimulationService : Service() {
 
     /**
      * Phase 1 test gate — flip to `true` to activate the simulation service.
-     * When false the service is registered but remains completely idle on start,
-     * so it has zero impact on production builds.  When true, [startPhase1TestLoop]
+     * When false the service is disabled and excluded from managed service startup.
+     * When true, [startPhase1TestLoop]
      * runs through all P1 verification scenarios.
      */
     val enableCepSimulation = BuildConfig.CEP_SIMULATION
@@ -108,15 +110,17 @@ class CEPSimulationService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        if (!enableCepSimulation) {
+            stopSelf()
+            return
+        }
         createNotificationChannel()
         startForeground(NOTIF_ID, buildNotification("Idle"))
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!enableCepSimulation) {
-            // Service is registered in the manifest but intentionally idle.
-            // Flip IN_TESTING = true in companion object to activate Phase 1 scenarios.
-            Log.d(TAG, "CEPSimulationService idle - no loop started (CEP_SIMULATION=false)")
+            stopSelf()
             return START_NOT_STICKY
         }
 

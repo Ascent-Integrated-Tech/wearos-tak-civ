@@ -1303,6 +1303,11 @@ credentials or certificates. The TAK foreground service, multicast and shared
 coroutine scope stay alive. Turning it on resumes eligible servers under existing
 network and companion-exclusive routing gates.
 
+CEP simulation is disabled in release and ordinary debug builds: it is excluded
+from managed service registration/startup, its Android component is disabled, and
+direct entry points cannot create notification 8123. Explicit debug test builds
+with `-PCEP_SIMULATION=true` retain simulation startup and notification behavior.
+
 TAK keepalive waits for its next receive-silence, ping-repeat or unanswered-response
 deadline, re-evaluating on inbound bytes instead of polling every five seconds.
 The existing silence configuration (zero disables; positive values have a 15-second
