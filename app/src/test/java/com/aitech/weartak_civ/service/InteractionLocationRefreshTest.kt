@@ -90,6 +90,394 @@ class InteractionLocationRefreshTest {
         elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos()
     }
 
+    private fun inject(service: LocationService, name: String, value: Any) {
+        LocationService::class.java.getDeclaredField(name).apply { isAccessible = true; set(service, value) }
+    }
+
+    private fun policy(service: LocationService): LocationAcquisitionPolicy =
+        LocationService::class.java.getDeclaredField("acquisitionPolicy").let {
+            it.isAccessible = true
+            it.get(service) as LocationAcquisitionPolicy
+        }
+
+    @Test fun constantOneShotTimeoutsBackOffAndFixAndConfigurationRestoreNormalCadence() =
+        oneShotBackoff(dynamic = false)
+
+    @Test fun dynamicOneShotTimeoutsBackOffAndFixAndConfigurationRestoreNormalCadence() =
+        oneShotBackoff(dynamic = true)
+
+    private fun oneShotBackoff(dynamic: Boolean) {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val callbacks = mutableListOf<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(callbacks), any<Looper>()) } just Runs
+        val service = service(manager)
+        inject(service, "dynamicReporting", dynamic)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        val previousObservation = CotDispatchService.desiredLocationObservationIntervalSecs
+        val schedules = mutableListOf<Long>()
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(capture(schedules)) } just Runs
+        every { com.aitech.weartak_civ.Utils.startGlobalTimer(any()) } just Runs
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            CotDispatchService.desiredLocationObservationIntervalSecs = 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            listOf(30_000L, 30_000L, 60_000L, 120_000L, 240_000L, 300_000L, 300_000L)
+                .forEachIndexed { index, interval ->
+                    if (index > 0) {
+                        service.acquireWakelockAndRequestLocation()
+                        await { callbacks.size == index + 1 }
+                    }
+                    val before = schedules.size
+                    shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+                    await { schedules.size > before }
+                    assertEquals(interval, schedules.last())
+                }
+            service.acquireWakelockAndRequestLocation()
+            await { callbacks.size == 8 }
+            callbacks.last().onLocationChanged(fix())
+            await { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.READY }
+            assertEquals(0, policy(service).backoffLevel)
+            await { schedules.last() == 30_000L }
+
+            repeat(4) { policy(service).failed() }
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 9 }
+            assertEquals(0, policy(service).backoffLevel)
+            val stale = callbacks.last()
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 10 }
+            stale.onLocationChanged(fix())
+            assertEquals(0, policy(service).backoffLevel)
+            // Cancelling a live generation removes its timeout rather than counting it.
+            service.onDestroy()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+            assertEquals(0, policy(service).backoffLevel)
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            CotDispatchService.desiredLocationObservationIntervalSecs = previousObservation
+            if (LocationService.isRunning.get()) service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun stationaryFusedUsesRecentHonestFixButInteractionRequiresFreshHighAccuracy() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val client = mockk<FusedLocationProviderClient>()
+        val callbacks = mutableListOf<LocationCallback>()
+        val requests = mutableListOf<LocationRequest>()
+        every { client.requestLocationUpdates(capture(requests), capture(callbacks), any<Looper>()) } returns Tasks.forResult(null)
+        every { client.removeLocationUpdates(any<LocationCallback>()) } returns Tasks.forResult(null)
+        val service = service(manager, LocationInput.FUSED, client)
+        inject(service, "activity", ActivityRecognitionService.Companion.ActivityRecognized.STILL)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACTIVITY_RECOGNITION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        every { com.aitech.weartak_civ.Utils.startGlobalTimer(any()) } just Runs
+        val observer = Observer()
+        EventBus.getDefault().register(observer)
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            // Let the selected input generation age before obtaining a cached fix.
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(31))
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            val scheduled = requests[0]
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, scheduled.priority)
+            assertFalse(scheduled.isWaitForAccurateLocation)
+            assertEquals(30_000L, scheduled.maxUpdateAgeMillis)
+            repeat(4) { policy(service).failed() }
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
+            await { callbacks.size == 2 }
+            assertEquals(0, policy(service).backoffLevel)
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, requests[1].priority)
+            assertTrue(requests[1].isWaitForAccurateLocation)
+            assertEquals(0L, requests[1].maxUpdateAgeMillis)
+            val cached = fix("fused").apply {
+                time -= 20_000L
+                elapsedRealtimeNanos -= 20_000_000_000L
+                accuracy = 75f
+                speed = 0f
+            }
+            callbacks[0].onLocationResult(LocationResult.create(listOf(Location(cached).apply {
+                elapsedRealtimeNanos -= 11_000_000_000L
+            })))
+            callbacks[0].onLocationResult(LocationResult.create(listOf(Location(cached).apply {
+                elapsedRealtimeNanos = SystemClock.elapsedRealtimeNanos() + 1
+            })))
+            assertTrue(observer.normalEvents.isEmpty())
+            callbacks[0].onLocationResult(LocationResult.create(listOf(cached)))
+            await { observer.normalEvents.size == 1 }
+            assertTrue(observer.events.isEmpty())
+            val stored = requireNotNull(MainActivity.dataRepository.latestLocation.value)
+            assertEquals(cached.time, stored.time)
+            assertEquals(cached.elapsedRealtimeNanos, stored.elapsedRealtimeNanos)
+            assertEquals(75f, stored.accuracy)
+            assertTrue(requireNotNull(LocationService.speedObservation.value).validUntilElapsedNanos <=
+                cached.elapsedRealtimeNanos + 36_000_000_000L)
+            inject(service, "activity", ActivityRecognitionService.Companion.ActivityRecognized.UNKNOWN)
+            service.acquireWakelockAndRequestLocation()
+            await { callbacks.size == 3 }
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, requests[2].priority)
+            callbacks[1].onLocationResult(LocationResult.create(listOf(fix("fused"))))
+            await { observer.events.size == 1 }
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            EventBus.getDefault().unregister(observer)
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun fusedFailuresCountButStaleFailuresAndRevokedPermissionDoNot() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val client = mockk<FusedLocationProviderClient>()
+        val tasks = mutableListOf<com.google.android.gms.tasks.TaskCompletionSource<Void>>()
+        every { client.requestLocationUpdates(any<LocationRequest>(), any<LocationCallback>(), any<Looper>()) } answers {
+            com.google.android.gms.tasks.TaskCompletionSource<Void>().also { tasks.add(it) }.task
+        }
+        every { client.removeLocationUpdates(any<LocationCallback>()) } returns Tasks.forResult(null)
+        val service = service(manager, LocationInput.FUSED, client)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        every { com.aitech.weartak_civ.Utils.startGlobalTimer(any()) } just Runs
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { tasks.size == 1 }
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { tasks.size == 2 }
+            tasks[0].setException(IllegalStateException("stale"))
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(0, policy(service).backoffLevel)
+            repeat(3) { index ->
+                if (index > 0) {
+                    service.acquireWakelockAndRequestLocation()
+                    await { tasks.size == index + 2 }
+                }
+                tasks.last().setException(IllegalStateException("unavailable"))
+                await { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.REQUEST_FAILED }
+            }
+            assertEquals(1, policy(service).backoffLevel)
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
+            await { tasks.size == 5 }
+            assertEquals(0, policy(service).backoffLevel)
+            service.acquireWakelockAndRequestLocation()
+            await { tasks.size == 6 }
+            shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+            assertEquals(LocationInputStatus.PERMISSION_REQUIRED, MainActivity.dataRepository.locationInputStatus.value)
+            assertEquals(0, policy(service).backoffLevel)
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun activityMovementResetsBackoffAndReprofilesPeriodicFusedWithoutSkippingObservations() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val client = mockk<FusedLocationProviderClient>()
+        val requests = mutableListOf<LocationRequest>()
+        val callbacks = mutableListOf<LocationCallback>()
+        every { client.requestLocationUpdates(capture(requests), capture(callbacks), any<Looper>()) } returns Tasks.forResult(null)
+        every { client.removeLocationUpdates(any<LocationCallback>()) } returns Tasks.forResult(null)
+        val service = service(manager, LocationInput.FUSED, client)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACTIVITY_RECOGNITION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        val still = ActivityRecognitionService.Companion.ActivityRecognized.STILL
+        try {
+            runBlocking {
+                MainActivity.dataRepository.storeEnableActivityRecognitionService(true)
+                MainActivity.dataRepository.storeLatestActivityRecognized(still)
+            }
+            LocationService::class.java.getDeclaredMethod("startAcquisitionActivityCollector").apply {
+                isAccessible = true; invoke(service)
+            }
+            await {
+                LocationService::class.java.getDeclaredField("activity").let {
+                    it.isAccessible = true; it.get(service) == still
+                }
+            }
+            CotDispatchService.actualReportingIntervalSecs = 1
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { requests.size == 1 }
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, requests.last().priority)
+            callbacks[0].onLocationResult(LocationResult.create(listOf(fix("fused").apply { speed = 0f })))
+            await { LocationService.speedObservation.value != null }
+            repeat(4) { policy(service).failed() }
+            runBlocking { MainActivity.dataRepository.storeLatestActivityRecognized(
+                ActivityRecognitionService.Companion.ActivityRecognized.WALKING) }
+            await { requests.size == 2 }
+            assertEquals(0, policy(service).backoffLevel)
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, requests.last().priority)
+            assertEquals(0L, requests.last().maxUpdateAgeMillis)
+            verify { client.removeLocationUpdates(callbacks[0]) }
+            runBlocking { MainActivity.dataRepository.storeLatestActivityRecognized(still) }
+            await { requests.size == 3 }
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, requests.last().priority)
+            LocationService.speedObservation.value = null
+            runBlocking { MainActivity.dataRepository.storeEnableActivityRecognitionService(false) }
+            await { requests.size == 4 }
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, requests.last().priority)
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+        }
+    }
+
+    @Test fun identicalCachedFixStillSchedulesNextDynamicObservationWithoutRenewingSpeed() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val client = mockk<FusedLocationProviderClient>()
+        val callbacks = mutableListOf<LocationCallback>()
+        every { client.requestLocationUpdates(any<LocationRequest>(), capture(callbacks), any<Looper>()) } returns Tasks.forResult(null)
+        every { client.removeLocationUpdates(any<LocationCallback>()) } returns Tasks.forResult(null)
+        val service = service(manager, LocationInput.FUSED, client)
+        inject(service, "dynamicReporting", true)
+        inject(service, "activity", ActivityRecognitionService.Companion.ActivityRecognized.STILL)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACTIVITY_RECOGNITION)
+        val oldObservation = CotDispatchService.desiredLocationObservationIntervalSecs
+        val schedules = mutableListOf<Long>()
+        val observer = Observer()
+        EventBus.getDefault().register(observer)
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(capture(schedules)) } just Runs
+        try {
+            CotDispatchService.desiredLocationObservationIntervalSecs = 10
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            val cached = fix("fused").apply {
+                time -= 1_000
+                elapsedRealtimeNanos -= 1_000_000_000L
+                speed = 0f
+            }
+            callbacks[0].onLocationResult(LocationResult.create(listOf(cached)))
+            await { observer.normalEvents.size == 1 && schedules.size == 1 }
+            val firstObservation = requireNotNull(LocationService.speedObservation.value)
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(10))
+            service.acquireWakelockAndRequestLocation()
+            await { callbacks.size == 2 }
+            callbacks[1].onLocationResult(LocationResult.create(listOf(cached)))
+            await { schedules.size == 2 }
+            assertEquals(10_000L, schedules.last())
+            assertEquals(1, observer.normalEvents.size)
+            assertSame(firstObservation, LocationService.speedObservation.value)
+        } finally {
+            CotDispatchService.desiredLocationObservationIntervalSecs = oldObservation
+            service.onDestroy()
+            EventBus.getDefault().unregister(observer)
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun powerPolicyChangeResetsBackoffWithoutCancellingPendingDynamicObservation() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val callbacks = mutableListOf<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(callbacks), any<Looper>()) } just Runs
+        val service = service(manager)
+        inject(service, "dynamicReporting", true)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val oldObservation = CotDispatchService.desiredLocationObservationIntervalSecs
+        val oldPower = PowerManagerService.observationPowerThrottled
+        val powerField = PowerManagerService::class.java.getDeclaredField("observationPowerThrottled")
+            .apply { isAccessible = true }
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        try {
+            CotDispatchService.desiredLocationObservationIntervalSecs = 30
+            powerField.setBoolean(null, false)
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            repeat(4) { policy(service).failed() }
+            powerField.setBoolean(null, true)
+            service.onPowerManagerEvent(PowerManagerEvent(PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
+            assertEquals(0, policy(service).backoffLevel)
+            verify(exactly = 0) { manager.removeUpdates(callbacks[0]) }
+            assertEquals(1, callbacks.size)
+        } finally {
+            CotDispatchService.desiredLocationObservationIntervalSecs = oldObservation
+            powerField.setBoolean(null, oldPower)
+            service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun cancelledFusedRegistrationsNeverBecomeTimeoutFailures() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val client = mockk<FusedLocationProviderClient>()
+        val cancellations = mutableListOf<com.google.android.gms.tasks.CancellationTokenSource>()
+        every { client.requestLocationUpdates(any<LocationRequest>(), any<LocationCallback>(), any<Looper>()) } answers {
+            com.google.android.gms.tasks.CancellationTokenSource().let {
+                cancellations.add(it)
+                com.google.android.gms.tasks.TaskCompletionSource<Void>(it.token).task
+            }
+        }
+        every { client.removeLocationUpdates(any<LocationCallback>()) } returns Tasks.forResult(null)
+        val service = service(manager, LocationInput.FUSED, client)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        every { com.aitech.weartak_civ.Utils.startGlobalTimer(any()) } just Runs
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { cancellations.size == 1 }
+            repeat(4) { index ->
+                if (index > 0) {
+                    service.acquireWakelockAndRequestLocation()
+                    await { cancellations.size == index + 1 }
+                }
+                cancellations.last().cancel()
+                shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+            }
+            assertEquals(0, policy(service).backoffLevel)
+            assertNotEquals(LocationInputStatus.REQUEST_FAILED, MainActivity.dataRepository.locationInputStatus.value)
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
+    @Test fun disablingLocationDuringAcquisitionDoesNotCountTimeoutAsFailure() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val callbacks = mutableListOf<LocationListener>()
+        every { manager.requestLocationUpdates("gps", any<Long>(), any<Float>(),
+            capture(callbacks), any<Looper>()) } just Runs
+        val service = service(manager)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previousInterval = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 30
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { callbacks.size == 1 }
+            repeat(2) { policy(service).failed() }
+            runBlocking { MainActivity.dataRepository.storeEnableLocationService(false) }
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
+            await { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.OFF }
+            assertEquals(0, policy(service).backoffLevel)
+            verify { manager.removeUpdates(callbacks[0]) }
+        } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousInterval
+            service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
     @Test fun oneShotFixCompletesBothPurposesWithoutSkippingTheirNativeRequests() =
         sharedGnssCompletion(periodic = false, interactionDeliversFirst = false)
 
@@ -544,7 +932,7 @@ class InteractionLocationRefreshTest {
             assertNull(MainActivity.dataRepository.bestKnownLocation())
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
             verify { client.removeLocationUpdates(oneShot) }
-            assertEquals(LocationInputStatus.REQUEST_FAILED, MainActivity.dataRepository.locationInputStatus.value)
+            await { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.REQUEST_FAILED }
             oneShot.onLocationResult(LocationResult.create(listOf(fix("fused"))))
             assertNull(MainActivity.dataRepository.bestKnownLocation())
         } finally {
@@ -744,7 +1132,7 @@ class InteractionLocationRefreshTest {
             assertNull(MainActivity.dataRepository.latestLocation.value)
             shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(6))
             verify { manager.removeUpdates(callback.captured) }
-            assertEquals(LocationInputStatus.REQUEST_FAILED, MainActivity.dataRepository.locationInputStatus.value)
+            await { MainActivity.dataRepository.locationInputStatus.value == LocationInputStatus.REQUEST_FAILED }
             callback.captured.onLocationChanged(fix("network"))
             shadowOf(Looper.getMainLooper()).idle()
             assertNull(MainActivity.dataRepository.latestLocation.value)
