@@ -1682,6 +1682,147 @@ matched unplugged sessions with elapsed time, battery percentage drop and OS
 wakelock/radio/GPS evidence. Event counts cannot establish per-component energy
 use or prove battery savings, and no physical battery measurements are claimed.
 
+### Power context in developer Logging
+
+Power context extends the same **default-OFF**, local-only developer journal.
+Schema stays **1**; additive `POWER_CONTEXT`, `DEVICE_SETTING` and
+`RESOURCE_LIFETIME` events carry `CONTEXT_VERSION=1`. Consumers must accept these
+new enum names. No new permission, permission prompt, polling loop, alarm,
+sensor acquisition, network request or wake lock is introduced. Exactly one of
+the six existing five-minute connectivity path ticks captures global context.
+Other captures use existing battery callbacks (before battery percentage
+de-duplication), charging boundaries, screen/radio/power broadcasts, display
+callbacks and fixed Settings URI observers. Logging off unregisters context
+observers/listeners/receivers and cancels pending context callbacks. Clear
+invalidates pending writes/callbacks and resets the clock epoch.
+
+`POWER_CONTEXT` records adjacent elapsed/uptime clocks at observation time:
+`CAPTURE_ELAPSED_MS`, `UPTIME_MS`, `PREVIOUS_ELAPSED_MS`,
+`ELAPSED_DELTA_MS`, `UPTIME_DELTA_MS`, `ASLEEP_MS` and
+`ASLEEP_BASIS_POINTS` (divide by 100 for percent asleep).
+Elapsed time includes system suspend; uptime excludes it. This estimates
+**system suspend**, not human sleep, Doze residency, process CPU time or energy.
+For example, elapsed +300,000 ms and uptime +30,000 ms is 90% asleep.
+`CLOCK_STATUS` is baseline/unavailable=0, valid=1, invalid=2.
+The first capture after opt-in, clear or process restart has no interval.
+Clock rollback, zero-length intervals, negative uptime deltas and inconsistency
+larger than 5 ms are invalid, with no fabricated percent. A clock pair is
+bracketed by elapsed reads (`CLOCK_SKEW_MS`) and retried once if skew exceeds
+5 ms; only <=5 ms negative sleep discrepancies are clamped.
+`NEVER_SUSPENDED` is measurable suspend=0, exact zero sleep=1,
+indistinguishable from zero within 5 ms=2. `SHORT_INTERVAL=1` marks intervals
+under one second. Raw deltas remain available. Only an admitted snapshot
+advances the baseline. Queue/storage loss can remove endpoints; exported rows
+are not necessarily a continuous interval chain.
+
+`REASON` is initial=0, existing five-minute tick=1, state/battery callback=2,
+charging boundary=3. Event-driven full snapshots are limited to one per
+30 seconds except initial/charging boundaries. `IDLE`, `LIGHT_IDLE`,
+`INTERACTIVE`, `DISPLAY_STATE` (Android Display state codes) and `SAVER`
+are independent observations; -1 is unavailable. Screen-off does not prove
+suspend or AOD. The AOD setting and a dozing display are separate evidence.
+`CURRENT_UA` is signed instantaneous battery current in microamps
+(Android convention: positive charging, negative discharging);
+`CHARGE_UAH` is charge counter in microamp-hours, not integrated interval energy.
+`CURRENT_STATUS` and `CHARGE_STATUS` distinguish real zero from unavailable
+properties; unsupported `Long.MIN_VALUE` is never exported as a value.
+
+`DEVICE_SETTING` records changes, not arbitrary names or strings. `READ_STATUS`
+decodes as readable=0, **unreadable (missing)=1**, **unreadable (denied)=2**,
+**unreadable (malformed)=3**, unsupported=4. Omitted `VALUE` is not false/zero.
+Namespaces: System=0, Secure=1, Global=2, effective platform state=3.
+`OBSERVER_AVAILABLE` reports successful URI registration; numeric
+`OBSERVATION_FAILURES` counts unavailable observation registrations.
+Observers are registered before the initial read; pending notifications
+reconcile changes. Denied observers fall back to existing callbacks/snapshots.
+Notifications timestamp observation, not the actual transition; changes while
+suspended or between callbacks can be missed. No complete transition coverage
+is claimed.
+
+The fixed setting IDs are:
+
+| ID | Namespace | Raw setting / effective state |
+| --- | --- | --- |
+| 0-8 | Secure | `wake_gesture_enabled`, `doze_pick_up_gesture`, `doze_pulse_on_pick_up`, `doze_tap_gesture`, `doze_double_tap_gesture`, `wake_on_gesture`, `wrist_gestures_enabled`, `doze_always_on`, `ambient_enabled`, respectively |
+| 9/10 | System/Secure | `lift_to_wake` |
+| 11/12 | System/Secure | `double_tap_to_wake_up` |
+| 13/14 | System/Secure | `aod_mode` |
+| 15/16 | System/Secure | `aod_tap_to_show_mode` |
+| 17 | Global | `stay_on_while_plugged_in` (plug-type bitmask, not Boolean) |
+| 18 | Global | `low_power` |
+| 19-21 | Platform | Bluetooth adapter state, NFC enabled, Wi-Fi radio state, respectively |
+| 22-26 | Platform | Device idle, light idle, interactive, display state, effective power saver, respectively |
+
+Gesture/Wear/Samsung keys are compatibility probes, **not verified effective
+toggle semantics** on a particular watch; `SEMANTICS_VERIFIED=0` preserves that
+distinction. Missing keys are unreadable, never guessed disabled. No hidden API,
+settings enumeration/write, peer names, MACs, SSIDs, scans or bonded-device
+enumeration is used. Bluetooth permission denial is unreadable without a new
+permission prompt. Effective state transitions are retained independently of
+the full-snapshot cadence gate.
+
+New context detail shares an opportunistically refilled **60 records/minute**
+budget with burst **16** (two slots reserved for full power snapshots), bypassing
+the old five-second repeated-key grouping. Churn becomes fixed-identity
+`AGGREGATED=1` summaries with latest state, `SUPPRESSED`, `FIRST_MS`, `LAST_MS`;
+these are explicitly lossy, not ordered transitions or additional acquisitions.
+Summaries flush on existing snapshots/export/off, with no timer/hardware read.
+The allowlist has 19 raw Settings probes, eight effective-state probes and
+at most 32 resource classes; inventory is capped at 64 active tokens.
+Each new serialized record is capped at **2 KiB**. The existing 128-record queue,
+256-key aggregation limit, three 2 MiB files, three-day lazy expiry and visible
+storage failure handling remain. Capacity can rotate in under an hour at
+sustained churn: retention is a cap, not a guaranteed recording duration.
+
+Resource records describe **WearTAK-owned** acquisitions/registrations, not
+sensor/health values. They distinguish CPU, screen, Wi-Fi/multicast locks,
+sensors/trackers and connectivity/subscription requests. Logging can be enabled
+mid-hold without changing operational resources; disable never releases them.
+Recorder-local monotonic `TOKEN`s, counts, elapsed start/duration/timeout,
+requested sampling period and per-resource union duration allow overlap-safe
+analysis; don't sum overlapping holds as CPU-awake percentages. Registration
+failure is not active, removal requests are not confirmed cleanup, and timed
+expiry discovered at the next existing `isHeld` observation has uncertain actual
+release time. No timer is added to discover expiry.
+
+Resource ID / class codes are fixed:
+
+| Resource ID | Resource | Class |
+| --- | --- | --- |
+| 1 | Location CPU lock | 1 (CPU lock) |
+| 2 | Debug CPU lock | 1 |
+| 3 | Debug screen lock | 2 (screen lock) |
+| 4 | Debug Wi-Fi lock | 3 (Wi-Fi performance lock) |
+| 5 | Multicast filtering lock | 4 (multicast lock, not CPU) |
+| 6-7 | Debug / multicast connectivity request | 5 (connectivity request, not CPU) |
+| 8-14 | Heading, HR, off-body, pressure, environment pressure/light/humidity | 6 (Android listener) |
+| 15-18 | Samsung skin, PPG, SpO2, continuous HR | 7 (Samsung tracker) |
+| 19 | Activity recognition | 8 (activity subscription) |
+| 20 | Health Services passive listener | 9 (passive subscription) |
+| 21-22 | Native / fused location | 10 (location subscription) |
+
+`ACTION`: begin=1, end=2, already-active=3, failed=4, uncertain=5,
+removal-requested=6, local-callback-disabled=7, expiry-observed=8,
+inventory-overflow=9, summary=10, stale-callback=11.
+`RESULT=0` accompanies failed/uncertain/expiry/overflow/stale actions and
+previously uncertain holds/summaries; otherwise it is 1, **not a hardware-awake
+Boolean**. `ACTIVE` includes uncertain outstanding registrations, but excludes
+overflowed tokens. `UNION_MS` in summaries is cumulative for the accounting epoch:
+**do not sum successive summaries**. Resource-summary slots are separate from
+suppressed detail, so a latest detail cannot erase cumulative unions.
+Clear silently resets accounting while retaining operational holds and tokens;
+the next boundary or existing snapshot reconciles them without refilling the
+just-cleared journal during an immediate export.
+
+**Other apps' wakelocks and kernel wake sources (for example `ssp_wake_lock`)
+are NOT visible in-app and still need adb batterystats.** Lack of suspend does
+not identify its cause. Authorized later OS collection complements the journal;
+kernel detail depends on build/privileges and may require other OS traces.
+WearTAK does not read restricted proc/sysfs files, execute adb, request privileged
+battery permissions or attribute an awake interval to another app/OEM.
+Screen/clock timing can reveal behavior despite numeric-only privacy rules:
+explicit opt-in, local export/clear and bounded retention still apply.
+
 ### Dev Mode Stay Awake
 
 Debug and release APKs include one opt-in **Stay awake** split-toggle chip in the alphabetized

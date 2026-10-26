@@ -176,11 +176,16 @@ class MovementDetectionService : Service(), SensorEventListener {
             lastAzimuthTrueDeg = null
             lastPublishAtMs = 0L
             rotationStartedNanos = android.os.SystemClock.elapsedRealtimeNanos()
-            rotationRegistered = sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+            rotationRegistered = DiagnosticResources.acquire(DiagnosticResource.HEADING, this,
+                periodUs = 200_000, successful = { it }) {
+                sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL)
+            }
             if (!rotationRegistered) Log.e(TAG, "Rotation listener registration failed")
         } else {
             rotationRegistered = false
-            sensorManager.unregisterListener(this)
+            DiagnosticResources.release(DiagnosticResource.HEADING, this) {
+                sensorManager.unregisterListener(this)
+            }
             // Preserve the last bearing for cached ambient/complication rendering.
         }
         AppDiagnostics.record(DiagnosticEvent.ROTATION_LISTENER, mapOf(

@@ -192,7 +192,10 @@ class HeartrateService: Service() {
         if (null != heartRateSensor) {
             try {
                 registrationStartedAtNanos = android.os.SystemClock.elapsedRealtimeNanos()
-                sensorRegistered = sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
+                sensorRegistered = DiagnosticResources.acquire(DiagnosticResource.HEART_RATE, sensorEventListener,
+                    periodUs = SAMPLING_PERIOD_US.toLong(), successful = { it }) {
+                    sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
+                }
                 AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
                     DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to if (sensorRegistered) 1L else 0L))
                 if (sensorRegistered) Log.i(TAG, "HeartrateService heartRateSensor callback registered")
@@ -213,7 +216,9 @@ class HeartrateService: Service() {
     private fun stopSensors() {
         if (!sensorRegistered) return
         Log.d(TAG, "HeartrateService stopSensors(): active=$active monitoring=$monitoringEnabled worn=${sharedRepository.latestIsDeviceWorn.value} permission=$permission")
-        sensorManager.unregisterListener(sensorEventListener)
+        DiagnosticResources.release(DiagnosticResource.HEART_RATE, sensorEventListener) {
+            sensorManager.unregisterListener(sensorEventListener)
+        }
         sensorRegistered = false
         AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
             DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 0L))

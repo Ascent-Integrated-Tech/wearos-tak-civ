@@ -43,7 +43,7 @@ enum class DiagnosticEvent {
     DISPLAY_INTERACTIVE, ROTATION_LISTENER, PROCESSING_WORK,
     NETWORK_LIFECYCLE, TAK_CONNECTION, TAK_CONNECTION_COUNTS, CONNECTIVITY_PATH,
     SAMSUNG_HR_CONTINUOUS, STAY_AWAKE_AUTO_DISABLED, STAY_AWAKE_START_REFUSED,
-    MOTION_CONFIRMATION
+    MOTION_CONFIRMATION, POWER_CONTEXT, DEVICE_SETTING, RESOURCE_LIFETIME
 }
 
 @Keep
@@ -58,7 +58,15 @@ enum class DiagnosticMetric {
     CONNECTED_COUNT, CONNECTING_COUNT, SOCKET_COUNT, UI_CONNECTED, UI_CONNECTING,
     ENABLED, CONFIGURED_COUNT, MODE, GROUP_SELECTED, REQUESTED, LOCK_HELD, IDLE_RELEASED,
     BACKOFF_LEVEL, PRIORITY, MAX_AGE_MS,
-    COALESCED, SKIPPED, REASON
+    COALESCED, SKIPPED, REASON,
+    CONTEXT_VERSION, CAPTURE_ELAPSED_MS, UPTIME_MS, PREVIOUS_ELAPSED_MS,
+    ELAPSED_DELTA_MS, UPTIME_DELTA_MS, ASLEEP_MS, ASLEEP_BASIS_POINTS,
+    NEVER_SUSPENDED, SHORT_INTERVAL, CLOCK_STATUS, CLOCK_SKEW_MS,
+    IDLE, LIGHT_IDLE, INTERACTIVE, DISPLAY_STATE, SAVER, CURRENT_UA, CURRENT_STATUS,
+    CHARGE_UAH, CHARGE_STATUS, SETTING_ID, NAMESPACE, READ_STATUS, VALUE,
+    SEMANTICS_VERIFIED, OBSERVER_AVAILABLE, OBSERVATION_FAILURES,
+    RESOURCE_ID, RESOURCE_CLASS, TOKEN, ACTION, START_MS, TIMEOUT_MS, PERIOD_US,
+    UNION_MS, FIRST_MS, LAST_MS, SUPPRESSED
 }
 
 internal enum class ProcessingStage(val code: Long) {
@@ -122,6 +130,8 @@ internal class DiagnosticJournal(
     fun append(record: DiagnosticRecord) {
         val line = gson.toJson(record) + "\n"
         val bytes = line.toByteArray(Charsets.UTF_8)
+        if (record.event in contextEvents && bytes.size > 2048)
+            throw IOException("Diagnostics context event exceeds 2 KiB")
         if (bytes.size > maxBytes) throw IOException("Diagnostics event exceeds storage limit")
         val files = files()
         if (files.last().length() + bytes.size > maxBytes) {
@@ -151,6 +161,11 @@ internal class DiagnosticJournal(
             if (!it.delete()) throw IOException("Cannot clear diagnostics")
         }
         firstTimestamp.clear()
+    }
+
+    companion object {
+        internal val contextEvents = setOf(DiagnosticEvent.POWER_CONTEXT,
+            DiagnosticEvent.DEVICE_SETTING, DiagnosticEvent.RESOURCE_LIFETIME)
     }
 }
 
@@ -183,6 +198,8 @@ class AppDiagnostics internal constructor(private val application: Application) 
         val powerThrottled: Long?, val dockThrottled: Long?
     )
     private val rates = mutableMapOf<RateKey, Rate>()
+    private val contextBudget = ContextDetailBudget()
+    private val powerContext = PowerContextDiagnostics(application, ::captureContext)
     private class Work {
         var at = 0L
         var count = 0L
@@ -241,6 +258,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
             attach()
             enqueue(DiagnosticEvent.PROCESS_START)
             recordSamsungHrState()
+            startContext()
         }
     }
 
@@ -334,11 +352,19 @@ class AppDiagnostics internal constructor(private val application: Application) 
     internal fun bindConnectivity(repo: DataRepository,
         plugins: com.aitech.weartak_civ.integration.plugin.PluginSettingsCoordinator) {
         ConnectivityPathDiagnostics(scope, enabled, repo, plugins,
-            { capture(DiagnosticEvent.CONNECTIVITY_PATH, it) })
+            { capture(DiagnosticEvent.CONNECTIVITY_PATH, it) },
+            powerSnapshot = {
+                DiagnosticResources.flush(observeActive = true)
+                powerContext.snapshot()
+            })
     }
 
     // Call storage/settings operations on IO, like the existing diagnostic export path.
     suspend fun setEnabled(value: Boolean) {
+        if (!value) {
+            powerContext.stop()
+            DiagnosticResources.stop()
+        }
         if (!value) awaitPendingWrites()
         synchronized(storageLock) {
             if (enabled.value == value) return
@@ -355,12 +381,46 @@ class AppDiagnostics internal constructor(private val application: Application) 
                 mutableEnabled.value = value
                 rates.clear()
                 work.forEach { it.reset() }
+                contextBudget.reset()
             }
             if (value) {
                 attach()
                 enqueue(DiagnosticEvent.ENABLED)
                 recordSamsungHrState()
             } else detach()
+        }
+        if (value) startContext()
+    }
+
+    private fun startContext() {
+        DiagnosticResources.start(resourceEmitter())
+        powerContext.start()
+    }
+
+    private fun resourceEmitter(): (DiagnosticEvent, Map<DiagnosticMetric, Long>) -> Boolean {
+        val epoch = generation.get()
+        return { event, metrics -> captureContextAt(epoch, event, metrics) }
+    }
+
+    private fun captureContext(event: DiagnosticEvent, metrics: Map<DiagnosticMetric, Long>) =
+        captureContextAt(generation.get(), event, metrics)
+
+    private fun captureContextAt(epoch: Long, event: DiagnosticEvent, metrics: Map<DiagnosticMetric, Long>): Boolean {
+        if (!enabled.value) return false
+        synchronized(rateLock) {
+            if (!enabled.value || generation.get() != epoch) return false
+            val now = SystemClock.elapsedRealtime()
+            val values = metrics + (DiagnosticMetric.CONTEXT_VERSION to 1L)
+            if (!contextBudget.admit(event, values, now)) return false
+            if (event == DiagnosticEvent.POWER_CONTEXT) {
+                contextBudget.flush().forEach { (summaryEvent, summary) ->
+                    if (queue.trySend(Pending.Write(generation.get(), record(summaryEvent, summary))).isFailure)
+                        dropped.incrementAndGet()
+                }
+            }
+            val accepted = queue.trySend(Pending.Write(generation.get(), record(event, values))).isSuccess
+            if (!accepted) dropped.incrementAndGet()
+            return accepted
         }
     }
 
@@ -491,6 +551,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
                     mapOf(DiagnosticMetric.COUNT to rate.skipped, DiagnosticMetric.AGGREGATED to 1L))
             }.toMutableList()
             rates.clear()
+            contextBudget.flush().forEach { (event, metrics) -> pending.add(record(event, metrics)) }
             val now = SystemClock.elapsedRealtime()
             ProcessingStage.entries.forEach { stage ->
                 val total = work[stage.ordinal]
@@ -510,6 +571,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
     }
 
     suspend fun exportJson(): String {
+        DiagnosticResources.flush()
         awaitPendingWrites()
         return synchronized(storageLock) {
             try {
@@ -525,32 +587,42 @@ class AppDiagnostics internal constructor(private val application: Application) 
         }
     }
 
-    fun clear() = synchronized(storageLock) {
-        synchronized(rateLock) {
-            generation.incrementAndGet()
-            dropped.set(0)
-            rates.clear()
-            work.forEach { it.reset() }
+    fun clear() {
+        powerContext.reset {
+            synchronized(storageLock) {
+                synchronized(rateLock) {
+                    generation.incrementAndGet()
+                    dropped.set(0)
+                    rates.clear()
+                    work.forEach { it.reset() }
+                    contextBudget.reset()
+                }
+                try {
+                    journal.clear()
+                    mutableFailure.value = false
+                } catch (error: IOException) {
+                    storageFailure(error)
+                    throw error
+                } catch (error: SecurityException) {
+                    storageFailure(error)
+                    throw error
+                }
+            }
         }
-        try {
-            journal.clear()
-            mutableFailure.value = false
-        } catch (error: IOException) {
-            storageFailure(error)
-            throw error
-        } catch (error: SecurityException) {
-            storageFailure(error)
-            throw error
-        }
+        DiagnosticResources.reset(resourceEmitter())
     }
 
-    internal fun close() = synchronized(storageLock) {
-        if (enabled.value) {
-            storage { flushAggregates() }
-            detach()
+    internal fun close() {
+        powerContext.stop()
+        DiagnosticResources.stop()
+        synchronized(storageLock) {
+            if (enabled.value) {
+                storage { flushAggregates() }
+                detach()
+            }
+            scope.cancel()
+            queue.close()
         }
-        scope.cancel()
-        queue.close()
     }
 
     @Subscribe(threadMode = ThreadMode.POSTING)
@@ -612,6 +684,9 @@ class AppDiagnostics internal constructor(private val application: Application) 
             instance?.recordSamsungHrState()
         }
         internal val recordingEnabled get() = instance?.enabled
+        internal fun powerBatteryCallback(chargingBoundary: Boolean) {
+            instance?.powerContext?.battery(chargingBoundary)
+        }
         fun initialize(application: Application): AppDiagnostics =
             instance ?: synchronized(this) {
                 instance ?: AppDiagnostics(application).also { instance = it }

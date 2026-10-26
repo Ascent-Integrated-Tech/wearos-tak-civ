@@ -7,6 +7,9 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.os.Handler
 import android.util.Log
+import com.aitech.weartak_civ.service.DiagnosticResource
+import com.aitech.weartak_civ.service.DiagnosticResources
+import com.aitech.weartak_civ.service.ResourceAction
 import java.io.Closeable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -48,6 +51,11 @@ internal class MulticastWifiRequest(
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
         val requestedCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onUnavailable() {
+                DiagnosticResources.note(DiagnosticResource.MULTICAST_NETWORK, this, ResourceAction.FAILED)
+                DiagnosticResources.end(DiagnosticResource.MULTICAST_NETWORK, this)
+            }
+
             override fun onAvailable(network: Network) {
                 Log.i(TAG, "Multicast Wi-Fi request available: $network")
             }
@@ -66,7 +74,9 @@ internal class MulticastWifiRequest(
                 Log.i(TAG, "Multicast Wi-Fi link: $network interface=${properties.interfaceName}")
             }
         }
-        connectivityManager.requestNetwork(request, requestedCallback, handler)
+        DiagnosticResources.acquire(DiagnosticResource.MULTICAST_NETWORK, requestedCallback) {
+            connectivityManager.requestNetwork(request, requestedCallback, handler)
+        }
         callback = requestedCallback
         armIdleTimeout()
         publishState()
@@ -92,7 +102,9 @@ internal class MulticastWifiRequest(
         callback = null
         idleReleased = idle
         try {
-            if (registered != null) connectivityManager.unregisterNetworkCallback(registered)
+            if (registered != null) DiagnosticResources.release(DiagnosticResource.MULTICAST_NETWORK, registered) {
+                connectivityManager.unregisterNetworkCallback(registered)
+            }
         } finally {
             publishState()
             if (registered != null) Log.i(TAG, if (idle) "Released idle multicast Wi-Fi request" else

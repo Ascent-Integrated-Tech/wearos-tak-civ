@@ -116,9 +116,21 @@ class ActivityRecognitionService : Service() {
             if (!isRunning.get() || !recognitionEnabled()) return@launch
             if (ContextCompat.checkSelfPermission(this@ActivityRecognitionService,
                 Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED) {
-                activityRecognitionClient.requestActivityUpdates(UPDATE_INTERVAL_MS, callbackIntent)
-                    .addOnSuccessListener { Log.i(TAG, "Activity updates requested every $UPDATE_INTERVAL_MS ms") }
-                    .addOnFailureListener { Log.e(TAG, "Failed to request activity updates", it) }
+                DiagnosticResources.request(DiagnosticResource.ACTIVITY, callbackIntent) {
+                    activityRecognitionClient.requestActivityUpdates(UPDATE_INTERVAL_MS, callbackIntent)
+                }
+                    .addOnSuccessListener {
+                        DiagnosticResources.begin(DiagnosticResource.ACTIVITY, callbackIntent, periodUs = UPDATE_INTERVAL_MS * 1000)
+                        if (!isRunning.get()) {
+                            DiagnosticResources.note(DiagnosticResource.ACTIVITY, callbackIntent, ResourceAction.STALE_CALLBACK)
+                            DiagnosticResources.note(DiagnosticResource.ACTIVITY, callbackIntent, ResourceAction.UNCERTAIN)
+                        }
+                        Log.i(TAG, "Activity updates requested every $UPDATE_INTERVAL_MS ms")
+                    }
+                    .addOnFailureListener {
+                        DiagnosticResources.note(DiagnosticResource.ACTIVITY, callbackIntent, ResourceAction.FAILED)
+                        Log.e(TAG, "Failed to request activity updates", it)
+                    }
             } else {
                 Log.w(TAG, "Cannot request activity updates: permission not granted")
             }
@@ -155,11 +167,16 @@ class ActivityRecognitionService : Service() {
                 if (!passiveMonitoringEnabled) {
                     if (passiveListenerRegistered) {
                         passiveListenerRegistered = false
+                        DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.LOCAL_DISABLED)
+                        DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.REMOVAL_REQUESTED)
                         try {
                             withContext(NonCancellable) { passiveMonitoringClient.clearPassiveListenerCallback() }
+                            DiagnosticResources.end(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback)
                         } catch (cancelled: CancellationException) {
+                            DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.UNCERTAIN)
                             throw cancelled
                         } catch (error: Exception) {
+                            DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.UNCERTAIN)
                             Log.e(TAG, "Failed to clear passive listener; disabled callbacks remain rejected", error)
                         }
                     }
@@ -184,11 +201,18 @@ class ActivityRecognitionService : Service() {
                 .setHealthEventTypes(setOf(HealthEvent.Type.FALL_DETECTED))
                 .build()
             passiveMonitoringClient.setPassiveListenerCallback(cfg, passiveDailyListenerCallback)
+            DiagnosticResources.begin(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback)
+            if (!canAcceptPassiveData()) {
+                DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.STALE_CALLBACK)
+                DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.LOCAL_DISABLED)
+            }
             passiveListenerRegistered = true
             Log.d(TAG, "Registered passive listener for $wanted")
         } catch (cancelled: CancellationException) {
+            DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.UNCERTAIN)
             throw cancelled
         } catch (t: Exception) {
+            DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.FAILED)
             Log.e(TAG, "Failed to register passive listener", t)
         }
     }
@@ -196,10 +220,16 @@ class ActivityRecognitionService : Service() {
     private fun clearPassiveMonitoring() {
         if (!passiveListenerRegistered) return
         passiveListenerRegistered = false
-        Futures.addCallback(passiveMonitoringClient.clearPassiveListenerCallbackAsync(),
+        DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.LOCAL_DISABLED)
+        Futures.addCallback(DiagnosticResources.request(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, removal = true) {
+            passiveMonitoringClient.clearPassiveListenerCallbackAsync()
+        },
             object : FutureCallback<Void> {
-                override fun onSuccess(result: Void?) = Unit
+                override fun onSuccess(result: Void?) {
+                    DiagnosticResources.end(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback)
+                }
                 override fun onFailure(error: Throwable) {
+                    DiagnosticResources.note(DiagnosticResource.PASSIVE_HEALTH, passiveDailyListenerCallback, ResourceAction.UNCERTAIN)
                     Log.e(TAG, "Failed to clear passive listener; disabled callbacks remain rejected", error)
                 }
             }, ContextCompat.getMainExecutor(this))
@@ -295,7 +325,16 @@ class ActivityRecognitionService : Service() {
         repo.resetActivityRecognition()
         clearPassiveMonitoring()
         if (!::activityRecognitionClient.isInitialized || !::callbackIntent.isInitialized) return
-        activityRecognitionClient.removeActivityUpdates(callbackIntent).addOnSuccessListener { callbackIntent.cancel() }.addOnFailureListener { Log.e(TAG, "Failed to remove activity updates", it) }
+        DiagnosticResources.note(DiagnosticResource.ACTIVITY, callbackIntent, ResourceAction.LOCAL_DISABLED)
+        DiagnosticResources.request(DiagnosticResource.ACTIVITY, callbackIntent, removal = true) {
+            activityRecognitionClient.removeActivityUpdates(callbackIntent)
+        }.addOnSuccessListener {
+            DiagnosticResources.end(DiagnosticResource.ACTIVITY, callbackIntent)
+            callbackIntent.cancel()
+        }.addOnFailureListener {
+            DiagnosticResources.note(DiagnosticResource.ACTIVITY, callbackIntent, ResourceAction.UNCERTAIN)
+            Log.e(TAG, "Failed to remove activity updates", it)
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? = null

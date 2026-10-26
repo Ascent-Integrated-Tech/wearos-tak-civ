@@ -75,9 +75,12 @@ class EnvSensorService : Service(), SensorEventListener {
 
         // Register sensors
         //sTemp?.let     { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
-        sPressure?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
-        sLight?.let    { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
-        rHumidity?.let { sm.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
+        sPressure?.let { sensor -> DiagnosticResources.acquire(DiagnosticResource.ENV_PRESSURE, this,
+            periodUs = 200_000, successful = { it }) { sm.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL) } }
+        sLight?.let { sensor -> DiagnosticResources.acquire(DiagnosticResource.ENV_LIGHT, this,
+            periodUs = 200_000, successful = { it }) { sm.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL) } }
+        rHumidity?.let { sensor -> DiagnosticResources.acquire(DiagnosticResource.ENV_HUMIDITY, this,
+            periodUs = 200_000, successful = { it }) { sm.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL) } }
 
         // Phase 4: CEP emission is now driven by onSensorChanged at native rate.
         // No separate emit loop needed.
@@ -90,7 +93,18 @@ class EnvSensorService : Service(), SensorEventListener {
         try {
             serviceScope.cancel()
         } catch (_: Throwable) { }
-        sm.unregisterListener(this)
+        val resources = listOf(DiagnosticResource.ENV_PRESSURE, DiagnosticResource.ENV_LIGHT, DiagnosticResource.ENV_HUMIDITY)
+        resources.forEach { DiagnosticResources.note(it, this, ResourceAction.REMOVAL_REQUESTED) }
+        var unregistered = false
+        try {
+            sm.unregisterListener(this)
+            unregistered = true
+        } finally {
+            resources.forEach {
+                if (unregistered) DiagnosticResources.end(it, this)
+                else DiagnosticResources.note(it, this, ResourceAction.UNCERTAIN)
+            }
+        }
         isRunning.set(false)
         stopForegroundServiceCompat()
         Log.i(TAG, "EnvSensorService destroyed; listeners unregistered and foreground stopped.")
@@ -161,4 +175,3 @@ class EnvSensorService : Service(), SensorEventListener {
         private const val NOTIF_ID = 2701
     }
 }
-

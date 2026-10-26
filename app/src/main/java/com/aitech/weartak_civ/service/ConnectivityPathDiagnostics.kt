@@ -28,7 +28,8 @@ internal class ConnectivityPathDiagnostics(
     repo: DataRepository,
     plugins: PluginSettingsCoordinator,
     private val emit: (Map<DiagnosticMetric, Long>) -> Unit,
-    private val snapshotIntervalMs: Long = 300_000L
+    private val snapshotIntervalMs: Long = 300_000L,
+    private val powerSnapshot: () -> Unit = {}
 ) {
     init {
         scope.launch {
@@ -51,6 +52,7 @@ internal class ConnectivityPathDiagnostics(
                         while (isActive) {
                             delay(snapshotIntervalMs)
                             latest.value?.let(emit)
+                            if (path == ConnectivityPath.TAK) powerSnapshot()
                         }
                     }
                     watch(ConnectivityPath.TAK,

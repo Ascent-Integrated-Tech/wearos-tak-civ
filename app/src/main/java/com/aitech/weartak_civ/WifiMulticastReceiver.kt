@@ -1,5 +1,8 @@
 package com.aitech.weartak_civ
 
+import com.aitech.weartak_civ.service.DiagnosticResource
+import com.aitech.weartak_civ.service.DiagnosticResources
+
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.Network
@@ -128,7 +131,7 @@ class WifiMulticastReceiver internal constructor(
             val subscriptions = mutableListOf<Subscription>()
             var opened = false
             try {
-                lock.acquire()
+                DiagnosticResources.acquire(DiagnosticResource.MULTICAST_LOCK, lock) { lock.acquire() }
                 for (endpoint in endpoints) {
                     val group = InetAddress.getByName(endpoint.address)
                     require(group is Inet4Address && group.isMulticastAddress) {
@@ -149,7 +152,10 @@ class WifiMulticastReceiver internal constructor(
                         .flatMap { java.util.Collections.list(it.inetAddresses) }
                         .mapNotNull { it.hostAddress }
                         .toSet(),
-                    releaseLock = { if (lock.isHeld) lock.release() },
+                    releaseLock = {
+                        if (lock.isHeld) DiagnosticResources.release(DiagnosticResource.MULTICAST_LOCK, lock) { lock.release() }
+                        else DiagnosticResources.end(DiagnosticResource.MULTICAST_LOCK, lock, expired = true)
+                    },
                     logPacket = { summary ->
                         if (BuildConfig.DEBUG) Log.d("WearTAK-MulticastRx", summary)
                     }
@@ -159,7 +165,8 @@ class WifiMulticastReceiver internal constructor(
             } finally {
                 if (!opened) {
                     subscriptions.forEach { it.socket.close() }
-                    if (lock.isHeld) lock.release()
+                    if (lock.isHeld) DiagnosticResources.release(DiagnosticResource.MULTICAST_LOCK, lock) { lock.release() }
+                    else DiagnosticResources.end(DiagnosticResource.MULTICAST_LOCK, lock, expired = true)
                 }
             }
         }

@@ -134,8 +134,15 @@ class DebugStayAwakeService : Service() {
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .removeCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
-        val callback = ConnectivityManager.NetworkCallback()
-        getSystemService(ConnectivityManager::class.java).requestNetwork(request, callback)
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onUnavailable() {
+                DiagnosticResources.note(DiagnosticResource.DEBUG_NETWORK, this, ResourceAction.FAILED)
+                DiagnosticResources.end(DiagnosticResource.DEBUG_NETWORK, this)
+            }
+        }
+        DiagnosticResources.acquire(DiagnosticResource.DEBUG_NETWORK, callback) {
+            getSystemService(ConnectivityManager::class.java).requestNetwork(request, callback)
+        }
         wifiRequestCallback = callback
     }
 
@@ -145,16 +152,16 @@ class DebugStayAwakeService : Service() {
         // A window flag cannot keep the display awake after leaving the app UI.
         screenLock = power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "$TAG:screen").apply {
             setReferenceCounted(false)
-            acquire()
+            DiagnosticResources.acquire(DiagnosticResource.DEBUG_SCREEN, this) { acquire() }
         }
         cpuLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:cpu").apply {
             setReferenceCounted(false)
-            acquire()
+            DiagnosticResources.acquire(DiagnosticResource.DEBUG_CPU, this) { acquire() }
         }
         val wifi = applicationContext.getSystemService(WifiManager::class.java)
         wifiLock = wifi.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "$TAG:wifi").apply {
             setReferenceCounted(false)
-            acquire()
+            DiagnosticResources.acquire(DiagnosticResource.DEBUG_WIFI, this) { acquire() }
         }
     }
 
@@ -195,14 +202,25 @@ class DebugStayAwakeService : Service() {
         wifiRequestCallback?.let { callback ->
             wifiRequestCallback = null
             try {
-                getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(callback)
+                DiagnosticResources.release(DiagnosticResource.DEBUG_NETWORK, callback) {
+                    getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(callback)
+                }
             } catch (error: IllegalArgumentException) {
                 Log.w(TAG, "Debug stay awake Wi-Fi request was already released", error)
             }
         }
-        wifiLock?.let { if (it.isHeld) it.release() }
-        cpuLock?.let { if (it.isHeld) it.release() }
-        screenLock?.let { if (it.isHeld) it.release() }
+        wifiLock?.let {
+            if (it.isHeld) DiagnosticResources.release(DiagnosticResource.DEBUG_WIFI, it) { it.release() }
+            else DiagnosticResources.end(DiagnosticResource.DEBUG_WIFI, it, expired = true)
+        }
+        cpuLock?.let {
+            if (it.isHeld) DiagnosticResources.release(DiagnosticResource.DEBUG_CPU, it) { it.release() }
+            else DiagnosticResources.end(DiagnosticResource.DEBUG_CPU, it, expired = true)
+        }
+        screenLock?.let {
+            if (it.isHeld) DiagnosticResources.release(DiagnosticResource.DEBUG_SCREEN, it) { it.release() }
+            else DiagnosticResources.end(DiagnosticResource.DEBUG_SCREEN, it, expired = true)
+        }
         wifiLock = null
         cpuLock = null
         screenLock = null

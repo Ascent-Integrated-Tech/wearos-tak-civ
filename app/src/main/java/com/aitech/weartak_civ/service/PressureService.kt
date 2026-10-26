@@ -136,7 +136,10 @@ class PressureService : Service() {
 
         if (pressureSensor != null) {
             // register listener at normal update rate
-            sensorManager.registerListener(sensorEventListener, pressureSensor, SensorManager.SENSOR_DELAY_NORMAL)
+            DiagnosticResources.acquire(DiagnosticResource.PRESSURE, sensorEventListener,
+                periodUs = 200_000, successful = { it }) {
+                sensorManager.registerListener(sensorEventListener, pressureSensor, SensorManager.SENSOR_DELAY_NORMAL)
+            }
             Log.d(TAG, "Pressure sensor callback registered")
         } else {
             // device does not have a barometer
@@ -147,7 +150,9 @@ class PressureService : Service() {
 
     // stops pressure sensor updates
     private fun stopPressureSensor() {
-        sensorManager.unregisterListener(sensorEventListener)
+        DiagnosticResources.release(DiagnosticResource.PRESSURE, sensorEventListener) {
+            sensorManager.unregisterListener(sensorEventListener)
+        }
     }
 
     private fun startEnableImmersionAlertsCollector() {
