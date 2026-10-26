@@ -6,6 +6,12 @@ The app can connect directly to a TAK server and can optionally use SITX, Ditto 
 
 ### TAK master switch and upgrades
 
+Multicast choice now persists across upgrades. Multicast remains on by default;
+existing saved on/off values are preserved, without attributing a user choice to
+legacy values. Accepted local multicast changes save an explicit-choice marker
+atomically. Explicit managed policy remains authoritative without erasing that
+marker; absent policy leaves the saved value unchanged.
+
 The TAK Servers master switch defaults to on, including upgrades with no saved
 servers. Accepted local switch changes are saved atomically with an explicit-choice
 marker; locked/rejected changes do not create a choice. A one-time upgrade repair
