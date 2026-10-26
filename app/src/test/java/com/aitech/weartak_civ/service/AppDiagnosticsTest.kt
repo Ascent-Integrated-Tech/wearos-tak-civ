@@ -63,6 +63,22 @@ class AppDiagnosticsTest {
         assertTrue(app.getSharedPreferences("app_diagnostics", Application.MODE_PRIVATE).getBoolean("enabled", false))
     }
 
+    @Test fun samsungContinuousListenerStateIsCapturedAtOptInWithoutHealthPayload() = runBlocking {
+        AppDiagnostics.updateSamsungHrContinuousRunning(true)
+        try {
+            val diagnostics = AppDiagnostics(app).also { recorder = it }
+            diagnostics.setEnabled(true)
+            val events = JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
+                .filter { it.asJsonObject["event"].asString == "SAMSUNG_HR_CONTINUOUS" }
+            assertEquals(1, events.size)
+            assertEquals(1, events.single().asJsonObject["metrics"].asJsonObject["ACTIVE"].asInt)
+            assertEquals(if (com.aitech.weartak_civ.BuildConfig.SAMSUNG_HRV_ENABLED) 1 else 0,
+                events.single().asJsonObject["metrics"].asJsonObject["ENABLED"].asInt)
+        } finally {
+            AppDiagnostics.updateSamsungHrContinuousRunning(false)
+        }
+    }
+
     @Test fun payloadsAreNeverReadAndRepeatedEventsAreAggregated() = runBlocking {
         val diagnostics = AppDiagnostics(app).also { recorder = it }
         diagnostics.setEnabled(true)

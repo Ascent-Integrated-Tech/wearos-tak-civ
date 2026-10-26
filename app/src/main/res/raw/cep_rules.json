@@ -242,6 +242,7 @@
     {
       "type": "derived",
       "id": "features.hrv.rmssd_drop_ratio",
+      "max_age_sec": 120,
       "expr": {
         "div": [
           {
@@ -1037,9 +1038,10 @@
             "is": true
           },
           {
-            "lte_key": [
+            "lte_key_fresh": [
               "features.hrv.rmssd_recent_1m",
-              5.0
+              5.0,
+              120
             ]
           }
         ]
@@ -2294,9 +2296,10 @@
             ]
           },
           {
-            "gte_key": [
+            "gte_key_fresh": [
               "features.hrv.rmssd_drop_ratio",
-              0.2
+              0.2,
+              120
             ]
           },
           {

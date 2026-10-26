@@ -1345,6 +1345,33 @@ separate multicast filtering lock is retained; the removed high-performance powe
 lock is not needed for packet reception. No normal-connected battery saving is
 claimed without a controlled measurement.
 
+### Optional Samsung HRV acquisition
+
+Samsung `HEART_RATE_CONTINUOUS` acquisition in `SkinTempService` is now **off by
+default**, including its HRV-only screen-off flush loop. The separate platform
+`HeartrateService` remains the heart-rate source. Skin temperature, SpO2, PPG and
+CRM acquisition are unchanged.
+
+An explicit build flag, `-PenableSamsungHrv=true`, re-enables the Samsung
+continuous HRV path for a controlled comparison; normal builds omit that property
+and use `false`. Invalid values fail the build. This is not a new watch setting,
+and changing the flag requires a separately built, verified artifact.
+
+Opted-in HRV emits only a new valid RMSSD sample, with its original sample time,
+while running and worn and no older than the existing 120-second HRV freshness
+limit. Stop/disconnect/off-wrist clears its cache and flush callbacks; it does not
+clear the handler queue shared by other sensors. Late or empty batches cannot
+refresh the cached RMSSD. Missing numeric CEP inputs remain absent, rather than
+falling through to legacy Boolean false/zero. An absent HRV contributes no HRV
+points to the cold score and cannot satisfy the HRV-drop or low-HRV recalibration
+corroborators; the other cold-score inputs still work.
+
+Under opt-in Logging, `SAMSUNG_HR_CONTINUOUS` records `ENABLED` (build opt-in)
+and `ACTIVE` (SDK listener attached). It records the current state at logging/
+process start and actual attach/unset/disconnect transitions, not HR values or
+health identifiers. This enables a later attributable A/B; it is not evidence of
+independent Samsung Health waste or a measured battery saving.
+
 ### Persistent developer menus and Logging
 
 Tap the version eight times in **Preferences** to unlock **Admin Preferences**

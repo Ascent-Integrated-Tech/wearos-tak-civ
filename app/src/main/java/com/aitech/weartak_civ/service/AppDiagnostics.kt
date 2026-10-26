@@ -41,7 +41,8 @@ enum class DiagnosticEvent {
     PLI_ATTEMPT, PLI_RESULT, POWER_CHANGED, WAKE_LOCK, CONNECTIVITY, SYNC, COMMAND,
     CHAT, SENSOR, SERVICE_REQUEST, APP_EVENT, SUBSCRIBER_FAILURE, QUEUE_OVERFLOW,
     DISPLAY_INTERACTIVE, ROTATION_LISTENER, PROCESSING_WORK,
-    NETWORK_LIFECYCLE, TAK_CONNECTION, TAK_CONNECTION_COUNTS, CONNECTIVITY_PATH
+    NETWORK_LIFECYCLE, TAK_CONNECTION, TAK_CONNECTION_COUNTS, CONNECTIVITY_PATH,
+    SAMSUNG_HR_CONTINUOUS
 }
 
 @Keep
@@ -232,6 +233,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
         if (enabled.value) {
             attach()
             enqueue(DiagnosticEvent.PROCESS_START)
+            recordSamsungHrState()
         }
     }
 
@@ -350,9 +352,15 @@ class AppDiagnostics internal constructor(private val application: Application) 
             if (value) {
                 attach()
                 enqueue(DiagnosticEvent.ENABLED)
+                recordSamsungHrState()
             } else detach()
         }
     }
+
+    private fun recordSamsungHrState() = capture(DiagnosticEvent.SAMSUNG_HR_CONTINUOUS, mapOf(
+        DiagnosticMetric.ENABLED to if (BuildConfig.SAMSUNG_HRV_ENABLED) 1L else 0L,
+        DiagnosticMetric.ACTIVE to if (samsungHrContinuousRunning) 1L else 0L
+    ))
 
     private fun enqueue(event: DiagnosticEvent, metrics: Map<DiagnosticMetric, Long> = emptyMap()) {
         if (queue.trySend(Pending.Write(generation.get(), record(event, metrics))).isFailure) dropped.incrementAndGet()
@@ -362,7 +370,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
         if (!enabled.value) return
         synchronized(rateLock) {
             if (!enabled.value) return
-            if (event == DiagnosticEvent.CONNECTIVITY_PATH) {
+            if (event == DiagnosticEvent.CONNECTIVITY_PATH || event == DiagnosticEvent.SAMSUNG_HR_CONTINUOUS) {
                 enqueue(event, metrics + (DiagnosticMetric.COUNT to 1L))
                 return
             }
@@ -584,6 +592,12 @@ class AppDiagnostics internal constructor(private val application: Application) 
 
     companion object {
         @Volatile private var instance: AppDiagnostics? = null
+        @Volatile private var samsungHrContinuousRunning = false
+        internal fun updateSamsungHrContinuousRunning(running: Boolean) {
+            if (samsungHrContinuousRunning == running) return
+            samsungHrContinuousRunning = running
+            instance?.recordSamsungHrState()
+        }
         internal val recordingEnabled get() = instance?.enabled
         fun initialize(application: Application): AppDiagnostics =
             instance ?: synchronized(this) {

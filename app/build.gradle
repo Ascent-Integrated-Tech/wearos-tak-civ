@@ -73,6 +73,11 @@ android {
         buildConfigField "String", "GIT_COMMIT", "\"${buildGitCommit}\""
         buildConfigField "String", "GIT_COMMIT_SHORT", "\"${buildGitCommitShort}\""
         buildConfigField("String", "BUILD_TIMESTAMP_UTC", "\"${buildTimestampUtc}\"")
+        def samsungHrvEnabled = providers.gradleProperty("enableSamsungHrv").orElse("false").get()
+        if (!(samsungHrvEnabled in ["true", "false"])) {
+            throw new GradleException("enableSamsungHrv must be true or false")
+        }
+        buildConfigField "boolean", "SAMSUNG_HRV_ENABLED", samsungHrvEnabled
 
 //        manifestPlaceholders["repo"] = gitUrl()
 //        manifestPlaceholders["branch"] = gitBranch()
