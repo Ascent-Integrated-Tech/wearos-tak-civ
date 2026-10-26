@@ -1001,13 +1001,15 @@
     <string name="debug_transport">Transport</string>
     <string name="debug_version">Version</string>
     <string name="debug_version_code">Version code</string>
-    <string name="network_enabled_not_connected">Switches enable transports; they do not indicate connection status.</string>
     <string name="network_connected_group">Connected to %1$s</string>
     <string name="network_disconnected_group">%1$s · Not connected</string>
     <string name="network_no_group">No group selected</string>
     <string name="network_toggle_failed">Unable to change connectivity. Check plugin settings and network locks.</string>
     <string name="ditto_custom_subtitle">Custom PDL</string>
     <string name="ditto_no_pdl_subtitle">None</string>
+    <string name="network_server_ratio" translatable="false">%1$d/%2$d</string>
+    <string name="toggle_state_on">On</string>
+    <string name="toggle_state_off">Off</string>
     <plurals name="network_server_count">
         <item quantity="one">%1$d/%2$d Server</item>
         <item quantity="other">%1$d/%2$d Servers</item>

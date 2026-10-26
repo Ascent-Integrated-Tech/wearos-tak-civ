@@ -11,7 +11,8 @@ internal data class NetworkConnectivityRow(
     val title: String,
     val subtitle: String,
     val checked: Boolean,
-    val toggle: (Boolean) -> Unit
+    val toggle: (Boolean) -> Unit,
+    val statusDescription: String = subtitle
 )
 
 internal fun List<NetworkConnectivityRow>.alphabetizedConnections(locale: Locale): List<NetworkConnectivityRow> {
@@ -21,6 +22,16 @@ internal fun List<NetworkConnectivityRow>.alphabetizedConnections(locale: Locale
     }
 }
 
+internal fun toggleStateAnnouncement(
+    checked: Boolean,
+    onLabel: String,
+    offLabel: String,
+    status: String,
+    visibleDescription: String
+): String? {
+    if (status.isEmpty() || status == visibleDescription) return null
+    return "${if (checked) onLabel else offLabel}, $status"
+}
 @StringRes
 internal fun dittoPdlSubtitle(source: DittoPdlSource, hasCustomPdl: Boolean): Int = when (source) {
     DittoPdlSource.COMMUNITY -> R.string.ditto_community_subtitle
