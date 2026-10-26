@@ -1503,7 +1503,6 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 "Network Preferences",
                 columnContent = {
-                    item { Text(stringResource(R.string.network_enabled_not_connected)) }
                     itemsIndexed(rows, key = { _, row -> row.key }) { _, row ->
                         WearTAKToggleChip(
                             checkedLive = row.checked,
