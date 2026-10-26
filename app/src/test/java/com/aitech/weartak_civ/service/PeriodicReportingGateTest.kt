@@ -5,6 +5,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PeriodicReportingGateTest {
+    @Test fun motionCanAllowAnImmediatePliInsteadOfWaitingForTheStationaryDeadline() {
+        val gate = PeriodicReportingGate()
+        gate.reported(1_000_000_000)
+        assertFalse(gate.isDue(2_000_000_000, 60))
+        gate.reset()
+        assertTrue(gate.isDue(2_000_000_000, 5))
+    }
+
     @Test fun observationsDoNotResetDeadlineOrEmitPerFix() {
         val gate = PeriodicReportingGate()
         assertTrue(gate.isDue(1_000_000_000, 60))

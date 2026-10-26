@@ -171,14 +171,14 @@ class MotionConfirmationTest {
         verify(exactly = 1) { manager.removeUpdates(callback) }
     }
 
-    @Test fun confirmedSpeedSelectsMovingCadenceAndDoesNotSendExtraPli() {
+    @Test fun confirmedSpeedSelectsMovingCadenceAndAllowsAnImmediatePli() {
         stationary()
         val normal = observer.normal
         trigger().onLocationChanged(fix(1.2f))
         await { repo.stationaryMotion.state.value.movingUntilNanos > 0 && schedules.last() == 60_000L }
         assertFalse(repo.stationaryMotion.state.value.stationary)
         assertEquals(1.2, repo.stationaryMotion.state.value.confirmedSpeedMps!!, 0.001)
-        assertEquals(normal, observer.normal)
+        assertEquals(normal + 1, observer.normal)
         assertEquals(1, triggers.size)
     }
 
@@ -338,13 +338,13 @@ class MotionConfirmationTest {
         assertTrue(repo.stationaryMotion.state.value.movingUntilNanos > SystemClock.elapsedRealtimeNanos())
     }
 
-    @Test fun constantModeChangeWinsEvenBeforeItsCollectorRuns() {
+    @Test fun constantModeStillAcceptsMotionEvidenceBeforeItsCollectorRuns() {
         stationary()
         val callback = trigger()
         runBlocking { repo.storeEnableDynamicReportingStrategy(false) }
         callback.onLocationChanged(fix(20f))
         await { !repo.stationaryMotion.state.value.stationary }
-        assertEquals(0, repo.stationaryMotion.state.value.movingUntilNanos)
+        assertTrue(repo.stationaryMotion.state.value.movingUntilNanos > SystemClock.elapsedRealtimeNanos())
         assertEquals(1, triggers.size)
     }
 

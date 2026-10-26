@@ -10,6 +10,8 @@ class PeriodicReportingGate {
             nowElapsedNanos - last >= intervalSeconds * 1_000_000_000L
     }
 
+    fun reset() { lastReportedNanos = null }
+
     fun reported(nowElapsedNanos: Long) {
         lastReportedNanos = nowElapsedNanos
     }

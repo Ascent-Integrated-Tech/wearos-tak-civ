@@ -226,6 +226,12 @@ class DataRepository(
     private val context: Context,
     private val projectionScope: CoroutineScope = repoScope,
 ) {
+    internal val locationMotionNanos = MutableStateFlow(0L)
+
+    internal fun noteLocationMotion() {
+        locationMotionNanos.value = android.os.SystemClock.elapsedRealtimeNanos()
+    }
+
     internal val stationaryMotion = com.aitech.weartak_civ.service.StationaryMotionPolicy()
     internal val passiveSaDemand = PassiveSaDemand()
     internal val headingComplications = HeadingComplicationDemand(
@@ -2123,7 +2129,8 @@ class DataRepository(
     }
 
     private fun pliStaleOffset(): CotTimeOffset =
-        CotTimeOffset(seconds = 2 * almightyReportingIntervalSecs.value + 15)
+        CotTimeOffset(seconds = com.aitech.weartak_civ.service.StationaryLocationPolicy.staleSeconds(
+            almightyReportingIntervalSecs.value, CotDispatchService.stationaryLocation))
 
     // This is the data class for both physio alerts and manual alerts that the backend adds to and clears.
     // This is a custom TAK emergency (911) alert as we change the description of the 911 alert sent to TAK

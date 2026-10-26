@@ -366,9 +366,19 @@ class CotDispatchService : Service() {
 
     private fun startReportingIntervalRepoBridge() {
         serviceScope.launch {
+            var wasStationary = stationaryLocation
             actualReportingIntervalSecsFlow
                 .collect { secs ->
+                    val previous = dataRepository.almightyReportingIntervalSecs.value
                     dataRepository.setAlmightyReportingInterval(secs)
+                    // Advertise the longer stale window before deferring the next stationary fix.
+                    if (stationaryLocation && secs > previous) buildAndSendPhysioLocationCotMsg()
+                    if (wasStationary && secs < previous) {
+                        periodicPliMutex.withLock { periodicReportingGate.reset() }
+                        cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
+                        cotDispatchHandler?.post(cotDispatchRunnable)
+                    }
+                    wasStationary = stationaryLocation
                 }
         }
     }
@@ -1713,11 +1723,22 @@ class CotDispatchService : Service() {
         val actualReportingIntervalSecsFlow: StateFlow<Int> =
             _actualReportingIntervalSecsFlow.asStateFlow()
 
-        var actualReportingIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
+        @Volatile
+        internal var stationaryLocation = false
             set(value) {
                 if (field == value) return
                 field = value
-                _actualReportingIntervalSecsFlow.value = value
+                _actualReportingIntervalSecsFlow.value = actualReportingIntervalSecs
+                EventBus.getDefault().post(com.aitech.weartak_civ.events.PowerManagerEvent(
+                    com.aitech.weartak_civ.events.PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
+            }
+
+        var actualReportingIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
+            get() = StationaryLocationPolicy.intervalSeconds(field, stationaryLocation)
+            set(value) {
+                if (field == value) return
+                field = value
+                _actualReportingIntervalSecsFlow.value = actualReportingIntervalSecs
             }
 
         private val _desiredReportingIntervalSecsFlow =

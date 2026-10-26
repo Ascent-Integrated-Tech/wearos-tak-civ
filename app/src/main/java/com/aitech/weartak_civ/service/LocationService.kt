@@ -162,7 +162,9 @@ class LocationService : Service() {
                         Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED)
                     recognized else ActivityRecognized.UNKNOWN
             }.distinctUntilChanged().collect {
+                if (activity != it && it != ActivityRecognized.STILL) dataRepository.noteLocationMotion()
                 activity = it
+                if (LocationAcquisitionPolicy.moving(it)) clearMotion()
                 if (!dataRepository.stationaryMotion.state.value.stationary &&
                     LocationAcquisitionPolicy.moving(it)) resetAcquisitionBackoff()
                 refreshPeriodicProfile()
@@ -191,10 +193,9 @@ class LocationService : Service() {
     }
 
     private suspend fun motionEligible(): Boolean =
-        dynamicReporting && isRunning.get() &&
+        isRunning.get() &&
             currentInput?.let(::permitted) == true &&
             dataRepository.getEnableLocationService.first() &&
-            dataRepository.getEnableDynamicReportingStrategy.first() &&
             dataRepository.getLocationInput.first() == currentInput &&
             dataRepository.manualAlertList.value.none { it.alertState == com.aitech.weartak_civ.data.DataRepository.AlertState.ALERT } &&
             !dataRepository.phoneManagedSettingsLocked.first()
@@ -260,6 +261,7 @@ class LocationService : Service() {
                             clearMotion()
                             return@launch
                         }
+                        dataRepository.noteLocationMotion()
                         motionDiagnostic(1)
                         motionRequestedNanos = SystemClock.elapsedRealtimeNanos()
                         val power = getSystemService(POWER_SERVICE) as PowerManager
@@ -530,7 +532,7 @@ class LocationService : Service() {
                             minOf(expiry, cachedExpiry) else expiry)
                     refreshPeriodicProfile()
                 }
-                if (normal) EventBus.getDefault().post(LocationRcvd())
+                if (normal || confirmed) EventBus.getDefault().post(LocationRcvd())
                 completions.firstOrNull { it.reasons != null }?.reasons?.let { reasons ->
                     EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
                 }
@@ -767,6 +769,7 @@ class LocationService : Service() {
     fun onInteractionPliRefresh(event: InteractionPliRefresh) {
         if (!isRunning.get()) return
         scope.launch {
+            dataRepository.noteLocationMotion()
             resetAcquisitionBackoff()
             if (!inputAvailable()) {
                 cancelRequest(Acquisition.INTERACTION)
@@ -939,7 +942,21 @@ class LocationService : Service() {
         if (event.eventType == PowerManagerEvent.CHANGED_UPDATE_INTERVAL) {
             val policy = PowerManagerService.observationPowerThrottled to PowerManagerService.observationDockThrottled
             if (!dynamicReporting) {
-                restartLocationUpdates()
+                scope.launch {
+                    val interval = PowerManagerService.locationObservationIntervalSeconds(false) * 1_000L
+                    if (acquisitionIntervalMillis == interval) return@launch
+                    val faster = interval < acquisitionIntervalMillis
+                    acquisitionPolicy.reset()
+                    cancelRequest(Acquisition.PERIODIC)
+                    acquisitionIntervalMillis = interval
+                    observationBaseIntervalMillis = interval
+                    periodic = interval < MAX_PERIODIC_GPS_UPDATE_INTERVAL * 1_000L
+                    if (periodic) requestUpdates(Acquisition.PERIODIC, interval)
+                    else {
+                        runTimerJob(interval)
+                        if (faster) acquireWakelockAndRequestLocation()
+                    }
+                }
                 return
             }
             val intervalMillis = PowerManagerService.locationObservationIntervalSeconds(true) * 1_000L
