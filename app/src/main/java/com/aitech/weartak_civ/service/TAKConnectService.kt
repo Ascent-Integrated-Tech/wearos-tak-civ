@@ -98,6 +98,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -1397,9 +1398,23 @@ class TAKConnectService: Service() {
 
 
 
-        // Refresh the available Data Sync missions for one TAK Server
-        // Each server has its own mission list so the server ID is used to find the right connection
-        // The refreshed list is saved in the repository for the rest of the app to access
+        // Called once on entry to the missions screen, never by connection or polling jobs.
+        suspend fun refreshMissionListsOnScreenEntry() = withContext(Dispatchers.IO) {
+            if (!dataRepository.getEnableDataSync.first()) {
+                AppDiagnostics.record(DiagnosticEvent.MISSION_LIST, mapOf(DiagnosticMetric.RESULT to 0L))
+                return@withContext
+            }
+            val servers = takServerDetails.toList().mapNotNull { detail ->
+                detail.runtime.currentAttempt?.takeIf { missionConnectionReady(detail, it) }
+                    ?.let { detail to it }
+            }
+            coroutineScope {
+                servers.forEach { (detail, attempt) ->
+                    launch { refreshAvailableMissions(detail.serverId, attempt) }
+                }
+            }
+        }
+
         private suspend fun refreshAvailableMissions(
             serverId: String,
             attempt: ConnectionAttempt
@@ -1410,23 +1425,29 @@ class TAKConnectService: Service() {
             if (!missionConnectionReady(detail, attempt)) return
 
             try {
-                // Create the mission API client and request the latest mission list
-                // This gets all missions the connected client is allowed to see
+                dataRepository.restorePersistedMissionState(detail.serverId, detail.name, detail.address)
+                if (!missionConnectionReady(detail, attempt)) return
                 val missions = missionApi(detail).getAllMissions()
+                currentCoroutineContext().ensureActive()
+                if (!missionConnectionReady(detail, attempt)) return
+                val unchanged = dataRepository.takMissions.value
+                    .firstOrNull { it.serverId == serverId }
+                    ?.missions?.map { it.mission } == missions
 
-                // Update the repository with the latest missions
-                // Include server information so missions from different servers stay separate
                 dataRepository.updateTakMissions(
                     serverId = detail.serverId,
                     serverName = detail.name,
                     serverAddress = detail.address,
                     missions = missions
                 )
+                AppDiagnostics.record(DiagnosticEvent.MISSION_LIST, mapOf(
+                    DiagnosticMetric.RESULT to if (unchanged) 2L else 1L,
+                    DiagnosticMetric.COUNT to missions.size.toLong()
+                ))
 
-                // Log how many missions were returned
                 Log.d(
                     TAG,
-                    "Mission refresh: found ${missions.size} missions"
+                    "Mission list screen-entry serverId=$serverId count=${missions.size} unchanged=$unchanged"
                 )
             } catch (error: CancellationException) {
                 // Let coroutine cancellation stop the operation normally
@@ -1435,74 +1456,34 @@ class TAKConnectService: Service() {
                 if (!missionConnectionReady(detail, attempt)) return
                 // Log API or connection failures without stopping other server operations
                 if (error is TakMissionPausedException) {
+                    AppDiagnostics.record(DiagnosticEvent.MISSION_LIST, mapOf(DiagnosticMetric.RESULT to 0L))
                     Log.i(TAG, "Data Sync paused for $serverId")
                     return
                 }
+                dataRepository.updateTakMissionError(
+                    detail.serverId, detail.name, detail.address,
+                    error.message ?: error.javaClass.simpleName
+                )
+                AppDiagnostics.record(DiagnosticEvent.MISSION_LIST, mapOf(DiagnosticMetric.RESULT to 3L))
                 Log.e(TAG, "Mission refresh failed for $serverId", error)
             }
         }
 
-        // Load the mission list when the watch connects to a TAK Server
-        // Restore previous mission subscriptions after the list is downloaded
-        // Start syncing subscribed missions so their content stays updated
+        // Restore joined missions without discovering the list, including after a cold start.
         private suspend fun loadTakMissions(
             detail: TakServerDetail,
             attempt: ConnectionAttempt
         ) {
             if (!missionConnectionReady(detail, attempt)) return
 
-            // Tell the repository that this server's missions are loading
-            // This allows the app to track the loading state
-            dataRepository.updateTakMissionLoading(
-                serverId = detail.serverId,
-                serverName = detail.name,
-                serverAddress = detail.address
-            )
-
-            Log.i(
-                TAG,
-                "Mission load starting serverId=${detail.serverId} " +
-                        "serverName=${detail.name} address=${detail.address}"
-            )
-
             try {
-                // Log the server and client details used during mission requests
-                // Useful when checking which device is requesting mission access
-                Log.d(
-                    TAG,
-                    "MISSION AUTH " +
-                            "server=${detail.address} " +
-                            "username=${detail.username} " +
-                            "clientUid=${MainActivity.device_uid}"
-                )
-
-                // Request the available Data Sync missions from the server
-                // The response is converted into mission models by the API layer
-                val missions = missionApi(detail).getAllMissions()
-
-                // Save the mission models under the correct TAK Server
-                // This makes the mission list available to other parts of the app
-                dataRepository.updateTakMissions(
+                dataRepository.restorePersistedMissionState(
                     serverId = detail.serverId,
                     serverName = detail.name,
-                    serverAddress = detail.address,
-                    missions = missions
+                    serverAddress = detail.address
                 )
 
-                // Restore any mission subscriptions saved from an earlier connection
-                // This lets the watch remember which missions were joined previously
-                dataRepository.restorePersistedMissionState(
-                    serverId = detail.serverId
-                )
-
-                // Start checking subscribed missions for new changes and CoT content
                 syncSubscribedMissions(detail.serverId, attempt)
-
-                Log.i(
-                    TAG,
-                    "Mission load complete serverId=${detail.serverId} " +
-                            "missions=${missions.map { it.name }}"
-                )
 
             } catch (error: CancellationException) {
                 // Preserve normal cancellation behavior
@@ -1686,7 +1667,7 @@ class TAKConnectService: Service() {
 
 
         // Keep subscribed missions updated while the server connection is active
-        // Check for newly available missions and updates to existing missions
+        // Only joined mission content is polled; discovery requires opening the list.
         // Each server is handled separately to prevent mixing mission content
         private suspend fun syncSubscribedMissions(
             serverId: String,
@@ -1697,10 +1678,6 @@ class TAKConnectService: Service() {
             // Replacing this connection attempt also stops this polling loop.
             while (currentCoroutineContext().isActive && missionConnectionReady(detail, attempt)) {
                 if (!dataRepository.getEnableDataSync.first()) return
-
-                // Refresh the available mission list from this TAK Server
-                // This allows newly created missions to appear in the repository
-                refreshAvailableMissions(serverId, attempt)
 
                 // Find missions currently marked as subscribed on this server
                 // Unsubscribed missions do not need their content downloaded
@@ -2183,9 +2160,7 @@ class TAKConnectService: Service() {
                 (attempt == null || isCurrent(detail, attempt))
 
 
-        // Start loading Data Sync missions after a TAK Server connects
-        // Launch the loading process in the background without blocking connection setup
-        // The loading function also restores subscriptions and begins mission syncing
+        // Connection/resume restores subscriptions and syncs content, never the full list.
         private fun loadTakMissionsAfterConnect(
             detail: TakServerDetail,
             attempt: ConnectionAttempt

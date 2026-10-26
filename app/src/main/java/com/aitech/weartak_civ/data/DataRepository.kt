@@ -510,6 +510,19 @@ class DataRepository(
             val previousServer =
                 current.firstOrNull { it.serverId == serverId }
 
+            if (previousServer != null &&
+                previousServer.missions.map { it.mission } == missions
+            ) {
+                val updated = previousServer.copy(
+                    serverName = serverName,
+                    serverAddress = serverAddress,
+                    status = if (missions.isEmpty()) TakMissionStatus.EMPTY else TakMissionStatus.READY,
+                    errorMessage = null
+                )
+                return@update if (updated == previousServer) current
+                    else current.map { if (it.serverId == serverId) updated else it }
+            }
+
             // Build a state entry for every mission returned by the server
             val missionStates = missions.map { mission ->
 
@@ -924,10 +937,11 @@ class DataRepository(
         storeMissionSubscriptions(updated)
     }
 
-    // Restore saved mission subscriptions after loading missions from a server
-    // Match saved subscriptions to missions currently available on that server
+    // Seed saved joined missions independently of available-list discovery.
     suspend fun restorePersistedMissionState(
-        serverId: String
+        serverId: String,
+        serverName: String,
+        serverAddress: String
     ) {
 
         // Read saved subscriptions for the requested TAK Server
@@ -939,43 +953,28 @@ class DataRepository(
             return
         }
 
-        // Update the in-memory mission states using the saved subscriptions
         _takMissions.update { servers ->
-            servers.map { server ->
-
-                // Leave other TAK Servers unchanged
-                if (server.serverId != serverId) {
-                    server
-                } else {
-                    server.copy(
-                        missions = server.missions.map { state ->
-
-                            // Look for a saved subscription with the same mission name
-                            val saved = persisted.firstOrNull {
-                                it.missionName == state.mission.name
-                            }
-
-                            if (saved != null) {
-
-                                // Restore the subscribed state
-                                // Restore the last sync time and processed changes
-                                // Set the mission to idle and clear any previous error
-                                state.copy(
-                                    subscribed = true,
-                                    lastSyncTime = saved.lastSyncTime,
-                                    processedChangeKeys = saved.processedChangeKeys,
-                                    status = TakMissionStatus.IDLE,
-                                    errorMessage = null
-                                )
-                            } else {
-
-                                // Leave missions without a saved subscription unchanged
-                                state
-                            }
-                        }
+            val previous = servers.firstOrNull { it.serverId == serverId }
+                ?: TakServerMissions(serverId, serverName, serverAddress, status = TakMissionStatus.READY)
+            val missing = persisted.filter { saved ->
+                previous.missions.none { it.mission.name == saved.missionName }
+            }.map { saved ->
+                TakMissionState(mission = TakMission(name = saved.missionName))
+            }
+            val restored = previous.copy(
+                missions = (previous.missions + missing).map { state ->
+                    val saved = persisted.firstOrNull { it.missionName == state.mission.name }
+                    if (saved == null || state.subscribed) state else state.copy(
+                        subscribed = true,
+                        lastSyncTime = saved.lastSyncTime,
+                        processedChangeKeys = saved.processedChangeKeys,
+                        status = TakMissionStatus.IDLE,
+                        errorMessage = null
                     )
                 }
-            }
+            )
+            if (servers.none { it.serverId == serverId }) servers + restored
+            else servers.map { if (it.serverId == serverId) restored else it }
         }
     }
 

@@ -3346,6 +3346,9 @@ fun WearTAKSettingsNav(
         composable("data_sync") {
             val serverMissions by dataRepository.takMissions.collectAsState()
             val enableDataSync by settingsVm.savedEnableDataSync.collectAsState()
+            LaunchedEffect(Unit) {
+                TAKConnectService.refreshMissionListsOnScreenEntry()
+            }
 
             WearTAKPageWithBackArrow(
                 stringResource(R.string.data_sync),
