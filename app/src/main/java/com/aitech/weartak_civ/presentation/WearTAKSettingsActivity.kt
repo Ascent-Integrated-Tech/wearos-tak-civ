@@ -598,6 +598,9 @@ fun WearTAKSettingsNav(
             }
         }
         composable("ditto_pdl") {
+            LaunchedEffect(Unit) {
+                com.aitech.weartak_civ.service.DittoService.onDittoScreenOpened()
+            }
             DittoPdlSelectionPage(
                 navController = navController,
                 selectedSource = dittoPdlSource
@@ -605,6 +608,9 @@ fun WearTAKSettingsNav(
         }
 
         composable("ditto_custom_pdl") {
+            LaunchedEffect(Unit) {
+                com.aitech.weartak_civ.service.DittoService.onDittoScreenOpened()
+            }
             DittoCustomPdlEntryPage(navController)
         }
         //Callsign and Device Settings vvv
