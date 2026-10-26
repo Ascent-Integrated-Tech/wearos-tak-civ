@@ -1027,24 +1027,85 @@ class DittoReceiveIntegrationTest {
         }
     }
 
-    @Test fun chatRetentionEvictsOnlyExpiredLocalDocumentsAndReportsFailures() = runTest {
+    @Test fun chatRetentionUsesOneCombinedLocalEvictionAndVerifiesItActuallySucceeded() = runTest {
         val f = Fixture(this)
         try {
             val publisher = f.publisher(mutableListOf())
             val collection = mockk<live.ditto.DittoCollection>()
             val operation = mockk<live.ditto.DittoPendingCursorOperation>()
             every { f.store.collection("chat") } returns collection
-            every { collection.find("o <= ${f.time}") } returns operation
-            every { collection.find("b <= ${f.time - DittoChatDocument.TTL_MILLIS}") } returns operation
+            every { collection.find(DittoChatRetention.expiredQuery(f.time)) } returns operation
             every { operation.evict() } returns emptyList()
+            every { operation.limit(1) } returns operation
+            every { operation.exec() } returns emptyList()
             publisher.evictExpiredChatDocuments(f.store, f.time)
-            verify(exactly = 2) { operation.evict() }
+            verify(exactly = 1) { operation.evict() }
+            every { operation.exec() } returns listOf(mockk())
+            assertThrows(IllegalStateException::class.java) {
+                publisher.evictExpiredChatDocuments(f.store, f.time)
+            }
             every { operation.evict() } throws IllegalStateException("synthetic eviction failure")
-            publisher.evictExpiredChatDocuments(f.store, f.time)
-            assertTrue(ShadowLog.getLogsForTag("WearTAK-DittoService").any {
-                it.msg == "Could not evict expired Ditto chat; retrying later"
-            })
+            assertThrows(IllegalStateException::class.java) {
+                publisher.evictExpiredChatDocuments(f.store, f.time)
+            }
             assertTrue(f.delivery.outboundDitto.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun allFourCollectionsRejectExpiredIngestWithoutPhysicalCleanup() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("track", f.doc("expired-track", "a-f-G-U-C") + ("o" to f.time))
+            f.emit("mapitem", f.doc("expired-point") + ("o" to f.time))
+            f.emit("alert", f.alarm() + ("o" to f.time))
+            f.emit("chat", f.nativeChat("expired-chat") + ("o" to f.time),
+                (f.nativeChat("expired-native-chat") - "o" - "r" - "n") +
+                    ("b" to f.time - DittoChatDocument.TTL_MILLIS))
+            f.drain()
+            assertTrue(f.repo.receivedUserList.value.isEmpty())
+            assertTrue(f.repo.receivedMarkerList.value.isEmpty())
+            assertTrue(f.bh.remoteAlerts.value.isEmpty())
+            assertTrue(f.chats.isEmpty())
+            verify(exactly = 0) { f.store.collection(any()) }
+            f.emit("alert", f.alarm(at = f.time - 1))
+            f.drain()
+            assertTrue(f.bh.remoteAlerts.value.isEmpty())
+            assertTrue(f.logs.any { it == "Ignoring expired Ditto emergency snapshot" })
+        } finally { f.close() }
+    }
+
+    @Test fun expiredNewerAlertClearsItsPriorLiveStateAndCannotReplayAfterRestart() = runTest {
+        val f = Fixture(this)
+        try {
+            f.emit("alert", f.alarm())
+            f.drain()
+            assertTrue(f.bh.isUidValid("alarm"))
+            f.emit("alert", f.alarm(at = f.time + 100) + ("o" to f.time + 200))
+            f.drain()
+            assertFalse(f.bh.isUidValid("alarm"))
+            f.observers.close()
+            f.observers = f.start()
+            f.emit("alert", f.alarm())
+            f.drain()
+            assertFalse(f.bh.isUidValid("alarm"))
+            f.emit("alert", f.alarm(at = f.time + 500))
+            f.drain()
+            assertTrue(f.bh.isUidValid("alarm"))
+        } finally { f.close() }
+    }
+
+    @Test fun expiredAlertCannotRemoveOtherTransportCopy() = runTest {
+        val f = Fixture(this)
+        try {
+            val event = CotMessageParser.parseEmergencyOrNull(
+                DittoCotDocument.decode(f.alarm(at = f.time - 1)).xml
+            )!!
+            f.bh.applyEmergencyEvent(event, "tak.example", "tak-server", f.time, "watch")
+            f.emit("alert", f.alarm())
+            f.drain()
+            f.emit("alert", f.alarm(at = f.time + 100) + ("o" to f.time + 200))
+            f.drain()
+            assertEquals("tak-server", f.bh.remoteAlerts.value.getValue("alarm").bhEvent.sourceServerId)
         } finally { f.close() }
     }
 

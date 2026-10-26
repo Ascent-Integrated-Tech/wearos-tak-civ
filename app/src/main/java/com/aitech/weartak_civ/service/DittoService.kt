@@ -83,7 +83,7 @@ class DittoService : Service() {
     private var subscriptionTrack: DittoSyncSubscription? = null
     private var subscriptionAlert: DittoSyncSubscription? = null
     private var subscriptionMapItem: DittoSyncSubscription? = null
-    private var subscriptionChat: DittoSyncSubscription? = null
+    private var chatRetention: DittoChatRetention? = null
     private var storeObservers: DittoStoreObservers? = null
     private var bleDiscovery: DittoBleDiscoverySession? = null
     private var changeCounterTrackDocument: Int = 1
@@ -136,7 +136,6 @@ class DittoService : Service() {
         try {
             configureDitto()
             subscribeToCollections()
-            evictExpiredChatDocuments()
             storeObservers = DittoStoreObservers(
                 ditto.store, ioScope, DittoCotReceiver(
                     repository = dataRepository,
@@ -164,7 +163,15 @@ class DittoService : Service() {
             ioScope.launch {
                 while (isActive) {
                     retryPointPublications()
-                    evictExpiredChatDocuments()
+                    try {
+                        synchronized(peerLock) {
+                            if (!peerStopped) chatRetention?.refreshIfDue()
+                        }
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Could not restore Ditto chat subscription; stopping peer", error)
+                        stopSelf()
+                        return@launch
+                    }
                     delay(10_000)
                 }
             }
@@ -173,7 +180,7 @@ class DittoService : Service() {
             startupResult.value = true
             Log.i(TAG, "DittoService startSync()")
         } catch (e: Exception) {
-            Log.e(TAG, "DittoService failed to start")
+            Log.e(TAG, "DittoService failed to start", e)
             startupResult.value = false
             bleDiscovery?.close()
             bleDiscovery = null
@@ -237,7 +244,13 @@ class DittoService : Service() {
         subscriptionTrack = ditto.sync.registerSubscription("SELECT * FROM track")
         subscriptionMapItem = ditto.sync.registerSubscription("SELECT * FROM mapitem")
         subscriptionAlert = ditto.sync.registerSubscription("SELECT * FROM alert")
-        subscriptionChat = ditto.sync.registerSubscription("SELECT * FROM chat")
+        chatRetention = DittoChatRetention(
+            getSharedPreferences("ditto-retention", Context.MODE_PRIVATE),
+            subscribe = { ditto.sync.registerSubscription(it) },
+            evict = { evictExpiredChatDocuments(ditto.store, it) },
+            onError = { Log.e(TAG, "Could not evict expired Ditto chat; retrying next day", it) }
+        )
+        chatRetention?.start()
 
     }
 
@@ -246,12 +259,12 @@ class DittoService : Service() {
         subscriptionTrack?.close()
         subscriptionAlert?.close()
         subscriptionMapItem?.close()
-        subscriptionChat?.close()
+        chatRetention?.close()
 
         subscriptionTrack = null
         subscriptionAlert = null
         subscriptionMapItem = null
-        subscriptionChat = null
+        chatRetention = null
     }
 
     private fun configureDitto() {
@@ -466,13 +479,13 @@ class DittoService : Service() {
         store: DittoStore = ditto.store,
         nowMillis: Long = System.currentTimeMillis()
     ) {
-        try {
-            // Local eviction, not replicated deletion: expiry never removes inbox history.
-            store.collection("chat").find("o <= $nowMillis").evict()
-            store.collection("chat").find("b <= ${nowMillis - DittoChatDocument.TTL_MILLIS}").evict()
-        } catch (error: Exception) {
-            Log.e(TAG, "Could not evict expired Ditto chat; retrying later", error)
+        // Local eviction, not replicated deletion: expiry never removes inbox history.
+        val query = DittoChatRetention.expiredQuery(nowMillis)
+        val count = store.collection("chat").find(query).evict().size
+        check(store.collection("chat").find(query).limit(1).exec().isEmpty()) {
+            "Expired Ditto chat remains after local eviction"
         }
+        Log.i(TAG, "Ditto chat retention completed: evicted=$count remainingExpired=0")
     }
 
     internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {

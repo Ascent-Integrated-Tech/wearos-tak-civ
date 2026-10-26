@@ -1150,6 +1150,7 @@ class BloodhoundRepository(
             val key = SourceCotKey(sourceId ?: NON_TAK_BLOODHOUND_SOURCE_ID, uid)
             val removed = bloodhoundStore.removeIfNotOlder(key, time, receivedAt)
             if (removed != null) {
+                alertExpiryJobs.remove(key)?.cancel()
                 if (_activeKey.value == key) setActiveKey(null)
                 if (_bloodhoundEvent.value?.event?.let { sourceKey(it) == key } == true) {
                     _bloodhoundEvent.value = null

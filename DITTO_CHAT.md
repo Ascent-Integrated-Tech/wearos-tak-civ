@@ -105,9 +105,25 @@ Example JSON (the native `_c` CRDT is created by the SDK, so is omitted here):
 - Outbound TTL is 24 hours. Native stale is `b + 86400000`; optional `o` may
   shorten, never extend it. Drop stale `<= now`, reject stale before event time
   and event times over five minutes in the future.
-  At service start and every 10 seconds, locally evict documents whose `o`
-  has passed or whose `b` is over 24 hours old. No replicated delete is sent,
-  and existing inbox history is never deleted by mesh expiry.
+  At service start when due, and approximately daily thereafter, locally evict
+  documents whose `o` has passed or whose `b` is at least 24 hours old, using
+  one combined predicate. A persisted cutoff prevents repeated eviction on
+  service restart; failed cleanup is reported and retried the next day.
+  Cancel the overlapping chat subscription before eviction and re-register
+  with `(o IS MISSING OR o IS NULL OR o > cutoff) AND b > cutoff - 86400000` afterwards,
+  so the same expired history is not fetched again. Verify no expired matches
+  remain before reporting cleanup success. Ingest still checks current time
+  on every snapshot: cleanup cadence never makes stale data eligible.
+  No replicated delete is sent, and existing inbox history is never deleted
+  by mesh expiry. V4 eviction triggers a full mesh resync; it must not run in
+  the 10-second publication retry loop without the daily gate.
+  Track, mapitem and alert have no periodic eviction. Their ingestion enforces
+  stale timestamps independently of storage cleanup (expired newer revisions
+  still remove only their source's prior state; alert cancellations still apply).
+  Expired active alert snapshots never create alerts.
+
+  See [Ditto v4 storage management](https://docs.ditto.live/sdk/v4/sync/device-storage-management)
+  for eviction's resync cost and subscription replacement requirements.
 - Reject malformed XML, DTD/entities, invalid coordinates, and payloads over
   256 KiB. Snapshot limits are 4,096 docs and 2 MiB of combined `r`/`msg`
   characters; the replay journal is bounded to 8,192 entries.
