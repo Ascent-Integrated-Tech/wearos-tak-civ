@@ -2,11 +2,16 @@ package com.aitech.weartak_civ.service
 
 import android.app.Application
 import android.net.Network
+import android.net.ConnectivityManager
+import android.os.Handler
+import android.os.Looper
 import com.aitech.weartak_civ.TakMulticastEndpoints
 import com.aitech.weartak_civ.WifiMulticastReceiver
 import com.aitech.weartak_civ.presentation.MainActivity
+import com.aitech.weartak_civ.manager.MulticastWifiRequest
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.receiveAsFlow
@@ -28,6 +33,51 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], application = Application::class)
 class MulticastServiceLifecycleTest {
+    @Test fun wifiDemandRequiresValidEnabledEndpointWithoutCompanionAndRearmsOnConfigurationChange() = runBlocking {
+        MainActivity.mainActivity = mockk {
+            every { applicationContext } returns RuntimeEnvironment.getApplication()
+        }
+        val manager = mockk<ConnectivityManager>(relaxed = true)
+        val handler = Handler(Looper.getMainLooper())
+        val requester = MulticastWifiRequest(manager, handler)
+        val configs = Channel<TAKConnectService.MulticastConfig>(Channel.UNLIMITED)
+        val requested = Channel<Unit>(Channel.UNLIMITED)
+        val released = Channel<Unit>(Channel.UNLIMITED)
+        every { manager.requestNetwork(any(), any<ConnectivityManager.NetworkCallback>(), handler) } answers {
+            requested.trySend(Unit)
+            Unit
+        }
+        every { manager.unregisterNetworkCallback(any<ConnectivityManager.NetworkCallback>()) } answers {
+            released.trySend(Unit)
+            Unit
+        }
+        val service = TAKConnectService()
+        val collector = launch { service.collectMulticastWifiRequests(configs.receiveAsFlow(), requester) }
+        val valid = TAKConnectService.MulticastConfig(null, true, "239.2.3.1", 6969)
+        try {
+            listOf(valid.copy(enable = false), valid.copy(companionConnected = true),
+                valid.copy(address = ""), valid.copy(address = "192.0.2.1"),
+                valid.copy(port = 0), valid.copy(port = 65536), valid.copy(port = null)
+            ).forEach { configs.send(it) }
+            configs.send(valid)
+            withTimeout(3_000) { requested.receive() }
+            verify(exactly = 1) {
+                manager.requestNetwork(any(), any<ConnectivityManager.NetworkCallback>(), handler)
+            }
+            configs.send(valid.copy(companionConnected = true))
+            withTimeout(3_000) { released.receive() }
+            configs.send(valid.copy(port = 7000))
+            withTimeout(3_000) { requested.receive() }
+            configs.send(valid.copy(enable = false))
+            withTimeout(3_000) { released.receive() }
+        } finally {
+            withTimeout(3_000) { collector.cancelAndJoin() }
+        }
+        verify(exactly = 2) {
+            manager.requestNetwork(any(), any<ConnectivityManager.NetworkCallback>(), handler)
+        }
+    }
+
     @Test fun serviceCollectorDeduplicatesAndClosesOnWifiLossReplacementDisableAndShutdown() = runBlocking {
         MainActivity.mainActivity = mockk {
             every { applicationContext } returns RuntimeEnvironment.getApplication()
@@ -69,6 +119,9 @@ class MulticastServiceLifecycleTest {
         }
         try {
             configure(enabled.copy(enable = false), false)
+            configure(enabled.copy(address = ""), false)
+            configure(enabled.copy(address = "192.0.2.1"), false)
+            configure(enabled.copy(port = 65536), false)
             assertEquals(0, totalOpened.get())
             configure(enabled, true)
             val first = withTimeout(3000) { opened.receive() }

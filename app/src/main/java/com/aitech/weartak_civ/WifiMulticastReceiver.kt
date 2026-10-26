@@ -36,7 +36,10 @@ class WifiMulticastReceiver internal constructor(
         val socket: MulticastSocket
     )
 
-    suspend fun receive(onCot: suspend (TakServerCotEnvelope) -> Unit) = coroutineScope {
+    suspend fun receive(
+        onPeerPacket: () -> Unit = {},
+        onCot: suspend (TakServerCotEnvelope) -> Unit
+    ) = coroutineScope {
         subscriptions.forEach { subscription ->
             launch(Dispatchers.IO) {
                 val buffer = ByteArray(65535)
@@ -55,6 +58,7 @@ class WifiMulticastReceiver internal constructor(
                         logPacket("Ignoring multicast self-echo group=${subscription.endpoint.sourceId}")
                         continue
                     }
+                    onPeerPacket()
                     val xml = try {
                         TakDatagramDecoder.decode(packet.data, packet.offset, packet.length)
                     } catch (error: IOException) {

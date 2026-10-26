@@ -143,6 +143,7 @@ class DittoService : Service() {
                 )
             )
             ditto.startSync() // Start syncing
+            syncActiveState.value = true
             ioScope.launch {
                 while (isActive) {
                     retryPointPublications()
@@ -161,6 +162,7 @@ class DittoService : Service() {
             storeObservers = null
             unSubscribeToCollections()
             isRunning.set(false)
+            syncActiveState.value = false
             dataRepository.setEndpointDisconnected(DataRepository.Endpoint.DITTO)
             stopSelf()
         }
@@ -598,6 +600,7 @@ class DittoService : Service() {
         if (ownsDitto && initializedDitto != null) {
             try {
                 initializedDitto.stopSync()
+                syncActiveState.value = false
                 Log.d(TAG, "Sync stopped")
             } catch (error: DittoError) {
                 Log.e(
@@ -653,6 +656,8 @@ class DittoService : Service() {
 
         private val DITTO_SERVICE_NOTIFICATION_ID = 3333
         val isRunning: AtomicBoolean = AtomicBoolean(false)
+        private val syncActiveState = MutableStateFlow(false)
+        val syncActive = syncActiveState.asStateFlow()
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds
         lateinit var localPeerKeyString: String
         private var dittoInstance: Ditto? = null
@@ -678,6 +683,7 @@ class DittoService : Service() {
                 try {
                     if (enabled && !isRunning.get()) startupResult.value = null
                     repo.storeEnableDittoService(enabled)
+                    if (repo.getEnableDittoService.first() != enabled) return@withLock false
                     if (!enabled) {
                         withContext(Dispatchers.Main) { context.stopService(Intent(context, DittoService::class.java)) }
                         withTimeout(15_000) { activeService.first { it == null } }

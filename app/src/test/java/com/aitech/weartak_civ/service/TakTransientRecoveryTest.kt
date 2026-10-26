@@ -63,7 +63,11 @@ class TakTransientRecoveryTest {
         TAKConnectService.takServerDetails = mutableListOf()
     }
 
-    @After fun cleanup() {
+    @After fun cleanup() = kotlinx.coroutines.runBlocking {
+        val scope = scopeField.get(null) as kotlinx.coroutines.CoroutineScope
+        val children = scope.coroutineContext[Job]?.children?.toList().orEmpty()
+        children.forEach { it.cancel() }
+        kotlinx.coroutines.withTimeout(5_000) { children.forEach { it.join() } }
         scopeField.set(null, oldScope)
         TAKConnectService.serviceStopping = oldStopping
         TAKConnectService.isNetworkConnected = oldNetwork
@@ -198,7 +202,7 @@ class TakTransientRecoveryTest {
         for (error in listOf(ConnectException(), SSLHandshakeException("trust"),
             TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401)))) {
             val detail = detail().copy(isP12Cert = false, p12Cert = null)
-            every { TAKConnectService.fetchAndParseCertificateConfig(detail) } throws error
+            every { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) } throws error
             TAKConnectService.getClientCertificateAndConnect(detail)
             runCurrent()
             assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
@@ -235,12 +239,12 @@ class TakTransientRecoveryTest {
         val retry = detail.runtime.retryJob!!
         mockkObject(TAKConnectService.Companion)
         every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
-        every { TAKConnectService.fetchAndParseCertificateConfig(any()) } throws
+        every { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) } throws
             TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401))
         TAKConnectService.getClientCertificateAndConnect(detail)
         assertTrue(retry.isCancelled)
         advanceUntilIdle()
-        verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail) }
+        verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) }
         TAKConnectService.recoverTransientFailure(detail, old, ConnectException())
         assertNull(detail.runtime.retryJob)
         val current = detail.runtime.currentAttempt
@@ -248,7 +252,7 @@ class TakTransientRecoveryTest {
         TAKConnectService.getClientCertificateAndConnect(detail)
         assertSame(current, detail.runtime.currentAttempt)
         assertEquals(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT, detail.connectionStatus.get())
-        verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail) }
+        verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) }
     }
 
     @Test fun cancelledScopeCannotStartPendingRetry() = runTest {
@@ -266,7 +270,8 @@ class TakTransientRecoveryTest {
     @Test fun csrTransportFailurePropagatesWithoutBecomingNull() {
         mockkObject(TAKConnectService.Companion, recordPrivateCalls = true)
         every { TAKConnectService.Companion["postCsrAndGetResponse"](
-            any<String>(), any<String>(), any<String>(), any<String>()) } throws ConnectException()
+            any<String>(), any<String>(), any<String>(), any<String>(),
+            isNull<com.aitech.weartak_civ.data.takserver.TakHttpSession>()) } throws ConnectException()
         assertThrows(ConnectException::class.java) {
             TAKConnectService.postCsrAndParse(detail(), "test-csr")
         }

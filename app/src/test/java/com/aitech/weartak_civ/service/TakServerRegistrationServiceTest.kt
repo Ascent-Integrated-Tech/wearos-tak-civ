@@ -66,6 +66,11 @@ class TakServerRegistrationServiceTest {
         TAKConnectService.isNetworkConnected = false
         TAKConnectService.getInstance().closeTakServerSockets()
         withTimeout(5_000) { jobs.forEach { it.join() } }
+        val scopeField = TAKConnectService::class.java.getDeclaredField("connectionScope").apply { isAccessible = true }
+        val scope = scopeField.get(null) as kotlinx.coroutines.CoroutineScope
+        val children = scope.coroutineContext[kotlinx.coroutines.Job]?.children?.toList().orEmpty()
+        children.forEach { it.cancel() }
+        withTimeout(5_000) { children.forEach { it.join() } }
         unmockkAll()
     }
 
@@ -141,7 +146,7 @@ class TakServerRegistrationServiceTest {
         val failure = TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401)
         mockkObject(TAKConnectService.Companion)
         every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
-        every { TAKConnectService.fetchAndParseCertificateConfig(any()) } throws TakEnrollmentException(failure)
+        every { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) } throws TakEnrollmentException(failure)
         TAKConnectService.isNetworkConnected = true
         val observed = TAKConnectService.serverRegistration.state
         repeat(3) { attempt ->
@@ -152,7 +157,7 @@ class TakServerRegistrationServiceTest {
             assertEquals(failure, terminal.failure)
             assertEquals(1, TAKConnectService.getTakServerDetail(serverId)!!.numConnAttempts)
         }
-        verify(exactly = 3) { TAKConnectService.fetchAndParseCertificateConfig(any()) }
+        verify(exactly = 3) { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) }
     }
 
     @Test fun repositoryCompanionGateAlsoTerminatesRegistration() {
@@ -179,7 +184,7 @@ class TakServerRegistrationServiceTest {
 
     @Test fun cancelledEnrollmentTerminatesRegistrationAndPreservesCancellation() = runBlocking {
         mockEnrollment()
-        every { TAKConnectService.fetchAndParseCertificateConfig(any()) } throws CancellationException("Stopped")
+        every { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) } throws CancellationException("Stopped")
         register()
         val job = TAKConnectService.getTakServerDetail(serverId)!!.runtime.currentAttempt!!.job!!
         withTimeout(5_000) { job.join() }
@@ -227,7 +232,7 @@ class TakServerRegistrationServiceTest {
         assertEquals(TakServerRegistration.Status.CONNECTED, terminal.status)
         assertNull(terminal.failure)
         verify(exactly = 1) { socket.startHandshake() }
-        verify(exactly = 0) { TAKConnectService.fetchAndParseCertificateConfig(any()) }
+        verify(exactly = 0) { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) }
     }
 
     private fun mockEnrollment() {

@@ -1198,9 +1198,7 @@ class DataRepository(private val context: Context) {
             )
 
     suspend fun storeEnableMulticast(enable: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_MULTICAST] = enable
-        }
+        storeNetworkToggle(ENABLE_MULTICAST, enable)
     }
 
     val getEnableMulticast: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -3476,10 +3474,26 @@ class DataRepository(private val context: Context) {
     suspend fun clearPhoneManagedSettingsForPeer(
         companionAddress: String,
         mayClear: () -> Boolean = { true }
+    ): PhoneManagedSettingsValues? =
+        clearPhoneManagedSettingsForPeerInternal(companionAddress, mayClear, false)
+
+    suspend fun clearPhoneManagedSettingsFromNetworkSettings(
+        companionAddress: String
+    ): PhoneManagedSettingsValues? =
+        clearPhoneManagedSettingsForPeerInternal(companionAddress, { true }, true)
+
+    private suspend fun clearPhoneManagedSettingsForPeerInternal(
+        companionAddress: String,
+        mayClear: () -> Boolean,
+        requireNetworkUnlocked: Boolean
     ): PhoneManagedSettingsValues? {
         var before: PhoneManagedSettingsValues? = null
         var after: PhoneManagedSettingsValues? = null
         context.dataStore.edit { prefs ->
+            if (requireNetworkUnlocked && prefs.networkTogglesLocked()) {
+                Log.w(TAG, "Companion management release rejected while network settings are locked")
+                return@edit
+            }
             check(mayClear()) { "Companion connection changed before management release" }
             val managedAddress = prefs[PHONE_MANAGED_COMPANION_ADDRESS]
             if (prefs[PHONE_MANAGED_SETTINGS_ENABLED] == true &&
@@ -3765,9 +3779,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeEnableDittoService(enableDittoService: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_DITTO_SERVICE] = enableDittoService
-        }
+        storeNetworkToggle(ENABLE_DITTO_SERVICE, enableDittoService)
     }
 
     val getEnableChatService: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -4272,9 +4284,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeEnableSitxService(enableSitxService: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_SITX_SERVICE] = enableSitxService
-        }
+        storeNetworkToggle(ENABLE_SITX_SERVICE, enableSitxService)
     }
 
     val getEnableTakEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -4282,9 +4292,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeEnableTakEndpoint(enableTakEndpoint: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_TAK_ENDPOINT] = enableTakEndpoint
-        }
+        storeNetworkToggle(ENABLE_TAK_ENDPOINT, enableTakEndpoint)
     }
 
     val getEnableEsriEndpoint: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -4820,9 +4828,7 @@ class DataRepository(private val context: Context) {
     }
 
     suspend fun storeEnableCompanionAppService(enableCompanionAppService: Boolean) {
-        context.dataStore.edit { prefs ->
-            prefs[ENABLE_COMPANION_APP_SERVICE] = enableCompanionAppService
-        }
+        storeNetworkToggle(ENABLE_COMPANION_APP_SERVICE, enableCompanionAppService)
     }
 
     val getEnableChatCommands: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -4881,6 +4887,37 @@ class DataRepository(private val context: Context) {
         getNetworkPreferencesLocked
     ) { phoneManaged, networkLocked -> phoneManaged || networkLocked }
         .distinctUntilChanged()
+
+    private suspend fun storeNetworkToggle(key: Preferences.Key<Boolean>, enabled: Boolean) {
+        context.dataStore.edit { prefs ->
+            if (prefs.networkTogglesLocked()) {
+                Log.w(TAG, "Network toggle rejected while settings are locked: ${key.name}")
+                return@edit
+            }
+            prefs[key] = enabled
+        }
+    }
+
+    private fun Preferences.networkTogglesLocked(): Boolean =
+        this[NETWORK_PREFERENCES_LOCKED] == true ||
+            (this[PHONE_MANAGED_SETTINGS_ENABLED] == true && phoneManagementSessionActive.value)
+
+    /** Trusted Android managed configuration remains authoritative over local UI locks. */
+    suspend fun storeManagedNetworkToggles(
+        tak: Boolean,
+        multicast: Boolean,
+        sitx: Boolean,
+        ditto: Boolean,
+        companion: Boolean?
+    ) {
+        context.dataStore.edit { prefs ->
+            prefs[ENABLE_TAK_ENDPOINT] = tak
+            prefs[ENABLE_MULTICAST] = multicast
+            prefs[ENABLE_SITX_SERVICE] = sitx
+            prefs[ENABLE_DITTO_SERVICE] = ditto
+            companion?.let { prefs[ENABLE_COMPANION_APP_SERVICE] = it }
+        }
+    }
 
     suspend fun storeNetworkPreferencesLocked(locked: Boolean) {
         context.dataStore.edit { prefs ->

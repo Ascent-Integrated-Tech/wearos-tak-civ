@@ -41,7 +41,7 @@ enum class DiagnosticEvent {
     PLI_ATTEMPT, PLI_RESULT, POWER_CHANGED, WAKE_LOCK, CONNECTIVITY, SYNC, COMMAND,
     CHAT, SENSOR, SERVICE_REQUEST, APP_EVENT, SUBSCRIBER_FAILURE, QUEUE_OVERFLOW,
     DISPLAY_INTERACTIVE, ROTATION_LISTENER, PROCESSING_WORK,
-    NETWORK_LIFECYCLE, TAK_CONNECTION, TAK_CONNECTION_COUNTS
+    NETWORK_LIFECYCLE, TAK_CONNECTION, TAK_CONNECTION_COUNTS, CONNECTIVITY_PATH
 }
 
 @Keep
@@ -53,7 +53,8 @@ enum class DiagnosticMetric {
     ACTIVITY, REPORT_REASON, OBSERVATION_REASON,
     BYTES, FRAMES, DURATION_US, MAX_DURATION_US, FAILURES, WINDOW_MS,
     GENERATION, ATTEMPT, DELAY_MS, STATUS, VALIDATED, INTERNET, TRANSPORT,
-    CONNECTED_COUNT, CONNECTING_COUNT, SOCKET_COUNT, UI_CONNECTED, UI_CONNECTING
+    CONNECTED_COUNT, CONNECTING_COUNT, SOCKET_COUNT, UI_CONNECTED, UI_CONNECTING,
+    ENABLED, CONFIGURED_COUNT, MODE, GROUP_SELECTED, REQUESTED, LOCK_HELD, IDLE_RELEASED
 }
 
 internal enum class ProcessingStage(val code: Long) {
@@ -321,6 +322,12 @@ class AppDiagnostics internal constructor(private val application: Application) 
         }
     }
 
+    internal fun bindConnectivity(repo: DataRepository,
+        plugins: com.aitech.weartak_civ.integration.plugin.PluginSettingsCoordinator) {
+        ConnectivityPathDiagnostics(scope, enabled, repo, plugins,
+            { capture(DiagnosticEvent.CONNECTIVITY_PATH, it) })
+    }
+
     // Call storage/settings operations on IO, like the existing diagnostic export path.
     suspend fun setEnabled(value: Boolean) {
         if (!value) awaitPendingWrites()
@@ -355,6 +362,10 @@ class AppDiagnostics internal constructor(private val application: Application) 
         if (!enabled.value) return
         synchronized(rateLock) {
             if (!enabled.value) return
+            if (event == DiagnosticEvent.CONNECTIVITY_PATH) {
+                enqueue(event, metrics + (DiagnosticMetric.COUNT to 1L))
+                return
+            }
             val now = SystemClock.elapsedRealtime()
             val key = RateKey(event, metrics[DiagnosticMetric.KIND], metrics[DiagnosticMetric.SOURCE],
                 metrics[DiagnosticMetric.ACTIVE], metrics[DiagnosticMetric.RESULT],

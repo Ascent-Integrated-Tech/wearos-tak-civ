@@ -1196,7 +1196,8 @@ class CotDispatchService : Service() {
 
     private suspend fun endpointAvailability(): CotEndpointAvailability =
         CotEndpointAvailability(
-            tak = isLicenseValid() && TAKConnectService.isAnyTakConnected,
+            tak = isLicenseValid() && dataRepository.getEnableTakEndpoint.first() &&
+                TAKConnectService.isAnyTakConnected,
             sitx = sitxAvailable(),
             ditto = DittoService.isRunning.get(),
             multicast = isLicenseValid() && dataRepository.multicastPublisherRunning.value,

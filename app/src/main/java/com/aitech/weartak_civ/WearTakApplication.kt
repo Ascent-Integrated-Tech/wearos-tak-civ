@@ -137,6 +137,7 @@ class WearTakApplication : Application() {
         pluginIngress = PluginIngressPort(this)
         pluginManager = PluginManager(this, pluginIngress)
         pluginRepository = HostPluginRepository(this, pluginManager)
+        diagnostics.bindConnectivity(repo, pluginManager.settingsCoordinator)
         pluginManager.startDeferred()
     }
 

@@ -1839,7 +1839,6 @@ class MainActivity : ComponentActivity() {
 
             if (enableTakEndpointConfigUpdate != enableTakEndpoint) {
                 enableTakEndpoint = enableTakEndpointConfigUpdate
-                dataRepository.storeEnableTakEndpoint(enableTakEndpointConfigUpdate)
             }
 
             if ((null != sitxTakUrlConfigUpdate) && (sitxTakUrl != sitxTakUrlConfigUpdate)) {
@@ -1902,10 +1901,15 @@ class MainActivity : ComponentActivity() {
                 enableActivityRecognitionServiceConfigUpdate
             )
             dataRepository.storeEnableSkinTempService(enableSkinTempServiceConfigUpdate)
-            dataRepository.storeEnableDittoService(enableDittoServiceConfigUpdate)
-            if (companionServiceSetting.persistManagedOverride) {
-                dataRepository.storeEnableCompanionAppService(enableCompanionAppServiceConfigUpdate)
-            }
+            dataRepository.storeManagedNetworkToggles(
+                tak = enableTakEndpointConfigUpdate,
+                multicast = enableMulticastConfigUpdate,
+                sitx = enableSitxServiceConfigUpdate,
+                ditto = enableDittoServiceConfigUpdate,
+                companion = enableCompanionAppServiceConfigUpdate.takeIf {
+                    companionServiceSetting.persistManagedOverride
+                }
+            )
             dataRepository.storeEnableBleBeaconService(enableBleBeaconServiceConfigUpdate)
             if (constantReportingInterval != constantReportingIntervalConfigUpdate) {
                 constantReportingInterval = constantReportingIntervalConfigUpdate
@@ -1953,9 +1957,7 @@ class MainActivity : ComponentActivity() {
             }
             dataRepository.storeBloodhoundProximityIntensity(bloodhoundProximityIntensityConfigUpdate)
             dataRepository.storeEnableHailService(enableHailServiceConfigUpdate)
-            dataRepository.storeEnableSitxService(enableSitxServiceConfigUpdate)
             dataRepository.storeEnableBatdokCot(enableBatdokCotConfigUpdate)
-            dataRepository.storeEnableMulticast(enableMulticastConfigUpdate)
             dataRepository.storeEnableSmsForAlerts(enableSmsForAlertsConfigUpdate)
             dataRepository.storeSmsNumbersList(smsNumbersListConfigUpdate)
             dataRepository.storeEnableBatteryAlerts(enableBatteryAlertsConfigUpdate)
@@ -2024,7 +2026,6 @@ class MainActivity : ComponentActivity() {
             }
             if (enableSitxServiceConfigUpdate != enableSitxService) {
                 enableSitxService = enableSitxServiceConfigUpdate
-                if (!calledOnCreate) dataRepository.storeEnableSitxService(enableSitxService)
             }
             if (enablePhysiologicalServicesConfigUpdate != enablePhysiologicalServices) {
                 enablePhysiologicalServices = enablePhysiologicalServicesConfigUpdate
@@ -2055,7 +2056,6 @@ class MainActivity : ComponentActivity() {
             if (enableDittoServiceConfigUpdate != enableDittoService) {
                 enableDittoService = enableDittoServiceConfigUpdate
                 Log.d(TAG, "enableDittoService=$enableDittoService")
-                if (!calledOnCreate) dataRepository.storeEnableDittoService(enableDittoService)
             }
             if (enableCompanionAppServiceConfigUpdate != enableCompanionAppService) {
                 enableCompanionAppService = enableCompanionAppServiceConfigUpdate

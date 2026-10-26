@@ -713,7 +713,7 @@ class WearTAKSettingsViewModel : ViewModel() {
     fun storeEnableMulticast(enable: Boolean) {
         viewModelScope.launch {
             dataRepository.storeEnableMulticast(enable)
-            enableMulticastOnWifi = enable
+            enableMulticastOnWifi = dataRepository.getEnableMulticast.first()
         }
     }
 
@@ -769,7 +769,7 @@ class WearTAKSettingsViewModel : ViewModel() {
     fun storeEnableSitx(enable: Boolean) {
         viewModelScope.launch {
             dataRepository.storeEnableSitxService(enable)
-            enableSitxService = enable
+            enableSitxService = dataRepository.getEnableSitxService.first()
         }
     }
 
@@ -948,13 +948,15 @@ fun displaySitxGroupDialog(
 
     fun storeEnableCompanionAppService(enable: Boolean) {
         viewModelScope.launch {
+            if (dataRepository.networkSettingsLocked.first()) return@launch
             if (!enable) {
                 dataRepository.phoneManagedCompanionAddress.first()?.let { peer ->
-                    dataRepository.clearPhoneManagedSettingsForPeer(peer)?.applyToRuntimeConstants()
+                    dataRepository.clearPhoneManagedSettingsFromNetworkSettings(peer)
+                        ?.applyToRuntimeConstants()
                 }
             }
             dataRepository.storeEnableCompanionAppService(enable)
-            enableCompanionAppService = enable
+            enableCompanionAppService = dataRepository.getEnableCompanionAppService.first()
         }
     }
 
@@ -1010,7 +1012,18 @@ fun displaySitxGroupDialog(
     fun storeEnableDittoService(enable: Boolean) {
         viewModelScope.launch {
             dataRepository.storeEnableDittoService(enable)
-            enableDittoService = enable
+            enableDittoService = dataRepository.getEnableDittoService.first()
+        }
+    }
+
+    val savedEnableTakEndpoint = dataRepository.getEnableTakEndpoint.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), true
+    )
+
+    fun storeEnableTakEndpoint(enabled: Boolean) {
+        viewModelScope.launch {
+            dataRepository.storeEnableTakEndpoint(enabled)
+            MainActivity.enableTakEndpoint = dataRepository.getEnableTakEndpoint.first()
         }
     }
 

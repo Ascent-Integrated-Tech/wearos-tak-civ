@@ -5,29 +5,45 @@ import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
-import android.net.wifi.WifiManager
 import android.os.Handler
 import android.util.Log
 import java.io.Closeable
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 internal class MulticastWifiRequest(
     private val connectivityManager: ConnectivityManager,
-    wifiManager: WifiManager,
-    private val handler: Handler
+    private val handler: Handler,
+    private val idleTimeoutMs: Long = 600_000L
 ) : Closeable {
     private var callback: ConnectivityManager.NetworkCallback? = null
-    // Android 14+ maps this to low latency mode, which only takes effect screen-on/in foreground.
-    @Suppress("DEPRECATION")
-    private val wifiLock = wifiManager.createWifiLock(
-        WifiManager.WIFI_MODE_FULL_HIGH_PERF, "$TAG:wifi"
-    ).apply { setReferenceCounted(false) }
+    private var idleReleased = false
+    private val idleTimeout = Runnable {
+        synchronized(this) {
+            if (callback != null) {
+                try {
+                    releaseRequest(idle = true)
+                } catch (error: SecurityException) {
+                    Log.e(TAG, "Permission denied releasing idle multicast Wi-Fi request", error)
+                } catch (error: IllegalArgumentException) {
+                    Log.e(TAG, "Idle multicast Wi-Fi request was no longer registered", error)
+                }
+            }
+        }
+    }
 
-    fun setEnabled(enabled: Boolean) {
+    @Synchronized
+    fun setEnabled(enabled: Boolean, resetIdle: Boolean = false) {
         if (!enabled) {
             close()
             return
         }
-        if (callback != null) return
+        if (resetIdle) idleReleased = false
+        if (callback != null) {
+            if (resetIdle) armIdleTimeout()
+            return
+        }
+        if (idleReleased) return
         val request = NetworkRequest.Builder()
             .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
             .build()
@@ -50,31 +66,53 @@ internal class MulticastWifiRequest(
                 Log.i(TAG, "Multicast Wi-Fi link: $network interface=${properties.interfaceName}")
             }
         }
-        // An observer or Wi-Fi lock alone does not count as demand for Wear OS Wi-Fi.
-        var registered = false
-        try {
-            wifiLock.acquire()
-            connectivityManager.requestNetwork(request, requestedCallback, handler)
-            callback = requestedCallback
-            registered = true
-            Log.i(TAG, "Requested local Wi-Fi for multicast with Wi-Fi power lock (internet not required)")
-        } finally {
-            if (!registered && wifiLock.isHeld) wifiLock.release()
-        }
+        connectivityManager.requestNetwork(request, requestedCallback, handler)
+        callback = requestedCallback
+        armIdleTimeout()
+        publishState()
+        Log.i(TAG, "Requested local Wi-Fi for multicast (no power lock; internet not required)")
     }
 
-    override fun close() {
-        val registered = callback ?: return
+    @Synchronized
+    fun onPeerPacketReceived() {
+        if (callback != null) armIdleTimeout()
+    }
+
+    private fun armIdleTimeout() {
+        handler.removeCallbacks(idleTimeout)
+        handler.postDelayed(idleTimeout, idleTimeoutMs)
+    }
+
+    @Synchronized
+    override fun close() = releaseRequest(idle = false)
+
+    private fun releaseRequest(idle: Boolean) {
+        handler.removeCallbacks(idleTimeout)
+        val registered = callback
         callback = null
+        idleReleased = idle
         try {
-            connectivityManager.unregisterNetworkCallback(registered)
+            if (registered != null) connectivityManager.unregisterNetworkCallback(registered)
         } finally {
-            if (wifiLock.isHeld) wifiLock.release()
-            Log.i(TAG, "Released multicast Wi-Fi request and power lock")
+            publishState()
+            if (registered != null) Log.i(TAG, if (idle) "Released idle multicast Wi-Fi request" else
+                "Released multicast Wi-Fi request")
         }
     }
 
-    private companion object {
+    private fun publishState() = synchronized(state) {
+        if (stateOwner == null || stateOwner === this || callback != null) {
+            stateOwner = if (callback != null || idleReleased) this else null
+            state.value = RuntimeState(callback != null, idleReleased)
+        }
+    }
+
+    data class RuntimeState(val requested: Boolean, val idleReleased: Boolean)
+
+    companion object {
+        private var stateOwner: MulticastWifiRequest? = null
+        private val state = MutableStateFlow(RuntimeState(false, false))
+        val runtimeState = state.asStateFlow()
         const val TAG = "WearTAK-MulticastWifi"
     }
 }

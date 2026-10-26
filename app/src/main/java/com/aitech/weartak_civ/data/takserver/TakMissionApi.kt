@@ -55,6 +55,7 @@ class TakMissionApi(
 
         .build(),
     private val requestsAllowed: suspend () -> Boolean = { true },
+    private val session: TakHttpSession? = null,
 ) {
 
     // Converts JSON responses into Kotlin data objects
@@ -110,7 +111,7 @@ class TakMissionApi(
         // Send the request and read the server response
         // Automatically close the response after processing
         ensureRequestsAllowed()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withSessionResponse(session) { response ->
             currentCoroutineContext().ensureActive()
 
             // Check whether the server returned a successful response
@@ -225,7 +226,7 @@ class TakMissionApi(
 
         // Send the request and read the server response
         ensureRequestsAllowed()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withSessionResponse(session) { response ->
             currentCoroutineContext().ensureActive()
 
             // Return null when the server reports that the mission does not exist
@@ -315,7 +316,7 @@ class TakMissionApi(
 
         // Send the unsubscribe request to the TAK Server
         ensureRequestsAllowed()
-        client.newCall(request).execute().use { response ->
+        client.newCall(request).withSessionResponse(session) { response ->
             currentCoroutineContext().ensureActive()
 
             // Check whether the server accepted the unsubscribe request
@@ -453,7 +454,7 @@ class TakMissionApi(
         try {
 
             // Send the request and automatically close the response afterward
-            return client.newCall(request).execute().use { response ->
+            return client.newCall(request).withSessionResponse(session) { response ->
                 currentCoroutineContext().ensureActive()
 
                 // Read the response body as text

@@ -42,6 +42,7 @@ class WifiMulticastReceiverTest {
         val socket = localSocket()
         val ignored = Channel<Unit>(Channel.UNLIMITED)
         var deliveries = 0
+        var peerPackets = 0
         val receiver = WifiMulticastReceiver(
             subscriptions = listOf(WifiMulticastReceiver.Subscription(TakMulticastEndpoints.directCot, socket)),
             localAddresses = setOf(socket.localAddress.hostAddress),
@@ -49,7 +50,7 @@ class WifiMulticastReceiverTest {
             releaseLock = {}
         )
         receiver.use {
-            val receiving = launch { receiver.receive { deliveries++ } }
+            val receiving = launch { receiver.receive(onPeerPacket = { peerPackets++ }) { deliveries++ } }
             try {
                 DatagramSocket().use { send(it, socket, MARKER_XML) }
                 withTimeout(3000) { ignored.receive() }
@@ -58,6 +59,7 @@ class WifiMulticastReceiverTest {
             }
         }
         assertEquals(0, deliveries)
+        assertEquals(0, peerPackets)
         assertTrue(socket.isClosed)
     }
 

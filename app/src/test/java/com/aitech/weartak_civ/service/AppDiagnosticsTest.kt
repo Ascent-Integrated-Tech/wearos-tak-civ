@@ -111,6 +111,26 @@ class AppDiagnosticsTest {
         assertEquals("hybrid-speed-activity-v2", preserved[1].asJsonObject["policy"].asString)
     }
 
+    @Test fun connectivityTransitionsKeepEveryDistinctStateWithoutFiveSecondCoalescing() = runBlocking {
+        val diagnostics = AppDiagnostics(app).also { recorder = it }
+        diagnostics.setEnabled(true)
+        val capture = AppDiagnostics::class.java.getDeclaredMethod(
+            "capture", DiagnosticEvent::class.java, Map::class.java
+        ).apply { isAccessible = true }
+        listOf(0L, 1L, 0L).forEach { connected ->
+            capture.invoke(diagnostics, DiagnosticEvent.CONNECTIVITY_PATH, mapOf(
+                DiagnosticMetric.KIND to 0L,
+                DiagnosticMetric.ENABLED to 1L,
+                DiagnosticMetric.CONFIGURED_COUNT to 5L,
+                DiagnosticMetric.CONNECTED_COUNT to connected
+            ))
+        }
+        val events = JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
+            .filter { it.asJsonObject["event"].asString == "CONNECTIVITY_PATH" }
+        assertEquals(listOf(0, 1, 0),
+            events.map { it.asJsonObject["metrics"].asJsonObject["CONNECTED_COUNT"].asInt })
+    }
+
     @Test fun powerAndDockThrottleTransitionsKeepDistinctAppliedPolicyRecords() = runBlocking {
         val diagnostics = AppDiagnostics(app).also { recorder = it }
         diagnostics.setEnabled(true)

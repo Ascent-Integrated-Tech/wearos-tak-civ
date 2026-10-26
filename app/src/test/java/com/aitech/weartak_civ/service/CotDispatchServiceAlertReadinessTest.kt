@@ -181,12 +181,33 @@ class CotDispatchServiceAlertReadinessTest {
         assertEquals(2, fixture.sent.size)
     }
 
+    @Test fun disabledTakMasterDoesNotUseStaleSocketReadinessOrBlockMulticast() = runTest {
+        val fixture = Fixture(this)
+        fixture.snapshotLocation = fixture.location(System.currentTimeMillis())
+        fixture.takEnabled.value = false
+        TAKConnectService.isAnyTakConnected = true
+        try {
+            val alert = fixture.alert("master-off")
+            fixture.activeAlerts(false)[alert.uuid] = alert
+            fixture.send(false, alert)
+            assertTrue(fixture.sent.isEmpty())
+            assertEquals(1, fixture.queue(false).size)
+            fixture.multicast.value = true
+            fixture.drain(false)
+            assertEquals(1, fixture.sent.size)
+            assertTrue(fixture.queue(false).isEmpty())
+        } finally {
+            TAKConnectService.isAnyTakConnected = false
+        }
+    }
+
     private class Fixture(scope: TestScope) {
         val endpoints = MutableStateFlow<Set<DataRepository.Endpoint>>(emptySet())
         val multicast = MutableStateFlow(false)
         val companionReady = MutableStateFlow(false)
         val companionEnabled = MutableStateFlow(false)
         val pluginAvailable = MutableStateFlow(false)
+        val takEnabled = MutableStateFlow(true)
         val sent = mutableListOf<String>()
         val payloads = mutableListOf<CotCompanionPayload.Emergency>()
         val chats = mutableListOf<CotCompanionPayload.Chat>()
@@ -212,6 +233,7 @@ class CotDispatchServiceAlertReadinessTest {
             every { repo.multicastPublisherRunning } returns multicast
             every { repo.sitxStatus } returns MutableStateFlow(DataRepository.SitxServerStatus.DISCONNECTED)
             every { repo.getEnableSitxService } returns MutableStateFlow(false)
+            every { repo.getEnableTakEndpoint } returns takEnabled
             every { repo.getEnableCompanionAppService } returns companionEnabled
             every { companion.companionAppReady } returns companionReady
             every { repo.isCompanionConnected } returns companionReady
