@@ -82,6 +82,7 @@ class ReportingIntervalStrategyService : Service() {
         startIsAlertingCollector()
         startSpeedCollector()
         startActivityCollector()
+        startMotionCollector()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -112,7 +113,7 @@ class ReportingIntervalStrategyService : Service() {
                 else ActivityRecognized.UNKNOWN
 
             val activity = currentActivity()
-            dynamicReportingInterval = calcDynamicReportingInterval(isAlerting, latestSpeedMps,
+            dynamicReportingInterval = calcDynamicReportingInterval(isAlerting, policySpeed(),
                 whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval,
                 stationaryReportingInterval, activity)
             reportingInterval = if (enableDynamicReportingStrategy) { dynamicReportingInterval } else { constantReportingInterval }
@@ -153,9 +154,13 @@ class ReportingIntervalStrategyService : Service() {
     }
 
     private fun recordPolicySelection(activity: ActivityRecognized, observationInterval: Int) {
-        policyDiagnostics.update(enableDynamicReportingStrategy, isAlerting, latestSpeedMps,
+        policyDiagnostics.update(enableDynamicReportingStrategy, isAlerting, policySpeed(),
             activity, reportingInterval, observationInterval,
-            recording = AppDiagnostics.recordingEnabled?.value == true)?.let {
+            recording = AppDiagnostics.recordingEnabled?.value == true,
+            motion = if (enableDynamicReportingStrategy && !isAlerting)
+                dataRepository.stationaryMotion.state.value.takeIf {
+                    it.stationary || it.movingUntilNanos > SystemClock.elapsedRealtimeNanos()
+                } else null)?.let {
             AppDiagnostics.record(DiagnosticEvent.REPORT_POLICY, it)
         }
     }
@@ -170,7 +175,7 @@ class ReportingIntervalStrategyService : Service() {
     }
 
     private suspend fun calcDynamicReportingIntervalAndSendUpdate() {
-        val dynamicRI = calcDynamicReportingInterval(isAlerting, latestSpeedMps,
+        val dynamicRI = calcDynamicReportingInterval(isAlerting, policySpeed(),
             whileAlertingReportingInterval, onFootReportingInterval, vehicleReportingInterval,
             stationaryReportingInterval, currentActivity())
         if (dynamicRI != dynamicReportingInterval) {
@@ -265,9 +270,30 @@ class ReportingIntervalStrategyService : Service() {
         }
     }
 
-    private fun currentActivity(): ActivityRecognized =
-        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
+    private fun currentActivity(): ActivityRecognized {
+        val recognized = if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
             PackageManager.PERMISSION_GRANTED) latestActivity else ActivityRecognized.UNKNOWN
+        return if (enableDynamicReportingStrategy && !isAlerting)
+            dataRepository.stationaryMotion.activity(recognized, SystemClock.elapsedRealtimeNanos()) else recognized
+    }
+
+    private fun policySpeed(): Double? =
+        if (enableDynamicReportingStrategy && !isAlerting)
+            dataRepository.stationaryMotion.speed(latestSpeedMps, SystemClock.elapsedRealtimeNanos())
+        else latestSpeedMps
+
+    private fun startMotionCollector() {
+        serviceScope.launch {
+            dataRepository.stationaryMotion.state.collectLatest { state ->
+                calcDynamicReportingIntervalAndSendUpdate()
+                if (state.movingUntilNanos > 0) {
+                    val remaining = (state.movingUntilNanos - SystemClock.elapsedRealtimeNanos()) / 1_000_000L
+                    delay(remaining.coerceAtLeast(0) + 1)
+                    dataRepository.stationaryMotion.expire(state, SystemClock.elapsedRealtimeNanos())
+                }
+            }
+        }
+    }
 
     private fun desiredObservationInterval(activity: ActivityRecognized): Int =
         if (!enableDynamicReportingStrategy) constantReportingInterval

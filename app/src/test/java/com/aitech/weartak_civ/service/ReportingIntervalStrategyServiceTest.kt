@@ -32,6 +32,64 @@ import org.greenrobot.eventbus.Subscribe
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class ReportingIntervalStrategyServiceTest {
+    @Test fun motionLatchControlsBothCadencesAndExplicitOverridesStillWin() {
+        val app = RuntimeEnvironment.getApplication()
+        val repo = DataRepository(app)
+        shadowOf(app).grantPermissions(Manifest.permission.ACTIVITY_RECOGNITION)
+        runBlocking {
+            repo.storeEnableDynamicReportingStrategy(true)
+            repo.storeEnableLocationService(true)
+            repo.storeEnableActivityRecognitionService(true)
+            repo.storeConstantReportingInterval(43)
+            repo.storeOnFootReportingInterval(30)
+            repo.storeVehicleReportingInterval(60)
+            repo.storeStationaryReportingInterval(3600)
+            repo.storeWhileAlertingReportingInterval(7)
+        }
+        val service = Robolectric.buildService(ReportingIntervalStrategyService::class.java).get()
+        ReportingIntervalStrategyService::class.java.getDeclaredField("dataRepository").apply {
+            isAccessible = true; set(service, repo)
+        }
+        fun call(name: String) = ReportingIntervalStrategyService::class.java.getDeclaredMethod(name).apply {
+            isAccessible = true
+        }.invoke(service)
+        val oldReport = CotDispatchService.desiredReportingIntervalSecs
+        val oldObservation = CotDispatchService.desiredLocationObservationIntervalSecs
+        try {
+            call("initializeVariables")
+            call("startMotionCollector")
+            call("startActivityCollector")
+            call("startEnableDynamicStrategyCollector")
+            call("startIsAlertingCollector")
+            repo.stationaryMotion.hold()
+            await { CotDispatchService.desiredReportingIntervalSecs == 3600 &&
+                CotDispatchService.desiredLocationObservationIntervalSecs == 3600 }
+            runBlocking { repo.storeLatestActivityRecognized(ActivityRecognized.WALKING) }
+            shadowOf(Looper.getMainLooper()).idle()
+            assertEquals(3600, CotDispatchService.desiredReportingIntervalSecs)
+            assertEquals(3600, CotDispatchService.desiredLocationObservationIntervalSecs)
+            repo.stationaryMotion.confirm(SystemClock.elapsedRealtimeNanos() + 60_000_000_000L, null)
+            await { CotDispatchService.desiredReportingIntervalSecs == 30 &&
+                CotDispatchService.desiredLocationObservationIntervalSecs == 30 }
+            repo.stationaryMotion.hold()
+            await { CotDispatchService.desiredReportingIntervalSecs == 3600 }
+            runBlocking { repo.appendManualAlert(DataRepository.CustomEmergencyAlert(
+                "test-alert", DataRepository.AlertState.ALERT, "SOS", "test",
+                1, false, System.currentTimeMillis(), false)) }
+            await { CotDispatchService.desiredReportingIntervalSecs == 7 &&
+                CotDispatchService.desiredLocationObservationIntervalSecs == 7 }
+            runBlocking { repo.storeEnableDynamicReportingStrategy(false) }
+            await { CotDispatchService.desiredReportingIntervalSecs == 43 &&
+                CotDispatchService.desiredLocationObservationIntervalSecs == 43 }
+            assertEquals(3600, runBlocking { repo.getStationaryReportingInterval.first() })
+        } finally {
+            (ReportingIntervalStrategyService::class.java.getDeclaredField("serviceScope").apply {
+                isAccessible = true
+            }.get(service) as CoroutineScope).cancel()
+            CotDispatchService.desiredReportingIntervalSecs = oldReport
+            CotDispatchService.desiredLocationObservationIntervalSecs = oldObservation
+        }
+    }
     class PolicyObserver {
         var updates = 0
         @Subscribe fun receive(event: PowerManagerEvent) { updates++ }

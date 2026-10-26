@@ -5,6 +5,23 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReportingPolicyDiagnosticsTest {
+    @Test fun motionReasonsAreDistinctAndCannotOverrideAlertOrConstant() {
+        val recorder = ReportingPolicyDiagnostics()
+        val stationary = StationaryMotionPolicy.State(stationary = true)
+        val held = recorder.update(true, false, null, ActivityRecognized.STILL, 3600, 3600,
+            motion = stationary)!!
+        assertEquals(DiagnosticSelectionReason.MOTION_STATIONARY.code, held[DiagnosticMetric.REPORT_REASON])
+        assertEquals(held[DiagnosticMetric.REPORT_REASON], held[DiagnosticMetric.OBSERVATION_REASON])
+        val moving = recorder.update(true, false, null, ActivityRecognized.UNKNOWN, 60, 60,
+            motion = StationaryMotionPolicy.State(movingUntilNanos = 100))!!
+        assertEquals(DiagnosticSelectionReason.MOTION_CONFIRMED.code, moving[DiagnosticMetric.REPORT_REASON])
+        val alert = recorder.update(true, true, null, ActivityRecognized.STILL, 7, 7,
+            motion = stationary)!!
+        assertEquals(DiagnosticSelectionReason.ALERT.code, alert[DiagnosticMetric.REPORT_REASON])
+        val constant = recorder.update(false, true, null, ActivityRecognized.STILL, 43, 43,
+            motion = stationary)!!
+        assertEquals(DiagnosticSelectionReason.CONSTANT.code, constant[DiagnosticMetric.REPORT_REASON])
+    }
     private fun selection(
         speed: Double? = null,
         activity: ActivityRecognized = ActivityRecognized.UNKNOWN,

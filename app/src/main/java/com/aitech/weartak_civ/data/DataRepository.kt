@@ -225,6 +225,7 @@ class DataRepository(
     private val context: Context,
     private val projectionScope: CoroutineScope = repoScope,
 ) {
+    internal val stationaryMotion = com.aitech.weartak_civ.service.StationaryMotionPolicy()
     internal val headingComplications = HeadingComplicationDemand(
         context.getSharedPreferences("heading-complications", Context.MODE_PRIVATE)
     )
