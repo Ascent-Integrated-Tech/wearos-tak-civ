@@ -40,14 +40,13 @@ object LegacyPliPayloadBuilder {
         val battery = system.batteryPercent
         val steps = metrics?.steps ?: 0L
         val floors = metrics?.floors ?: 0.0
-        val calories = metrics?.calories ?: 0.0
         val isWorn = physio.heartRateBpm != -1
 
         val esri = if (options.buildEsri) {
             val activityFields = if (options.includeActivityMetrics) {
-                "\"steps\": $steps, \"floors\": ${floors.roundToInt()}, \"calories\": ${calories.roundToInt()}"
+                "\"steps\": $steps, \"floors\": ${floors.roundToInt()}"
             } else {
-                "\"steps\": -1, \"floors\": -1, \"calories\": -1"
+                "\"steps\": -1, \"floors\": -1"
             }
             """
         { "type": "FeatureCollection", "features": [ { "type": "Feature", "id": "$uid", "properties": { "timeutc": "$start", "staletimeutc": "$stale", "callsign": "${options.callsign}", "role": "${options.role}", "color": "${options.team}", "phone": "+11234567890", "model": "WEAROS", "device": "Samsung Galaxy Watch", "hae": $hae, "horizaccuracy": $ce, "vertaccuracy": $le, "heading": $course, "speed": $speed, "batt": $battery, "biometrics": [ { "model": "WEAROS", "device": "Samsung Galaxy Watch", "isworn": $isWorn, "hr": $heartRate, "hribi": -1, "hrv": -1, "skintemp": $skinTemperature, "ambienttemp": -1, "coretemp": -1, "spo2": -1, "spo2measuretimeutc": "", "vo2": -1, "vo2measuretimeutc": "", "vo2max": -1, "vo2maxmeasuretimeutc": "", "sweatloss": -1, "sweatlossduration": -1, "sweatlossmeasuretimeutc": "", "sleepscore": -1, "sleepduration": -1, "deepsleepduration": -1, "sleepscoremeasuretimeutc": "", "energyscore": -1, "energyscoremeasuretimeutc": "", $activityFields, "exertion": $exertion, "fatmass": -1, "musclemass": -1, "biameasuretimeutc": "", "batt": $battery } ], "alerts" : [ ], "resolvedalerts" : [ ] }, "geometry": { "type": "Point", "coordinates": [ $lon, $lat ] } } ] }
@@ -58,9 +57,9 @@ object LegacyPliPayloadBuilder {
 
         val tabletCommand = if (options.buildTabletCommand) {
             val activityFields = if (options.includeActivityMetrics) {
-                "\"steps\":$steps,\"floors\":${floors.roundToInt()},\"calories\":${calories.roundToInt()}"
+                "\"steps\":$steps,\"floors\":${floors.roundToInt()}"
             } else {
-                "\"steps\":-1,\"floors\":-1,\"calories\":-1"
+                "\"steps\":-1,\"floors\":-1"
             }
             """
                 {"id":"$uid","timeutc":"$start","staletimeutc":"$stale","callsign":"${options.callsign}","role":"${options.role}","color":"${options.team}","phone":"+13014058648","model":"WEAROS","device":"Samsung Galaxy Watch","lat":$lat,"lon":$lon,"hae":$hae,"horizaccuracy":$ce,"vertaccuracy":$le,"heading":$course,"speed":$speed,"batt":$battery,"biometrics":[{"model":"WEAROS","device":"Samsung Galaxy Watch","isworn":$isWorn,"hr":$battery,"hribi":-1,"hrv":-1,"skintemp":$skinTemperature,"ambienttemp":-1,"coretemp":-1,"spo2":-1,"spo2measuretimeutc":"","vo2":-1,"vo2measuretimeutc":"","vo2max":-1,"vo2maxmeasuretimeutc":"","sweatloss":-1,"sweatlossduration":-1,"sweatlossmeasuretimeutc":"","sleepscore":-1,"sleepduration":-1,"deepsleepduration":-1,"sleepscoremeasuretimeutc":"","energyscore":-1,"energyscoremeasuretimeutc":"",$activityFields,"exertion":$exertion,"fatmass":-1,"musclemass":-1,"biameasuretimeutc":"","batt":$battery}],"alerts":[],"resolvedalerts":[]}

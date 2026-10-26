@@ -72,6 +72,9 @@ class ActivityRecognitionService : Service() {
         private const val NOTIF_ID = 192
         private const val LOG_FILENAME = "/sdcard/Download/activity_detection.log"
         val isRunning: AtomicBoolean = AtomicBoolean(false)
+        internal val PASSIVE_DAILY_DATA_TYPES: Set<DataType<*, *>> = setOf(
+            DataType.STEPS_DAILY, DataType.FLOORS_DAILY, DataType.ELEVATION_GAIN_DAILY
+        )
         enum class ActivityRecognized {
             RUNNING, WALKING, TILTING, STILL, BICYCLING, IN_VEHICLE, ON_FOOT, UNKNOWN
         }
@@ -92,7 +95,6 @@ class ActivityRecognitionService : Service() {
     private var passiveListenerRegistered = false
 
     private var cumulativeSteps:     Long?   = null
-    private var cumulativeCalories:  Double? = null
     private var cumulativeFloors:    Double? = null
     private var cumulativeElevation: Double? = null
 
@@ -172,12 +174,7 @@ class ActivityRecognitionService : Service() {
             if (!canAcceptPassiveData() || !repo.getEnablePhysiologicalServices.first() ||
                 !repo.getEnableActRecService.first()) return
             Log.i(TAG, "Passive caps => ${caps.supportedDataTypesPassiveMonitoring}")
-            val wanted = buildSet {
-                if (DataType.STEPS_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.STEPS_DAILY)
-                if (DataType.CALORIES_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.CALORIES_DAILY)
-                if (DataType.FLOORS_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.FLOORS_DAILY)
-                if (DataType.ELEVATION_GAIN_DAILY in caps.supportedDataTypesPassiveMonitoring) add(DataType.ELEVATION_GAIN_DAILY)
-            }
+            val wanted = PASSIVE_DAILY_DATA_TYPES.intersect(caps.supportedDataTypesPassiveMonitoring)
             if (wanted.isEmpty()) {
                 Log.w(TAG, "No requested passive data types supported")
                 return
@@ -309,12 +306,11 @@ class ActivityRecognitionService : Service() {
             // Read the optional points
             // Each call may contain 0-many data points for each requested type
             dataPoints.getData(DataType.STEPS_DAILY).firstOrNull()?.value?.toLong()?.let { cumulativeSteps = it }
-            dataPoints.getData(DataType.CALORIES_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeCalories = it }
             dataPoints.getData(DataType.FLOORS_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeFloors = it }
             dataPoints.getData(DataType.ELEVATION_GAIN_DAILY).firstOrNull()?.value?.toDouble()?.let { cumulativeElevation = it }
 
             // DEBUG LOG: shows the cached snapshot
-            val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
+            val logStr = "passiveDailyListenerCallback: Steps: $cumulativeSteps, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m"
             //Log.i(TAG, logStr)
             //writeToLogFileLocation(logFile, logStr)
 
@@ -323,11 +319,10 @@ class ActivityRecognitionService : Service() {
                 if (!canAcceptPassiveData() || !repo.getEnablePhysiologicalServices.first() ||
                     !repo.getEnableActRecService.first()) return@launch
                 val nowHour = Instant.now().truncatedTo(ChronoUnit.HOURS)
-                //Log.d(TAG, "passiveDailyListenerCallback: nowHour: $nowHour; Steps: $cumulativeSteps, Cals: $cumulativeCalories, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
+                //Log.d(TAG, "passiveDailyListenerCallback: nowHour: $nowHour; Steps: $cumulativeSteps, Floors: $cumulativeFloors, Elevation: $cumulativeElevation m")
                 repo.updateDailyMetrics(
                     timestampHour = nowHour,
                     steps         = cumulativeSteps,
-                    calories      = cumulativeCalories,
                     floors        = cumulativeFloors,
                     elevationM    = cumulativeElevation
                 )

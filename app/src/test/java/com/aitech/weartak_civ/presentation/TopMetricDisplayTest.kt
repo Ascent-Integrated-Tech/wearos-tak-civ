@@ -4,6 +4,8 @@ import android.app.Application
 import android.location.Location
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.doublePreferencesKey
 import com.aitech.weartak_civ.Utils
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.TopDisplayMetric
@@ -57,6 +59,26 @@ class TopMetricDisplayTest {
         assertEquals("key_steps", DataRepository(app).getSelectedPhysioMetric.first())
         repo.storeSelectedPhysioMetric("key_mgrs")
         assertEquals("key_mgrs", DataRepository(app).getSelectedPhysioMetric.first())
+    }
+
+    @Test fun staleCalorieKeysAreIgnoredWithoutChangingRetainedDailyMetrics() = runBlocking {
+        val app = RuntimeEnvironment.getApplication()
+        MainActivity.device_uid = "test-watch"
+        val repo = DataRepository(app)
+        repo.legacyDataStore().edit {
+            it[stringPreferencesKey("selected_physio_metric")] = "key_calories"
+            it[booleanPreferencesKey("enable_calories")] = true
+            it[doublePreferencesKey("key_calories")] = 250.0
+        }
+        val reopened = DataRepository(app)
+        assertEquals("key_exertion", reopened.getSelectedPhysioMetric.first())
+        val hour = java.time.Instant.EPOCH
+        reopened.updateDailyMetrics(hour, 123L, 6.7, 9.0)
+        reopened.updateDailyMetrics(hour.plusSeconds(3600), null, null, null)
+        assertEquals(DataRepository.DailyMetrics(hour.plusSeconds(3600), 123L, 6.7, 9.0),
+            reopened.latestDailyMetrics.value)
+        reopened.storeSelectedPhysioMetric("key_steps")
+        assertEquals("key_steps", DataRepository(app).getSelectedPhysioMetric.first())
     }
 
     @Test fun disabledOverridesOffWristAndStaleMeasurementsIncludingSteps() {

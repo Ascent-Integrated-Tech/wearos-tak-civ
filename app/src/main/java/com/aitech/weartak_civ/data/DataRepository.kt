@@ -1758,7 +1758,6 @@ class DataRepository(
     data class DailyHealthMetrics(
         @PrimaryKey val timestampHour: Instant,  // truncated to the top of the hour
         val steps: Long,
-        val calories: Double,
         val elevationMeters: Double
     )
 
@@ -1836,7 +1835,7 @@ class DataRepository(
         val restingHrBpm: Int?,          // baseline rest HR
         val exertion: Double?,           // 0..1 or null if unknown
         val exertionClass: String?,      // "LIGHT", "MODERATE", "VIGOROUS", "UNKNOWN"
-        val dailyMetrics: DailyMetrics?  // aggregated steps/calories/floors/elevation
+        val dailyMetrics: DailyMetrics?  // aggregated steps/floors/elevation
     )
 
     data class PhysioSnapshot(
@@ -1877,7 +1876,6 @@ class DataRepository(
     data class DailyMetrics(
         val timestampHour: Instant,
         val steps: Long       = 0L,
-        val calories: Double  = 0.0,
         val floors: Double    = 0.0,
         val elevationM: Double = 0.0
     )
@@ -1888,7 +1886,6 @@ class DataRepository(
     fun updateDailyMetrics(
         timestampHour: Instant,
         steps: Long?,
-        calories: Double?,
         floors: Double?,
         elevationM: Double?
     ) {
@@ -1896,7 +1893,6 @@ class DataRepository(
         _latestDailyMetrics.value = DailyMetrics(
             timestampHour = timestampHour,
             steps        = steps       ?: prev?.steps       ?: 0L,
-            calories     = calories    ?: prev?.calories    ?: 0.0,
             floors       = floors      ?: prev?.floors      ?: 0.0,
             elevationM   = elevationM  ?: prev?.elevationM  ?: 0.0
         )

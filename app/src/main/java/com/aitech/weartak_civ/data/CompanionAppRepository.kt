@@ -186,7 +186,6 @@ class CompanionAppRepository(private val context: Context) {
             exr    = ((phys.data.exertion ?: 0.0) * 100.0).toInt(), // 0..100
 
             stps = dm?.steps?.toInt() ?: 0,
-            cals = dm?.calories?.roundToInt() ?: 0,
             flrs = dm?.floors?.roundToInt() ?: 0,
             elev = dm?.elevationM?.roundToInt() ?: 0
         )
@@ -267,7 +266,6 @@ class CompanionAppRepository(private val context: Context) {
         val age: Int,           // user age (years)
         val exr: Int,           // exertion (0-100%)
         val stps: Int,          // steps     (cumulative daily taken)
-        val cals: Int,          // calories  (cumulative daily burned)
         val flrs: Int,          // floors    (cumulative daily climbed)
         val elev: Int,          // elevation (cumulative daily climbed meters)
     )
