@@ -4915,10 +4915,25 @@ class DataRepository(
     ) { phoneManaged, networkLocked -> phoneManaged || networkLocked }
         .distinctUntilChanged()
 
-    private suspend fun storeNetworkToggle(key: Preferences.Key<Boolean>, enabled: Boolean) {
+    suspend fun storeCommandNetworkToggle(
+        tak: Boolean,
+        enabled: Boolean,
+        policyRejection: () -> String?
+    ): String? = storeNetworkToggle(
+        if (tak) ENABLE_TAK_ENDPOINT else ENABLE_MULTICAST, enabled, policyRejection
+    )
+
+    private suspend fun storeNetworkToggle(
+        key: Preferences.Key<Boolean>,
+        enabled: Boolean,
+        policyRejection: (() -> String?)? = null
+    ): String? {
+        var rejection: String? = null
         context.dataStore.edit { prefs ->
-            if (prefs.networkTogglesLocked()) {
-                Log.w(TAG, "Network toggle rejected while settings are locked: ${key.name}")
+            rejection = if (prefs.networkTogglesLocked()) "network settings locked or phone-managed"
+                else policyRejection?.invoke()
+            if (rejection != null) {
+                Log.w(TAG, "Network toggle rejected: ${key.name}: $rejection")
                 return@edit
             }
             prefs[key] = enabled
@@ -4928,6 +4943,7 @@ class DataRepository(
                 prefs[MULTICAST_USER_CHOICE] = enabled
             }
         }
+        return rejection
     }
 
     private fun Preferences.networkTogglesLocked(): Boolean =

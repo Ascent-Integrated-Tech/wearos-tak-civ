@@ -34,7 +34,7 @@ object ChatCommandParser {
         val body = text.trim()
         if (!body.startsWith(PREFIX, ignoreCase = true)) return ChatCommandParse.NotACommand
         if (body.length > MAX_PDL_COMMAND_LENGTH) return ChatCommandParse.Malformed("too long")
-        val rest = body.substring(PREFIX.length)
+        val rest = body.substring(PREFIX.length).trimStart()
         val nameEnd = rest.indexOfFirst { it.isWhitespace() }.let { if (it < 0) rest.length else it }
         val name = rest.substring(0, nameEnd).lowercase()
         if (!NAME.matches(name)) return ChatCommandParse.Malformed("invalid command name")
@@ -42,6 +42,12 @@ object ChatCommandParser {
         val isP12Command = name == "usep12"
         if (body.length > if (isPdlCommand || isP12Command) MAX_PDL_COMMAND_LENGTH else MAX_LENGTH) {
             return ChatCommandParse.Malformed("too long")
+        }
+        if (name in NetworkMasterCommandHandler.COMMANDS) {
+            if (rest.substring(nameEnd).isNotBlank()) {
+                return ChatCommandParse.Malformed("$name takes no arguments")
+            }
+            return ChatCommandParse.Parsed(ChatCommand(name, emptyMap()))
         }
         if (isPdlCommand) {
             val value = rest.substring(nameEnd).trim()

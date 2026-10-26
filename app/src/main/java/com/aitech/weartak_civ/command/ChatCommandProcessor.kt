@@ -27,7 +27,9 @@ data class ChatCommandRequest(
 data class ChatCommandResult(
     val ok: Boolean,
     val message: String,
-    val afterReply: (suspend () -> Unit)? = null
+    val afterReply: (suspend () -> Unit)? = null,
+    /** Null means applied; a nonnull message reports an apply-time rejection. */
+    val afterSuccessfulReply: (suspend () -> String?)? = null
 )
 
 fun interface ChatCommandHandler {
@@ -47,17 +49,18 @@ class ChatCommandProcessor(
     private val reply: suspend (ChatCommandRequest, String) -> Unit,
     private val audit: (String) -> Unit,
     private val now: () -> Long = System::currentTimeMillis,
-    private val authorizer: ChatCommandAuthorizer = ChatCommandAuthorizer()
+    private val authorizer: ChatCommandAuthorizer = ChatCommandAuthorizer(),
+    private val confirmedReply: suspend (ChatCommandRequest, String) -> Boolean = { _, _ -> false }
 ) {
     /** Returns true when the message was a command and must not be shown as ordinary chat. */
     suspend fun handle(request: ChatCommandRequest): Boolean {
         val parsed = ChatCommandParser.parse(request.text)
         if (parsed is ChatCommandParse.NotACommand) return false
         com.aitech.weartak_civ.service.AppDiagnostics.record(com.aitech.weartak_civ.service.DiagnosticEvent.COMMAND)
-        if (!isEnabled()) return request.text.trimStart().let {
-            it.startsWith("${ChatCommandParser.PREFIX}usep12", true) ||
-                it.startsWith("${ChatCommandParser.PREFIX}setpdl", true)
-        }
+        if (!isEnabled()) return request.text.trimStart()
+            .substring(ChatCommandParser.PREFIX.length).trimStart().let {
+                it.startsWith("usep12", true) || it.startsWith("setpdl", true)
+            }
 
         if (request.messageId.isNullOrBlank() || request.senderUid.isBlank()) {
             audit("ignored command without message ID")
@@ -95,15 +98,42 @@ class ChatCommandProcessor(
         } catch (error: kotlinx.coroutines.CancellationException) {
             throw error
         } catch (error: Exception) {
+            audit("command ${command.name} execution failed: ${error.javaClass.simpleName}")
             ChatCommandResult(false, "Command failed")
         }
-        audit("command ${command.name} from ${request.senderCallsign}: ${if (result.ok) "ok" else "failed"}")
-        com.aitech.weartak_civ.service.AppDiagnostics.record(com.aitech.weartak_civ.service.DiagnosticEvent.COMMAND,
-            mapOf(com.aitech.weartak_civ.service.DiagnosticMetric.RESULT to if (result.ok) 1L else 0L))
+        val deferred = result.afterSuccessfulReply
+        if (deferred != null) {
+            try {
+                if (!confirmedReply(request, result.message)) {
+                    audit("command ${command.name} refused: originating warning write not accepted")
+                    recordOutcome(command, request, false)
+                    return
+                }
+                val rejection = deferred()
+                recordOutcome(command, request, rejection == null)
+                if (rejection != null) {
+                    audit("command ${command.name} apply rejected: $rejection")
+                    reply(request, rejection)
+                }
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                audit("command ${command.name} deferred execution failed: ${error.javaClass.simpleName}")
+                recordOutcome(command, request, false)
+            }
+            return
+        }
+        recordOutcome(command, request, result.ok)
         try {
             reply(request, result.message)
         } finally {
             result.afterReply?.invoke()
         }
+    }
+
+    private fun recordOutcome(command: ChatCommand, request: ChatCommandRequest, ok: Boolean) {
+        audit("command ${command.name} from ${request.senderCallsign}: ${if (ok) "ok" else "failed"}")
+        com.aitech.weartak_civ.service.AppDiagnostics.record(com.aitech.weartak_civ.service.DiagnosticEvent.COMMAND,
+            mapOf(com.aitech.weartak_civ.service.DiagnosticMetric.RESULT to if (ok) 1L else 0L))
     }
 }

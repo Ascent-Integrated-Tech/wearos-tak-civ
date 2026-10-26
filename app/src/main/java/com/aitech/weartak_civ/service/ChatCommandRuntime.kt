@@ -11,6 +11,7 @@ package com.aitech.weartak_civ.service
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.RestrictionsManager
 import android.content.Context
 import android.content.Intent
 import android.util.Log
@@ -31,6 +32,8 @@ import com.aitech.weartak_civ.command.SetLocationInputHandler
 import com.aitech.weartak_civ.command.SetDittoPdlHandler
 import com.aitech.weartak_civ.command.UseP12Handler
 import com.aitech.weartak_civ.command.ToggleDittoHandler
+import com.aitech.weartak_civ.command.NetworkMasterCommandHandler
+import com.aitech.weartak_civ.command.NetworkCommandPolicy
 import com.aitech.weartak_civ.WearTakApplication
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.takserver.TakServerId
@@ -88,10 +91,30 @@ object ChatCommandRuntime {
         val profileHandlers = ProfileHandler.COMMAND_KEYS.mapValues { (_, keys) ->
             ProfileHandler(keys, identityLocked, options, store)
         }
+        val policyRejection: (Boolean) -> String? = { tak ->
+            val manager = appContext.getSystemService(Context.RESTRICTIONS_SERVICE) as RestrictionsManager
+            NetworkCommandPolicy.rejection(manager.applicationRestrictions, tak)?.also {
+                Log.w(TAG, "Network command rejected: $it")
+            }
+        }
+        val networkHandler = NetworkMasterCommandHandler(
+            rejection = { tak ->
+                if (repo.networkSettingsLocked.first()) "network settings locked or phone-managed"
+                else policyRejection(tak)
+            },
+            apply = { tak, enabled ->
+                val reason = repo.storeCommandNetworkToggle(tak, enabled) { policyRejection(tak) }
+                if (reason == null) {
+                    if (tak) MainActivity.enableTakEndpoint = repo.getEnableTakEndpoint.first()
+                    else MainActivity.enableMulticastOnWifi = repo.getEnableMulticast.first()
+                }
+                reason
+            }
+        )
         val processor = ChatCommandProcessor(
             isEnabled = { repo.getEnableChatCommands.first() },
             allowedCallsigns = { repo.getChatCommandCallsigns.first() },
-            handlers = profileHandlers + mapOf(
+            handlers = profileHandlers + NetworkMasterCommandHandler.COMMANDS.associateWith { networkHandler } + mapOf(
                 "usep12" to UseP12Handler(
                     isLocked = { repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first() },
                     serverExists = { id -> repo.awaitTakServerList().any { it.serverId == id } },
@@ -141,7 +164,10 @@ object ChatCommandRuntime {
                     "Command acknowledgement route unavailable"
                 }
             },
-            audit = { Log.i(TAG, it) }
+            audit = { Log.i(TAG, it) },
+            confirmedReply = { request, text ->
+                ChatCommandReplies.sendConfirmedWrite(appContext, repo, request, text)
+            }
         )
         val mutex = kotlinx.coroutines.sync.Mutex()
         return { request -> commandScope.async {

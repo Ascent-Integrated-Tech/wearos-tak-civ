@@ -3951,6 +3951,36 @@ class TAKConnectService: Service() {
             return true
         }
 
+        internal suspend fun sendCommandReplyWritten(serverId: String, xml: String): Boolean =
+            withContext(Dispatchers.IO) {
+                if (dataRepository.isCompanionConnected.value || !isLicenseValid()) return@withContext false
+                val detail = takServerDetailsById[serverId] ?: return@withContext false
+                writeCommandReply(detail, xml)
+            }
+
+        internal fun writeCommandReply(detail: TakServerDetail, xml: String): Boolean {
+            synchronized(detail.runtime.lock) {
+                if (serviceStopping || !takEndpointEnabled || !detail.isEnabled ||
+                    detail.duplicateEndpointSuppressed || detail.runtime.terminated ||
+                    detail.connectionStatus.get() != TAK_SERVER_CONNECTED_COT_PORT) return false
+                val attempt = detail.runtime.currentAttempt ?: return false
+                val socket = detail.secureSocket ?: return false
+                if (detail.runtime.generation != attempt.generation || attempt.socket !== socket ||
+                    socket.isClosed || !socket.isConnected) return false
+                try {
+                    socket.outputStream.apply {
+                        write(xml.toByteArray(Charsets.UTF_8))
+                        flush()
+                    }
+                    return true
+                } catch (error: IOException) {
+                    Log.e(TAG, "Originating command acknowledgement write failed", error)
+                    handleSocketFailure(detail, attempt, socket, error)
+                    return false
+                }
+            }
+        }
+
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {
             if (dataRepository.isCompanionConnected.value) return
             if (isLicenseValid() && isNetworkConnected) {
