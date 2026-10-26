@@ -1121,6 +1121,40 @@ Existing explicit map, self-point, alert,
 identity and route-readiness refresh paths retain their own freshness/dispatch rules.
 Phone-managed constant reporting and Companion-exclusive routing remain authoritative.
 
+When Dynamic reporting has a trusted stationary fix (reported horizontal accuracy
+at most 25 m), WearTAK arms the low-power, one-shot significant-motion sensor when
+available. A trigger requests **one fresh fix**, without changing either cadence.
+The first usable post-request fix confirms movement only with horizontal accuracy
+at most 25 m and either reliable speed or accuracy-aware displacement:
+speed must be at least `max(1.0 m/s, 0.44704 m/s + 2 * speedAccuracy)` with reported
+speed accuracy, or distance from the stationary anchor must exceed
+`max(15 m, 2 * (anchorAccuracy + fixAccuracy))`. Both position accuracies must be
+at most 25 m. These are initial engineering thresholds for later controlled
+evaluation, not measured watch noise limits or statistical guarantees.
+
+A wrist gesture, desk bump, noisy/poor fix or six-second timeout leaves the saved
+stationary cadence and existing observation deadline intact, and re-arms the
+trigger. No second fix, automatic retry, provider fallback or moving-rate tail is
+added. Separate false triggers can each incur one bounded acquisition. Motion
+verification shares an already-pending high-accuracy interaction request when
+possible, without extending either deadline. Cached/pre-request/future and stale
+source-generation fixes cannot confirm motion. While this stationary gate is
+active, activity-only changes and speed expiry cannot silently switch to a moving
+cadence; raw activity remains available to health/CEP consumers.
+
+Confirmed movement releases the gate, using the saved moving rates and existing
+power/dock transforms. Displacement-only evidence never invents speed and overrides
+old zero-speed/STILL state until the next routine observation or its expected
+deadline plus six seconds. Routine observations continue throughout and can resolve
+movement independently. The stationary anchor is not moved by failed verification
+fixes. Without a significant-motion sensor, or if arming/re-arming fails, the gate
+is removed and the incumbent speed/activity behavior above remains in effect.
+Hardware can miss triggers and slow/indoor departure may not confirm on one fix;
+the existing scheduled observation is the safety net, not a guaranteed rapid
+departure detector. Constant/phone-managed rates, SOS/manual alerts, physiological
+alert refreshes and explicit interaction dispatch retain their existing semantics.
+No continuous accelerometer sampling or new location permission is added.
+
 The speed thresholds follow the [pinned public ATAK implementation](https://github.com/deptofdefense/AndroidTacticalAssaultKit-CIV/blob/889eee292c43d3d2eafdd1f2fbf378ad5cd89ecc/atak/ATAK/app/src/main/java/com/atakmap/comms/ReportingRate.java);
 WearTAK retains its own user rates and power policy, uses clamped interpolation
 without ATAK's normalization offset, and adds no distance, heading, altitude or
@@ -1543,7 +1577,7 @@ enabled; warnings, stale handling, expiry, guidance and opt-in Logging are
 unchanged. Deterministic equivalence/work tests establish less projection work,
 not a measured watch CPU or battery saving.
 
-New records identify the current hybrid as `hybrid-speed-activity-v2`; older
+New records identify the current hybrid as `hybrid-motion-confirm-v3`; older
 records keep their original policy, app version and source commit.
 `REPORT_POLICY` captures the initial/enabled snapshot and subsequent changes in
 selected intervals, activity or selection reason, not every speed tick. Its
@@ -1553,7 +1587,8 @@ selected intervals, activity or selection reason, not every speed tick. Its
 bicycling 4, in-vehicle 5, on-foot 6, Unknown 7.
 `REPORT_REASON` and `OBSERVATION_REASON` use explicit codes: Constant 0, alert 1,
 stationary speed 2, interpolated speed 3, vehicle speed 4, recognized activity
-profile 5, Unknown/unsupported activity fallback 6. Valid fresh speed owns
+profile 5, Unknown/unsupported activity fallback 6, motion-held stationary 7 and
+motion-confirmed moving 8. Valid fresh speed owns
 Dynamic reporting; activity owns acquisition and the invalid-speed reporting
 fallback. Tilting, bicycling and Unknown use the existing conservative maximum
 of foot/vehicle intervals, not the stationary interval.
@@ -1598,7 +1633,11 @@ are other=0, map=1, settings=2, chat=3, main=4. Battery dock codes are none=0,
 USB=1, wireless=2; sensor kind 1 is the HR listener; lock kind 1 is Stay awake
 (the location lock has no kind field). PLI result is accepted=1, rejected=0,
 exception=-1; connectivity result uses `TakServerConnStatusEvent` constants.
-Location acquisition kind codes are periodic=0, one-shot=1, interaction=2.
+Location acquisition kind codes are periodic=0, one-shot=1, interaction=2,
+motion-confirmation=3. `MOTION_CONFIRMATION.RESULT` is armed=0, triggered=1,
+confirmed=2, timeout=3, acquisition-failed=4, sensor-absent=5, arming-failed=6,
+not-confirmed=7; `ACTIVE` indicates the shared stationary latch. Location motion
+verification uses lock kind 2, with the same bounded timeout/duration semantics.
 Configuration source -1 means no selected input; an omitted battery percentage
 means it has not yet been observed.
 Speed validity result is usable=1, Unknown=0, without recording the speed.

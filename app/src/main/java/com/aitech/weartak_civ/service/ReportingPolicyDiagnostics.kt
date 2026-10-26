@@ -4,7 +4,8 @@ import com.aitech.weartak_civ.service.ActivityRecognitionService.Companion.Activ
 
 internal enum class DiagnosticSelectionReason(val code: Long) {
     CONSTANT(0), ALERT(1), SPEED_STATIONARY(2), SPEED_INTERPOLATED(3),
-    SPEED_VEHICLE(4), ACTIVITY_PROFILE(5), UNKNOWN_OR_UNSUPPORTED_ACTIVITY(6)
+    SPEED_VEHICLE(4), ACTIVITY_PROFILE(5), UNKNOWN_OR_UNSUPPORTED_ACTIVITY(6),
+    MOTION_STATIONARY(7), MOTION_CONFIRMED(8)
 }
 
 internal class ReportingPolicyDiagnostics {
@@ -26,6 +27,7 @@ internal class ReportingPolicyDiagnostics {
         reportSeconds: Int,
         observationSeconds: Int,
         recording: Boolean = true,
+        motion: StationaryMotionPolicy.State? = null,
     ): Map<DiagnosticMetric, Long>? {
         if (!recording) {
             previous = null
@@ -34,6 +36,8 @@ internal class ReportingPolicyDiagnostics {
         val observation = when {
             !dynamic -> DiagnosticSelectionReason.CONSTANT
             alerting -> DiagnosticSelectionReason.ALERT
+            motion?.stationary == true -> DiagnosticSelectionReason.MOTION_STATIONARY
+            (motion?.movingUntilNanos ?: 0) > 0 -> DiagnosticSelectionReason.MOTION_CONFIRMED
             else -> when (activity) {
                 ActivityRecognized.STILL, ActivityRecognized.ON_FOOT, ActivityRecognized.WALKING,
                 ActivityRecognized.RUNNING, ActivityRecognized.IN_VEHICLE ->
@@ -43,6 +47,8 @@ internal class ReportingPolicyDiagnostics {
         }
         val report = when {
             !dynamic || alerting -> observation
+            motion?.stationary == true -> DiagnosticSelectionReason.MOTION_STATIONARY
+            (motion?.movingUntilNanos ?: 0) > 0 -> DiagnosticSelectionReason.MOTION_CONFIRMED
             speedMps == null || !speedMps.isFinite() || speedMps < 0 -> observation
             speedMps < SpeedReportingPolicy.STATIONARY_SPEED_MPS -> DiagnosticSelectionReason.SPEED_STATIONARY
             speedMps >= SpeedReportingPolicy.VEHICLE_SPEED_MPS -> DiagnosticSelectionReason.SPEED_VEHICLE

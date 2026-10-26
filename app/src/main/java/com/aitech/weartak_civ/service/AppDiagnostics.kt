@@ -42,7 +42,8 @@ enum class DiagnosticEvent {
     CHAT, SENSOR, SERVICE_REQUEST, APP_EVENT, SUBSCRIBER_FAILURE, QUEUE_OVERFLOW,
     DISPLAY_INTERACTIVE, ROTATION_LISTENER, PROCESSING_WORK,
     NETWORK_LIFECYCLE, TAK_CONNECTION, TAK_CONNECTION_COUNTS, CONNECTIVITY_PATH,
-    SAMSUNG_HR_CONTINUOUS, STAY_AWAKE_AUTO_DISABLED, STAY_AWAKE_START_REFUSED
+    SAMSUNG_HR_CONTINUOUS, STAY_AWAKE_AUTO_DISABLED, STAY_AWAKE_START_REFUSED,
+    MOTION_CONFIRMATION
 }
 
 @Keep
@@ -70,7 +71,7 @@ internal data class DiagnosticRecord(
     val version: String = BuildConfig.VERSION_NAME,
     val versionCode: Int = BuildConfig.VERSION_CODE,
     val sourceCommit: String = BuildConfig.GIT_COMMIT_SHORT,
-    val policy: String = "hybrid-speed-activity-v2",
+    val policy: String = "hybrid-motion-confirm-v3",
     val wallTimeMs: Long,
     val elapsedMs: Long,
     val event: DiagnosticEvent,

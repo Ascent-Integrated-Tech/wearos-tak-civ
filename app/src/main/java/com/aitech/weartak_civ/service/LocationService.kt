@@ -18,6 +18,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.hardware.Sensor
+import android.hardware.SensorManager
+import android.hardware.TriggerEvent
+import android.hardware.TriggerEventListener
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
@@ -57,6 +61,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -67,7 +73,7 @@ import org.greenrobot.eventbus.ThreadMode
 import java.util.concurrent.atomic.AtomicBoolean
 
 class LocationService : Service() {
-    private enum class Acquisition { PERIODIC, ONE_SHOT, INTERACTION }
+    private enum class Acquisition { PERIODIC, ONE_SHOT, INTERACTION, MOTION_CONFIRMATION }
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val handler = Handler(Looper.getMainLooper())
     private var locationManager: LocationManager? = null
@@ -93,6 +99,15 @@ class LocationService : Service() {
     private var observationPowerPolicy = false to false
     private var wakeLock: PowerManager.WakeLock? = null
     private var wakeLockStartedMs = 0L
+    private var motionSensorManager: SensorManager? = null
+    private var motionTrigger: TriggerEventListener? = null
+    private var stationaryAnchor: Location? = null
+    private var motionVerifying = false
+    private var motionEpoch = 0L
+    private var motionWakeLock: PowerManager.WakeLock? = null
+    private var motionWakeLockStartedMs = 0L
+    private var motionRequestedNanos = 0L
+    private var sharedMotionRequest = false
     private var receiverRegistered = false
     private val binder = LocationServiceBinder()
 
@@ -104,6 +119,7 @@ class LocationService : Service() {
         val durationMillis: Long,
         val reasons: Set<PliRefreshReason>?,
         val cached: Boolean,
+        val motionEpoch: Long,
     )
 
     private val providerChanges = object : BroadcastReceiver() {
@@ -118,6 +134,7 @@ class LocationService : Service() {
         _instance = this
         locationManager = getSystemService(LOCATION_SERVICE) as LocationManager
         fusedClient = LocationServices.getFusedLocationProviderClient(this)
+        motionSensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
         startForegroundServiceCompat(notificationId = LOCATION_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW)
         ContextCompat.registerReceiver(this, providerChanges,
@@ -134,6 +151,7 @@ class LocationService : Service() {
             }
         }
         startAcquisitionActivityCollector()
+        startMotionCollectors()
     }
 
     private fun startAcquisitionActivityCollector() {
@@ -145,10 +163,210 @@ class LocationService : Service() {
                     recognized else ActivityRecognized.UNKNOWN
             }.distinctUntilChanged().collect {
                 activity = it
-                if (LocationAcquisitionPolicy.moving(it)) resetAcquisitionBackoff()
+                if (!dataRepository.stationaryMotion.state.value.stationary &&
+                    LocationAcquisitionPolicy.moving(it)) resetAcquisitionBackoff()
                 refreshPeriodicProfile()
             }
         }
+    }
+
+    private fun startMotionCollectors() {
+        scope.launch {
+            combine(dataRepository.getEnableLocationService, dataRepository.isAlerting,
+                dataRepository.phoneManagedSettingsLocked) { enabled, alerting, managed ->
+                enabled && !alerting && !managed
+            }.distinctUntilChanged().collect { allowed ->
+                if (!allowed) clearMotion()
+            }
+        }
+        scope.launch {
+            dataRepository.stationaryMotion.state.collectLatest { state ->
+                if (state.movingUntilNanos > 0) {
+                    delay(((state.movingUntilNanos - SystemClock.elapsedRealtimeNanos()) / 1_000_000L)
+                        .coerceAtLeast(0) + 1)
+                    dataRepository.stationaryMotion.expire(state, SystemClock.elapsedRealtimeNanos())
+                }
+            }
+        }
+    }
+
+    private suspend fun motionEligible(): Boolean =
+        dynamicReporting && isRunning.get() &&
+            currentInput?.let(::permitted) == true &&
+            dataRepository.getEnableLocationService.first() &&
+            dataRepository.getEnableDynamicReportingStrategy.first() &&
+            dataRepository.getLocationInput.first() == currentInput &&
+            dataRepository.manualAlertList.value.none { it.alertState == com.aitech.weartak_civ.data.DataRepository.AlertState.ALERT } &&
+            !dataRepository.phoneManagedSettingsLocked.first()
+
+    private fun recognizedActivity(): ActivityRecognized =
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
+            PackageManager.PERMISSION_GRANTED) activity else ActivityRecognized.UNKNOWN
+
+    private fun motionDiagnostic(result: Long) {
+        AppDiagnostics.record(DiagnosticEvent.MOTION_CONFIRMATION, mapOf(
+            DiagnosticMetric.RESULT to result,
+            DiagnosticMetric.ACTIVE to if (dataRepository.stationaryMotion.state.value.stationary) 1L else 0L
+        ))
+    }
+
+    private fun cancelMotionTrigger() {
+        val listener = motionTrigger
+        motionTrigger = null
+        if (listener == null) return
+        val canceled = try {
+            motionSensorManager?.cancelTriggerSensor(listener,
+                motionSensorManager?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)) == true
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Significant motion trigger permission revoked during cleanup", error)
+            false
+        }
+        if (!canceled) {
+            Log.w(TAG, "Could not cancel significant motion trigger; stale callbacks remain rejected")
+        }
+    }
+
+    private fun clearMotion() {
+        motionEpoch++
+        motionVerifying = false
+        cancelMotionTrigger()
+        cancelRequest(Acquisition.MOTION_CONFIRMATION)
+        stationaryAnchor = null
+        dataRepository.stationaryMotion.clear()
+    }
+
+    private fun armMotion(): Boolean {
+        if (motionVerifying || motionTrigger != null) return true
+        val manager = motionSensorManager
+        val sensor = manager?.getDefaultSensor(Sensor.TYPE_SIGNIFICANT_MOTION)
+        if (sensor == null) {
+            motionDiagnostic(5)
+            clearMotion()
+            return false
+        }
+        val epoch = motionEpoch
+        val requestGeneration = generation
+        val listener = object : TriggerEventListener() {
+            override fun onTrigger(event: TriggerEvent?) {
+                handler.post {
+                    if (motionTrigger !== this || epoch != motionEpoch || requestGeneration != generation) return@post
+                    motionTrigger = null
+                    motionVerifying = true
+                    scope.launch {
+                        if (epoch != motionEpoch || requestGeneration != generation) return@launch
+                        val eligible = motionEligible()
+                        if (epoch != motionEpoch || requestGeneration != generation) return@launch
+                        if (!eligible) {
+                            clearMotion()
+                            return@launch
+                        }
+                        motionDiagnostic(1)
+                        motionRequestedNanos = SystemClock.elapsedRealtimeNanos()
+                        val power = getSystemService(POWER_SERVICE) as PowerManager
+                        motionWakeLockStartedMs = SystemClock.elapsedRealtime()
+                        try {
+                            motionWakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "id:motion-confirm").apply {
+                                acquire(ACQUISITION_TIMEOUT_MILLIS)
+                            }
+                        } catch (error: SecurityException) {
+                            Log.w(TAG, "Cannot hold CPU for motion confirmation", error)
+                            motionDiagnostic(4)
+                            clearMotion()
+                            return@launch
+                        }
+                        AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK, mapOf(
+                            DiagnosticMetric.KIND to 2L, DiagnosticMetric.ACTIVE to 1L,
+                            DiagnosticMetric.DURATION_MS to ACQUISITION_TIMEOUT_MILLIS))
+                        requestUpdates(Acquisition.MOTION_CONFIRMATION)
+                    }
+                }
+            }
+        }
+        motionTrigger = listener
+        val armed = try {
+            checkNotNull(manager).requestTriggerSensor(listener, sensor)
+        } catch (error: SecurityException) {
+            Log.w(TAG, "Significant motion trigger permission unavailable", error)
+            false
+        }
+        if (!armed) {
+            Log.w(TAG, "Significant motion trigger arming failed; retaining incumbent reporting policy")
+            motionDiagnostic(6)
+            clearMotion()
+            return false
+        }
+        motionDiagnostic(0)
+        return true
+    }
+
+    private suspend fun finishMotion() {
+        val finishingEpoch = motionEpoch
+        cancelRequest(Acquisition.MOTION_CONFIRMATION)
+        motionVerifying = false
+        val eligible = motionEligible()
+        if (finishingEpoch != motionEpoch) return
+        if (!eligible) {
+            clearMotion()
+        } else if (dataRepository.stationaryMotion.state.value.stationary) {
+            armMotion()
+        }
+    }
+
+    private suspend fun resolveMotion(location: Location, ordinary: Boolean, fresh: Boolean): Boolean {
+        val fixEpoch = motionEpoch
+        val fixGeneration = generation
+        val eligible = motionEligible()
+        if (fixEpoch != motionEpoch || fixGeneration != generation) return false
+        if (!eligible) {
+            if (dataRepository.stationaryMotion.state.value != StationaryMotionPolicy.State()) clearMotion()
+            return false
+        }
+        val policy = dataRepository.stationaryMotion
+        val accuracy = location.accuracy.toDouble().takeIf { location.hasAccuracy() }
+        val speed = location.speed.toDouble().takeIf { location.hasSpeed() }
+        val uncertainty = location.speedAccuracyMetersPerSecond.toDouble().takeIf { location.hasSpeedAccuracy() }
+        val recognized = recognizedActivity()
+        if (policy.state.value.stationary) {
+            val anchor = stationaryAnchor
+            if (fresh && (!motionVerifying || location.elapsedRealtimeNanos >= motionRequestedNanos) &&
+                StationaryMotionPolicy.moved(accuracy, speed, uncertainty,
+                    anchor?.distanceTo(location)?.toDouble(), anchor?.accuracy?.toDouble())) {
+                val resolvingEpoch = motionEpoch
+                val resolvingGeneration = generation
+                val movingActivity = if (LocationAcquisitionPolicy.moving(recognized)) recognized else ActivityRecognized.UNKNOWN
+                val desired = SpeedReportingPolicy.activityIntervalSeconds(movingActivity, false,
+                    dataRepository.getWhileAlertingReportingInterval.first(),
+                    dataRepository.getOnFootReportingInterval.first(), dataRepository.getVehicleReportingInterval.first(),
+                    dataRepository.getStationaryReportingInterval.first())
+                if (!motionEligible() || resolvingEpoch != motionEpoch || resolvingGeneration != generation) return false
+                val interval = SpeedReportingPolicy.observationIntervalSeconds(true, desired,
+                    CotDispatchService.actualReportingIntervalSecs, PowerManagerService.observationPowerThrottled,
+                    PowerManagerService.observationDockThrottled)
+                cancelMotionTrigger()
+                stationaryAnchor = null
+                CotDispatchService.desiredLocationObservationIntervalSecs = desired
+                cancelRequest(Acquisition.MOTION_CONFIRMATION)
+                motionVerifying = false
+                policy.confirm(SystemClock.elapsedRealtimeNanos() +
+                    (interval * 1_000L + ACQUISITION_TIMEOUT_MILLIS) * 1_000_000L,
+                    StationaryMotionPolicy.reliableSpeed(speed, uncertainty))
+                motionDiagnostic(2)
+                return true
+            }
+            motionDiagnostic(7)
+            if (ordinary && StationaryMotionPolicy.usableAccuracy(accuracy) &&
+                LocationAcquisitionPolicy.stationary(speed, recognized)) stationaryAnchor = Location(location)
+            return false
+        }
+        if (ordinary) {
+            policy.clear()
+            if (StationaryMotionPolicy.usableAccuracy(accuracy) &&
+                LocationAcquisitionPolicy.stationary(speed, recognized)) {
+                stationaryAnchor = Location(location)
+                if (armMotion()) policy.hold()
+            }
+        }
+        return false
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int) = START_NOT_STICKY
@@ -161,7 +379,7 @@ class LocationService : Service() {
                 PackageManager.PERMISSION_GRANTED)
     }
 
-    private fun inputAvailable(): Boolean {
+    private fun inputAvailable(updateStatus: Boolean = true): Boolean {
         val input = currentInput
         val manager = locationManager
         val status = try {
@@ -182,7 +400,7 @@ class LocationService : Service() {
             Log.w(TAG, "Selected input removed during availability check", error)
             LocationInputStatus.UNAVAILABLE
         }
-        dataRepository.locationInputStatus.value = status
+        if (updateStatus) dataRepository.locationInputStatus.value = status
         if (status != LocationInputStatus.ACQUIRING)
             Log.i(TAG, "Selected location input ${input?.provider} is $status; no fallback")
         return status == LocationInputStatus.ACQUIRING
@@ -192,8 +410,10 @@ class LocationService : Service() {
         fixConsumers.remove(kind)
         requestVersions[kind] = (requestVersions[kind] ?: 0L) + 1L
         timeouts.remove(kind)?.let(handler::removeCallbacks)
-        val listener = listeners.remove(kind)
-        val callback = fusedCallbacks.remove(kind)
+        val shared = kind == Acquisition.MOTION_CONFIRMATION && sharedMotionRequest
+        if (kind == Acquisition.MOTION_CONFIRMATION) sharedMotionRequest = false
+        val listener = listeners.remove(kind)?.takeUnless { shared }
+        val callback = fusedCallbacks.remove(kind)?.takeUnless { shared }
         if (listener != null || callback != null) AppDiagnostics.record(DiagnosticEvent.LOCATION_STOPPED,
             mapOf(DiagnosticMetric.KIND to kind.ordinal.toLong()))
         try {
@@ -218,9 +438,22 @@ class LocationService : Service() {
             }
             wakeLock = null
         }
+        if (kind == Acquisition.MOTION_CONFIRMATION) {
+            motionWakeLock?.let { lock ->
+                val held = lock.isHeld
+                if (held) lock.release()
+                AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK, mapOf(
+                    DiagnosticMetric.KIND to 2L, DiagnosticMetric.ACTIVE to 0L,
+                    DiagnosticMetric.RESULT to if (held) 1L else 0L,
+                    DiagnosticMetric.DURATION_MS to (SystemClock.elapsedRealtime() - motionWakeLockStartedMs)
+                        .coerceIn(0, ACQUISITION_TIMEOUT_MILLIS)))
+            }
+            motionWakeLock = null
+        }
     }
 
     private fun cancelRequests() {
+        clearMotion()
         generation++
         lastCompletedFix = null
         lastNormalFix = null
@@ -235,6 +468,20 @@ class LocationService : Service() {
             fixCompletionMutex.withLock {
                 if (!dataRepository.getEnableLocationService.first() ||
                     first.generation != generation || currentInput != first.input || !permitted(first.input)) return@withLock
+                val motionOnly = completions.all { it.kind == Acquisition.MOTION_CONFIRMATION }
+                if (motionOnly && first.motionEpoch != motionEpoch) return@withLock
+                val ordinary = completions.any { it.kind == Acquisition.PERIODIC || it.kind == Acquisition.ONE_SHOT }
+                val confirmed = resolveMotion(location, ordinary, completions.none { it.cached })
+                if (first.generation != generation || currentInput != first.input ||
+                    (motionOnly && first.motionEpoch != motionEpoch)) return@withLock
+                if (motionOnly && !confirmed) {
+                    completions.forEach { completion ->
+                        AppDiagnostics.record(DiagnosticEvent.LOCATION_ACCEPTED, completion.diagnosticContext +
+                            (DiagnosticMetric.DURATION_MS to completion.durationMillis))
+                    }
+                    finishMotion()
+                    return@withLock
+                }
                 val newFix = lastCompletedFix != location
                 if (newFix) dataRepository.storeLatestLocation(location)
                 if (!dataRepository.isCurrentLocationInput(location) || first.generation != generation ||
@@ -251,9 +498,10 @@ class LocationService : Service() {
                     AppDiagnostics.record(DiagnosticEvent.LOCATION_ACCEPTED, completion.diagnosticContext +
                         (DiagnosticMetric.DURATION_MS to completion.durationMillis))
                 }
-                val normal = completions.any { it.kind != Acquisition.INTERACTION } && lastNormalFix != location
+                val normal = completions.any { it.kind == Acquisition.PERIODIC || it.kind == Acquisition.ONE_SHOT } &&
+                    lastNormalFix != location
                 if (normal) lastNormalFix = lastCompletedFix
-                if (normal || completions.any { it.kind == Acquisition.ONE_SHOT }) {
+                if (normal || confirmed || completions.any { it.kind == Acquisition.ONE_SHOT }) {
                     if (dynamicReporting) scheduleNextDynamicObservation()
                     else if (wasBackedOff) scheduleConstantObservation()
                 }
@@ -277,6 +525,8 @@ class LocationService : Service() {
                 completions.firstOrNull { it.reasons != null }?.reasons?.let { reasons ->
                     EventBus.getDefault().post(InteractionLocationRcvd(location, reasons))
                 }
+                if (completions.any { it.kind == Acquisition.MOTION_CONFIRMATION && it.motionEpoch == motionEpoch })
+                    finishMotion()
             }
         }
     }
@@ -291,14 +541,26 @@ class LocationService : Service() {
             requestVersion != (requestVersions[kind] ?: 0L)) return
         if (!enabled) {
             cancelRequest(kind)
+            if (kind == Acquisition.MOTION_CONFIRMATION) clearMotion()
             dataRepository.locationInputStatus.value = LocationInputStatus.OFF
             return
         }
-        if (!inputAvailable()) return
+        if (!inputAvailable(kind != Acquisition.MOTION_CONFIRMATION)) {
+            if (kind == Acquisition.MOTION_CONFIRMATION) finishMotion()
+            return
+        }
         if (input == null) return
         val manager = locationManager ?: return
-        val requestedNanos = SystemClock.elapsedRealtimeNanos()
+        val requestedNanos = if (kind == Acquisition.MOTION_CONFIRMATION) motionRequestedNanos
+            else SystemClock.elapsedRealtimeNanos()
+        if (kind == Acquisition.MOTION_CONFIRMATION &&
+            SystemClock.elapsedRealtimeNanos() - requestedNanos >= ACQUISITION_TIMEOUT_MILLIS * 1_000_000L) {
+            motionDiagnostic(3)
+            finishMotion()
+            return
+        }
         val lowPower = input == LocationInput.FUSED && kind != Acquisition.INTERACTION &&
+            kind != Acquisition.MOTION_CONFIRMATION &&
             stationary()
         if (kind == Acquisition.PERIODIC) periodicLowPower = lowPower
         val priority = if (lowPower) Priority.PRIORITY_BALANCED_POWER_ACCURACY else Priority.PRIORITY_HIGH_ACCURACY
@@ -307,6 +569,7 @@ class LocationService : Service() {
             Acquisition.PERIODIC -> Long.MAX_VALUE
             Acquisition.ONE_SHOT -> requestedNanos + ACQUISITION_TIMEOUT_MILLIS * 1_000_000L
             Acquisition.INTERACTION -> requestedNanos + InteractionPliRefreshGate.TIMEOUT_MILLIS * 1_000_000L
+            Acquisition.MOTION_CONFIRMATION -> requestedNanos + ACQUISITION_TIMEOUT_MILLIS * 1_000_000L
         }
         val diagnosticContext = mapOf(
             DiagnosticMetric.SOURCE to input.ordinal.toLong(),
@@ -336,7 +599,8 @@ class LocationService : Service() {
             } else null
             if (kind != Acquisition.PERIODIC) cancelRequest(kind)
             return FixCompletion(kind, requestGeneration, input, diagnosticContext,
-                (nowNanos - requestedNanos) / 1_000_000L, reasons, location.elapsedRealtimeNanos < requestedNanos)
+                (nowNanos - requestedNanos) / 1_000_000L, reasons, location.elapsedRealtimeNanos < requestedNanos,
+                motionEpoch)
         }
         val listener = object : LocationListener {
             override fun onLocationChanged(location: Location) {
@@ -365,6 +629,9 @@ class LocationService : Service() {
         }
         if (input == LocationInput.FUSED) fusedCallbacks[kind] = fusedCallback
         else listeners[kind] = listener
+        val shareInteraction = kind == Acquisition.MOTION_CONFIRMATION &&
+            fixConsumers.containsKey(Acquisition.INTERACTION)
+        if (kind == Acquisition.MOTION_CONFIRMATION) sharedMotionRequest = shareInteraction
         if (kind != Acquisition.PERIODIC) {
             val timeout = Runnable {
                 if (!isRunning.get() || requestGeneration != generation ||
@@ -376,6 +643,7 @@ class LocationService : Service() {
                     if (!isRunning.get() || requestGeneration != generation ||
                         completedVersion != requestVersions[kind]) return@launch
                     if (!serviceEnabled || !permitted(input)) {
+                        if (kind == Acquisition.MOTION_CONFIRMATION) clearMotion()
                         dataRepository.locationInputStatus.value = if (serviceEnabled)
                             LocationInputStatus.PERMISSION_REQUIRED else LocationInputStatus.OFF
                         return@launch
@@ -383,13 +651,23 @@ class LocationService : Service() {
                     Log.i(TAG, "$kind ${input.provider} request timed out without a usable fix")
                     AppDiagnostics.record(DiagnosticEvent.LOCATION_TIMEOUT, diagnosticContext +
                         (DiagnosticMetric.DURATION_MS to (SystemClock.elapsedRealtimeNanos() - requestedNanos) / 1_000_000L))
+                    if (kind == Acquisition.MOTION_CONFIRMATION) {
+                        motionDiagnostic(3)
+                        finishMotion()
+                        return@launch
+                    }
                     dataRepository.locationInputStatus.value = LocationInputStatus.REQUEST_FAILED
                     if (kind == Acquisition.ONE_SHOT) observationFailed()
                 }
             }
             timeouts[kind] = timeout
             handler.postDelayed(timeout, if (kind == Acquisition.INTERACTION)
-                InteractionPliRefreshGate.TIMEOUT_MILLIS else ACQUISITION_TIMEOUT_MILLIS)
+                InteractionPliRefreshGate.TIMEOUT_MILLIS else
+                ((deadlineNanos - SystemClock.elapsedRealtimeNanos()) / 1_000_000L).coerceAtLeast(0))
+        }
+        if (shareInteraction) {
+            AppDiagnostics.record(DiagnosticEvent.LOCATION_COALESCED, diagnosticContext)
+            return
         }
         try {
             if (input == LocationInput.FUSED) {
@@ -401,7 +679,7 @@ class LocationService : Service() {
                     .setWaitForAccurateLocation(!lowPower)
                     .apply {
                         if (kind != Acquisition.PERIODIC) setDurationMillis(
-                            if (kind == Acquisition.INTERACTION) InteractionPliRefreshGate.TIMEOUT_MILLIS else ACQUISITION_TIMEOUT_MILLIS)
+                            ((deadlineNanos - SystemClock.elapsedRealtimeNanos()) / 1_000_000L).coerceAtLeast(1))
                     }
                     .build()
                 client.requestLocationUpdates(request, fusedCallback, Looper.getMainLooper())
@@ -413,6 +691,11 @@ class LocationService : Service() {
                             Log.w(TAG, "Fused location request failed; no fallback", error)
                             AppDiagnostics.record(DiagnosticEvent.LOCATION_FAILURE, diagnosticContext)
                             cancelRequest(kind)
+                            if (kind == Acquisition.MOTION_CONFIRMATION) {
+                                motionDiagnostic(4)
+                                finishMotion()
+                                return@launch
+                            }
                             dataRepository.locationInputStatus.value = when {
                                 !serviceEnabled -> LocationInputStatus.OFF
                                 error is SecurityException || !permitted(input) -> LocationInputStatus.PERMISSION_REQUIRED
@@ -426,6 +709,7 @@ class LocationService : Service() {
                         if (fusedCallbacks[kind] !== fusedCallback || requestGeneration != generation) return@addOnCanceledListener
                         Log.i(TAG, "$kind fused request cancelled")
                         cancelRequest(kind)
+                        if (kind == Acquisition.MOTION_CONFIRMATION) scope.launch { finishMotion() }
                         if (dynamicReporting && kind == Acquisition.ONE_SHOT)
                             scope.launch { scheduleNextDynamicObservation() }
                     }
@@ -437,12 +721,21 @@ class LocationService : Service() {
             AppDiagnostics.record(DiagnosticEvent.LOCATION_FAILURE, diagnosticContext +
                 (DiagnosticMetric.RESULT to 1L))
             cancelRequest(kind)
+            if (kind == Acquisition.MOTION_CONFIRMATION) {
+                clearMotion()
+                return
+            }
             dataRepository.locationInputStatus.value = LocationInputStatus.PERMISSION_REQUIRED
         } catch (error: IllegalArgumentException) {
             Log.w(TAG, "Selected input unavailable: ${input.provider}", error)
             AppDiagnostics.record(DiagnosticEvent.LOCATION_FAILURE, diagnosticContext +
                 (DiagnosticMetric.RESULT to 2L))
             cancelRequest(kind)
+            if (kind == Acquisition.MOTION_CONFIRMATION) {
+                motionDiagnostic(4)
+                finishMotion()
+                return
+            }
             dataRepository.locationInputStatus.value = LocationInputStatus.UNAVAILABLE
             if (kind == Acquisition.ONE_SHOT) observationFailed()
         }
@@ -536,15 +829,15 @@ class LocationService : Service() {
     }
 
     private fun stationary(): Boolean {
+        if (dataRepository.stationaryMotion.state.value.stationary) return true
+        if (dataRepository.stationaryMotion.state.value.movingUntilNanos > SystemClock.elapsedRealtimeNanos()) return false
         val speed = speedObservation.value?.let { observation ->
             val location = observation.location
             SpeedReportingPolicy.validSpeed(location.speed.toDouble().takeIf { location.hasSpeed() },
                 location.elapsedRealtimeNanos, SystemClock.elapsedRealtimeNanos(),
                 dataRepository.isCurrentLocationInput(location), observation.validUntilElapsedNanos)
         }
-        val permittedActivity = if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
-            PackageManager.PERMISSION_GRANTED) activity else ActivityRecognized.UNKNOWN
-        return LocationAcquisitionPolicy.stationary(speed, permittedActivity)
+        return LocationAcquisitionPolicy.stationary(speed, recognizedActivity())
     }
 
     private suspend fun refreshPeriodicProfile() {

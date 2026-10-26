@@ -114,7 +114,7 @@ class AppDiagnosticsTest {
         val events = JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
             .filter { it.asJsonObject["event"].asString == "REPORT_POLICY" }
         assertEquals(3, events.size)
-        assertTrue(events.all { it.asJsonObject["policy"].asString == "hybrid-speed-activity-v2" })
+        assertTrue(events.all { it.asJsonObject["policy"].asString == "hybrid-motion-confirm-v3" })
         val root = temporary.newFolder()
         val journal = DiagnosticJournal({ root })
         journal.append(sample(1).copy(policy = "dynamic-speed-observation-v1",
@@ -124,7 +124,7 @@ class AppDiagnosticsTest {
         assertEquals("dynamic-speed-observation-v1", preserved[0].asJsonObject["policy"].asString)
         assertEquals("old-build", preserved[0].asJsonObject["version"].asString)
         assertEquals("old-source", preserved[0].asJsonObject["sourceCommit"].asString)
-        assertEquals("hybrid-speed-activity-v2", preserved[1].asJsonObject["policy"].asString)
+        assertEquals("hybrid-motion-confirm-v3", preserved[1].asJsonObject["policy"].asString)
     }
 
     @Test fun connectivityTransitionsKeepEveryDistinctStateWithoutFiveSecondCoalescing() = runBlocking {
