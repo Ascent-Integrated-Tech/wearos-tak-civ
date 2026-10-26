@@ -417,9 +417,17 @@ class LocationService : Service() {
         if (listener != null || callback != null) AppDiagnostics.record(DiagnosticEvent.LOCATION_STOPPED,
             mapOf(DiagnosticMetric.KIND to kind.ordinal.toLong()))
         try {
-            listener?.let { locationManager?.removeUpdates(it) }
-            callback?.let {
-                fusedClient?.removeLocationUpdates(it)?.addOnFailureListener { error ->
+            listener?.let { registered -> locationManager?.let { manager ->
+                DiagnosticResources.release(DiagnosticResource.LOCATION_NATIVE, registered) { manager.removeUpdates(registered) }
+            } }
+            callback?.let { registered ->
+                DiagnosticResources.note(DiagnosticResource.LOCATION_FUSED, registered, ResourceAction.LOCAL_DISABLED)
+                DiagnosticResources.request(DiagnosticResource.LOCATION_FUSED, registered, removal = true) {
+                    fusedClient?.removeLocationUpdates(registered)
+                }?.addOnSuccessListener {
+                    DiagnosticResources.end(DiagnosticResource.LOCATION_FUSED, registered)
+                }?.addOnFailureListener { error ->
+                    DiagnosticResources.note(DiagnosticResource.LOCATION_FUSED, registered, ResourceAction.UNCERTAIN)
                     Log.w(TAG, "Could not remove $kind fused request; late callbacks remain rejected", error)
                 }
             }
@@ -430,7 +438,8 @@ class LocationService : Service() {
         if (kind == Acquisition.ONE_SHOT) {
             wakeLock?.let { lock ->
                 val held = lock.isHeld
-                if (held) lock.release()
+                if (held) DiagnosticResources.release(DiagnosticResource.LOCATION_CPU, lock) { lock.release() }
+                else DiagnosticResources.end(DiagnosticResource.LOCATION_CPU, lock, expired = true)
                 AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK, mapOf(
                     DiagnosticMetric.ACTIVE to 0L, DiagnosticMetric.RESULT to if (held) 1L else 0L,
                     DiagnosticMetric.DURATION_MS to (SystemClock.elapsedRealtime() - wakeLockStartedMs)
@@ -682,8 +691,18 @@ class LocationService : Service() {
                             ((deadlineNanos - SystemClock.elapsedRealtimeNanos()) / 1_000_000L).coerceAtLeast(1))
                     }
                     .build()
-                client.requestLocationUpdates(request, fusedCallback, Looper.getMainLooper())
+                DiagnosticResources.request(DiagnosticResource.LOCATION_FUSED, fusedCallback) {
+                    client.requestLocationUpdates(request, fusedCallback, Looper.getMainLooper())
+                }.addOnSuccessListener {
+                    DiagnosticResources.begin(DiagnosticResource.LOCATION_FUSED, fusedCallback,
+                        periodUs = intervalMillis.coerceAtLeast(1_000L) * 1000)
+                    if (fusedCallbacks[kind] !== fusedCallback || requestGeneration != generation) {
+                        DiagnosticResources.note(DiagnosticResource.LOCATION_FUSED, fusedCallback, ResourceAction.STALE_CALLBACK)
+                        DiagnosticResources.note(DiagnosticResource.LOCATION_FUSED, fusedCallback, ResourceAction.UNCERTAIN)
+                    }
+                }
                     .addOnFailureListener { error ->
+                        DiagnosticResources.note(DiagnosticResource.LOCATION_FUSED, fusedCallback, ResourceAction.FAILED)
                         scope.launch {
                             val serviceEnabled = dataRepository.getEnableLocationService.first()
                             if (!isRunning.get() || fusedCallbacks[kind] !== fusedCallback ||
@@ -706,6 +725,7 @@ class LocationService : Service() {
                         }
                     }
                     .addOnCanceledListener {
+                        DiagnosticResources.note(DiagnosticResource.LOCATION_FUSED, fusedCallback, ResourceAction.FAILED)
                         if (fusedCallbacks[kind] !== fusedCallback || requestGeneration != generation) return@addOnCanceledListener
                         Log.i(TAG, "$kind fused request cancelled")
                         cancelRequest(kind)
@@ -714,7 +734,9 @@ class LocationService : Service() {
                             scope.launch { scheduleNextDynamicObservation() }
                     }
             } else {
-                manager.requestLocationUpdates(input.provider, intervalMillis, 0f, listener, Looper.getMainLooper())
+                DiagnosticResources.acquire(DiagnosticResource.LOCATION_NATIVE, listener, periodUs = intervalMillis * 1000) {
+                    manager.requestLocationUpdates(input.provider, intervalMillis, 0f, listener, Looper.getMainLooper())
+                }
             }
         } catch (error: SecurityException) {
             Log.w(TAG, "Selected input permission revoked: ${input.provider}", error)
@@ -896,7 +918,11 @@ class LocationService : Service() {
                     PowerManagerService.locationObservationIntervalSeconds(false) * 1_000L))
                 if (!inputAvailable()) return@launch
                 val power = getSystemService(POWER_SERVICE) as PowerManager
-                wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "id:gps").apply { acquire(6_000) }
+                wakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "id:gps").apply {
+                    DiagnosticResources.acquire(DiagnosticResource.LOCATION_CPU, this, timeoutMs = 6_000) {
+                        acquire(6_000)
+                    }
+                }
                 wakeLockStartedMs = SystemClock.elapsedRealtime()
                 AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK, mapOf(
                     DiagnosticMetric.ACTIVE to 1L, DiagnosticMetric.DURATION_MS to 6_000L))

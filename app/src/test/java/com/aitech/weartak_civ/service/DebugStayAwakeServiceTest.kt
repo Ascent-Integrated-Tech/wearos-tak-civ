@@ -58,6 +58,7 @@ class DebugStayAwakeServiceTest {
     @After
     fun tearDown() {
         controller.destroy()
+        DiagnosticResources.stop()
     }
 
     @Test
@@ -411,6 +412,8 @@ class DebugStayAwakeServiceTest {
 
     private fun verifyAutoOff(trigger: Intent) {
         val app = RuntimeEnvironment.getApplication()
+        val resources = mutableListOf<Map<DiagnosticMetric, Long>>()
+        DiagnosticResources.start { _, metrics -> resources.add(metrics); true }
         val receiversBefore = conditionReceiverCount()
         start()
         shadowOf(Looper.getMainLooper()).idle()
@@ -449,6 +452,14 @@ class DebugStayAwakeServiceTest {
         assertFalse(DebugStayAwakePreferences(service).enabled)
         assertTrue(shadowOf(service).isStoppedBySelf)
         assertTrue(shadowOf(service).isForegroundStopped)
+        listOf(DiagnosticResource.DEBUG_CPU, DiagnosticResource.DEBUG_SCREEN,
+            DiagnosticResource.DEBUG_WIFI, DiagnosticResource.DEBUG_NETWORK).forEach { resource ->
+            val records = resources.filter { it[DiagnosticMetric.RESOURCE_ID] == resource.code }
+            val begin = records.single { it[DiagnosticMetric.ACTION] == ResourceAction.BEGIN.code }
+            val end = records.single { it[DiagnosticMetric.ACTION] == ResourceAction.END.code }
+            assertEquals(begin[DiagnosticMetric.TOKEN], end[DiagnosticMetric.TOKEN])
+            assertEquals(begin.getValue(DiagnosticMetric.ACTIVE) - 1, end[DiagnosticMetric.ACTIVE])
+        }
 
         broadcast(Intent(Intent.ACTION_POWER_CONNECTED))
         setPlugged(BatteryManager.BATTERY_PLUGGED_USB)

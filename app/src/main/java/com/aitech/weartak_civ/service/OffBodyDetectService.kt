@@ -86,7 +86,10 @@ class OffBodyDetectService: Service() {
         offBodySensor = sensorManager.getDefaultSensor(Sensor.TYPE_LOW_LATENCY_OFFBODY_DETECT)
         if (null != offBodySensor) {
             lastObservationAtNanos = Long.MIN_VALUE
-            sensorRegistered = sensorManager.registerListener(sensorEventListener, offBodySensor, SensorManager.SENSOR_DELAY_NORMAL)
+            sensorRegistered = DiagnosticResources.acquire(DiagnosticResource.OFF_BODY, sensorEventListener,
+                periodUs = 200_000, successful = { it }) {
+                sensorManager.registerListener(sensorEventListener, offBodySensor, SensorManager.SENSOR_DELAY_NORMAL)
+            }
             if (sensorRegistered) Log.d(TAG, "OffBody Sensor callback registered")
             else Log.e(TAG, "OffBody listener registration refused; worn state unknown")
         } else {
@@ -96,7 +99,9 @@ class OffBodyDetectService: Service() {
 
     fun stopOffBodySensor() {
         if (sensorRegistered) {
-            sensorManager.unregisterListener(sensorEventListener)
+            DiagnosticResources.release(DiagnosticResource.OFF_BODY, sensorEventListener) {
+                sensorManager.unregisterListener(sensorEventListener)
+            }
             sensorRegistered = false
         }
     }

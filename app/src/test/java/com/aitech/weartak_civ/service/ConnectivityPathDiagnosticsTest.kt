@@ -45,7 +45,9 @@ class ConnectivityPathDiagnosticsTest {
         every { plugins.connectivityToggles } returns MutableStateFlow(emptyMap())
         every { plugins.outboundCotReadyRoutes } returns MutableStateFlow(emptyMap())
         val events = mutableListOf<Map<DiagnosticMetric, Long>>()
-        ConnectivityPathDiagnostics(backgroundScope, enabled, repo, plugins, events::add)
+        var powerSnapshots = 0
+        ConnectivityPathDiagnostics(backgroundScope, enabled, repo, plugins, events::add,
+            powerSnapshot = { powerSnapshots++ })
         runCurrent()
         assertTrue(events.isEmpty())
         enabled.value = true
@@ -62,6 +64,7 @@ class ConnectivityPathDiagnosticsTest {
         advanceTimeBy(300_000)
         runCurrent()
         assertEquals(19, events.size)
+        assertEquals(1, powerSnapshots)
         enabled.value = false
         runCurrent()
         charging.value = false
@@ -69,5 +72,6 @@ class ConnectivityPathDiagnosticsTest {
         advanceTimeBy(600_000)
         runCurrent()
         assertEquals(19, events.size)
+        assertEquals(1, powerSnapshots)
     }
 }

@@ -107,6 +107,7 @@ class BatteryPowerObserver(context: Context, private val dataRepository: DataRep
             val dockChanged = dockType != lastDockType
             val chargingChanged = (chargingOrFull != lastChargingOrFull)
             val pctChanged = batteryPct != lastBatteryPct
+            AppDiagnostics.powerBatteryCallback(dockChanged || chargingChanged)
             if (!dockChanged && !pctChanged && !chargingChanged) return
 
             lastDockType = dockType

@@ -326,6 +326,7 @@ class SkinTempService : Service() {
         }
 
         override fun onConnectionEnded() {
+            noteSamsungCleanupUncertain()
             Log.w(TAG, "SkinTempService onConnectionEnded(): HealthPlatform DISCONNECTED")
             // Clean up when disconnected
             stopSkinTracker(true)
@@ -335,6 +336,13 @@ class SkinTempService : Service() {
             AppDiagnostics.updateSamsungHrContinuousRunning(false)
             stopEmitLoop()
         }
+    }
+
+    private fun noteSamsungCleanupUncertain() {
+        if (::skinTracker.isInitialized) DiagnosticResources.note(DiagnosticResource.SAMSUNG_SKIN, skinTracker, ResourceAction.UNCERTAIN, onlyIfActive = true)
+        if (::spo2Tracker.isInitialized) DiagnosticResources.note(DiagnosticResource.SAMSUNG_SPO2, spo2Tracker, ResourceAction.UNCERTAIN, onlyIfActive = true)
+        if (::hrTracker.isInitialized) DiagnosticResources.note(DiagnosticResource.SAMSUNG_HR, hrTracker, ResourceAction.UNCERTAIN, onlyIfActive = true)
+        ppgTracker?.let { DiagnosticResources.note(DiagnosticResource.SAMSUNG_PPG, it, ResourceAction.UNCERTAIN, onlyIfActive = true) }
     }
 
     private val trackerEventListener = object : HealthTracker.TrackerEventListener {
@@ -385,6 +393,7 @@ class SkinTempService : Service() {
         fun Float.toFahrenheit(): Float = this * 9f/5f + 32f
 
         override fun onError(error: HealthTracker.TrackerError) {
+            if (::skinTracker.isInitialized) DiagnosticResources.note(DiagnosticResource.SAMSUNG_SKIN, skinTracker, ResourceAction.UNCERTAIN)
             Log.e(TAG, "SkinTempService HealthTracker.TrackerError: $error")
         }
 
@@ -456,6 +465,7 @@ class SkinTempService : Service() {
         }
 
         override fun onError(error: HealthTracker.TrackerError) {
+            if (::hrTracker.isInitialized) DiagnosticResources.note(DiagnosticResource.SAMSUNG_HR, hrTracker, ResourceAction.UNCERTAIN)
             Log.e(TAG, "HR tracker error: $error")
         }
     }
@@ -486,7 +496,7 @@ class SkinTempService : Service() {
             val now = System.currentTimeMillis()
             ppgPauseStartedAtMs = now
             ppgRedSustainedAtPauseMs = if (ppgRedFirstContinuouslyOkSinceMs == 0L) 0L else (now - ppgRedFirstContinuouslyOkSinceMs).coerceAtLeast(0L)
-            ppgTracker?.unsetEventListener()
+            ppgTracker?.let { tracker -> DiagnosticResources.release(DiagnosticResource.SAMSUNG_PPG, tracker) { tracker.unsetEventListener() } }
             ppgRunning = false
             ppgPausedForSpo2 = true
             //Log.i(TAG, "[PPG] Paused PPG_CONTINUOUS for SpO2")
@@ -546,7 +556,7 @@ class SkinTempService : Service() {
         if (ppgRunning) return true
 
         return try {
-            tracker.setEventListener(ppgEventListener)
+            DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_PPG, tracker) { tracker.setEventListener(ppgEventListener) }
             ppgRunning = true
             Log.i(TAG, "[PPG] Continuous listener started")
             true
@@ -674,7 +684,7 @@ class SkinTempService : Service() {
             ppgStartUptimeMs = 0L
             ppgSamples.clear()
 
-            tracker.setEventListener(ppgEventListener)
+            DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_PPG, tracker) { tracker.setEventListener(ppgEventListener) }
             ppgRunning = true
 
             Log.i(TAG, "[PPG] On-demand listener started")
@@ -690,7 +700,7 @@ class SkinTempService : Service() {
         if (!ppgRunning) return
 
         try {
-            ppgTracker?.unsetEventListener()
+            ppgTracker?.let { tracker -> DiagnosticResources.release(DiagnosticResource.SAMSUNG_PPG, tracker) { tracker.unsetEventListener() } }
             ppgRunning = false
             Log.i(TAG, "[PPG] On Demand listener stopped")
         } catch (t: Throwable) {
@@ -802,6 +812,7 @@ class SkinTempService : Service() {
         }
         override fun onFlushCompleted() { Log.d(TAG, "[SPO2] onFlushCompleted") }
         override fun onError(error: HealthTracker.TrackerError) {
+            if (::spo2Tracker.isInitialized) DiagnosticResources.note(DiagnosticResource.SAMSUNG_SPO2, spo2Tracker, ResourceAction.UNCERTAIN)
             backgroundHandler.post {
                 if (measureState.get() != MeasurementState.SPO2_RUNNING) return@post
                 Log.e(TAG, "[SPO2] Error: $error")
@@ -864,7 +875,9 @@ class SkinTempService : Service() {
                 return@post
             }
             try {
-                spo2Tracker.setEventListener(spo2StrictListener)
+                DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_SPO2, spo2Tracker, timeoutMs = SPO2_TIMEOUT_MS) {
+                    spo2Tracker.setEventListener(spo2StrictListener)
+                }
                 Log.i(TAG, "[SPO2] Started (timeout ${SPO2_TIMEOUT_MS/1000}s)")
             } catch (ex: Throwable) {
                 Log.e(TAG, "[SPO2] start failed", ex)
@@ -909,7 +922,7 @@ class SkinTempService : Service() {
         spo2TimeoutCleanup()
         if (::spo2Tracker.isInitialized) {
             try {
-                spo2Tracker.unsetEventListener()
+                DiagnosticResources.release(DiagnosticResource.SAMSUNG_SPO2, spo2Tracker) { spo2Tracker.unsetEventListener() }
             } catch (t: Throwable) {
                 Log.e(TAG, "[SPO2] unset error", t)
             }
@@ -924,7 +937,7 @@ class SkinTempService : Service() {
         if (!::spo2Tracker.isInitialized) return
         backgroundHandler.post {
             try {
-                spo2Tracker.unsetEventListener()
+                DiagnosticResources.release(DiagnosticResource.SAMSUNG_SPO2, spo2Tracker) { spo2Tracker.unsetEventListener() }
                 spo2Running = false
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to stop SpO2 tracker", t)
@@ -1008,6 +1021,7 @@ class SkinTempService : Service() {
         }
         override fun onFlushCompleted() {}
         override fun onError(error: HealthTracker.TrackerError) {
+            ppgTracker?.let { DiagnosticResources.note(DiagnosticResource.SAMSUNG_PPG, it, ResourceAction.UNCERTAIN) }
             Log.e(TAG, "PPG TrackerError: $error")
 
             if (crmPpgSamplingActive) {
@@ -1054,7 +1068,9 @@ class SkinTempService : Service() {
                 ppgSamples.clear()
                 // On-demand: start 20s burst
                 try {
-                    t.setEventListener(ppgEventListener)
+                    DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_PPG, t, timeoutMs = 20_000) {
+                        t.setEventListener(ppgEventListener)
+                    }
                     ppgRunning = true
                     Log.i(TAG, "[PPG] Started (20s window)")
                 } catch (ex: Throwable) {
@@ -1077,7 +1093,7 @@ class SkinTempService : Service() {
         if (ppgTracker == null) return
         backgroundHandler.post {
             try {
-                ppgTracker?.unsetEventListener()
+                ppgTracker?.let { tracker -> DiagnosticResources.release(DiagnosticResource.SAMSUNG_PPG, tracker) { tracker.unsetEventListener() } }
                 ppgRunning = false
             } catch (t: Throwable) {
                 Log.e(TAG, "Failed to stop PPG tracker", t)
@@ -1095,9 +1111,12 @@ class SkinTempService : Service() {
         }
         backgroundHandler.post {
             synchronized(nnBuffer) {
-                if (!isHrRunning || !deviceWorn || hrGeneration != generation) return@post
+                if (!isHrRunning || !deviceWorn || hrGeneration != generation) {
+                    DiagnosticResources.note(DiagnosticResource.SAMSUNG_HR, hrTracker, ResourceAction.STALE_CALLBACK)
+                    return@post
+                }
                 try {
-                    hrTracker.setEventListener(hrEventListener)
+                    DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_HR, hrTracker) { hrTracker.setEventListener(hrEventListener) }
                     AppDiagnostics.updateSamsungHrContinuousRunning(true)
                     Log.i(TAG, "HRV tracker started (HEART_RATE_CONTINUOUS)")
                 } catch (error: Exception) {
@@ -1123,9 +1142,12 @@ class SkinTempService : Service() {
         if (!::hrTracker.isInitialized) return
         backgroundHandler.post {
             synchronized(nnBuffer) {
-                if (isHrRunning || hrGeneration != generation) return@post
+                if (isHrRunning || hrGeneration != generation) {
+                    DiagnosticResources.note(DiagnosticResource.SAMSUNG_HR, hrTracker, ResourceAction.STALE_CALLBACK)
+                    return@post
+                }
                 try {
-                    hrTracker.unsetEventListener()
+                    DiagnosticResources.release(DiagnosticResource.SAMSUNG_HR, hrTracker) { hrTracker.unsetEventListener() }
                     AppDiagnostics.updateSamsungHrContinuousRunning(false)
                     Log.i(TAG, "HRV tracker stopped")
                 } catch (error: Exception) {
@@ -1498,6 +1520,7 @@ class SkinTempService : Service() {
         crmPpgSamplingActive = false
         crmRepo.updateSamplingState(CrmSamplingState.IDLE)
         pushColdInputsOkFlag()
+        noteSamsungCleanupUncertain()
         healthService.disconnectService()
         AppDiagnostics.updateSamsungHrContinuousRunning(false)
         handlerThread.quitSafely()
@@ -1564,14 +1587,16 @@ class SkinTempService : Service() {
     private fun startSkinTracker() {
         if (!::skinTracker.isInitialized || isHandlerRunning) return
         isHandlerRunning = true
-        backgroundHandler.post { skinTracker.setEventListener(trackerEventListener) }
+        backgroundHandler.post {
+            DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_SKIN, skinTracker) { skinTracker.setEventListener(trackerEventListener) }
+        }
     }
 
     private fun stopSkinTracker(clearQueue: Boolean = false) {
         if (!isHandlerRunning) return
         isHandlerRunning = false
         backgroundHandler.post {
-            skinTracker.unsetEventListener()
+            DiagnosticResources.release(DiagnosticResource.SAMSUNG_SKIN, skinTracker) { skinTracker.unsetEventListener() }
             if (clearQueue) backgroundHandler.removeCallbacksAndMessages(null)
         }
     }
