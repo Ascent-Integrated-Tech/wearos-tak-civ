@@ -1303,6 +1303,11 @@ credentials or certificates. The TAK foreground service, multicast and shared
 coroutine scope stay alive. Turning it on resumes eligible servers under existing
 network and companion-exclusive routing gates.
 
+TAK keepalive waits for its next receive-silence, ping-repeat or unanswered-response
+deadline, re-evaluating on inbound bytes instead of polling every five seconds.
+The existing silence configuration (zero disables; positive values have a 15-second
+floor), ping/reconnect policy and connection-generation fencing are unchanged.
+
 Sit(x) shows the selected group and actual connection state. Ditto shows only
 **Community**, **Custom PDL** or **None**; the same safe subtitle is used in Plugins.
 The PDL itself is never displayed as a subtitle. Network/phone-management locks are
