@@ -1273,6 +1273,18 @@ This does **not** repair rejected credentials: HTTP 401 still requires valid
 credentials/server-side authorization. Response bodies and certificate material
 are not logged by enrollment.
 
+Transient initial socket and enrollment transport I/O failures retry automatically
+after 5, 10, 20, 40, 80, then at most 120 seconds between attempts. Each server
+owns one cancellable, generation-fenced pending retry; success resets the failure
+backoff. Disabled servers, companion-managed connections, duplicate endpoints,
+network unavailability and service shutdown retain their existing gates.
+The UI reports a failed/disconnected connection while waiting, not a successful
+or actively connecting session. HTTP rejection, authentication, TLS/trust and
+certificate errors require user action rather than automatic retries. Network
+failures do not delete valid cached certificates or force re-enrollment. Recovery
+uses delayed jobs, not a polling loop; existing established-session drop backoff
+is unchanged.
+
 ### Persistent developer menus and Logging
 
 Tap the version eight times in **Preferences** to unlock **Admin Preferences**

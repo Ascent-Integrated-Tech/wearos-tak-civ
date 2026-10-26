@@ -1,0 +1,348 @@
+package com.aitech.weartak_civ.service
+
+import android.app.Application
+import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.takserver.TakConnectionFailure
+import com.aitech.weartak_civ.data.takserver.TakEnrollmentException
+import com.aitech.weartak_civ.data.takserver.TakEnrollmentStage
+import com.aitech.weartak_civ.data.takserver.TakFailureCategory
+import com.aitech.weartak_civ.presentation.MainActivity
+import io.mockk.*
+import java.io.IOException
+import java.security.KeyStore
+import java.util.concurrent.Executors
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
+import java.net.ConnectException
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.security.cert.CertificateException
+import javax.net.ssl.SSLException
+import javax.net.ssl.SSLHandshakeException
+import javax.net.ssl.SSLPeerUnverifiedException
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.*
+import org.junit.After
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.annotation.Config
+
+@OptIn(ExperimentalCoroutinesApi::class)
+@RunWith(RobolectricTestRunner::class)
+@Config(application = Application::class, sdk = [34])
+class TakTransientRecoveryTest {
+    private val companion = MutableStateFlow(false)
+    private val scopeField = TAKConnectService::class.java.getDeclaredField("connectionScope").apply { isAccessible = true }
+    private var oldScope: Any? = null
+    private var oldStopping = false
+    private var oldNetwork = false
+    private var oldDetails = mutableListOf<TAKConnectService.TakServerDetail>()
+
+    @Before fun prepare() {
+        val app = RuntimeEnvironment.getApplication()
+        MainActivity.mainActivity = mockk<MainActivity>(relaxed = true) {
+            every { applicationContext } returns app
+            every { getExternalFilesDir(any()) } answers { app.getExternalFilesDir(firstArg()) }
+        }
+        MainActivity.dataRepository = mockk<DataRepository>(relaxed = true) {
+            every { isCompanionConnected } returns companion
+        }
+        oldScope = scopeField.get(null)
+        oldStopping = TAKConnectService.serviceStopping
+        oldNetwork = TAKConnectService.isNetworkConnected
+        oldDetails = TAKConnectService.takServerDetails
+        TAKConnectService.serviceStopping = false
+        TAKConnectService.isNetworkConnected = true
+        TAKConnectService.takServerDetails = mutableListOf()
+    }
+
+    @After fun cleanup() {
+        scopeField.set(null, oldScope)
+        TAKConnectService.serviceStopping = oldStopping
+        TAKConnectService.isNetworkConnected = oldNetwork
+        TAKConnectService.takServerDetails = oldDetails
+        unmockkAll()
+    }
+
+    @Test fun classificationRetriesOnlyIoWithoutCredentialTrustOrCancellationCauses() {
+        listOf(IOException(), ConnectException(), SocketException(), SocketTimeoutException(), UnknownHostException())
+            .forEach { assertTrue(it.javaClass.name, TakTransientRecovery.isRetryable(it)) }
+        val terminal = listOf(SSLException("tls"), SSLHandshakeException("handshake"),
+            SSLPeerUnverifiedException("hostname"), CertificateException(), SecurityException(),
+            CancellationException(), IllegalArgumentException(),
+            TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401)),
+            TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.SIGN, TakFailureCategory.HTTP, 500)))
+        terminal.forEach {
+            assertFalse(it.javaClass.name, TakTransientRecovery.isRetryable(it))
+            assertFalse(TakTransientRecovery.isRetryable(IOException("wrapped", it)))
+        }
+        assertTrue(TakTransientRecovery.isRetryable(RuntimeException(ConnectException())))
+        assertTrue(TakTransientRecovery.isRetryable(UnknownHostException().apply {
+            initCause(RuntimeException("native resolver failure"))
+        }))
+        val cycle = IOException()
+        cycle.initCause(IOException(cycle))
+        assertFalse(TakTransientRecovery.isRetryable(cycle))
+    }
+
+    @Test fun failureBackoffStartsAtExistingFiveSecondsAndCapsAtTwoMinutes() {
+        assertEquals(listOf(5_000L, 10_000L, 20_000L, 40_000L, 80_000L, 120_000L, 120_000L),
+            (1..7).map(TakTransientRecovery::delayMs))
+        assertEquals(120_000L, TakTransientRecovery.delayMs(Int.MAX_VALUE))
+    }
+
+    @Test fun repeatedFailureCallbacksOwnOneRetryAndDoNotChangeFailedUiOrCertificate() = runTest {
+        scopeField.set(null, this)
+        val detail = detail()
+        val attempt = current(detail)
+        val originalCertificate = detail.p12Cert
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.getClientCertificateAndConnect(detail) } just Runs
+        repeat(50) { TAKConnectService.recoverTransientFailure(detail, attempt, ConnectException()) }
+        val retry = detail.runtime.retryJob
+        assertNotNull(retry)
+        assertEquals(1, detail.runtime.transientFailureStreak)
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+        assertEquals(originalCertificate, detail.p12Cert)
+        runCurrent()
+        advanceTimeBy(4_999)
+        verify(exactly = 0) { TAKConnectService.getClientCertificateAndConnect(detail) }
+        advanceTimeBy(1)
+        runCurrent()
+        verify(exactly = 1) { TAKConnectService.getClientCertificateAndConnect(detail) }
+        assertNull(detail.runtime.retryJob)
+        assertTrue(retry!!.isCompleted)
+    }
+
+    @Test fun everyGateBlocksSchedulingOrExecutionAndStaleAttemptsCannotRetry() = runTest {
+        scopeField.set(null, this)
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.getClientCertificateAndConnect(any()) } just Runs
+        for (gate in 0..6) {
+            val detail = detail()
+            val attempt = current(detail)
+            TAKConnectService.recoverTransientFailure(detail, attempt, ConnectException())
+            assertNotNull(detail.runtime.retryJob)
+            when (gate) {
+                0 -> detail.isEnabled = false
+                1 -> companion.value = true
+                2 -> TAKConnectService.isNetworkConnected = false
+                3 -> TAKConnectService.serviceStopping = true
+                4 -> detail.runtime.terminated = true
+                5 -> detail.duplicateEndpointSuppressed = true
+                6 -> detail.runtime.generation++
+            }
+            advanceUntilIdle()
+            assertNull(detail.runtime.retryJob)
+            TAKConnectService.recoverTransientFailure(detail, attempt, ConnectException())
+            assertNull(detail.runtime.retryJob)
+            companion.value = false
+            TAKConnectService.isNetworkConnected = true
+            TAKConnectService.serviceStopping = false
+        }
+        verify(exactly = 0) { TAKConnectService.getClientCertificateAndConnect(any()) }
+    }
+
+    @Test fun invalidateCancelsPendingJobAndResetsFailureStreak() = runTest {
+        scopeField.set(null, this)
+        val detail = detail()
+        val attempt = current(detail)
+        TAKConnectService.recoverTransientFailure(detail, attempt, ConnectException())
+        val retry = detail.runtime.retryJob!!
+        TAKConnectService.Companion::class.java.getDeclaredMethod("invalidateConnection",
+            TAKConnectService.TakServerDetail::class.java, Boolean::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(TAKConnectService.Companion, detail, true)
+        assertTrue(retry.isCancelled)
+        assertNull(detail.runtime.retryJob)
+        assertEquals(0, detail.runtime.transientFailureStreak)
+        advanceUntilIdle()
+        assertNull(detail.runtime.currentAttempt)
+    }
+
+    @Test fun enrollmentIoContinuesBeyondOldAttemptLimitWithoutDeletingLoadedCertificate() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns true
+        every { TAKConnectService.connectTAKServer(detail, any()) } throws ConnectException()
+        every { TAKConnectService.deleteFile(any()) } just Runs
+        TAKConnectService.takServerDetails = mutableListOf(detail)
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        runCurrent()
+        for (delay in listOf(5_000L, 10_000L, 20_000L, 40_000L, 80_000L)) {
+            assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+            assertNotNull(detail.runtime.retryJob)
+            assertFalse(TAKConnectService.isAnyTakConnecting)
+            advanceTimeBy(delay)
+            runCurrent()
+        }
+        assertEquals(6, detail.numConnAttempts)
+        assertEquals(6, detail.runtime.transientFailureStreak)
+        verify(exactly = 6) { TAKConnectService.loadKeyStore(any(), any(), any()) }
+        verify(exactly = 0) { TAKConnectService.deleteFile(any()) }
+        detail.runtime.retryJob!!.cancel()
+    }
+
+    @Test fun firstConfigIoRetriesButAuthenticationAndTlsRemainActionableWithoutRetry() = runTest {
+        scopeField.set(null, this)
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.deleteFile(any()) } just Runs
+        for (error in listOf(ConnectException(), SSLHandshakeException("trust"),
+            TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401)))) {
+            val detail = detail().copy(isP12Cert = false, p12Cert = null)
+            every { TAKConnectService.fetchAndParseCertificateConfig(detail) } throws error
+            TAKConnectService.getClientCertificateAndConnect(detail)
+            runCurrent()
+            assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+            assertEquals(error is ConnectException, detail.runtime.retryJob != null)
+            detail.runtime.retryJob?.cancel()
+        }
+    }
+
+    @Test fun concurrentFailureCallbacksScheduleOnlyOneJob() = runTest {
+        scopeField.set(null, this)
+        val detail = detail()
+        val attempt = current(detail)
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.getClientCertificateAndConnect(detail) } just Runs
+        val executor = Executors.newFixedThreadPool(8)
+        try {
+            val tasks = (1..50).map {
+                executor.submit { TAKConnectService.recoverTransientFailure(detail, attempt, ConnectException()) }
+            }
+            tasks.forEach { it.get() }
+        } finally {
+            executor.shutdownNow()
+        }
+        assertEquals(1, detail.runtime.transientFailureStreak)
+        advanceUntilIdle()
+        verify(exactly = 1) { TAKConnectService.getClientCertificateAndConnect(detail) }
+    }
+
+    @Test fun freshAttemptCancelsOldRetryAndConnectedRequestsDoNotResetStatus() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        val old = current(detail)
+        TAKConnectService.recoverTransientFailure(detail, old, ConnectException())
+        val retry = detail.runtime.retryJob!!
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.fetchAndParseCertificateConfig(any()) } throws
+            TakEnrollmentException(TakConnectionFailure(TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401))
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        assertTrue(retry.isCancelled)
+        advanceUntilIdle()
+        verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail) }
+        TAKConnectService.recoverTransientFailure(detail, old, ConnectException())
+        assertNull(detail.runtime.retryJob)
+        val current = detail.runtime.currentAttempt
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        assertSame(current, detail.runtime.currentAttempt)
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT, detail.connectionStatus.get())
+        verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail) }
+    }
+
+    @Test fun cancelledScopeCannotStartPendingRetry() = runTest {
+        val scope = CoroutineScope(SupervisorJob() + StandardTestDispatcher(testScheduler))
+        scopeField.set(null, scope)
+        val detail = detail()
+        TAKConnectService.recoverTransientFailure(detail, current(detail), ConnectException())
+        val retry = detail.runtime.retryJob!!
+        scope.cancel()
+        advanceUntilIdle()
+        assertTrue(retry.isCancelled)
+        assertNull(detail.runtime.retryJob)
+    }
+
+    @Test fun csrTransportFailurePropagatesWithoutBecomingNull() {
+        mockkObject(TAKConnectService.Companion, recordPrivateCalls = true)
+        every { TAKConnectService.Companion["postCsrAndGetResponse"](
+            any<String>(), any<String>(), any<String>(), any<String>()) } throws ConnectException()
+        assertThrows(ConnectException::class.java) {
+            TAKConnectService.postCsrAndParse(detail(), "test-csr")
+        }
+    }
+
+    @Test fun actualSocketFailureUsesBackoffAndSuccessfulHandshakeResetsIt() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        TAKConnectService.takServerDetails = mutableListOf(detail)
+        val socket = mockTlsSocket()
+        every { socket.startHandshake() } throws ConnectException()
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        runCurrent()
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+        assertEquals(1, detail.runtime.transientFailureStreak)
+        verify(exactly = 1) { socket.startHandshake() }
+        advanceTimeBy(4_999)
+        verify(exactly = 1) { socket.startHandshake() }
+        every { socket.startHandshake() } just Runs
+        advanceTimeBy(1)
+        runCurrent()
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT, detail.connectionStatus.get())
+        assertEquals(0, detail.runtime.transientFailureStreak)
+        assertEquals(0, detail.numConnAttempts)
+        assertNull(detail.runtime.retryJob)
+        verify(exactly = 2) { socket.startHandshake() }
+        verify(exactly = 0) { TAKConnectService.deleteFile(any()) }
+    }
+
+    @Test fun actualTrustFailureRemainsFailedWithoutRetryOrCertificateDeletion() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        val socket = mockTlsSocket()
+        every { socket.startHandshake() } throws SSLHandshakeException("test trust rejection")
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        advanceUntilIdle()
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+        assertNull(detail.runtime.retryJob)
+        verify(exactly = 1) { socket.startHandshake() }
+        verify(exactly = 0) { TAKConnectService.deleteFile(any()) }
+    }
+
+    private fun mockTlsSocket(): SSLSocket {
+        mockkObject(TAKConnectService.Companion, recordPrivateCalls = true)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } answers {
+            firstArg<KeyStore>().load(null, null)
+            true
+        }
+        every { TAKConnectService.findRootInChain(any()) } returns null
+        every { TAKConnectService.deleteFile(any()) } just Runs
+        every { TAKConnectService.Companion["loadTakChannelsAfterConnect"](
+            any<TAKConnectService.TakServerDetail>()) } returns Unit
+        every { TAKConnectService.Companion["loadTakMissionsAfterConnect"](
+            any<TAKConnectService.TakServerDetail>(), any<TAKConnectService.ConnectionAttempt>()) } returns Unit
+        every { TAKConnectService.Companion["startCotReader"](
+            any<TAKConnectService.TakServerDetail>(), any<SSLSocket>(),
+            any<TAKConnectService.ConnectionAttempt>()) } returns Unit
+        mockkStatic(SSLContext::class)
+        val ssl = mockk<SSLContext>(relaxed = true)
+        every { SSLContext.getInstance("TLSv1.3") } returns ssl
+        val factory = mockk<SSLSocketFactory>()
+        every { ssl.socketFactory } returns factory
+        val socket = mockk<SSLSocket>(relaxed = true)
+        every { factory.createSocket(any<String>(), any<Int>()) } returns socket
+        return socket
+    }
+
+    private fun current(detail: TAKConnectService.TakServerDetail): TAKConnectService.ConnectionAttempt {
+        val attempt = TAKConnectService.ConnectionAttempt(1)
+        detail.runtime.generation = 1
+        detail.runtime.currentAttempt = attempt
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTION_FAILED)
+        return attempt
+    }
+
+    private fun detail() = TAKConnectService.TakServerDetail(
+        "recovery-test", true, "Test", "recovery.invalid", 8089, true, "", "", "preserved-cert", ""
+    )
+}

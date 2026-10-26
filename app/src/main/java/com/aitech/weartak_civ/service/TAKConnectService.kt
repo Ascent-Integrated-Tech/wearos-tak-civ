@@ -179,6 +179,8 @@ class TAKConnectService: Service() {
         var readerJob: Job? = null
         var terminated: Boolean = false
         var shortSessionStreak: Int = 0
+        var retryJob: Job? = null
+        var transientFailureStreak: Int = 0
     }
 
     data class NameValueEntry(
@@ -890,7 +892,6 @@ class TAKConnectService: Service() {
         const val TAK_SERVER_DUPLICATE_STRING = "DUPLICATE"
 
         val isRunning : AtomicBoolean = AtomicBoolean(false)
-        private val NUM_CONN_ATTEMPS_AFTER_FAILURE = 3
         private val TAG = "WearTAK-" + TAKConnectService::class.java.simpleName
         const private val TAK_CONNECT_SERVICE_NOTIFICATION_ID = 101
         const private val KEYSTORE_PASS = "atakatak"
@@ -2559,6 +2560,8 @@ class TAKConnectService: Service() {
                 }
                 detail.runtime.connectJob?.cancel()
                 detail.runtime.readerJob?.cancel()
+                detail.runtime.retryJob?.cancel()
+                detail.runtime.retryJob = null
                 detail.runtime.connectingSocket?.let { oldSockets.add(it) }
                 detail.secureSocket?.let { oldSockets.add(it) }
                 detail.runtime.connectingSocket = null
@@ -2593,6 +2596,9 @@ class TAKConnectService: Service() {
                 if (terminate) detail.runtime.terminated = true
                 detail.runtime.connectJob?.cancel()
                 detail.runtime.readerJob?.cancel()
+                detail.runtime.retryJob?.cancel()
+                detail.runtime.retryJob = null
+                detail.runtime.transientFailureStreak = 0
                 detail.runtime.connectingSocket?.let { sockets.add(it) }
                 detail.secureSocket?.let { sockets.add(it) }
                 detail.runtime.connectingSocket = null
@@ -2790,8 +2796,10 @@ class TAKConnectService: Service() {
                 Log.d(TAG, "fetchAndParseCertificateConfig: GET $url")
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        Log.e(TAG, "ERROR fetch certification config response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
-                        return nameValueList
+                        throw com.aitech.weartak_civ.data.takserver.TakEnrollmentException(
+                            TakConnectionFailure(TakEnrollmentStage.CONFIG,
+                                if (response.code == 401 || response.code == 403)
+                                    TakFailureCategory.AUTHENTICATION else TakFailureCategory.HTTP, response.code))
                     }
 
                     val responseBody = response.body?.string()
@@ -2817,6 +2825,10 @@ class TAKConnectService: Service() {
                     Log.d(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: $nameValueList")
                     return nameValueList
                 }
+            } catch (e: com.aitech.weartak_civ.data.takserver.TakEnrollmentException) {
+                throw e
+            } catch (e: IOException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
                 return null
@@ -2873,14 +2885,20 @@ class TAKConnectService: Service() {
 
                 client.newCall(request).execute().use { response ->
                     if (!response.isSuccessful) {
-                        Log.e(TAG, "ERROR CSR response returned unexpected HTTP code: ${response.code} w/ body: ${response.body?.string()}")
-                        return null
+                        throw com.aitech.weartak_civ.data.takserver.TakEnrollmentException(
+                            TakConnectionFailure(TakEnrollmentStage.SIGN,
+                                if (response.code == 401 || response.code == 403)
+                                    TakFailureCategory.AUTHENTICATION else TakFailureCategory.HTTP, response.code))
                     }
                     val responseBodyString = response.body?.string()
                     Log.v(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
                     // Return the response body as string
                     return responseBodyString
                 }
+            } catch (e: com.aitech.weartak_civ.data.takserver.TakEnrollmentException) {
+                throw e
+            } catch (e: IOException) {
+                throw e
             } catch (e: Exception) {
                 Log.e(TAG, "postCsrAndGetResponse ERROR: ${e.message}", e)
             }
@@ -3101,17 +3119,7 @@ class TAKConnectService: Service() {
                 return
             }
             Log.d(TAG, "getClientCertificateAndConnect called for server(${takServerDetail.address}) w/ numConnAttempts(${takServerDetail.numConnAttempts})")
-            takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
-            takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
             if (isNetworkConnected) {
-                if (takServerDetail.numConnAttempts > NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                    recordConnection(takServerDetail, ConnectionTransition.SKIPPED, ConnectionReason.ATTEMPT_LIMIT)
-                    serverRegistration.publish(
-                        takServerDetail.serverId, takServerDetail, TakServerRegistration.Status.FAILED,
-                        serverRegistration.unavailable()
-                    )
-                    return
-                }
                 val attempt = beginConnectionAttempt(takServerDetail)
                 if (attempt == null) {
                     val status = takServerDetail.connectionStatus.get()
@@ -3132,7 +3140,8 @@ class TAKConnectService: Service() {
                     )
                     return
                 }
-                takServerDetail.numConnAttempts++
+                takServerDetail.numConnAttempts = (takServerDetail.numConnAttempts.toLong() + 1)
+                    .coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 val job = connectionScope.launch {
                     try {
                         isAnyTakConnecting = true; isAnyTakConnectingLiveData.postValue(true)
@@ -3188,49 +3197,6 @@ class TAKConnectService: Service() {
                                 }
                             }
                         } else {
-                            if (takServerDetail.numConnAttempts == NUM_CONN_ATTEMPS_AFTER_FAILURE) {
-                                // This is to address a bug found when connecting to tak.weartak.com where
-                                // certificate was valid but we got the error below and we could not connect
-                                // to the server till that server needed to be removed (which removes the .jks file)
-                                // and server details added again.
-                                // The error found was:
-                                // ERROR in connectTAKServer: Error configuring certificate: ssl=0xe737db58:  (Explain with AI)
-                                // error:10000112:SSL routines:OPENSSL_internal:CERTIFICATE_AND_PRIVATE_KEY_MISMATCH (external/boringssl/src/ssl/ssl_cert.cc:281 0xb261e757:0x00000000)
-                                // javax.net.ssl.SSLHandshakeException: Error configuring certificate: ssl=0xe737db58:
-                                // error:10000112:SSL routines:OPENSSL_internal:CERTIFICATE_AND_PRIVATE_KEY_MISMATCH (external/boringssl/src/ssl/ssl_cert.cc:281 0xb261e757:0x00000000)
-                                //    at com.android.org.conscrypt.SSLUtils.toSSLHandshakeException(SSLUtils.java:356)
-                                //    at com.android.org.conscrypt.ConscryptEngine.convertException(ConscryptEngine.java:1134)
-                                //    at com.android.org.conscrypt.ConscryptEngine.unwrap(ConscryptEngine.java:919)
-                                //    at com.android.org.conscrypt.ConscryptEngine.unwrap(ConscryptEngine.java:747)
-                                //    at com.android.org.conscrypt.ConscryptEngine.unwrap(ConscryptEngine.java:712)
-                                //    at com.android.org.conscrypt.ConscryptEngineSocket$SSLInputStream.processDataFromSocket(ConscryptEngineSocket.java:896)
-                                //    at com.android.org.conscrypt.ConscryptEngineSocket$SSLInputStream.-$$Nest$mprocessDataFromSocket(Unknown Source:0)
-                                //    at com.android.org.conscrypt.ConscryptEngineSocket.doHandshake(ConscryptEngineSocket.java:236)
-                                //    at com.android.org.conscrypt.ConscryptEngineSocket.startHandshake(ConscryptEngineSocket.java:218)
-                                //    at com.aitech.weartak_civ.service.TAKConnectService$Companion.connectTAKServer(TAKConnectService.kt:1186)
-                                //    at com.aitech.weartak_civ.service.TAKConnectService$Companion$getClientCertificateAndConnect$1.invokeSuspend(TAKConnectService.kt:1043)
-                                //    at kotlin.coroutines.jvm.internal.BaseContinuationImpl.resumeWith(ContinuationImpl.kt:33)
-                                //    at kotlinx.coroutines.DispatchedTask.run(DispatchedTask.kt:104)
-                                //    at kotlinx.coroutines.internal.LimitedDispatcher$Worker.run(LimitedDispatcher.kt:111)
-                                //    at kotlinx.coroutines.scheduling.TaskImpl.run(Tasks.kt:99)
-                                //    at kotlinx.coroutines.scheduling.CoroutineScheduler.runSafely(CoroutineScheduler.kt:584)
-                                //    at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.executeTask(CoroutineScheduler.kt:811)
-                                //    at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.runWorker(CoroutineScheduler.kt:715)
-                                //    at kotlinx.coroutines.scheduling.CoroutineScheduler$Worker.run(CoroutineScheduler.kt:702)
-                                //    Caused by: javax.net.ssl.SSLException: Error configuring certificate: ssl=0xe737db58:
-                                //    error:10000112:SSL routines:OPENSSL_internal:CERTIFICATE_AND_PRIVATE_KEY_MISMATCH (external/boringssl/src/ssl/ssl_cert.cc:281 0xb261e757:0x00000000)
-                                //    at com.android.org.conscrypt.NativeCrypto.setLocalCertsAndPrivateKey(Native Method)
-                                //    at com.android.org.conscrypt.NativeSsl.setCertificate(NativeSsl.java:267)
-                                //    at com.android.org.conscrypt.NativeSsl.chooseClientCertificate(NativeSsl.java:230)
-                                //    at com.android.org.conscrypt.ConscryptEngine.clientCertificateRequested(ConscryptEngine.java:1654)
-                                //    at com.android.org.conscrypt.NativeCrypto.ENGINE_SSL_read_direct(Native Method)
-                                //    at com.android.org.conscrypt.NativeSsl.readDirectByteBuffer(NativeSsl.java:568)
-                                //    at com.android.org.conscrypt.ConscryptEngine.readPlaintextDataDirect(ConscryptEngine.java:1095)
-                                //    at com.android.org.conscrypt.ConscryptEngine.readPlaintextData(ConscryptEngine.java:1079)
-                                //    at com.android.org.conscrypt.ConscryptEngine.unwrap(ConscryptEngine.java:876)
-                                //    ... 16 more                                                                                                      ... 16 more
-                                deleteFile(certificateCacheFileName(takServerDetail))
-                            }
                             if (loadKeyStore(takServerDetail.keyStore, certificateCacheFileName(takServerDetail), KEYSTORE_PASS)) {
                                 Log.d(TAG, "Successfully loaded keyStore for ${takServerDetail.address}")
                                 takServerDetail.connectionStatus.set(TAK_SERVER_OBTAINED_CLIENT_CERT)
@@ -3309,6 +3275,7 @@ class TAKConnectService: Service() {
                                 takServerDetail, attempt,
                                 TakServerRegistration.Status.FAILED, failure
                             )
+                            recoverTransientFailure(takServerDetail, attempt, error)
                         }
                     } finally {
                         if (takServerDetail.connectionStatus.get() == TAK_SERVER_CONNECTION_FAILED) {
@@ -3486,6 +3453,10 @@ class TAKConnectService: Service() {
                         takServerDetail.secureSocket = socket
                         attempt.socket = socket
                         attempt.connectedAtMs = System.currentTimeMillis()
+                        takServerDetail.numConnAttempts = 0
+                        takServerDetail.runtime.transientFailureStreak = 0
+                        takServerDetail.runtime.retryJob?.cancel()
+                        takServerDetail.runtime.retryJob = null
                     }
                     takServerDetail.channelSslContext = sslContext
                     takServerDetail.channelTrustManager = trustManager
@@ -3501,8 +3472,6 @@ class TAKConnectService: Service() {
                     publishRegistrationResult(
                         takServerDetail, attempt, TakServerRegistration.Status.CONNECTED
                     )
-                    // Reset counters for connection attempts
-                    takServerDetail.numConnAttempts = 0
                     setIsAnyNetworkConnecting()
                     recordConnection(takServerDetail, ConnectionTransition.SUCCESS, generation = attempt.generation)
                     Log.d(TAG, "Successfully connected to $takServer on port $port")
@@ -3539,9 +3508,8 @@ class TAKConnectService: Service() {
                         if (newServerAddedViaUi) {
                             newServerAddedViaUi = false
                             newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
-                        } else {
-                            getClientCertificateAndConnect(takServerDetail)
                         }
+                        recoverTransientFailure(takServerDetail, attempt, e)
                     } else {
                         recordConnection(takServerDetail, ConnectionTransition.SKIPPED,
                             ConnectionReason.STALE_GENERATION, attempt.generation)
@@ -3656,29 +3624,52 @@ class TAKConnectService: Service() {
         }
 
         private fun scheduleReconnect(detail: TakServerDetail, delayMs: Long, generation: Long) {
-            recordConnection(detail, ConnectionTransition.RETRY_SCHEDULED,
-                generation = generation, delayMs = delayMs)
-            if (delayMs <= 0L) {
-                recordConnection(detail, ConnectionTransition.RETRY_STARTED, generation = generation)
-                getClientCertificateAndConnect(detail)
-                return
+            synchronized(detail.runtime.lock) {
+                if (detail.runtime.generation != generation ||
+                    connectionGateReason(detail) != ConnectionReason.NONE ||
+                    detail.secureSocket != null ||
+                    isConnectionActiveStatus(detail.connectionStatus.get()) ||
+                    detail.runtime.retryJob?.isActive == true) return
+                val job = connectionScope.launch(start = kotlinx.coroutines.CoroutineStart.LAZY) {
+                    delay(delayMs.coerceAtLeast(0))
+                    synchronized(detail.runtime.lock) {
+                        if (detail.runtime.generation != generation ||
+                            connectionGateReason(detail) != ConnectionReason.NONE ||
+                            detail.secureSocket != null ||
+                            isConnectionActiveStatus(detail.connectionStatus.get())) {
+                            recordConnection(detail, ConnectionTransition.SKIPPED,
+                                connectionGateReason(detail, ConnectionReason.STALE_GENERATION), generation)
+                            return@launch
+                        }
+                        detail.runtime.retryJob = null
+                        recordConnection(detail, ConnectionTransition.RETRY_STARTED, generation = generation)
+                        getClientCertificateAndConnect(detail)
+                    }
+                }
+                detail.runtime.retryJob = job
+                job.invokeOnCompletion {
+                    synchronized(detail.runtime.lock) {
+                        if (detail.runtime.retryJob === job) detail.runtime.retryJob = null
+                    }
+                }
+                recordConnection(detail, ConnectionTransition.RETRY_SCHEDULED,
+                    generation = generation, delayMs = delayMs)
+                job.start()
             }
-            connectionScope.launch {
-                delay(delayMs)
-                val stillIdle = synchronized(detail.runtime.lock) {
-                    // Any invalidate or new attempt (e.g. network change) owns reconnection now.
-                    detail.runtime.generation == generation && !detail.runtime.terminated &&
-                        detail.secureSocket == null &&
-                        !isConnectionActiveStatus(detail.connectionStatus.get())
-                }
-                if (stillIdle && !serviceStopping && detail.isEnabled && isNetworkConnected) {
-                    recordConnection(detail, ConnectionTransition.RETRY_STARTED, generation = generation)
-                    getClientCertificateAndConnect(detail)
-                } else {
-                    recordConnection(detail, ConnectionTransition.SKIPPED,
-                        connectionGateReason(detail, if (detail.runtime.generation != generation)
-                            ConnectionReason.STALE_GENERATION else ConnectionReason.ACTIVE_ATTEMPT), generation)
-                }
+        }
+
+        internal fun recoverTransientFailure(
+            detail: TakServerDetail, attempt: ConnectionAttempt, error: Throwable
+        ) {
+            if (!TakTransientRecovery.isRetryable(error)) return
+            synchronized(detail.runtime.lock) {
+                if (!isCurrent(detail, attempt) || !detail.isEnabled ||
+                    !isNetworkConnected || detail.duplicateEndpointSuppressed ||
+                    detail.runtime.retryJob?.isActive == true) return
+                detail.runtime.transientFailureStreak =
+                    (detail.runtime.transientFailureStreak + 1).coerceAtMost(16)
+                scheduleReconnect(detail, TakTransientRecovery.delayMs(detail.runtime.transientFailureStreak),
+                    attempt.generation)
             }
         }
 
