@@ -1,6 +1,9 @@
 package com.aitech.weartak_civ.presentation
 
 import android.app.Application
+import android.content.Intent
+import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -28,6 +31,9 @@ class DebugStayAwakeSettingTest {
 
     @Before fun resetPreference() {
         app.getSharedPreferences("debug_stay_awake", Application.MODE_PRIVATE).edit().clear().commit()
+        shadowOf(app.getSystemService(WifiManager::class.java)).setWifiState(WifiManager.WIFI_STATE_ENABLED)
+        app.sendStickyBroadcast(Intent(Intent.ACTION_BATTERY_CHANGED)
+            .putExtra(BatteryManager.EXTRA_PLUGGED, BatteryManager.BATTERY_PLUGGED_USB))
     }
 
     @Test fun smallRoundHasSimpleTopTogglesWithoutHelperText() = verifyTopSplitChip()
@@ -135,5 +141,53 @@ class DebugStayAwakeSettingTest {
         compose.waitForIdle()
         compose.onNode(isToggleable()).assertIsOff()
         compose.onNodeWithText("Off").assertDoesNotExist()
+    }
+
+    @Test fun refusedEnableKeepsSwitchOffAndExplainsWhy() {
+        shadowOf(app.getSystemService(WifiManager::class.java)).setWifiState(WifiManager.WIFI_STATE_DISABLED)
+        compose.setContent { DebugStayAwakeSetting() }
+        compose.onNode(isToggleable()).assertIsOff().performClick()
+        compose.waitForIdle()
+        compose.onNode(isToggleable()).assertIsOff()
+        compose.runOnIdle {
+            assertFalse(DebugStayAwakePreferences(app).enabled)
+            assertNull(shadowOf(app).nextStartedService)
+            assertEquals(app.getString(com.aitech.weartak_civ.R.string.debug_stay_awake_requires_wifi),
+                org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+        }
+    }
+
+    @Test fun unpluggedEnableKeepsSwitchOffAndExplainsWhy() {
+        app.sendStickyBroadcast(Intent(Intent.ACTION_BATTERY_CHANGED)
+            .putExtra(BatteryManager.EXTRA_PLUGGED, 0))
+        compose.setContent { DebugStayAwakeSetting() }
+        compose.onNode(isToggleable()).assertIsOff().performClick()
+        compose.waitForIdle()
+        compose.onNode(isToggleable()).assertIsOff()
+        compose.runOnIdle {
+            assertFalse(DebugStayAwakePreferences(app).enabled)
+            assertNull(shadowOf(app).nextStartedService)
+            assertEquals(app.getString(com.aitech.weartak_civ.R.string.debug_stay_awake_requires_power),
+                org.robolectric.shadows.ShadowToast.getTextOfLatestToast())
+        }
+    }
+
+    @Test fun autoDisableUpdatesVisibleSwitchWithoutReopeningPage() {
+        DebugStayAwakePreferences(app).recordSession(true)
+        val controller = org.robolectric.Robolectric.buildService(DebugStayAwakeService::class.java).create()
+        try {
+            compose.runOnIdle { controller.get().onStartCommand(null, 0, 1) }
+            compose.setContent { DebugStayAwakeSetting() }
+            compose.onNode(isToggleable()).assertIsOn()
+            compose.runOnIdle { app.sendBroadcast(Intent(Intent.ACTION_POWER_DISCONNECTED)) }
+            compose.waitForIdle()
+            compose.onNode(isToggleable()).assertIsOff()
+            compose.runOnIdle {
+                assertFalse(DebugStayAwakePreferences(app).enabled)
+                assertFalse(DebugStayAwakeService.active.value)
+            }
+        } finally {
+            controller.destroy()
+        }
     }
 }

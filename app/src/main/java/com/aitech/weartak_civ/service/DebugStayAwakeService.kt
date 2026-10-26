@@ -4,13 +4,16 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
+import android.os.BatteryManager
 import android.os.IBinder
 import android.os.PowerManager
 import android.util.Log
@@ -22,12 +25,46 @@ import com.aitech.weartak_civ.presentation.WearTAKSettingsActivity
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
+internal enum class StayAwakeStopReason(val code: Long, val message: Int) {
+    WIFI_OFF(1, R.string.debug_stay_awake_requires_wifi),
+    UNPLUGGED(2, R.string.debug_stay_awake_requires_power),
+    WIFI_UNAVAILABLE(3, R.string.debug_stay_awake_requires_wifi),
+    POWER_UNKNOWN(4, R.string.debug_stay_awake_requires_power)
+}
+
 class DebugStayAwakeService : Service() {
     private var screenLock: PowerManager.WakeLock? = null
     private var cpuLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
     private var wifiRequestCallback: ConnectivityManager.NetworkCallback? = null
     private var running = false
+    private var monitoring = false
+    private val conditionReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (!monitoring) return
+            val reason = when (intent.action) {
+                WifiManager.WIFI_STATE_CHANGED_ACTION -> when (
+                    intent.getIntExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN)
+                ) {
+                    WifiManager.WIFI_STATE_DISABLING, WifiManager.WIFI_STATE_DISABLED ->
+                        StayAwakeStopReason.WIFI_OFF
+                    else -> null
+                }
+                Intent.ACTION_POWER_DISCONNECTED -> StayAwakeStopReason.UNPLUGGED
+                Intent.ACTION_BATTERY_CHANGED -> if (
+                    intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) == 0
+                ) StayAwakeStopReason.UNPLUGGED else null
+                else -> null
+            }
+            if (reason != null) {
+                // Drop WearWifiMediator demand before persisting or stopping.
+                releaseLocks()
+                DebugStayAwakePreferences(this@DebugStayAwakeService).recordSession(false)
+                recordReason(DiagnosticEvent.STAY_AWAKE_AUTO_DISABLED, reason)
+                finishSession()
+            }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -42,15 +79,36 @@ class DebugStayAwakeService : Service() {
             finishSession()
             return START_NOT_STICKY
         }
-        if (running) {
-            showNotification()
-            return START_STICKY
-        }
-
         try {
+            if (!monitoring) {
+                ContextCompat.registerReceiver(this, conditionReceiver, IntentFilter().apply {
+                    addAction(WifiManager.WIFI_STATE_CHANGED_ACTION)
+                    addAction(Intent.ACTION_POWER_DISCONNECTED)
+                    addAction(Intent.ACTION_BATTERY_CHANGED)
+                }, ContextCompat.RECEIVER_EXPORTED)
+                monitoring = true
+            }
+            startRefusal(this)?.let { reason ->
+                releaseLocks()
+                refuseStart(this, reason)
+                finishSession()
+                return START_NOT_STICKY
+            }
             showNotification()
+            if (running) return START_STICKY
             acquireLocks()
             requestWifi()
+            // Conditions may change while acquiring resources or dispatching a queued restore.
+            startRefusal(this)?.let { reason ->
+                releaseLocks()
+                refuseStart(this, reason)
+                finishSession()
+                return START_NOT_STICKY
+            }
+            if (!monitoring || !preferences.enabled) {
+                finishSession()
+                return START_NOT_STICKY
+            }
         } catch (error: SecurityException) {
             Log.e(TAG, "Cannot start debug stay awake", error)
             Toast.makeText(this, R.string.debug_stay_awake_failed, Toast.LENGTH_LONG).show()
@@ -66,7 +124,7 @@ class DebugStayAwakeService : Service() {
         AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK,
             mapOf(DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 1L))
         mutableActive.value = true
-        Log.i(TAG, "Debug stay awake running; enabled intent persists until explicitly stopped")
+        Log.i(TAG, "Debug stay awake running while Wi-Fi is enabled and external power is connected")
         return START_STICKY
     }
 
@@ -129,6 +187,10 @@ class DebugStayAwakeService : Service() {
     }
 
     private fun releaseLocks() {
+        if (monitoring) {
+            monitoring = false
+            unregisterReceiver(conditionReceiver)
+        }
         val hadLocks = wifiLock != null || cpuLock != null || screenLock != null
         wifiRequestCallback?.let { callback ->
             wifiRequestCallback = null
@@ -172,12 +234,23 @@ class DebugStayAwakeService : Service() {
         val active = mutableActive.asStateFlow()
 
         fun setEnabled(context: Context, enabled: Boolean) {
+            if (enabled) {
+                startRefusal(context)?.let { reason ->
+                    refuseStart(context, reason)
+                    stop(context)
+                    return
+                }
+            }
             DebugStayAwakePreferences(context).recordSession(enabled)
             if (enabled) restoreIfEnabled(context) else stop(context)
         }
 
         fun restoreIfEnabled(context: Context) {
             if (!DebugStayAwakePreferences(context).enabled || active.value) return
+            startRefusal(context)?.let { reason ->
+                refuseStart(context, reason)
+                return
+            }
             try {
                 ContextCompat.startForegroundService(
                     context, Intent(context, DebugStayAwakeService::class.java).setAction(ACTION_RESTORE)
@@ -192,6 +265,32 @@ class DebugStayAwakeService : Service() {
         private fun reportRestoreFailure(context: Context, error: RuntimeException) {
             Log.e(TAG, "Cannot restore Stay awake; saved intent remains enabled", error)
             Toast.makeText(context, R.string.debug_stay_awake_failed, Toast.LENGTH_LONG).show()
+        }
+
+        private fun startRefusal(context: Context): StayAwakeStopReason? {
+            when (context.applicationContext.getSystemService(WifiManager::class.java).wifiState) {
+                WifiManager.WIFI_STATE_ENABLED -> Unit
+                WifiManager.WIFI_STATE_DISABLING, WifiManager.WIFI_STATE_DISABLED ->
+                    return StayAwakeStopReason.WIFI_OFF
+                else -> return StayAwakeStopReason.WIFI_UNAVAILABLE
+            }
+            val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            return when (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
+                null, -1 -> StayAwakeStopReason.POWER_UNKNOWN
+                0 -> StayAwakeStopReason.UNPLUGGED
+                else -> null
+            }
+        }
+
+        private fun refuseStart(context: Context, reason: StayAwakeStopReason) {
+            DebugStayAwakePreferences(context).recordSession(false)
+            recordReason(DiagnosticEvent.STAY_AWAKE_START_REFUSED, reason)
+            Toast.makeText(context, reason.message, Toast.LENGTH_SHORT).show()
+        }
+
+        private fun recordReason(event: DiagnosticEvent, reason: StayAwakeStopReason) {
+            Log.i(TAG, "$event: ${reason.name}")
+            AppDiagnostics.record(event, mapOf(DiagnosticMetric.REASON to reason.code))
         }
 
         fun stop(context: Context) {

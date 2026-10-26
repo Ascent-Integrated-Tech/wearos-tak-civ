@@ -1648,32 +1648,51 @@ use or prove battery savings, and no physical battery measurements are claimed.
 Debug and release APKs include one opt-in **Stay awake** split-toggle chip in the alphabetized
 **Developer Preferences** (tap the
 version eight times in Preferences to reveal these tools). This standalone demo/development
-session control does not require Wireless debugging or read its system setting. The switch
-holds screen, CPU and Wi-Fi locks and keeps a Wi-Fi network actively requested, including
+session control does not require Wireless debugging or read its system setting. Starting
+requires an enabled Wi-Fi radio and external power (including a fully charged watch
+still on the charger). Otherwise a brief toast explains the refusal and the switch stays off.
+The switch holds screen, CPU and Wi-Fi locks and keeps a Wi-Fi network actively requested, including
 while viewing system settings. The request does not require Internet access, so local-only
 hotspots can satisfy it. It shows an ongoing notification with a Stop action. It remains
-enabled until you turn off the switch or tap notification Stop. Tap the chip body for
-read-only behavior details. The switch reflects saved intent; **Running** and
-**Enabled, not running** distinguish that intent from actual service activity.
+enabled until you turn off the switch, tap notification Stop, switch Wi-Fi off,
+or remove the watch from its charger. The switch reflects saved intent.
+Wi-Fi radio `DISABLING` or `DISABLED` broadcasts stop the session; ordinary AP
+disconnects, roaming, or loss of Internet validation do not. Power-disconnected
+and battery plugged-state broadcasts also stop it, without polling.
+Automatic shutoff releases the active network request and all locks immediately,
+unregisters its receivers, removes its notification, and persists disabled.
+Restoring Wi-Fi or power never re-enables it: enable it manually again.
 Leaving the UI or swiping the recent task does not stop the foreground service.
 There is no separate update-persistence option: enabled users retain their choice
-regardless of the old checkbox. Explicitly disabled users stay disabled.
+regardless of the old checkbox, subject to the same Wi-Fi/power prerequisites.
+Explicitly or automatically disabled users stay disabled.
 The service requests `START_STICKY` recovery after ordinary process death; the
 package-update and post-unlock boot receiver restore only this service when enabled.
-Opening WearTAK retries a previously blocked restore. Startup failure releases partial
-locks and reports an error without turning the saved choice off. These hooks never
+Opening WearTAK retries a previously blocked restore. Missing or unknown Wi-Fi/power
+prerequisites turn the saved choice off and explain the refusal with a toast.
+Other Android startup failures release partial locks and report an error without
+turning the saved choice off. These hooks never
 launch the main activity or enable the full WearTAK/Companion BLE service stack.
 Updates and restarts temporarily release locks. Android can defer or deny service
 recovery (including force-stop, system task-manager stop, battery policy or permission
 restrictions), so recovery is best-effort, not uninterrupted operation. Boot restoration
 is not direct-boot/lock-screen bypass. Saved intent survives reboot/power cycle, not
 uninstall, app-data clearing or factory reset; no screen can stay awake while powered off.
-There is no timed expiry. The warning **Extra battery use. May heat watch.** appears only while
-enabled. The Wi-Fi request is released on stop, service destruction, or startup failure.
-It does not force Wi-Fi on or guarantee connectivity against RF conditions, hotspot
+There is no timed expiry. The notification warns **Extra battery use. May heat watch.**
+The Wi-Fi request is released on stop, service destruction, or startup failure.
+The active request intentionally creates Wear OS Wi-Fi demand for ADB, but the
+radio-disabling edge releases that demand before persisting shutoff; it never
+re-requests a network after that edge. It does not call APIs to force Wi-Fi on
+or guarantee connectivity against RF conditions, hotspot
 disconnects, or system overrides. It does not prevent an explicit screen-off action or
 guarantee ADB/multicast delivery. The switch
 is only available in the hidden Dev Mode menu.
+
+With Logging enabled, AppDiagnostics records `STAY_AWAKE_AUTO_DISABLED` and
+`STAY_AWAKE_START_REFUSED`, with numeric `REASON` codes: `WIFI_OFF=1`,
+`UNPLUGGED=2`, `WIFI_UNAVAILABLE=3` (radio not yet enabled or state unknown),
+and `POWER_UNKNOWN=4` (no usable sticky plugged state). These events retain
+individual reasons rather than coalescing rapid transitions.
 
 ### TAK SA multicast
 
@@ -1973,7 +1992,7 @@ worn; the stricter heart-rate sample freshness gate is unchanged.
 
 The home location-status icon opens existing reporting-rate settings without
 toggling location. Stay awake retains its label and real on/off control without
-row helper text; its service/notification behavior is unchanged.
+row helper text; its automatic shutoff behavior is described above.
 
 ### Core observation lifetimes
 
@@ -2014,7 +2033,8 @@ physical energy-saving claim.
 Verbose service-state table generation is debug-only; normal service state
 publication remains available in release. Stay awake remains an intentional
 user-enabled feature: boot/package replacement restores it only with saved
-enabled intent, never on a fresh install or after explicit off.
+enabled intent and valid Wi-Fi/power prerequisites, never on a fresh install or
+after explicit or automatic off.
 
 ### WEARTAK-130: chat commands
 

@@ -42,7 +42,7 @@ enum class DiagnosticEvent {
     CHAT, SENSOR, SERVICE_REQUEST, APP_EVENT, SUBSCRIBER_FAILURE, QUEUE_OVERFLOW,
     DISPLAY_INTERACTIVE, ROTATION_LISTENER, PROCESSING_WORK,
     NETWORK_LIFECYCLE, TAK_CONNECTION, TAK_CONNECTION_COUNTS, CONNECTIVITY_PATH,
-    SAMSUNG_HR_CONTINUOUS
+    SAMSUNG_HR_CONTINUOUS, STAY_AWAKE_AUTO_DISABLED, STAY_AWAKE_START_REFUSED
 }
 
 @Keep
@@ -57,7 +57,7 @@ enum class DiagnosticMetric {
     CONNECTED_COUNT, CONNECTING_COUNT, SOCKET_COUNT, UI_CONNECTED, UI_CONNECTING,
     ENABLED, CONFIGURED_COUNT, MODE, GROUP_SELECTED, REQUESTED, LOCK_HELD, IDLE_RELEASED,
     BACKOFF_LEVEL, PRIORITY, MAX_AGE_MS,
-    COALESCED, SKIPPED
+    COALESCED, SKIPPED, REASON
 }
 
 internal enum class ProcessingStage(val code: Long) {
@@ -376,7 +376,8 @@ class AppDiagnostics internal constructor(private val application: Application) 
         if (!enabled.value) return
         synchronized(rateLock) {
             if (!enabled.value) return
-            if (event == DiagnosticEvent.CONNECTIVITY_PATH || event == DiagnosticEvent.SAMSUNG_HR_CONTINUOUS) {
+            if (event == DiagnosticEvent.CONNECTIVITY_PATH || event == DiagnosticEvent.SAMSUNG_HR_CONTINUOUS ||
+                event == DiagnosticEvent.STAY_AWAKE_AUTO_DISABLED || event == DiagnosticEvent.STAY_AWAKE_START_REFUSED) {
                 enqueue(event, metrics + (DiagnosticMetric.COUNT to 1L))
                 return
             }

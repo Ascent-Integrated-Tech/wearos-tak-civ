@@ -3,13 +3,18 @@ package com.aitech.weartak_civ.service
 import android.app.Application
 import android.app.Service
 import android.content.Intent
+import android.content.SharedPreferences
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiManager
 import android.os.Looper
+import android.os.BatteryManager
 import android.os.PowerManager
 import android.provider.Settings
+import com.aitech.weartak_civ.R
+import com.google.gson.JsonParser
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -27,6 +32,7 @@ import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadow.api.Shadow
 import org.robolectric.shadows.ShadowConnectivityManager
+import org.robolectric.shadows.ShadowToast
 import java.time.Duration
 
 @RunWith(RobolectricTestRunner::class)
@@ -45,6 +51,8 @@ class DebugStayAwakeServiceTest {
         service.getSharedPreferences("debug_stay_awake", Application.MODE_PRIVATE).edit().clear().commit()
         Settings.Global.putInt(service.contentResolver, Settings.Global.BOOT_COUNT, 1)
         setWirelessDebugging(false)
+        setWifiState(WifiManager.WIFI_STATE_ENABLED)
+        setPlugged(BatteryManager.BATTERY_PLUGGED_USB)
     }
 
     @After
@@ -168,6 +176,7 @@ class DebugStayAwakeServiceTest {
         start()
         assertEquals(1, connectivity.requests.size)
         assertEquals(1, connectivity.networkCallbacks.size)
+        assertEquals(1, conditionReceiverCount())
     }
 
     @Test
@@ -377,6 +386,228 @@ class DebugStayAwakeServiceTest {
         }
     }
 
+    @Test
+    fun wifiDisablingImmediatelyReleasesDemandAndPersistsOff() {
+        verifyAutoOff(Intent(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            .putExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_DISABLING))
+    }
+
+    @Test
+    fun wifiDisabledAlsoStopsWithoutDisablingBroadcast() {
+        verifyAutoOff(Intent(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            .putExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_DISABLED))
+    }
+
+    @Test
+    fun unplugImmediatelyReleasesDemandAndPersistsOff() {
+        verifyAutoOff(Intent(Intent.ACTION_POWER_DISCONNECTED))
+    }
+
+    @Test
+    fun batteryUnplugStateAlsoStopsSession() {
+        verifyAutoOff(Intent(Intent.ACTION_BATTERY_CHANGED)
+            .putExtra(BatteryManager.EXTRA_PLUGGED, 0))
+    }
+
+    private fun verifyAutoOff(trigger: Intent) {
+        val app = RuntimeEnvironment.getApplication()
+        val receiversBefore = conditionReceiverCount()
+        start()
+        shadowOf(Looper.getMainLooper()).idle()
+        val screen = lock<PowerManager.WakeLock>("screenLock")
+        val cpu = lock<PowerManager.WakeLock>("cpuLock")
+        val wifi = lock<WifiManager.WifiLock>("wifiLock")
+        assertEquals(receiversBefore + 1, conditionReceiverCount())
+        assertEquals(1, connectivity.networkCallbacks.size)
+        val saved = service.getSharedPreferences("debug_stay_awake", Application.MODE_PRIVATE)
+        var observedDisabled = false
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "session_active" && !DebugStayAwakePreferences(service).enabled) {
+                observedDisabled = true
+                assertTrue(connectivity.networkCallbacks.isEmpty())
+                assertFalse(screen.isHeld)
+                assertFalse(cpu.isHeld)
+                assertFalse(wifi.isHeld)
+            }
+        }
+        saved.registerOnSharedPreferenceChangeListener(listener)
+        try {
+            broadcast(trigger)
+            assertTrue(observedDisabled)
+        } finally {
+            saved.unregisterOnSharedPreferenceChangeListener(listener)
+        }
+
+        assertTrue(connectivity.networkCallbacks.isEmpty())
+        assertEquals(1, connectivity.unregisterCalls)
+        assertFalse(screen.isHeld)
+        assertFalse(cpu.isHeld)
+        assertFalse(wifi.isHeld)
+        assertEquals(0, shadowOf(service.getSystemService(WifiManager::class.java)).activeLockCount)
+        assertEquals(receiversBefore, conditionReceiverCount())
+        assertFalse(DebugStayAwakeService.active.value)
+        assertFalse(DebugStayAwakePreferences(service).enabled)
+        assertTrue(shadowOf(service).isStoppedBySelf)
+        assertTrue(shadowOf(service).isForegroundStopped)
+
+        broadcast(Intent(Intent.ACTION_POWER_CONNECTED))
+        setPlugged(BatteryManager.BATTERY_PLUGGED_USB)
+        setWifiState(WifiManager.WIFI_STATE_ENABLED)
+        broadcast(Intent(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            .putExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_ENABLED))
+        DebugStayAwakeService.restoreIfEnabled(service)
+        for (action in listOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) {
+            DebugStayAwakeUpdateReceiver().onReceive(service, Intent(action))
+        }
+        val starts = generateSequence { shadowOf(app).nextStartedService }.toList()
+        assertTrue(starts.none { it.component?.className == DebugStayAwakeService::class.java.name })
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(
+            Intent().setAction(DebugStayAwakeService.ACTION_RESTORE), 0, 2))
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 3))
+        controller.destroy()
+        controller = Robolectric.buildService(DebugStayAwakeService::class.java).create()
+        service = controller.get()
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 4))
+        assertFalse(DebugStayAwakePreferences(service).enabled)
+        assertFalse(DebugStayAwakeService.active.value)
+        assertEquals(1, connectivity.requests.size)
+    }
+
+    @Test
+    fun ordinaryDisconnectAndUnknownRadioBroadcastDoNotStopOrDuplicateRequest() {
+        start()
+        broadcast(Intent(WifiManager.NETWORK_STATE_CHANGED_ACTION))
+        broadcast(Intent(WifiManager.WIFI_STATE_CHANGED_ACTION)
+            .putExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_UNKNOWN))
+        assertTrue(DebugStayAwakeService.active.value)
+        assertTrue(DebugStayAwakePreferences(service).enabled)
+        assertEquals(1, connectivity.requests.size)
+        assertEquals(1, connectivity.networkCallbacks.size)
+    }
+
+    @Test
+    fun wifiOffRefusesManualEnableAndDirectServiceStartWithShortToast() {
+        setWifiState(WifiManager.WIFI_STATE_DISABLED)
+        verifyRefusal(R.string.debug_stay_awake_requires_wifi)
+    }
+
+    @Test
+    fun unpluggedRefusesManualEnableAndDirectServiceStartWithShortToast() {
+        setPlugged(0)
+        verifyRefusal(R.string.debug_stay_awake_requires_power)
+    }
+
+    @Test
+    fun unknownRadioOrBatteryFailsClosed() {
+        setWifiState(WifiManager.WIFI_STATE_UNKNOWN)
+        verifyRefusal(R.string.debug_stay_awake_requires_wifi)
+        setWifiState(WifiManager.WIFI_STATE_ENABLED)
+        setPlugged(-1)
+        verifyRefusal(R.string.debug_stay_awake_requires_power)
+    }
+
+    private fun verifyRefusal(message: Int) {
+        val app = RuntimeEnvironment.getApplication()
+        val receiverCount = conditionReceiverCount()
+        DebugStayAwakeService.setEnabled(service, true)
+        assertFalse(DebugStayAwakePreferences(service).enabled)
+        assertEquals(null, shadowOf(app).nextStartedService)
+        assertEquals(service.getString(message), ShadowToast.getTextOfLatestToast())
+        assertEquals(android.widget.Toast.LENGTH_SHORT, ShadowToast.getLatestToast().duration)
+        DebugStayAwakePreferences(service).recordSession(true)
+        assertEquals(Service.START_NOT_STICKY, service.onStartCommand(null, 0, 1))
+        assertFalse(DebugStayAwakePreferences(service).enabled)
+        assertEquals(service.getString(message), ShadowToast.getTextOfLatestToast())
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(connectivity.requests.isEmpty())
+        assertEquals(receiverCount, conditionReceiverCount())
+        assertTrue(shadowOf(service).isStoppedBySelf)
+    }
+
+    @Test
+    fun restoreBootAndUpdateRefuseInvalidPrerequisitesAndPersistOff() {
+        for (action in listOf(null, Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) {
+            for (wifiOff in listOf(true, false)) {
+                setWifiState(if (wifiOff) WifiManager.WIFI_STATE_DISABLED else WifiManager.WIFI_STATE_ENABLED)
+                setPlugged(if (wifiOff) BatteryManager.BATTERY_PLUGGED_USB else 0)
+                DebugStayAwakePreferences(service).recordSession(true)
+                if (action == null) DebugStayAwakeService.restoreIfEnabled(service)
+                else DebugStayAwakeUpdateReceiver().onReceive(service, Intent(action))
+                assertFalse(DebugStayAwakePreferences(service).enabled)
+                assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+            }
+        }
+    }
+
+    @Test
+    fun fullBatteryStillPluggedInAllowsStartup() {
+        setPlugged(BatteryManager.BATTERY_PLUGGED_WIRELESS, BatteryManager.BATTERY_STATUS_FULL)
+        start()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(DebugStayAwakeService.active.value)
+    }
+
+    @Test
+    fun conditionsChangingDuringRequestCannotLeaveSessionRunning() {
+        connectivity.beforeRequest = { setWifiState(WifiManager.WIFI_STATE_DISABLING) }
+        start()
+        assertFalse(DebugStayAwakeService.active.value)
+        assertFalse(DebugStayAwakePreferences(service).enabled)
+        assertTrue(connectivity.networkCallbacks.isEmpty())
+        assertEquals(1, connectivity.unregisterCalls)
+        assertEquals(0, shadowOf(service.getSystemService(WifiManager::class.java)).activeLockCount)
+        assertEquals(0, conditionReceiverCount())
+    }
+
+    @Test
+    fun stopDestroyAndFailedStartUnregisterConditionReceiver() {
+        start()
+        assertEquals(1, conditionReceiverCount())
+        service.onStartCommand(Intent().setAction(DebugStayAwakeService.ACTION_STOP), 0, 2)
+        assertEquals(0, conditionReceiverCount())
+        start()
+        controller.destroy()
+        assertEquals(0, conditionReceiverCount())
+        controller = Robolectric.buildService(DebugStayAwakeService::class.java).create()
+        service = controller.get()
+        connectivity.denyRequest = true
+        start()
+        assertEquals(0, conditionReceiverCount())
+    }
+
+    @Test
+    fun diagnosticsRecordEachAutoDisableAndStartRefusalReason() = runBlocking {
+        val app = RuntimeEnvironment.getApplication()
+        val field = AppDiagnostics::class.java.getDeclaredField("instance").apply { isAccessible = true }
+        val previous = field.get(null)
+        val diagnostics = AppDiagnostics(app)
+        field.set(null, diagnostics)
+        try {
+            diagnostics.clear()
+            diagnostics.setEnabled(true)
+            start()
+            broadcast(Intent(WifiManager.WIFI_STATE_CHANGED_ACTION)
+                .putExtra(WifiManager.EXTRA_WIFI_STATE, WifiManager.WIFI_STATE_DISABLING))
+            start()
+            broadcast(Intent(Intent.ACTION_POWER_DISCONNECTED))
+            setWifiState(WifiManager.WIFI_STATE_DISABLED)
+            DebugStayAwakeService.setEnabled(service, true)
+            setWifiState(WifiManager.WIFI_STATE_ENABLED)
+            setPlugged(0)
+            DebugStayAwakeService.setEnabled(service, true)
+            val records = JsonParser.parseString(diagnostics.exportJson()).asJsonObject["events"].asJsonArray
+                .map { it.asJsonObject }
+            for (event in listOf("STAY_AWAKE_AUTO_DISABLED", "STAY_AWAKE_START_REFUSED")) {
+                assertEquals(listOf(1L, 2L), records.filter { it["event"].asString == event }
+                    .map { it["metrics"].asJsonObject["REASON"].asLong })
+            }
+        } finally {
+            diagnostics.setEnabled(false)
+            diagnostics.close()
+            field.set(null, previous)
+        }
+    }
+
     @Implements(ConnectivityManager::class)
     class StayAwakeConnectivityShadow : ShadowConnectivityManager() {
         val requests = mutableListOf<NetworkRequest>()
@@ -421,6 +652,26 @@ class DebugStayAwakeServiceTest {
             if (enabled) 1 else 0
         )
     }
+
+    private fun setWifiState(state: Int) {
+        shadowOf(service.getSystemService(WifiManager::class.java)).setWifiState(state)
+    }
+
+    private fun setPlugged(plugged: Int, status: Int = BatteryManager.BATTERY_STATUS_CHARGING) {
+        service.sendStickyBroadcast(Intent(Intent.ACTION_BATTERY_CHANGED)
+            .putExtra(BatteryManager.EXTRA_PLUGGED, plugged)
+            .putExtra(BatteryManager.EXTRA_STATUS, status))
+    }
+
+    private fun broadcast(intent: Intent) {
+        service.sendBroadcast(intent)
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun conditionReceiverCount(): Int =
+        shadowOf(RuntimeEnvironment.getApplication()).registeredReceivers.count {
+            it.broadcastReceiver.javaClass.enclosingClass == DebugStayAwakeService::class.java
+        }
 
     private inline fun <reified T> lock(name: String): T {
         val field = DebugStayAwakeService::class.java.getDeclaredField(name)
