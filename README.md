@@ -1911,8 +1911,27 @@ not use `BoxWithConstraints`/subcomposition inside intrinsic-measuring chips.
 Underlying and transmitted location values are unchanged.
 Existing Steps and retained selections persist; removed selector choices
 (CRM, calories, floors, SpO2/tier) resolve to Exertion. This only limits the top
-selector, not those features or collectors. The existing CRM Reserve screen
+selector, not those features or collectors (except calories, removed entirely).
+The existing CRM Reserve screen
 remains accessible from **Plugins > CRM** alongside its threshold settings.
+
+Calories are no longer requested from Health Services, cached in daily metrics,
+or transmitted. Passive monitoring still requests supported Steps, Floors, and
+Elevation Gain daily data types with the same accumulation behavior. The unused
+daily-health entity field and all localized calorie labels have been removed;
+there is no active Room database/table requiring a migration. There are no
+calorie exercise requests, CEP rules, plugin SDK/AIDL fields, or active calorie
+tiles/complications/settings to retain or deprecate. The plugin SDK archive and
+its binary contracts are unchanged.
+
+Legacy stored `key_calories` top-metric selections still resolve to Exertion;
+obsolete calorie preference keys are ignored. Profile preset JSON continues to
+ignore obsolete/unknown top-level fields, including calorie fields, while
+importing its supported profile, servers, units, and alerts normally.
+Companion PLI no longer contains `cals`; ESRI and Tablet Command biometrics no
+longer contain `calories`, including the disabled-metrics `-1` placeholder.
+Receivers must tolerate these absent optional fields rather than requiring a
+numeric value. Steps, floors, elevation, and native TAK CoT detail are unchanged.
 
 The list starts with **Physiological Monitoring**, then **Physiological Alerts**,
 using matching native toggle chips before the metric choices. Merely opening it

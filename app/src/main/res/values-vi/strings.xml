@@ -129,7 +129,6 @@
     <string name="high_exertion_alert_string">HIGH Exertion</string>
     <string name="exertion">Exertion</string>
     <string name="floors">Floors</string>
-    <string name="calories">Calories</string>
     <string name="steps">Steps</string>
     <string name="skin_temp">Skin Temp</string>
     <string name="current_metrics">Current Metrics</string>

@@ -82,6 +82,40 @@ class ActivityRecognitionServiceColdStartTest {
     }
 
     @Test
+    fun passiveRequestsContainOnlyStepsFloorsAndElevation() {
+        assertEquals(
+            setOf(DataType.STEPS_DAILY, DataType.FLOORS_DAILY, DataType.ELEVATION_GAIN_DAILY),
+            ActivityRecognitionService.PASSIVE_DAILY_DATA_TYPES
+        )
+        assertTrue(ActivityRecognitionService.PASSIVE_DAILY_DATA_TYPES.intersect(
+            setOf(DataType.CALORIES_DAILY, DataType.CALORIES, DataType.CALORIES_TOTAL)
+        ).isEmpty())
+        assertEquals(
+            setOf(DataType.STEPS_DAILY),
+            ActivityRecognitionService.PASSIVE_DAILY_DATA_TYPES.intersect(
+                setOf(DataType.STEPS_DAILY, DataType.CALORIES_DAILY)
+            )
+        )
+    }
+
+    @Test
+    fun passiveCallbackPreservesStepsFloorsAndElevationAndIgnoresUnsolicitedCalories() {
+        service.onCreate()
+        val field = ActivityRecognitionService::class.java.getDeclaredField("passiveMonitoringEnabled")
+            .apply { isAccessible = true }
+        val deadline = System.nanoTime() + 3_000_000_000L
+        while (!field.getBoolean(service) && System.nanoTime() < deadline) Thread.sleep(10)
+        assertTrue(field.getBoolean(service))
+        passiveCallback().onNewDataPointsReceived(DataPointContainer(listOf(
+            IntervalDataPoint(DataType.STEPS_DAILY, 1_234L, Duration.ZERO, Duration.ofMinutes(1)),
+            IntervalDataPoint(DataType.FLOORS_DAILY, 6.7, Duration.ZERO, Duration.ofMinutes(1)),
+            IntervalDataPoint(DataType.ELEVATION_GAIN_DAILY, 9.0, Duration.ZERO, Duration.ofMinutes(1)),
+            IntervalDataPoint(DataType.CALORIES_DAILY, 42.4, Duration.ZERO, Duration.ofMinutes(1))
+        )))
+        verifyRepo { repo.updateDailyMetrics(any(), 1_234L, 6.7, 9.0) }
+    }
+
+    @Test
     fun coldStartAndStickyRestartWithoutActivityRepositoryUseApplicationRepository() {
         service.onCreate()
         assertTrue(ActivityRecognitionService.isRunning.get())
@@ -101,7 +135,7 @@ class ActivityRecognitionServiceColdStartTest {
             DataPointContainer(listOf(IntervalDataPoint(DataType.STEPS_DAILY, 1_234L, Duration.ZERO, Duration.ofMinutes(1))))
         )
         verifyRepo {
-            repo.updateDailyMetrics(any(), 1_234L, null, null, null)
+            repo.updateDailyMetrics(any(), 1_234L, null, null)
         }
 
         callback.onHealthEventReceived(
@@ -141,7 +175,7 @@ class ActivityRecognitionServiceColdStartTest {
         passiveCallback().onHealthEventReceived(
             HealthEvent(HealthEvent.Type.FALL_DETECTED, Instant.now(), DataPointContainer(emptyList()))
         )
-        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any()) }
         coVerify(exactly = 0) { repo.addPhysioAndAutoGenAlertRequest(any(), any(), any(), any(), any(), any()) }
     }
 
@@ -179,15 +213,15 @@ class ActivityRecognitionServiceColdStartTest {
         monitoring.value = false
         awaitMonitoring(false)
         sample()
-        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any()) }
         monitoring.value = true
         awaitMonitoring(true)
         shadowOf(RuntimeEnvironment.getApplication()).denyPermissions(Manifest.permission.BODY_SENSORS)
         sample()
-        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any(), any()) }
+        coVerify(exactly = 0) { repo.updateDailyMetrics(any(), any(), any(), any()) }
         shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.BODY_SENSORS)
         sample()
-        verifyRepo { repo.updateDailyMetrics(any(), 456L, null, null, null) }
+        verifyRepo { repo.updateDailyMetrics(any(), 456L, null, null) }
     }
 
     private fun passiveCallback(): PassiveListenerCallback =

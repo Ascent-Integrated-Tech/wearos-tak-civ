@@ -123,6 +123,21 @@ class LoadProfileHandlerTest {
     }
 
     @Test
+    fun obsoleteCalorieFieldsDoNotPreventPresetImport() {
+        val json = """
+            {"profile":{"callsign":"ODIN"},
+             "calories":{"enabled":true,"daily":250},
+             "selected_physio_metric":"key_calories",
+             "key_calories":true,
+             "unitPrefs":{"rab_rng_units_pref":"0"}}
+        """.trimIndent()
+        val result = run(mapOf("name" to "odin"), json)
+        assertTrue(result.message, result.ok)
+        assertEquals(listOf("callsign=ODIN"), profileCalls)
+        assertEquals(listOf(mapOf("rab_rng_units_pref" to "0")), unitUpdates)
+    }
+
+    @Test
     fun presetNamesAreStrict() {
         assertEquals("odin-weartak", ProfilePresetParser.validName(" ODIN-WEARTAK "))
         assertNull(ProfilePresetParser.validName("a/b"))
