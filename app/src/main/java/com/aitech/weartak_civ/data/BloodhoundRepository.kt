@@ -1167,7 +1167,7 @@ class BloodhoundRepository(
 
     init {
         projectionScope.launch {
-            bloodhoundStore.visibleItems.collect {
+            bloodhoundStore.publicationVersion.collect {
                 synchronized(bloodhoundStateLock) {
                     publishVisibleBloodhounds()
                     val completed = pendingEventKeys.filterNot(bloodhoundStore::hasPendingProjection)

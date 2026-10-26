@@ -124,4 +124,22 @@ class SourceAwareCotCoalescingTest {
         runCurrent()
         assertEquals(2, store.visibleItems.value.first().position)
     }
+
+    @Test fun hiddenSourcePublicationSignalsCompletedSnapshotsWithoutChangingVisibleWinner() = runTest {
+        val store = SourceAwareCotStore(Item::source, Item::uid, Item::time, Item::receipt,
+            publicationScope = backgroundScope)
+        store.upsert(Item(time = 1_000))
+        store.upsert(Item(source = "ble"))
+        val visible = store.visibleItems.value
+        val version = store.publicationVersion.value
+        store.upsertWithResult(Item(source = "ble", time = 200), true)
+        assertEquals(version, store.publicationVersion.value)
+        assertTrue(store.hasPendingProjection(SourceCotKey("ble", "track")))
+        advanceTimeBy(1_500)
+        runCurrent()
+        assertEquals(version + 1, store.publicationVersion.value)
+        assertSame(visible, store.visibleItems.value)
+        assertEquals(200L, store.allItems.value[SourceCotKey("ble", "track")]!!.time)
+        assertFalse(store.hasPendingProjection(SourceCotKey("ble", "track")))
+    }
 }

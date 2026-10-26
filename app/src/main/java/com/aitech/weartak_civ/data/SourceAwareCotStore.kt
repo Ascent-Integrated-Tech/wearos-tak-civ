@@ -64,6 +64,8 @@ class SourceAwareCotStore<T>(
 
     private val _visibleItems = MutableStateFlow<List<T>>(emptyList())
     val visibleItems: StateFlow<List<T>> = _visibleItems.asStateFlow()
+    private val _publicationVersion = MutableStateFlow(0L)
+    val publicationVersion: StateFlow<Long> = _publicationVersion.asStateFlow()
 
     fun upsert(item: T): SourceCotKey = upsertWithResult(item).key
 
@@ -288,10 +290,13 @@ class SourceAwareCotStore<T>(
         pendingKeys.clear()
         // Keep the cache coherent before a synchronous all-items collector can re-enter.
         _allItems.value = storedByKey.mapValues { it.value.value }
-        if (!visibleChanged && !hadPending) return
-        _visibleItems.value = uidOrder.keys.mapNotNull { uid ->
-            visibleByUid[uid]?.value
+        if (visibleChanged || hadPending) {
+            _visibleItems.value = uidOrder.keys.mapNotNull { uid ->
+                visibleByUid[uid]?.value
+            }
         }
+        // Derived repositories observe a completed pair, including hidden-source-only changes.
+        _publicationVersion.value += 1
     }
 
     private fun Stored<T>.isNewerThan(other: Stored<T>): Boolean {
