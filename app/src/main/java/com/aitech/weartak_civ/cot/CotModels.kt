@@ -101,7 +101,14 @@ data class CotMarkerDetail(
     val contact: String?,
     val circleRadiusMeters: Double? = null,
     val isCamera: Boolean = false,
+    val hasUrgentDetail: Boolean = false,
 )
+
+internal fun CotMarkerDetail.canCoalesceTrack(type: String, how: String, sourceId: String?): Boolean =
+    !sourceId.isNullOrBlank() && !sourceId.startsWith("plugin:") &&
+        (type.startsWith("a-") || type.startsWith("u-d-")) &&
+        how.startsWith("m-", ignoreCase = true) && !hasUrgentDetail && remarks.isNullOrBlank() &&
+        link?.uid.isNullOrBlank()
 
 data class CotDeletion(val uid: String, val time: Long)
 

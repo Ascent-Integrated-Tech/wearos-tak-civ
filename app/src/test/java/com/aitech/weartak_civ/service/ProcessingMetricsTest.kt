@@ -210,4 +210,28 @@ class ProcessingMetricsTest {
         }
         assertEquals(3L, marker["metrics"].asJsonObject["COUNT"].asLong)
     }
+
+    @Test fun reductionsAggregateWithoutInventingOperationsAndRespectConsentGenerations() = runBlocking {
+        AppDiagnostics.recordIngestReduction(ProcessingStage.USER_STORE, 9, 10)
+        diagnostics.setEnabled(true)
+        AppDiagnostics.recordIngestReduction(ProcessingStage.USER_STORE, 2, 3)
+        AppDiagnostics.measureProcessing(ProcessingStage.USER_STORE) { Unit }
+        val first = records().single()["metrics"].asJsonObject
+        assertEquals(1L, first["COUNT"].asLong)
+        assertEquals(2L, first["COALESCED"].asLong)
+        assertEquals(3L, first["SKIPPED"].asLong)
+        assertEquals(0L, first["FAILURES"].asLong)
+        assertEquals(1, records().size)
+        AppDiagnostics.recordIngestReduction(ProcessingStage.MARKER_STORE, 4, 5)
+        diagnostics.clear()
+        assertTrue(records().isEmpty())
+        AppDiagnostics.recordIngestReduction(ProcessingStage.USER_STORE, 1, 2)
+        diagnostics.setEnabled(false)
+        diagnostics.setEnabled(true)
+        AppDiagnostics.recordIngestReduction(ProcessingStage.MARKER_STORE, 6, 7)
+        val last = records().last()["metrics"].asJsonObject
+        assertEquals(0L, last["COUNT"].asLong)
+        assertEquals(6L, last["COALESCED"].asLong)
+        assertEquals(7L, last["SKIPPED"].asLong)
+    }
 }
