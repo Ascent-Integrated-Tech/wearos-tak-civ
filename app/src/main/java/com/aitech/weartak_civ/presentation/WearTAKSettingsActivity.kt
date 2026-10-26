@@ -1478,8 +1478,7 @@ fun WearTAKSettingsNav(
                         androidx.compose.ui.res.pluralStringResource(R.plurals.network_server_count,
                             takServerList.size, takConnectedCount, takServerList.size))),
                 NetworkConnectivityRow("multicast", stringResource(R.string.tak_sa_multicast),
-                    "", enableMulticast, settingsVm::storeEnableMulticast,
-                    statusDescription = if (enableMulticast) enabledLabel else disabledLabel),
+                    "", enableMulticast, settingsVm::storeEnableMulticast),
                 NetworkConnectivityRow("sitx", stringResource(R.string.sitx_tak),
                     when {
                         sitxGroupStatus == SitxGroupStatus.CONNECTED && sitxGroup != null ->
@@ -3789,15 +3788,16 @@ fun WearTAKToggleChip(
     title: String, //Upper text of chip
     description: String = "", //Lower text of chip; omitted when empty
     enabled: Boolean = true,
-    statusDescription: String = "", //Accessibility-only status when no visible description
+    statusDescription: String = "", //Accessibility-only status; announced after On/Off when it adds information beyond the visible description
 ) {
+    val onLabel = stringResource(R.string.toggle_state_on)
+    val offLabel = stringResource(R.string.toggle_state_off)
+    val announced = toggleStateAnnouncement(checkedLive == true, onLabel, offLabel, statusDescription, description)
     ToggleChip(
         modifier = Modifier
             .fillMaxWidth()
             .then(
-                if (statusDescription.isNotEmpty() && description.isEmpty()) {
-                    Modifier.semantics { stateDescription = statusDescription }
-                } else Modifier
+                if (announced != null) Modifier.semantics { stateDescription = announced } else Modifier
             ),
 //            .padding(bottom = 7.dp),
         label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },

@@ -32,13 +32,22 @@ class NetworkToggleChipSubtitleTest {
         compose.onNodeWithText("TAK SA Multicast").assertIsDisplayed()
         compose.onNodeWithText("Enabled").assertDoesNotExist()
         val node = compose.onNode(hasText("TAK SA Multicast")).fetchSemanticsNode()
-        assertEquals("Enabled", node.config[SemanticsProperties.StateDescription])
+        assertEquals("On, Enabled", node.config[SemanticsProperties.StateDescription])
     }
 
-    @Test fun serverCountIsShownAsOnlySubtitle() {
+    @Test fun serverCountSubtitleKeepsInformativeStateWithToggleState() {
         compose.setContent {
-            WearTAKToggleChip(true, {}, title = "TAK Servers", description = "1/6", statusDescription = "Connected · 1/6 Servers")
+            WearTAKToggleChip(false, {}, title = "TAK Servers", description = "1/6", statusDescription = "Connected, 1 of 6 servers")
         }
         compose.onNodeWithText("1/6").assertIsDisplayed()
+        val node = compose.onNode(hasText("TAK Servers")).fetchSemanticsNode()
+        assertEquals("Off, Connected, 1 of 6 servers", node.config[SemanticsProperties.StateDescription])
+    }
+
+    @Test fun announcementOnlyOverridesWhenStatusAddsInformation() {
+        assertEquals("On, Connected, 1 of 6 servers", toggleStateAnnouncement(true, "On", "Off", "Connected, 1 of 6 servers", "1/6"))
+        assertEquals("Off, Status", toggleStateAnnouncement(false, "On", "Off", "Status", ""))
+        assertNull(toggleStateAnnouncement(true, "On", "Off", "", ""))
+        assertNull(toggleStateAnnouncement(true, "On", "Off", "Enabled", "Enabled"))
     }
 }

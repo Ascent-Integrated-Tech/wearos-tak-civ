@@ -1008,6 +1008,8 @@
     <string name="ditto_custom_subtitle">Custom PDL</string>
     <string name="ditto_no_pdl_subtitle">None</string>
     <string name="network_server_ratio" translatable="false">%1$d/%2$d</string>
+    <string name="toggle_state_on">On</string>
+    <string name="toggle_state_off">Off</string>
     <plurals name="network_server_count">
         <item quantity="one">%1$d/%2$d Server</item>
         <item quantity="other">%1$d/%2$d Servers</item>

@@ -22,6 +22,16 @@ internal fun List<NetworkConnectivityRow>.alphabetizedConnections(locale: Locale
     }
 }
 
+internal fun toggleStateAnnouncement(
+    checked: Boolean,
+    onLabel: String,
+    offLabel: String,
+    status: String,
+    visibleDescription: String
+): String? {
+    if (status.isEmpty() || status == visibleDescription) return null
+    return "${if (checked) onLabel else offLabel}, $status"
+}
 @StringRes
 internal fun dittoPdlSubtitle(source: DittoPdlSource, hasCustomPdl: Boolean): Int = when (source) {
     DittoPdlSource.COMMUNITY -> R.string.ditto_community_subtitle
