@@ -1,5 +1,6 @@
 package com.aitech.weartak_civ.service
 
+import com.aitech.weartak_civ.presentation.MainActivity
 import android.app.Application
 import android.Manifest
 import android.location.Location
@@ -32,6 +33,11 @@ import org.greenrobot.eventbus.Subscribe
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class ReportingIntervalStrategyServiceTest {
+    @org.junit.Before fun initializeIdentity() {
+        MainActivity.device_uid = "test-watch"
+        MainActivity.versionNumber = "test"
+    }
+
     @Test fun motionLatchControlsBothCadencesAndExplicitOverridesStillWin() {
         val app = RuntimeEnvironment.getApplication()
         val repo = DataRepository(app)
@@ -66,11 +72,12 @@ class ReportingIntervalStrategyServiceTest {
                 CotDispatchService.desiredLocationObservationIntervalSecs == 3600 }
             runBlocking { repo.storeLatestActivityRecognized(ActivityRecognized.WALKING) }
             shadowOf(Looper.getMainLooper()).idle()
-            assertEquals(3600, CotDispatchService.desiredReportingIntervalSecs)
-            assertEquals(3600, CotDispatchService.desiredLocationObservationIntervalSecs)
+            await { CotDispatchService.desiredReportingIntervalSecs == 30 &&
+                CotDispatchService.desiredLocationObservationIntervalSecs == 30 }
             repo.stationaryMotion.confirm(SystemClock.elapsedRealtimeNanos() + 60_000_000_000L, null)
             await { CotDispatchService.desiredReportingIntervalSecs == 30 &&
                 CotDispatchService.desiredLocationObservationIntervalSecs == 30 }
+            runBlocking { repo.storeLatestActivityRecognized(ActivityRecognized.STILL) }
             repo.stationaryMotion.hold()
             await { CotDispatchService.desiredReportingIntervalSecs == 3600 }
             runBlocking { repo.appendManualAlert(DataRepository.CustomEmergencyAlert(

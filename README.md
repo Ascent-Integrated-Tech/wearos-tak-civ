@@ -2703,3 +2703,8 @@ from [deptofdefense/AndroidTacticalAssaultKit-CIV](https://github.com/deptofdefe
 (`atak/ATAK/app/src/main/res/drawable-xxxhdpi/nav_bloodhound.png` and
 `drawable-hdpi/ic_crosshair.png`), licensed GPLv3. Distribution/licensing review
 of this artwork is pending with the project owner.
+
+
+### Stationary location battery saving
+
+With location and activity recognition enabled, a stationary location latch (a usable still fix with significant-motion monitoring) and STILL activity at 50% confidence must agree for 30 seconds before GPS acquisition and self PLI use a minimum 60-second interval. Slower configured, docked, or network-power intervals are preserved. No additional sensors or polling are enabled. Motion, activity changes, screen wake, and user interaction restore the normal cadence; alerts and explicit sends bypass the stationary delay. Self PLI advertises at least twice the effective interval plus 15 seconds of validity, including an announcement when the stationary interval increases. Existing off-body transport policy is unchanged.

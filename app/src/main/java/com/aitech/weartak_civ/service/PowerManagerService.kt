@@ -301,10 +301,12 @@ class PowerManagerService : Service() {
             private set
 
         fun locationObservationIntervalSeconds(dynamic: Boolean): Int =
-            SpeedReportingPolicy.observationIntervalSeconds(
-                dynamic, CotDispatchService.desiredLocationObservationIntervalSecs,
-                CotDispatchService.actualReportingIntervalSecs,
-                observationPowerThrottled, observationDockThrottled,
+            StationaryLocationPolicy.intervalSeconds(
+                SpeedReportingPolicy.observationIntervalSeconds(
+                    dynamic, CotDispatchService.desiredLocationObservationIntervalSecs,
+                    CotDispatchService.actualReportingIntervalSecs,
+                    observationPowerThrottled, observationDockThrottled,
+                ), CotDispatchService.stationaryLocation,
             )
 
         private val TAG = "WearTAK-" + PowerManagerService::class.java.simpleName

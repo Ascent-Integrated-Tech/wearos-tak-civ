@@ -607,6 +607,11 @@ class MainActivity : ComponentActivity() {
         Log.i(TAG, "MainActivity onNewIntent(): categories = (${intent.categories}), action = (${intent.action})")
     }
 
+    override fun onUserInteraction() {
+        super.onUserInteraction()
+        ((application as WearTakApplication).repo as DataRepository).noteLocationMotion()
+    }
+
     override fun onPause() {
         super.onPause()
         Log.i(TAG, "MainActivity onPause()")

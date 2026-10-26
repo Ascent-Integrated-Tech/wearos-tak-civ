@@ -65,6 +65,7 @@ class ReportingIntervalStrategyService : Service() {
     private var latestActivity = ActivityRecognized.UNKNOWN
     private var diagnosticSpeedUsable: Boolean? = null
     private val policyDiagnostics = ReportingPolicyDiagnostics()
+    private val stationaryLocationPolicy = StationaryLocationPolicy()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -83,6 +84,7 @@ class ReportingIntervalStrategyService : Service() {
         startSpeedCollector()
         startActivityCollector()
         startMotionCollector()
+        startStationaryLocationCollector()
     }
 
     override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
@@ -97,6 +99,7 @@ class ReportingIntervalStrategyService : Service() {
         stopForegroundServiceCompat()
         // TODO: should we serviceJob.cancel()
         serviceScope.cancel()
+        CotDispatchService.stationaryLocation = false
     }
 
     private fun initializeVariables() {
@@ -273,24 +276,70 @@ class ReportingIntervalStrategyService : Service() {
     private fun currentActivity(): ActivityRecognized {
         val recognized = if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) ==
             PackageManager.PERMISSION_GRANTED) latestActivity else ActivityRecognized.UNKNOWN
+        if (LocationAcquisitionPolicy.moving(recognized)) return recognized
+        if (recentMotion()) return ActivityRecognized.UNKNOWN
         return if (enableDynamicReportingStrategy && !isAlerting)
             dataRepository.stationaryMotion.activity(recognized, SystemClock.elapsedRealtimeNanos()) else recognized
     }
 
     private fun policySpeed(): Double? =
-        if (enableDynamicReportingStrategy && !isAlerting)
+        if (recentMotion()) null
+        else if (LocationAcquisitionPolicy.moving(latestActivity))
+            latestSpeedMps?.takeIf { it >= SpeedReportingPolicy.STATIONARY_SPEED_MPS }
+        else if (enableDynamicReportingStrategy && !isAlerting)
             dataRepository.stationaryMotion.speed(latestSpeedMps, SystemClock.elapsedRealtimeNanos())
         else latestSpeedMps
 
     private fun startMotionCollector() {
         serviceScope.launch {
-            dataRepository.stationaryMotion.state.collectLatest { state ->
+            combine(dataRepository.stationaryMotion.state, dataRepository.locationMotionNanos) {
+                state, _ -> state
+            }.collectLatest { state ->
                 calcDynamicReportingIntervalAndSendUpdate()
                 if (state.movingUntilNanos > 0) {
                     val remaining = (state.movingUntilNanos - SystemClock.elapsedRealtimeNanos()) / 1_000_000L
                     delay(remaining.coerceAtLeast(0) + 1)
                     dataRepository.stationaryMotion.expire(state, SystemClock.elapsedRealtimeNanos())
                 }
+            }
+        }
+    }
+
+    private fun recentMotion(): Boolean = dataRepository.locationMotionNanos.value.let {
+        it > 0 && SystemClock.elapsedRealtimeNanos() - it < StationaryLocationPolicy.DWELL_NANOS
+    }
+
+    private fun startStationaryLocationCollector() {
+        serviceScope.launch {
+            val activity = combine(dataRepository.latestActivityRecognized,
+                dataRepository.latestActivityConfidence, dataRepository.getEnableActRecService) {
+                recognized, confidence, enabled ->
+                (if (enabled) recognized else ActivityRecognized.UNKNOWN) to confidence
+            }
+            val availability = combine(dataRepository.getEnableLocationService,
+                dataRepository.isAlerting, dataRepository.getLocationInput) { enabled, alerting, input ->
+                Triple(enabled, alerting, input)
+            }
+            combine(activity, availability, dataRepository.stationaryMotion.state,
+                dataRepository.locationMotionNanos) { recognized, available, motion, lastMotion ->
+                { now: Long ->
+                    stationaryLocationPolicy.observe(now, motion.stationary, recognized.first,
+                        recognized.second, available.first &&
+                            ContextCompat.checkSelfPermission(this@ReportingIntervalStrategyService,
+                                Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED &&
+                            (ContextCompat.checkSelfPermission(this@ReportingIntervalStrategyService,
+                                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                                (available.third != LocationInput.INTERNAL_GNSS &&
+                                    ContextCompat.checkSelfPermission(this@ReportingIntervalStrategyService,
+                                        Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)),
+                        available.second, lastMotion)
+                }
+            }.collectLatest { evaluate ->
+                do {
+                    CotDispatchService.stationaryLocation = evaluate(SystemClock.elapsedRealtimeNanos())
+                    val next = stationaryLocationPolicy.nextEvaluationNanos ?: break
+                    delay(((next - SystemClock.elapsedRealtimeNanos()) / 1_000_000L).coerceAtLeast(0) + 1)
+                } while (true)
             }
         }
     }

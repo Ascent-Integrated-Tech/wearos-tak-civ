@@ -141,6 +141,7 @@ class MovementDetectionService : Service(), SensorEventListener {
         if (interactiveInitialized && interactive.value == current) return
         interactiveInitialized = true
         interactive.value = current
+        if (current) repo.noteLocationMotion()
         AppDiagnostics.record(DiagnosticEvent.DISPLAY_INTERACTIVE, mapOf(
             DiagnosticMetric.ACTIVE to if (current) 1L else 0L
         ))
