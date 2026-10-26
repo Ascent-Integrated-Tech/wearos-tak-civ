@@ -111,6 +111,27 @@ class SkinTempService : Service() {
     private lateinit var skinTracker: HealthTracker
     private lateinit var spo2Tracker: HealthTracker
     private lateinit var hrTracker: HealthTracker
+    private var hrSampleConsumer: ((HeartRateSample) -> Unit)? = null
+    private var hrFailureConsumer: (() -> Unit)? = null
+    private var hrListenerAttached = false
+    @Volatile private var destroyed = false
+    private val hrSource = object : SamsungHeartRateSource {
+        override fun start(onSample: (HeartRateSample) -> Unit, onFailure: () -> Unit): Boolean {
+            if (destroyed) return false
+            hrSampleConsumer = onSample
+            hrFailureConsumer = onFailure
+            return startHrTracker()
+        }
+
+        override fun stop() = stopHrTracker()
+    }
+
+    private fun withdrawHrSource() {
+        stopHrTracker()
+        if (HeartRateDelivery.samsungSource.value === hrSource) {
+            HeartRateDelivery.samsungSource.value = null
+        }
+    }
     // PPG capability model
     private var ppgTracker: HealthTracker? = null
     private var ppgTrackerType: HealthTrackerType? = null
@@ -221,18 +242,12 @@ class SkinTempService : Service() {
         }
     }
 
-    // Screen state + flush policy for HR
+    // SDK flush drains screen-off data; it does not configure hardware batching.
     private var screenOffFlushEnabled = false
-    private val SCREEN_OFF_FLUSH_INTERVAL_MS = 2 * 60 * 1_000L
+    private val SCREEN_OFF_FLUSH_INTERVAL_MS = 30_000L
     private val FLUSH_START_DELAY_MS = 5_000L
     private val powerManager by lazy { getSystemService(POWER_SERVICE) as PowerManager }
     private val isInteractiveNow get() = powerManager.isInteractive
-
-    // Rolling snapshot for HR/IBI
-    @Volatile private var lastNonZeroHr = 0
-    @Volatile private var lastNonZeroIbi = 0
-    @Volatile private var lastCallbackElapsed = 0L
-    @Volatile private var lastValidHrElapsed = 0L
 
 	// ---- HRV / RMSSD buffer + params (mirrors WEAR-383) ----
 	private val nnBuffer = ArrayDeque<Int>(128)
@@ -272,6 +287,7 @@ class SkinTempService : Service() {
 
     private val connectionListener = object : ConnectionListener {
         override fun onConnectionSuccess() {
+            if (destroyed) return
             skinTracker = healthService.getHealthTracker(HealthTrackerType.SKIN_TEMPERATURE_ON_DEMAND)
             // Initialize on-demand SpO2 and PPG trackers as a hub
             try {
@@ -285,6 +301,7 @@ class SkinTempService : Service() {
                 try {
                     hrTracker = healthService.getHealthTracker(HealthTrackerType.HEART_RATE_CONTINUOUS)
                     Log.i(TAG, "HRV tracker initialized (HEART_RATE_CONTINUOUS)")
+                    HeartRateDelivery.samsungSource.value = hrSource
                 } catch (error: Exception) {
                     Log.e(TAG, "Failed to init HRV tracker", error)
                 }
@@ -296,8 +313,7 @@ class SkinTempService : Service() {
             Log.i(TAG, "Health SDK Connected")
             if (deviceWorn) {
 //                startPpgContinuousIfSelected()
-                // Start HR tracker and apply screen policy
-                startHrTracker()
+                // HeartrateService owns the HR tracker; this only applies its flush policy.
                 if (!isInteractiveNow) {
                     enableScreenOffFlushLoop()
                     flushHr("initial_screen_off")
@@ -329,7 +345,7 @@ class SkinTempService : Service() {
             stopSkinTracker(true)
             stopSpo2Tracker()
             stopPpgTracker()
-            stopHrTracker()
+            withdrawHrSource()
             AppDiagnostics.updateSamsungHrContinuousRunning(false)
             stopEmitLoop()
         }
@@ -397,64 +413,40 @@ class SkinTempService : Service() {
     }
 
     // ---- HEART RATE CONTINUOUS + IBI listener ----
-    private val hrEventListener = object : HealthTracker.TrackerEventListener {
-        override fun onDataReceived(dataPoints: List<DataPoint>) {
-            if (!BuildConfig.SAMSUNG_HRV_ENABLED || !deviceWorn || !isHrRunning) return
-            lastCallbackElapsed = SystemClock.elapsedRealtime()
-            var batchMostRecentHr = 0
-            var batchMostRecentHrStatus = Int.MIN_VALUE
-            var batchMostRecentIbi = 0
-			var firstIbiList: List<Int>? = null
-			var firstIbiStatusList: List<Int>? = null
+    private var hrEventListener = createHrEventListener(0L)
 
-            for (i in dataPoints.indices) {
-                val dp = dataPoints[i]
-                try {
-                    val status = dp.getValue(ValueKey.HeartRateSet.HEART_RATE_STATUS)
-                    val hr = dp.getValue(ValueKey.HeartRateSet.HEART_RATE)
-                    batchMostRecentHr = hr
-                    batchMostRecentHrStatus = status
-                    if (status == 1 && hr > 0) {
-                        lastValidHrElapsed = SystemClock.elapsedRealtime()
-                        lastNonZeroHr = hr
-                    }
-                    if (i == 0) {
+    private fun createHrEventListener(generation: Long) = object : HealthTracker.TrackerEventListener {
+        override fun onDataReceived(dataPoints: List<DataPoint>) {
+            synchronized(nnBuffer) {
+                if (!BuildConfig.SAMSUNG_HRV_ENABLED || !deviceWorn ||
+                    !isHrRunning || generation != hrGeneration) return
+                for (dp in dataPoints) {
+                    try {
+                        val measuredAt = dp.timestamp
+                        val age = System.currentTimeMillis() - measuredAt
+                        if (measuredAt <= 0L || age < 0L) {
+                            Log.w(TAG, "Ignoring HRV point with invalid timestamp: $measuredAt")
+                            continue
+                        }
+                        val status = dp.getValue(ValueKey.HeartRateSet.HEART_RATE_STATUS)
+                        val hr = dp.getValue(ValueKey.HeartRateSet.HEART_RATE)
+                        if (status == 1 && hr > 0) {
+                            hrSampleConsumer?.invoke(HeartRateSample(hr, measuredAt))
+                        }
                         val ibiList = dp.getValue(ValueKey.HeartRateSet.IBI_LIST)
                         val ibiStatusList = dp.getValue(ValueKey.HeartRateSet.IBI_STATUS_LIST)
-						firstIbiList = ibiList
-						firstIbiStatusList = ibiStatusList
-                        if (ibiList != null && ibiList.isNotEmpty()) {
-                            val lastIbi = ibiList.last()
-                            batchMostRecentIbi = lastIbi
-                            if (lastIbi > 0) lastNonZeroIbi = lastIbi
-                            //Log.i(TAG, "[0] IBI_LIST(ms)=$ibiList")
-                            //Log.i(TAG, "[0] IBI_STATUS_LIST=$ibiStatusList")
+                        if (!addValidNnIntervals(ibiList, ibiStatusList)) continue
+                        val rmssd = computeRmssdMs()
+                        if (rmssd != null && rmssd > 0.0 && rmssd.isFinite()) {
+                            lastNonZeroRmssdMs = rmssd
+                            lastRmssdElapsedMs = SystemClock.elapsedRealtime() - age
+                            lastRmssdWallMs = measuredAt
                         }
+                    } catch (error: Exception) {
+                        Log.e(TAG, "HR parse error", error)
                     }
-                } catch (t: Throwable) {
-                    Log.e(TAG, "HR parse error", t)
                 }
             }
-            val effectiveHr = if (batchMostRecentHr > 0 && batchMostRecentHrStatus == 1) batchMostRecentHr else lastNonZeroHr
-            val effectiveIbi = if (batchMostRecentIbi > 0) batchMostRecentIbi else lastNonZeroIbi
-            val reason = if (isInteractiveNow) "interactive" else "flush/off"
-            /*Log.i(
-                TAG,
-                "HRIBI-SNAPSHOT: HR=$effectiveHr (raw=$batchMostRecentHr status=$batchMostRecentHrStatus lastNonZero=$lastNonZeroHr) " +
-                        "IBI=$effectiveIbi (raw=$batchMostRecentIbi lastNonZero=$lastNonZeroIbi) reason=$reason"
-            )*/
-			// Update NN buffer with newly received (valid) intervals and compute RMSSD (mirror WEAR-383)
-            synchronized(nnBuffer) {
-                if (!deviceWorn || !isHrRunning) return
-                if (!addValidNnIntervals(firstIbiList, firstIbiStatusList)) return@synchronized
-                val rmssd = computeRmssdMs()
-                if (rmssd != null && rmssd > 0.0 && rmssd.isFinite()) {
-                    lastNonZeroRmssdMs = rmssd
-                    lastRmssdElapsedMs = SystemClock.elapsedRealtime()
-                    lastRmssdWallMs = System.currentTimeMillis()
-                }
-            }
-			//Log.i(TAG, "HRV-RMSSD: rmssdMs=${"%.1f".format(effectiveRmssd)} nnCount=${nnBuffer.size} source=$reason")
         }
 
         override fun onFlushCompleted() {
@@ -464,6 +456,12 @@ class SkinTempService : Service() {
         override fun onError(error: HealthTracker.TrackerError) {
             if (::hrTracker.isInitialized) DiagnosticResources.note(DiagnosticResource.SAMSUNG_HR, hrTracker, ResourceAction.UNCERTAIN)
             Log.e(TAG, "HR tracker error: $error")
+            val failure = synchronized(nnBuffer) {
+                if (generation != hrGeneration || !isHrRunning) return
+                hrFailureConsumer
+            }
+            stopHrTracker()
+            failure?.invoke()
         }
     }
 
@@ -1107,59 +1105,55 @@ class SkinTempService : Service() {
     }
 
     // ---- HR tracker lifecycle + screen-off flush helpers ----
-    private fun startHrTracker() {
-        if (!BuildConfig.SAMSUNG_HRV_ENABLED || !deviceWorn || !::hrTracker.isInitialized) return
-        val generation = synchronized(nnBuffer) {
-            if (isHrRunning) return
+    private fun startHrTracker(): Boolean = synchronized(nnBuffer) {
+        if (destroyed || !BuildConfig.SAMSUNG_HRV_ENABLED || !::hrTracker.isInitialized) return false
+        if (isHrRunning) return true
+        if (hrListenerAttached) return false
+        try {
+            // HeartrateService owns monitoring, worn-state, and permission gating for both sources.
             isHrRunning = true
-            ++hrGeneration
-        }
-        backgroundHandler.post {
-            synchronized(nnBuffer) {
-                if (!isHrRunning || !deviceWorn || hrGeneration != generation) {
-                    DiagnosticResources.note(DiagnosticResource.SAMSUNG_HR, hrTracker, ResourceAction.STALE_CALLBACK)
-                    return@post
-                }
-                try {
-                    DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_HR, hrTracker) { hrTracker.setEventListener(hrEventListener) }
-                    AppDiagnostics.updateSamsungHrContinuousRunning(true)
-                    Log.i(TAG, "HRV tracker started (HEART_RATE_CONTINUOUS)")
-                } catch (error: Exception) {
-                    isHrRunning = false
-                    disableScreenOffFlushLoop()
-                    Log.e(TAG, "Failed to start HRV tracker", error)
-                }
+            hrEventListener = createHrEventListener(++hrGeneration)
+            hrListenerAttached = true
+            DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_HR, hrTracker) {
+                hrTracker.setEventListener(hrEventListener)
             }
+            AppDiagnostics.updateSamsungHrContinuousRunning(true)
+            Log.i(TAG, "HRV tracker started (HEART_RATE_CONTINUOUS; SDK has no batching control)")
+            if (!isInteractiveNow) enableScreenOffFlushLoop()
+            true
+        } catch (error: Exception) {
+            isHrRunning = false
+            disableScreenOffFlushLoop()
+            Log.e(TAG, "Failed to start HRV tracker", error)
+            false
         }
     }
 
-    private fun stopHrTracker() {
-        val generation = synchronized(nnBuffer) {
-            isHrRunning = false
-            nnBuffer.clear()
-            lastNonZeroRmssdMs = 0.0
-            lastRmssdElapsedMs = 0L
-            lastRmssdWallMs = 0L
-            lastHrvEmittedElapsedMs = 0L
-            ++hrGeneration
-        }
+    private fun stopHrTracker(): Boolean = synchronized(nnBuffer) {
+        isHrRunning = false
+        hrSampleConsumer = null
+        hrFailureConsumer = null
+        nnBuffer.clear()
+        lastNonZeroRmssdMs = 0.0
+        lastRmssdElapsedMs = 0L
+        lastRmssdWallMs = 0L
+        lastHrvEmittedElapsedMs = 0L
+        ++hrGeneration
         disableScreenOffFlushLoop()
-        if (!::hrTracker.isInitialized) return
-        backgroundHandler.post {
-            synchronized(nnBuffer) {
-                if (isHrRunning || hrGeneration != generation) {
-                    DiagnosticResources.note(DiagnosticResource.SAMSUNG_HR, hrTracker, ResourceAction.STALE_CALLBACK)
-                    return@post
+        if (hrListenerAttached && ::hrTracker.isInitialized) {
+            try {
+                DiagnosticResources.release(DiagnosticResource.SAMSUNG_HR, hrTracker) {
+                    hrTracker.unsetEventListener()
                 }
-                try {
-                    DiagnosticResources.release(DiagnosticResource.SAMSUNG_HR, hrTracker) { hrTracker.unsetEventListener() }
-                    AppDiagnostics.updateSamsungHrContinuousRunning(false)
-                    Log.i(TAG, "HRV tracker stopped")
-                } catch (error: Exception) {
-                    Log.e(TAG, "Failed to stop HRV tracker", error)
-                }
+                hrListenerAttached = false
+                AppDiagnostics.updateSamsungHrContinuousRunning(false)
+                Log.i(TAG, "HRV tracker stopped")
+            } catch (error: Exception) {
+                Log.e(TAG, "Failed to stop HRV tracker", error)
+                return false
             }
         }
+        true
     }
 
     internal fun latestHrvPayload(nowElapsedMs: Long): HrvPayload? = synchronized(nnBuffer) {
@@ -1481,6 +1475,7 @@ class SkinTempService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
         super.onDestroy()
         Log.d(TAG, "SkinTempService onDestroy()")
         isRunning.set(false)
@@ -1499,7 +1494,7 @@ class SkinTempService : Service() {
         stopSkinTracker(true)
         stopSpo2Tracker()
         stopPpgTracker()
-        stopHrTracker()
+        withdrawHrSource()
         if (::spo2Sequencer.isInitialized) {
             spo2Sequencer.reset(createSpo2EngineOps(CepProvider.getOrCreateEngine(applicationContext)), ResetReason.SERVICE_STOP)
             lastSpo2InvalidReason = ResetReason.SERVICE_STOP.name
@@ -1535,8 +1530,7 @@ class SkinTempService : Service() {
         if (nowWorn != deviceWorn) {
             if (nowWorn) {
                 deviceWorn = true
-                // HR continuous starts and follow screen policy
-                startHrTracker()
+                // HR source ownership follows the authoritative repository worn state.
                 if (!isInteractiveNow) {
                     enableScreenOffFlushLoop()
                     flushHr("worn_event_screen_off")
@@ -1559,7 +1553,6 @@ class SkinTempService : Service() {
                 ppgRedSustainedAtPauseMs = 0L
                 ppgPauseStartedAtMs = 0L
                 clearSpo2RepositoryStateAsync()
-                stopHrTracker()
                 stopSkinTracker(true)     // shut it down
                 stopSpo2Tracker()
                 stopPpgTracker()

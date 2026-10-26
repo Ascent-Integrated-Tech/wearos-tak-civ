@@ -91,6 +91,7 @@ internal fun FittedTopMetricText(
 
 @Composable
 internal fun topMetricValue(metric: TopDisplayMetric, repo: DataRepository): String {
+    ObserveLiveHeartRate(metric == TopDisplayMetric.HEART_RATE)
     val monitoring by repo.getEnablePhysiologicalServices.collectAsState(initial = MainActivity.enablePhysiologicalServices)
     val wornObservation by repo.latestDeviceWornObservation.collectAsState()
     val worn = wornObservation == true
