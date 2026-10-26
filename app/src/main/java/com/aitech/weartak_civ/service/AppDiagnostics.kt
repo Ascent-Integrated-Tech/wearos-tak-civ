@@ -73,7 +73,8 @@ enum class DiagnosticMetric {
 }
 
 internal enum class ProcessingStage(val code: Long) {
-    TCP_READ(0), TCP_FRAMING(1), TCP_INGEST(2), PLUGIN_OFFER(3), USER_STORE(4), MARKER_STORE(5)
+    TCP_READ(0), TCP_FRAMING(1), TCP_INGEST(2), PLUGIN_OFFER(3), USER_STORE(4), MARKER_STORE(5),
+    SA_DEFERRED(6)
 }
 
 @Keep

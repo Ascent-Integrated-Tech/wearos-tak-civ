@@ -131,6 +131,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.Utils.latLonToMgrs
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.observePassiveSaDemand
 import com.aitech.weartak_civ.data.RemoteEmergencyMapItem
 import androidx.compose.ui.res.stringResource
 import com.aitech.weartak_civ.data.DataRepository.MarkerType
@@ -278,6 +279,7 @@ open class MapActivity : ComponentActivity() {
         requestedFocus.value = readFocus(intent)
         mapActivity = this
         Log.i(TAG, "MapActivity onCreate called")
+        observePassiveSaDemand(lifecycle, (application as WearTakApplication).repo.passiveSaDemand)
 
         enableEdgeToEdge()
         setContent {
