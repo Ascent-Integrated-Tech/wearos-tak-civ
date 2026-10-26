@@ -99,6 +99,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -1468,17 +1469,17 @@ fun WearTAKSettingsNav(
                 masterEnabled = enableTakEndpoint,
                 anyConnected = takServerList.any { it.isEnabled && it.serverId in connected }
             )
+            val takConnectedCount = if (enableTakEndpoint) takServerList.count { it.isEnabled && it.serverId in connected } else 0
             val rows = (listOf(
                 NetworkConnectivityRow("tak", stringResource(R.string.tak_servers),
-                    stringResource(R.string.tak_status_with_count, stringResource(takIndicator.label),
+                    stringResource(R.string.network_server_ratio, takConnectedCount, takServerList.size),
+                    enableTakEndpoint, settingsVm::storeEnableTakEndpoint,
+                    statusDescription = stringResource(R.string.tak_status_with_count, stringResource(takIndicator.label),
                         androidx.compose.ui.res.pluralStringResource(R.plurals.network_server_count,
-                            takServerList.size,
-                            if (enableTakEndpoint) takServerList.count { it.isEnabled && it.serverId in connected } else 0,
-                            takServerList.size)),
-                    enableTakEndpoint, settingsVm::storeEnableTakEndpoint),
+                            takServerList.size, takConnectedCount, takServerList.size))),
                 NetworkConnectivityRow("multicast", stringResource(R.string.tak_sa_multicast),
-                    if (enableMulticast) enabledLabel else disabledLabel,
-                    enableMulticast, settingsVm::storeEnableMulticast),
+                    "", enableMulticast, settingsVm::storeEnableMulticast,
+                    statusDescription = if (enableMulticast) enabledLabel else disabledLabel),
                 NetworkConnectivityRow("sitx", stringResource(R.string.sitx_tak),
                     when {
                         sitxGroupStatus == SitxGroupStatus.CONNECTED && sitxGroup != null ->
@@ -1490,7 +1491,8 @@ fun WearTAKSettingsNav(
                     stringResource(dittoPdlSubtitle(dittoPdlSource, dittoCustomPdl.isNotBlank())),
                     enableDittoService, settingsVm::storeEnableDittoService),
                 NetworkConnectivityRow("companion", stringResource(R.string.companion_app),
-                    companionStatus, enableCompanionAppService, settingsVm::storeEnableCompanionAppService)
+                    "", enableCompanionAppService, settingsVm::storeEnableCompanionAppService,
+                    statusDescription = companionStatus)
             ) + pluginList.mapNotNull { plugin ->
                 val toggle = pluginToggles[plugin.packageName] ?: return@mapNotNull null
                 if (!plugin.isLoaded) return@mapNotNull null
@@ -1508,6 +1510,7 @@ fun WearTAKSettingsNav(
                             onCheckedChange = row.toggle,
                             title = row.title,
                             description = row.subtitle,
+                            statusDescription = row.statusDescription,
                             appIcon = {
                                 if (row.key == "tak") {
                                     Image(
@@ -3787,10 +3790,16 @@ fun WearTAKToggleChip(
     title: String, //Upper text of chip
     description: String = "", //Lower text of chip; omitted when empty
     enabled: Boolean = true,
+    statusDescription: String = "", //Accessibility-only status when no visible description
 ) {
     ToggleChip(
         modifier = Modifier
-            .fillMaxWidth(),
+            .fillMaxWidth()
+            .then(
+                if (statusDescription.isNotEmpty() && description.isEmpty()) {
+                    Modifier.semantics { stateDescription = statusDescription }
+                } else Modifier
+            ),
 //            .padding(bottom = 7.dp),
         label = { Text(title, maxLines = 3, overflow = TextOverflow.Ellipsis) },
         secondaryLabel = if (description.isNotEmpty()) {

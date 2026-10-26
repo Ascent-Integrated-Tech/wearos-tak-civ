@@ -11,7 +11,8 @@ internal data class NetworkConnectivityRow(
     val title: String,
     val subtitle: String,
     val checked: Boolean,
-    val toggle: (Boolean) -> Unit
+    val toggle: (Boolean) -> Unit,
+    val statusDescription: String = subtitle
 )
 
 internal fun List<NetworkConnectivityRow>.alphabetizedConnections(locale: Locale): List<NetworkConnectivityRow> {
