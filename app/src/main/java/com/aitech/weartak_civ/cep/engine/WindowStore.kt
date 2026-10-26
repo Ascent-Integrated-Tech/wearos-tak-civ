@@ -61,6 +61,14 @@ class WindowStore(private val ringConfig: RingConfig) {
     /** Test / diagnostics: newest sample in numeric ring [topic], if any. */
     internal fun peekNumericRingLast(topic: String): Double? = num[topic]?.lastOrNull()
 
+    internal fun clearWeatherState() {
+        for (key in WeatherDependencies.outputKeys + setOf(Topics.WIND, Topics.WATER)) {
+            num.remove(key)
+            arr.remove(key)
+            latest.remove(key)
+        }
+    }
+
     /**
      * Holder-mediated swap: copy per-topic ring buffers and [latest] from another store.
      * [FeatureStore] is intentionally not copied — profile and derived keys are re-seeded in

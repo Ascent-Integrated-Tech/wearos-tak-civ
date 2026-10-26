@@ -75,6 +75,7 @@ object CepProvider {
 
     /** Holder is the single ownership seam for the running engine. */
     private val holder = CepEngineHolder()
+    val weatherDemand get() = holder.weatherDemand
 
     /** Monotonic apply ticket; used by the apply lane to enforce last-write-wins. */
     private val applyTicket = AtomicLong(0L)

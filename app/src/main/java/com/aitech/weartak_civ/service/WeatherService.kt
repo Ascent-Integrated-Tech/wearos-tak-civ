@@ -30,6 +30,10 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import okhttp3.Call
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -42,14 +46,16 @@ import kotlin.math.*
 
 /**
  * WeatherService periodically fetches weather from OpenWeather One Call 3.0,
- * gated by minimum time and minimum distance moved. This implementation only logs
- * parsed values and updates a latest snapshot field; it does not emit CEP events.
+ * gated by effective CEP demand, key availability, time and distance. Publishes wind,
+ * wetness and ambient temperature without logging location, credentials or request URLs.
  */
 class WeatherService : Service() {
 	private val TAG = "WearTAK-" + WeatherService::class.java.simpleName
 
 	private val serviceJob = SupervisorJob()
 	private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+	private val lifecycleLock = Any()
+	@Volatile private var activeCall: Call? = null
 	private val httpClient by lazy {
 		OkHttpClient.Builder()
 			.callTimeout(20, TimeUnit.SECONDS)
@@ -94,11 +100,11 @@ class WeatherService : Service() {
 		loadInitialConfig()
 		Log.d(TAG, "WeatherService started; pollIntervalMin=$configuredPollIntervalMinutes, minDistanceMeters=$minDistanceMeters")
 
-		// Fail-fast if API key missing
+		// Also defend direct starts that bypass the manager's key gate.
 		val apiKey = OpenWeatherConfig.getApiKey()
 		if (apiKey.isNullOrBlank()) {
 			Log.e(TAG, "OpenWeather API key missing.")
-			//stopSelfSafely()
+			stopSelfSafely()
 			return
 		}
 
@@ -118,6 +124,8 @@ class WeatherService : Service() {
 		Log.i(TAG, "WeatherService onDestroy()")
 		isRunning.set(false)
 		serviceScope.cancel()
+		activeCall?.cancel()
+		synchronized(lifecycleLock) { latest = null }
 		stopForegroundServiceCompat()
 	}
 
@@ -137,7 +145,7 @@ class WeatherService : Service() {
 		currentBackoffMillis = TimeUnit.MINUTES.toMillis(configuredPollIntervalMinutes)
 	}
 
-	private suspend fun runLoop(apiKey: String) {
+	internal suspend fun runLoop(apiKey: String) {
 		// On first loop iteration, allow an immediate attempt if gates pass.
 		while (isRunning.get()) {
 			val now = System.currentTimeMillis()
@@ -172,7 +180,6 @@ class WeatherService : Service() {
 			lastAttemptFetchTimeMillis = now
 			val startNs = System.nanoTime()
 			val result = try {
-				Log.d(TAG, "Making OpenWeather request for lat=${latestLoc.latitude}, lon=${latestLoc.longitude}")
 				val url = buildOneCallUrl(
 					lat = latestLoc.latitude,
 					lon = latestLoc.longitude,
@@ -180,29 +187,44 @@ class WeatherService : Service() {
 					exclude = "minutely,daily,alerts",
 					apiKey = apiKey
 				)
-				Log.d(TAG, "Request URL: $url")
 				val request = Request.Builder().url(url).get().build()
-				httpClient.newCall(request).execute()
-			} catch (t: Throwable) {
-				Log.d(TAG, "Request error: ${t.message}")
-				Log.e(TAG, "HTTP request failed: ${t.message}", t)
+				val call = httpClient.newCall(request)
+				activeCall = call
+				currentCoroutineContext().ensureActive()
+				call.execute()
+			} catch (cancelled: CancellationException) {
+				throw cancelled
+			} catch (error: Exception) {
+				currentCoroutineContext().ensureActive()
+				Log.e(TAG, "Weather HTTP request failed (${error.javaClass.simpleName})")
 				null
 			}
 			val latencyMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startNs)
 
 			if (result == null) {
+				activeCall = null
 				handleFailureBackoff("Network error", latencyMs)
+				delay(currentBackoffMillis)
 				continue
 			}
 
+			var successful = false
 			result.use { resp ->
+				currentCoroutineContext().ensureActive()
 				Log.d(TAG, "Received HTTP response code=${resp.code} in ${latencyMs}ms")
 				if (!resp.isSuccessful) {
 					Log.d(TAG, "Non-success response: code=${resp.code}")
 					handleFailureBackoff("HTTP ${resp.code}", latencyMs)
 					return@use
 				}
-				val bodyStr = resp.body?.string()
+				val bodyStr = try {
+					resp.body?.string()
+				} catch (error: Exception) {
+					currentCoroutineContext().ensureActive()
+					Log.e(TAG, "Weather response read failed (${error.javaClass.simpleName})")
+					handleFailureBackoff("Response read error", latencyMs)
+					return@use
+				}
 				if (bodyStr.isNullOrBlank()) {
 					Log.d(TAG, "Empty body in response")
 					handleFailureBackoff("Empty body", latencyMs)
@@ -217,13 +239,18 @@ class WeatherService : Service() {
 						lon = latestLoc.longitude,
 						tsUtcMillis = System.currentTimeMillis()
 					)
-					latest = completed
+					currentCoroutineContext().ensureActive()
+					synchronized(lifecycleLock) {
+						if (!serviceJob.isActive) return@use
+						latest = completed
+					}
 
 					// Update success state
 					lastSuccessfulFetchTimeMillis = now
 					lastSuccessfulFetchLat = latestLoc.latitude
 					lastSuccessfulFetchLon = latestLoc.longitude
 					currentBackoffMillis = TimeUnit.MINUTES.toMillis(configuredPollIntervalMinutes) // reset
+					successful = true
 
 					// Structured success summary log
 					Log.i(TAG, "Weather fetch OK, latency=${latencyMs}ms " +
@@ -258,31 +285,37 @@ class WeatherService : Service() {
 						// Ingest ambient temperature directly to avoid clobbering wind/humidity via AmbientPayload
 						completed.tempC?.let { tempC ->
 							try {
+								currentCoroutineContext().ensureActive()
 								CepProvider.getOrCreateEngine(applicationContext).ingest("ambient.temp_c", tempC)
 								Log.d(TAG, "WeatherService: ingested ambient.temp_c=$tempC")
-							} catch (t: Throwable) {
-								Log.e(TAG, "Failed CEP ingest (ambient.temp_c)", t)
+							} catch (cancelled: CancellationException) {
+								throw cancelled
+							} catch (error: Exception) {
+								Log.e(TAG, "Failed CEP ambient temperature ingest (${error.javaClass.simpleName})")
 							}
 						}
-					} catch (t: Throwable) {
-						Log.e(TAG, "Failed CEP emit (wind/wet)", t)
+					} catch (cancelled: CancellationException) {
+						throw cancelled
+					} catch (error: Exception) {
+						Log.e(TAG, "Failed CEP weather emit (${error.javaClass.simpleName})")
 					}
+				} catch (cancelled: CancellationException) {
+					throw cancelled
 				} catch (je: JSONException) {
-					Log.d(TAG, "JSON parse error: ${je.message}")
-					Log.e(TAG, "JSON parse error: ${je.message}", je)
+					Log.e(TAG, "Weather JSON parse failed (${je.javaClass.simpleName})")
 					handleFailureBackoff("Parse error", latencyMs)
 					return@use
-				} catch (t: Throwable) {
-					Log.d(TAG, "Unexpected parse error: ${t.message}")
-					Log.e(TAG, "Unexpected parse error: ${t.message}", t)
+				} catch (error: Exception) {
+					Log.e(TAG, "Weather processing failed (${error.javaClass.simpleName})")
 					handleFailureBackoff("Parse error", latencyMs)
 					return@use
 				}
 			}
+			activeCall = null
 
 			// After success, wait until next cycle based on interval (not backoff)
 			val intervalMs = TimeUnit.MINUTES.toMillis(configuredPollIntervalMinutes)
-			delay(intervalMs)
+			delay(if (successful) intervalMs else currentBackoffMillis)
 		}
 	}
 
@@ -378,14 +411,7 @@ class WeatherService : Service() {
 	 */
 	internal object OpenWeatherConfig {
 		fun getApiKey(): String? {
-			return try {
-				// Prefer BuildConfig field if present (reflection avoids compile error when absent)
-				val buildConfig = com.aitech.weartak_civ.BuildConfig::class.java
-				val field = buildConfig.getField("OPENWEATHER_API_KEY")
-				(field.get(null) as? String)?.takeIf { it.isNotBlank() }
-			} catch (_: Throwable) {
-				null
-			}
+			return com.aitech.weartak_civ.BuildConfig.OPENWEATHER_API_KEY.takeIf { it.isNotBlank() }
 		}
 	}
 
@@ -490,4 +516,3 @@ class WeatherService : Service() {
 		}
 	}
 }
-
