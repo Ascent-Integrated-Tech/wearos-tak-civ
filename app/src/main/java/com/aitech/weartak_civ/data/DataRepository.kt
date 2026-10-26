@@ -200,7 +200,10 @@ import com.aitech.weartak_civ.events.InteractionPliRefresh
 import com.aitech.weartak_civ.events.PliRefreshReason
 
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "data")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(
+    name = "data",
+    produceMigrations = { listOf(TakMasterPreferenceMigration()) }
+)
 private val repoScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 private const val NON_TAK_COT_SOURCE_ID = "non-tak"
 internal const val COMPANION_USER_SOURCE_ID = "companion-phone-users"
@@ -4895,6 +4898,9 @@ class DataRepository(private val context: Context) {
                 return@edit
             }
             prefs[key] = enabled
+            if (key == ENABLE_TAK_ENDPOINT) {
+                prefs[TAK_ENDPOINT_USER_CHOICE] = enabled
+            }
         }
     }
 
@@ -4904,17 +4910,17 @@ class DataRepository(private val context: Context) {
 
     /** Trusted Android managed configuration remains authoritative over local UI locks. */
     suspend fun storeManagedNetworkToggles(
-        tak: Boolean,
-        multicast: Boolean,
-        sitx: Boolean,
-        ditto: Boolean,
-        companion: Boolean?
+        tak: Boolean? = null,
+        multicast: Boolean? = null,
+        sitx: Boolean? = null,
+        ditto: Boolean? = null,
+        companion: Boolean? = null
     ) {
         context.dataStore.edit { prefs ->
-            prefs[ENABLE_TAK_ENDPOINT] = tak
-            prefs[ENABLE_MULTICAST] = multicast
-            prefs[ENABLE_SITX_SERVICE] = sitx
-            prefs[ENABLE_DITTO_SERVICE] = ditto
+            tak?.let { prefs[ENABLE_TAK_ENDPOINT] = it }
+            multicast?.let { prefs[ENABLE_MULTICAST] = it }
+            sitx?.let { prefs[ENABLE_SITX_SERVICE] = it }
+            ditto?.let { prefs[ENABLE_DITTO_SERVICE] = it }
             companion?.let { prefs[ENABLE_COMPANION_APP_SERVICE] = it }
         }
     }
@@ -5946,7 +5952,7 @@ class DataRepository(private val context: Context) {
         private val MULTICAST_PROTOCOL = stringPreferencesKey("multicast_protocol")
         private val MULTICAST_PORT =intPreferencesKey("multicast_port")
         private val ENABLE_SITX_SERVICE = booleanPreferencesKey("enable_sitx_service")
-        private val ENABLE_TAK_ENDPOINT = booleanPreferencesKey("enable_tak_endpoint")
+        private val ENABLE_TAK_ENDPOINT = TAK_ENDPOINT_ENABLED
         private val ENABLE_ESRI_ENDPOINT = booleanPreferencesKey("enable_esri_endpoint")
         private val ESRI_ENDPOINT = stringPreferencesKey("esri_endpoint")
         private val ESRI_REPORTING_UPDATE_INTERVAL = intPreferencesKey("esri_reporting_update_interval")
