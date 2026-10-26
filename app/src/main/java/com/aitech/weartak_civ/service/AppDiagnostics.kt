@@ -56,7 +56,8 @@ enum class DiagnosticMetric {
     GENERATION, ATTEMPT, DELAY_MS, STATUS, VALIDATED, INTERNET, TRANSPORT,
     CONNECTED_COUNT, CONNECTING_COUNT, SOCKET_COUNT, UI_CONNECTED, UI_CONNECTING,
     ENABLED, CONFIGURED_COUNT, MODE, GROUP_SELECTED, REQUESTED, LOCK_HELD, IDLE_RELEASED,
-    BACKOFF_LEVEL, PRIORITY, MAX_AGE_MS
+    BACKOFF_LEVEL, PRIORITY, MAX_AGE_MS,
+    COALESCED, SKIPPED
 }
 
 internal enum class ProcessingStage(val code: Long) {
@@ -189,6 +190,8 @@ class AppDiagnostics internal constructor(private val application: Application) 
         var durationUs = 0L
         var maxDurationUs = 0L
         var failures = 0L
+        var coalesced = 0L
+        var skipped = 0L
 
         fun reset() {
             at = 0L
@@ -198,6 +201,8 @@ class AppDiagnostics internal constructor(private val application: Application) 
             durationUs = 0L
             maxDurationUs = 0L
             failures = 0L
+            coalesced = 0L
+            skipped = 0L
         }
     }
     private val work = Array(ProcessingStage.entries.size) { Work() }
@@ -423,19 +428,22 @@ class AppDiagnostics internal constructor(private val application: Application) 
 
     private fun captureProcessing(
         stage: ProcessingStage, epoch: Long, bytes: Long, frames: Long, durationUs: Long, failures: Long,
+        coalesced: Long = 0, skipped: Long = 0, count: Long = 1,
     ) {
         synchronized(rateLock) {
             if (!enabled.value || generation.get() != epoch) return
             val now = SystemClock.elapsedRealtime()
             val total = work[stage.ordinal]
-            if (total.count == 0L) total.at = now
+            if (total.count == 0L && total.coalesced == 0L && total.skipped == 0L) total.at = now
             fun add(a: Long, b: Long) = a + b.coerceIn(0L, Long.MAX_VALUE - a)
-            total.count = add(total.count, 1L)
+            total.count = add(total.count, count)
             total.bytes = add(total.bytes, bytes)
             total.frames = add(total.frames, frames)
             total.durationUs = add(total.durationUs, durationUs)
             total.maxDurationUs = maxOf(total.maxDurationUs, durationUs)
             total.failures = add(total.failures, failures)
+            total.coalesced = add(total.coalesced, coalesced)
+            total.skipped = add(total.skipped, skipped)
             if (now - total.at >= 30_000L) {
                 enqueue(DiagnosticEvent.PROCESSING_WORK, processingMetrics(stage, total, now))
                 total.reset()
@@ -451,6 +459,8 @@ class AppDiagnostics internal constructor(private val application: Application) 
         DiagnosticMetric.DURATION_US to total.durationUs,
         DiagnosticMetric.MAX_DURATION_US to total.maxDurationUs,
         DiagnosticMetric.FAILURES to total.failures,
+        DiagnosticMetric.COALESCED to total.coalesced,
+        DiagnosticMetric.SKIPPED to total.skipped,
         DiagnosticMetric.WINDOW_MS to (now - total.at).coerceAtLeast(0L),
         DiagnosticMetric.AGGREGATED to 1L,
     )
@@ -461,7 +471,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
             val now = SystemClock.elapsedRealtime()
             ProcessingStage.entries.forEach { stage ->
                 val total = work[stage.ordinal]
-                if (total.count > 0) {
+                if (total.count > 0 || total.coalesced > 0 || total.skipped > 0) {
                     enqueue(DiagnosticEvent.PROCESSING_WORK, processingMetrics(stage, total, now))
                     total.reset()
                 }
@@ -482,7 +492,7 @@ class AppDiagnostics internal constructor(private val application: Application) 
             val now = SystemClock.elapsedRealtime()
             ProcessingStage.entries.forEach { stage ->
                 val total = work[stage.ordinal]
-                if (total.count > 0)
+                if (total.count > 0 || total.coalesced > 0 || total.skipped > 0)
                     pending.add(record(DiagnosticEvent.PROCESSING_WORK, processingMetrics(stage, total, now)))
                 total.reset()
             }
@@ -618,6 +628,12 @@ class AppDiagnostics internal constructor(private val application: Application) 
         }
         internal fun flushProcessingWork() {
             instance?.flushProcessing()
+        }
+        internal fun recordIngestReduction(stage: ProcessingStage, coalesced: Long, skipped: Long) {
+            val recorder = instance ?: return
+            if (!recorder.enabled.value) return
+            recorder.captureProcessing(stage, recorder.generation.get(), 0, 0, 0, 0,
+                coalesced = coalesced, skipped = skipped, count = 0)
         }
     }
 }

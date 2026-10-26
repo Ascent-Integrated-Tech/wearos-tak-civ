@@ -20,6 +20,11 @@ data class CotIngressDiagnostics(
 )
 
 object CotMessageParser {
+    private val urgentDetail = Regex(
+        "<(?:[\\w.-]+:)?(?:emergency|__emergency|alert|__chat|__chatreceipt|ackrequest)\\b" +
+            "|\\b(?:emergency|alert)\\s*=",
+        RegexOption.IGNORE_CASE
+    )
     private const val ACCESS_EXTERNAL_DTD = "http://javax.xml.XMLConstants/property/accessExternalDTD"
     private const val ACCESS_EXTERNAL_SCHEMA = "http://javax.xml.XMLConstants/property/accessExternalSchema"
 
@@ -363,6 +368,7 @@ object CotMessageParser {
         contact = extractAttribute(rawXml, "contact", "endpoint")?.takeIf(String::isNotBlank),
         circleRadiusMeters = if (eventTypeOrNull(rawXml) == "u-d-c-c") circleRadius(rawXml) else null,
         isCamera = isCamera(rawXml),
+        hasUrgentDetail = urgentDetail.containsMatchIn(rawXml),
     )
 
     private fun circleRadius(rawXml: String): Double? {

@@ -9,6 +9,10 @@ import io.mockk.every
 import io.mockk.spyk
 import io.mockk.verify
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.advanceTimeBy
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -74,8 +78,10 @@ class GenericCotLifecycleTest {
         repo.clearReceivedMarkers()
     }
 
-    @Test fun aircraftRefreshesReplaceSourceUidInsteadOfGrowingAndOlderPacketsAreRejected() = runBlocking {
-        val navigation = BloodhoundRepository(RuntimeEnvironment.getApplication())
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test fun aircraftRefreshesReplaceSourceUidInsteadOfGrowingAndOlderPacketsAreRejected() = runTest {
+        val repo = DataRepository(RuntimeEnvironment.getApplication(), projectionScope = backgroundScope)
+        val navigation = BloodhoundRepository(RuntimeEnvironment.getApplication(), projectionScope = backgroundScope)
         repeat(500) { index ->
             val event = marker("ICAO-${index % 5}", time = now + index)
             assertTrue(repo.receiveMarkerEvent(event, navigation, "skyoverLA", "aircraft",
@@ -86,7 +92,11 @@ class GenericCotLifecycleTest {
         assertEquals(5, repo.receivedMarkerList.value.map { it.uid }.toSet().size)
         assertFalse(repo.receiveMarkerEvent(marker("ICAO-0", time = now - 1),
             navigation, "skyoverLA", "aircraft", receivedAt = now + 1_000))
+        runCurrent()
+        advanceTimeBy(1_500)
+        runCurrent()
         assertEquals(now + 495, repo.receivedMarkerList.value.single { it.uid == "ICAO-0" }.timeReceived)
+        assertEquals(now + 495, navigation.bloodhoundMap.value["ICAO-0"]!!.bhEvent.mapItem.cotEvent.time)
         repo.pruneGenericMarkers(now + 60_001)
         assertTrue(repo.receivedMarkerList.value.isEmpty())
         assertTrue(navigation.bloodhoundMap.value.isEmpty())

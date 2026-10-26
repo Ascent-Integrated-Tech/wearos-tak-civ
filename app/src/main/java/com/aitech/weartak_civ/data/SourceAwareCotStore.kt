@@ -12,6 +12,11 @@ package com.aitech.weartak_civ.data
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 data class SourceCotKey(
     val sourceId: String,
@@ -20,7 +25,8 @@ data class SourceCotKey(
 
 data class SourceCotUpsertResult(
     val key: SourceCotKey,
-    val applied: Boolean
+    val applied: Boolean,
+    val skipped: Boolean = false
 )
 
 /**
@@ -31,7 +37,10 @@ class SourceAwareCotStore<T>(
     private val sourceIdOf: (T) -> String,
     private val cotUidOf: (T) -> String,
     private val eventTimeOf: (T) -> Long,
-    private val receivedAtOf: (T) -> Long
+    private val receivedAtOf: (T) -> Long,
+    private val publicationScope: CoroutineScope? = null,
+    private val equivalent: (T, T) -> Boolean = { a, b -> a == b },
+    private val onReduction: (coalesced: Long, skipped: Long) -> Unit = { _, _ -> }
 ) {
     private data class Stored<T>(
         val value: T,
@@ -46,16 +55,21 @@ class SourceAwareCotStore<T>(
     private val uidOrder = LinkedHashMap<String, Long>()
     private val visibleByUid = HashMap<String, Stored<T>>()
     private var sequence = 0L
+    private val pendingKeys = mutableSetOf<SourceCotKey>()
+    private var publicationJob: Job? = null
+    private var publicationGeneration = 0L
 
     private val _allItems = MutableStateFlow<Map<SourceCotKey, T>>(emptyMap())
     val allItems: StateFlow<Map<SourceCotKey, T>> = _allItems.asStateFlow()
 
     private val _visibleItems = MutableStateFlow<List<T>>(emptyList())
     val visibleItems: StateFlow<List<T>> = _visibleItems.asStateFlow()
+    private val _publicationVersion = MutableStateFlow(0L)
+    val publicationVersion: StateFlow<Long> = _publicationVersion.asStateFlow()
 
     fun upsert(item: T): SourceCotKey = upsertWithResult(item).key
 
-    fun upsertWithResult(item: T): SourceCotUpsertResult = synchronized(lock) {
+    fun upsertWithResult(item: T, coalesce: Boolean = false): SourceCotUpsertResult = synchronized(lock) {
         val key = SourceCotKey(sourceIdOf(item), cotUidOf(item))
         require(key.sourceId.isNotBlank()) { "Source ID cannot be blank" }
         require(key.cotUid.isNotBlank()) { "CoT UID cannot be blank" }
@@ -71,8 +85,18 @@ class SourceAwareCotStore<T>(
 
         uidOrder.putIfAbsent(key.cotUid, sequence)
         storedByKey[key] = candidate
-        publishLocked(key)
-        SourceCotUpsertResult(key, applied = true)
+        val visible = visibleByUid[key.cotUid]
+        val unchanged = coalesce && current != null && equivalent(current.value, item) &&
+            visible?.let { sourceIdOf(it.value) == key.sourceId } == true
+        publishLocked(key, coalesce && current != null, unchanged)
+        SourceCotUpsertResult(key, applied = true, skipped = unchanged)
+    }
+
+    fun hasPendingProjection(key: SourceCotKey): Boolean = synchronized(lock) { key in pendingKeys }
+
+    /** Authoritative state, including accepted updates not yet projected to observers. */
+    fun snapshot(): Map<SourceCotKey, T> = synchronized(lock) {
+        storedByKey.mapValues { it.value.value }
     }
 
     fun item(key: SourceCotKey): T? = synchronized(lock) {
@@ -215,7 +239,11 @@ class SourceAwareCotStore<T>(
         }
     }
 
-    private fun publishLocked(upsertKey: SourceCotKey? = null) {
+    private fun publishLocked(
+        upsertKey: SourceCotKey? = null,
+        coalesce: Boolean = false,
+        unchanged: Boolean = false
+    ) {
         var visibleChanged = true
         val upserted = upsertKey?.let(storedByKey::get)
         if (upsertKey != null && upserted != null) {
@@ -236,12 +264,44 @@ class SourceAwareCotStore<T>(
                 }
             }
         }
+        // Ordering and watermarks are committed synchronously; only projections wait. A timer
+        // never owns an event, so source/session clears and deletes cannot replay queued data.
+        if (unchanged) {
+            onReduction(0, 1)
+            return
+        }
+        if (coalesce && publicationScope != null && upsertKey != null) {
+            if (!pendingKeys.add(upsertKey)) onReduction(1, 0)
+            if (publicationJob?.isActive != true) {
+                val generation = ++publicationGeneration
+                publicationJob = publicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
+                    try {
+                        delay(1_500)
+                    } finally {
+                        // Cancellation must not leave an accepted projection permanently pending.
+                        // Invalidated timers cannot publish after an immediate mutation or clear.
+                        synchronized(lock) {
+                            if (generation == publicationGeneration) publishLocked()
+                        }
+                    }
+                }
+            }
+            return
+        }
+        publicationGeneration++
+        publicationJob?.cancel()
+        publicationJob = null
+        val hadPending = pendingKeys.isNotEmpty()
+        pendingKeys.clear()
         // Keep the cache coherent before a synchronous all-items collector can re-enter.
         _allItems.value = storedByKey.mapValues { it.value.value }
-        if (!visibleChanged) return
-        _visibleItems.value = uidOrder.keys.mapNotNull { uid ->
-            visibleByUid[uid]?.value
+        if (visibleChanged || hadPending) {
+            _visibleItems.value = uidOrder.keys.mapNotNull { uid ->
+                visibleByUid[uid]?.value
+            }
         }
+        // Derived repositories observe a completed pair, including hidden-source-only changes.
+        _publicationVersion.value += 1
     }
 
     private fun Stored<T>.isNewerThan(other: Stored<T>): Boolean {

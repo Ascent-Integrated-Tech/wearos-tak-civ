@@ -599,7 +599,9 @@ TCP ingest (2), plugin offers (3), user-store/projection (4) and marker-store/
 projection (5). Sink stages include their other existing direct-CoT entry paths;
 these are not per-server or per-peer counters. Numeric fields contain operation
 `COUNT`, socket `BYTES`, produced `FRAMES`, total/max `DURATION_US`/
-`MAX_DURATION_US`, `FAILURES` and `WINDOW_MS`. Socket bytes are actual decrypted
+`MAX_DURATION_US`, `FAILURES` and `WINDOW_MS`, plus `COALESCED` and `SKIPPED`
+projection counts for user/marker stores. Reduction-only records may have zero
+operation `COUNT`; these are not counts of lost network messages. Socket bytes are actual decrypted
 application-stream reads, including framing separators, not encoded-frame size
 or cellular/TLS overhead. Exceptions/cancellation propagate unchanged and count
 as incomplete operations. Durations are inclusive elapsed time (including I/O,
@@ -612,7 +614,30 @@ or Logging disable. There is no timer, extra subscription, transmission or
 per-frame journal write. Disabled Logging skips timing and result selectors.
 No payload, fingerprint, channel, endpoint or contact identity enters these
 aggregates. They can locate workload, but cannot prove a specific sender's
-end-to-end delivery. Message order, acceptance and fanout are unchanged.
+end-to-end delivery. Message acceptance, plugin offers and transport fanout are unchanged.
+
+Inbound source-identified, machine-generated tracks/PLI without assignment/remark
+or urgent detail use bounded 1.5-second repository projection windows:
+new source/UID copies appear immediately; repeated safe updates retain the latest
+copy per source/UID and publish one completed repository/UI snapshot for the window.
+Continuous traffic does not restart the timer. Event-time/receipt/insertion ordering,
+source provenance, stale checks and deletion watermarks commit immediately, before
+projection batching. There is no queued raw ingress to replay after a transport gate,
+identity/session change, source clear or delete. Clears, deletes, local/user actions,
+chat, alerts/emergency, human-generated points, plugin injections and assignments remain immediate;
+an immediate mutation also flushes any pending projection. Emergency/alert-bearing
+`a-*` details are explicitly excluded from batching.
+Cancelling the projection scope flushes accepted state and clears pending keys;
+subsequent updates on a cancelled scope publish immediately instead of becoming stranded.
+
+No-op projection suppression compares position and all stored attributes, retaining
+authoritative timing/order metadata even when no UI write is needed. Expiry changes
+are not no-ops, and a cross-source winner change is never hidden. `COALESCED` counts
+accepted replacements of an already-pending source/UID; `SKIPPED` counts unchanged
+safe projections, not rejected older events. Both counters follow existing Logging
+consent and aggregate/export/reset behavior. This reduces projection work only;
+XML parsing, admission and safety-sensitive handling are not delayed. No device
+performance or battery improvement is claimed without a separate physical trial.
 
 Native location requests still start independently for scheduled observation
 and explicit interactions, with their existing six-second and five-second

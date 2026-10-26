@@ -27,6 +27,7 @@ import com.aitech.weartak_civ.cot.CotMarkerEvent
 import com.aitech.weartak_civ.cot.CotMarkerMapItem
 import com.aitech.weartak_civ.cot.CotPoint
 import com.aitech.weartak_civ.cot.CotEmergencyEvent
+import com.aitech.weartak_civ.cot.canCoalesceTrack
 import com.aitech.weartak_civ.provider.TargetVector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -45,6 +46,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -58,6 +60,7 @@ private const val COMPANION_BLOODHOUND_SOURCE_ID = "companion-bloodhound"
 class BloodhoundRepository(
     private val context: Context,
     private val dataStore: DataStore<Preferences> = context.dataStore,
+    private val projectionScope: CoroutineScope = scope,
 ) {
     private val TAG = "WearTAK-" + BloodhoundRepository::class.java.simpleName
     private val emergencyMutex = Mutex()
@@ -167,7 +170,12 @@ class BloodhoundRepository(
         sourceIdOf = { item: BloodhoundItem -> sourceKey(item.bhEvent).sourceId },
         cotUidOf = BloodhoundItem::uid,
         eventTimeOf = { item: BloodhoundItem -> item.bhEvent.mapItem.cotEvent.time },
-        receivedAtOf = { item: BloodhoundItem -> item.bhEvent.receivedAt }
+        receivedAtOf = { item: BloodhoundItem -> item.bhEvent.receivedAt },
+        publicationScope = projectionScope,
+        equivalent = { a, b ->
+            a.bhEvent.copy(receivedAt = b.bhEvent.receivedAt) == b.bhEvent &&
+                a.state == b.state && a.vector == b.vector && a.compass == b.compass
+        }
     )
     private val _bloodhoundMap = MutableStateFlow<Map<String, BloodhoundItem>>(emptyMap())
     val bloodhoundMap: StateFlow<Map<String, BloodhoundItem>> = _bloodhoundMap
@@ -208,7 +216,7 @@ class BloodhoundRepository(
                 if (clearsDismissal) dismissalTimes.remove(event.uid)
             }
             synchronized(bloodhoundStateLock) {
-                bloodhoundStore.allItems.value.filter { (key, item) ->
+                bloodhoundStore.snapshot().filter { (key, item) ->
                     key.cotUid == event.uid && item.bhEvent.remoteAlert != null &&
                         item.bhEvent.mapItem.cotEvent.time <= event.time
                 }.keys.forEach { key ->
@@ -705,7 +713,9 @@ class BloodhoundRepository(
         updateBloodhound(uid) { it.copy(vector = vector) }
     }
 
-    fun upsertFromEvent(e: BloodhoundEvent) = synchronized(bloodhoundStateLock) {
+    fun upsertFromEvent(e: BloodhoundEvent): Boolean = upsertEvent(e, coalesce = false).applied
+
+    private fun upsertEvent(e: BloodhoundEvent, coalesce: Boolean): SourceCotUpsertResult = synchronized(bloodhoundStateLock) {
         val key = sourceKey(e)
         val current = bloodhoundStore.item(key)
         val updated = if (current == null) {
@@ -718,8 +728,9 @@ class BloodhoundRepository(
                 origin = BloodhoundItem.Origin(e)
             )
         }
-        val result = bloodhoundStore.upsertWithResult(updated)
-        publishVisibleBloodhounds()
+        val result = bloodhoundStore.upsertWithResult(updated, coalesce = coalesce)
+        val projected = !bloodhoundStore.hasPendingProjection(key) && !result.skipped
+        if (projected) publishVisibleBloodhounds()
         if (Log.isLoggable(TAG, Log.DEBUG)) Log.d(
             TAG,
             "Map state bloodhound upsert uid=${e.uid} sourceServerId=${e.sourceServerId} " +
@@ -728,8 +739,8 @@ class BloodhoundRepository(
                 "channelOwnership=unavailable"
         )
 
-        if (result.applied) reconcileActiveTrackingSource(e.uid)
-        result.applied
+        if (result.applied && projected) reconcileActiveTrackingSource(e.uid)
+        result
     }
 
     suspend fun storeActiveBloodhoundItems(list: List<BloodhoundItem>) {
@@ -920,7 +931,7 @@ class BloodhoundRepository(
         val item = bloodhoundStore.item(key) ?: return@synchronized null
         // Local dismissal never emits a sender cancellation or removes ordinary targets.
         val removedKeys = if (item.bhEvent.remoteAlert != null) {
-            bloodhoundStore.allItems.value.filter { (candidate, candidateItem) ->
+            bloodhoundStore.snapshot().filter { (candidate, candidateItem) ->
                 candidate.cotUid == uid && candidateItem.bhEvent.remoteAlert != null
             }.keys
         } else {
@@ -964,7 +975,7 @@ class BloodhoundRepository(
 
     suspend fun removeAllFromMenu() = emergencyMutex.withLock {
         val selected = synchronized(bloodhoundStateLock) {
-            bloodhoundStore.allItems.value.toMap()
+            bloodhoundStore.snapshot()
         }
         val alerts = selected.values.filter { it.bhEvent.remoteAlert != null }
             .groupBy { it.uid }
@@ -1061,7 +1072,8 @@ class BloodhoundRepository(
         _bloodhoundMap.value = bloodhoundStore.visibleItems.value.associateBy(BloodhoundItem::uid) + alerts
     }
 
-    private fun visibleKey(uid: String): SourceCotKey? = _bloodhoundMap.value[uid]?.let { sourceKey(it.bhEvent) }
+    private fun visibleKey(uid: String): SourceCotKey? =
+        _remoteAlerts.value[uid]?.let { sourceKey(it.bhEvent) } ?: bloodhoundStore.visibleKey(uid)
 
     private fun sourceKey(event: BloodhoundEvent): SourceCotKey = SourceCotKey(
         sourceId = if (event.remoteAlert != null) "emergency:${event.sourceServerId}"
@@ -1083,8 +1095,9 @@ class BloodhoundRepository(
 
     private val _bloodhoundEvent = MutableStateFlow<BloodhoundUpdate?>(null)
     val bloodhoundEvent: StateFlow<BloodhoundUpdate?> = _bloodhoundEvent
+    private val pendingEventKeys = mutableSetOf<SourceCotKey>()
 
-    suspend fun updateBloodhoundEvent(event: BloodhoundEvent) {
+    suspend fun updateBloodhoundEvent(event: BloodhoundEvent, coalesce: Boolean = false) {
         synchronized(bloodhoundStateLock) {
             val isNewUid = !isUidValid(event.uid)
             val visibleTime = _bloodhoundMap.value[event.uid]?.bhEvent?.mapItem?.cotEvent?.time
@@ -1093,7 +1106,14 @@ class BloodhoundRepository(
             } else {
                 remarkFromHoundmaster(event.uid)
             }
-            if (!upsertFromEvent(event) || visibleKey(event.uid) != sourceKey(event)) {
+            val result = upsertEvent(event, coalesce)
+            if (!result.applied || result.skipped) return@synchronized
+            if (coalesce && bloodhoundStore.hasPendingProjection(result.key)) {
+                pendingEventKeys.add(result.key)
+                return@synchronized
+            }
+            pendingEventKeys.remove(result.key)
+            if (visibleKey(event.uid) != sourceKey(event)) {
                 return@synchronized
             }
             if (visibleTime != null && event.mapItem.cotEvent.time <= visibleTime) return@synchronized
@@ -1121,7 +1141,7 @@ class BloodhoundRepository(
                 mapItem = mapItem, server = server, timeIssued = mapItem.link?.productionTime,
                 timeCompleted = null, remark = event.detail.remarks.orEmpty(),
                 sourceServerId = sourceServerId, receivedAt = receivedAt
-            ))
+            ), coalesce = event.detail.canCoalesceTrack(event.type, event.how, sourceServerId))
         }
     }
 
@@ -1145,6 +1165,23 @@ class BloodhoundRepository(
         removeMarkerCopy(uid, null, local.bhEvent.mapItem.cotEvent.time, System.currentTimeMillis())
     }
 
+    init {
+        projectionScope.launch {
+            bloodhoundStore.publicationVersion.collect {
+                synchronized(bloodhoundStateLock) {
+                    publishVisibleBloodhounds()
+                    val completed = pendingEventKeys.filterNot(bloodhoundStore::hasPendingProjection)
+                    pendingEventKeys.removeAll(completed.toSet())
+                    completed.map { it.cotUid }.distinct().forEach(::reconcileActiveTrackingSource)
+                    completed.mapNotNull { key ->
+                        _bloodhoundMap.value[key.cotUid]?.takeIf { sourceKey(it.bhEvent) == key }
+                    }.lastOrNull()?.let { item ->
+                        _bloodhoundEvent.value = BloodhoundUpdate(item.bhEvent, false, false)
+                    }
+                }
+            }
+        }
+    }
 
     companion object {
         private val ENABLE = booleanPreferencesKey("enable_bloodhound_service")

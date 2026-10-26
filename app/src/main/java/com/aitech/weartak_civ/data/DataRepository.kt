@@ -9,6 +9,10 @@
 
 package com.aitech.weartak_civ.data
 
+import com.aitech.weartak_civ.cot.canCoalesceTrack
+import com.aitech.weartak_civ.service.AppDiagnostics
+import com.aitech.weartak_civ.service.ProcessingStage
+
 import android.content.Context
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
@@ -217,7 +221,10 @@ enum class DittoPdlSource {
 private const val DEFAULT_COMMUNITY_PDL =
     BuildConfig.DITTO_COMMUNITY_IDENTITY
 
-class DataRepository(private val context: Context) {
+class DataRepository(
+    private val context: Context,
+    private val projectionScope: CoroutineScope = repoScope,
+) {
     internal val headingComplications = HeadingComplicationDemand(
         context.getSharedPreferences("heading-complications", Context.MODE_PRIVATE)
     )
@@ -2324,7 +2331,14 @@ class DataRepository(private val context: Context) {
         sourceIdOf = { item: ReceivedUser -> item.sourceServerId ?: NON_TAK_COT_SOURCE_ID },
         cotUidOf = ReceivedUser::uid,
         eventTimeOf = ReceivedUser::timeReceived,
-        receivedAtOf = ReceivedUser::receivedAt
+        receivedAtOf = ReceivedUser::receivedAt,
+        publicationScope = projectionScope,
+        equivalent = { a, b ->
+            a.copy(receivedAt = b.receivedAt) == b
+        },
+        onReduction = { coalesced, skipped ->
+            AppDiagnostics.recordIngestReduction(ProcessingStage.USER_STORE, coalesced, skipped)
+        }
     )
     val receivedUserList: StateFlow<List<ReceivedUser>> = receivedUserStore.visibleItems
 
@@ -2337,7 +2351,7 @@ class DataRepository(private val context: Context) {
             }
             return false
         }
-        val copies = receivedUserStore.allItems.value.filterKeys { it.sourceId == COMPANION_USER_SOURCE_ID }
+        val copies = receivedUserStore.snapshot().filterKeys { it.sourceId == COMPANION_USER_SOURCE_ID }
         if (key !in copies && copies.size >= 512) {
             copies.minByOrNull { it.value.receivedAt }?.key?.let(receivedUserStore::remove)
         }
@@ -2353,7 +2367,7 @@ class DataRepository(private val context: Context) {
     }
 
     fun pruneCompanionUsers(now: Long = System.currentTimeMillis()) {
-        receivedUserStore.allItems.value.forEach { (key, user) ->
+        receivedUserStore.snapshot().forEach { (key, user) ->
             if (key.sourceId == COMPANION_USER_SOURCE_ID && user.staleTime <= now) {
                 receivedUserStore.remove(key)
             }
@@ -2427,7 +2441,8 @@ class DataRepository(private val context: Context) {
             chatEndpoint = event.detail.contact,
             isCamera = event.detail.isCamera
         )
-        val result = receivedUserStore.upsertWithResult(item)
+        val result = receivedUserStore.upsertWithResult(item,
+            coalesce = event.detail.canCoalesceTrack(event.type, event.how, sourceServerId))
         Log.d(
             TAG,
             "Map state user upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +
@@ -2518,7 +2533,15 @@ class DataRepository(private val context: Context) {
         sourceIdOf = { item: ReceivedMarker -> item.sourceServerId ?: NON_TAK_COT_SOURCE_ID },
         cotUidOf = ReceivedMarker::uid,
         eventTimeOf = ReceivedMarker::timeReceived,
-        receivedAtOf = ReceivedMarker::receivedAt
+        receivedAtOf = ReceivedMarker::receivedAt,
+        publicationScope = projectionScope,
+        equivalent = { a, b ->
+            val receiptControlsRetention = com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(b.markerType)
+            if (receiptControlsRetention) a == b else a.copy(receivedAt = b.receivedAt) == b
+        },
+        onReduction = { coalesced, skipped ->
+            AppDiagnostics.recordIngestReduction(ProcessingStage.MARKER_STORE, coalesced, skipped)
+        }
     )
     val receivedMarkerList: StateFlow<List<ReceivedMarker>> = receivedMarkerStore.visibleItems
 
@@ -2716,7 +2739,8 @@ class DataRepository(private val context: Context) {
             circleRadiusMeters = event.detail.circleRadiusMeters,
             isCamera = event.detail.isCamera
         )
-        val result = upsertReceivedMarker(item)
+        val result = receivedMarkerStore.upsertWithResult(item,
+            coalesce = event.detail.canCoalesceTrack(event.type, event.how, sourceServerId))
         if (com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(event.type)) {
             pruneGenericMarkers(now)
             startGenericExpiry()
@@ -2741,7 +2765,7 @@ class DataRepository(private val context: Context) {
                     kotlinx.coroutines.delay(1_000)
                     markerIngressMutex.withLock { pruneGenericMarkers() }
                     val keepRunning = synchronized(receivedMarkerStore) {
-                        val hasGeneric = receivedMarkerStore.allItems.value.values.any {
+                        val hasGeneric = receivedMarkerStore.snapshot().values.any {
                             com.aitech.weartak_civ.cot.CotMessageParser.isGenericMapType(it.markerType)
                         }
                         if (!hasGeneric) genericExpiryJob = null
