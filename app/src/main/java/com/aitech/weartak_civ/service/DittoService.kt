@@ -85,6 +85,7 @@ class DittoService : Service() {
     private var subscriptionMapItem: DittoSyncSubscription? = null
     private var subscriptionChat: DittoSyncSubscription? = null
     private var storeObservers: DittoStoreObservers? = null
+    private var bleDiscovery: DittoBleDiscoverySession? = null
     private var changeCounterTrackDocument: Int = 1
     private var ownsDitto = false
 
@@ -145,6 +146,15 @@ class DittoService : Service() {
             )
             ditto.startSync() // Start syncing
             syncActiveState.value = true
+            bleDiscovery = DittoBleDiscoverySession(
+                application, dataRepository, ditto, ioScope,
+                kotlinx.coroutines.flow.combine(
+                    dataRepository.getEnableDittoService,
+                    dataRepository.isCompanionConnected,
+                    reconfiguring
+                ) { enabled, companion, changing -> enabled && !companion && !changing }
+            )
+            bleDiscovery?.start()
             ioScope.launch {
                 while (isActive) {
                     retryPointPublications()
@@ -159,6 +169,8 @@ class DittoService : Service() {
         } catch (e: Exception) {
             Log.e(TAG, "DittoService failed to start")
             startupResult.value = false
+            bleDiscovery?.close()
+            bleDiscovery = null
             storeObservers?.close()
             storeObservers = null
             unSubscribeToCollections()
@@ -194,6 +206,7 @@ class DittoService : Service() {
     private fun configureDitto() {
         val config = DittoTransportConfig()
         config.enableAllPeerToPeer() // Enable all peer to peer transports
+        config.peerToPeer.bluetoothLe.enabled = false // Discovery owns bounded BLE windows.
         ditto.deviceName = callsign // set deviceName for presence viewer
         dittoVersion = ditto.sdkVersion // used in the cot detail for ditto
         ditto.transportConfig = config
@@ -597,6 +610,8 @@ class DittoService : Service() {
         dittoUpdateThread = null
         storeObservers?.close()
         storeObservers = null
+        bleDiscovery?.close()
+        bleDiscovery = null
         ioScope.cancel()
 
         val initializedDitto = getDittoInstance()
@@ -673,6 +688,10 @@ class DittoService : Service() {
         private val identityMutex = Mutex()
 
         fun getDittoInstance(): Ditto? = dittoInstance
+
+        internal fun onDittoScreenOpened() {
+            activeService.value?.bleDiscovery?.onUiOpened()
+        }
 
         internal fun publishCommandReply(xml: String): Boolean {
             val service = activeService.value ?: return false
