@@ -149,10 +149,7 @@ class SkinTempService : Service() {
     private val SPO2_EMIT_FRESHNESS_MS: Long = 35_000L
     // SHS "TIMEOUT" appears as status = -6
     private val SPO2_STATUS_TIMEOUT: Int = -6
-    // ActivityRecognition stillness gate
-    @Volatile private var isStill: Boolean = false
     @Volatile private var lastActivityConfidence: Int = 0
-    private val ACTIVITY_STILL_CONFIDENCE_MIN: Int = 50
     // Track last SpO2 outcome for backoff and diagnostics
     @Volatile private var lastSpo2OutcomeWasTimeout: Boolean = false
     @Volatile private var lastSpo2OutcomeWallMs: Long = 0L
@@ -747,7 +744,7 @@ class SkinTempService : Service() {
                                 ActivityRecognitionService.Companion.ActivityRecognized.STILL -> "STILL"
                                 else -> "UNKNOWN"
                             }
-                            val motionOk = isStill && lastActivityConfidence >= ACTIVITY_STILL_CONFIDENCE_MIN
+                            val motionOk = spo2MotionOk()
                             val ppgRedSustainedMs = ppgRedSustainedForValidation(ts)
                             val altitudeBucket = currentAltitudeBucket()
                             val cepEngine = CepProvider.getOrCreateEngine(applicationContext)
@@ -780,6 +777,7 @@ class SkinTempService : Service() {
                             return@post
                         } else if (status == SPO2_STATUS_TIMEOUT) {
                             lastSpo2Ts = System.currentTimeMillis()
+                            stopSpo2Session("status_timeout")
                             handleSpo2InvalidOutcome(
                                 reason = InvalidReason.TIMEOUT,
                                 ts = lastSpo2Ts ?: System.currentTimeMillis(),
@@ -787,7 +785,6 @@ class SkinTempService : Service() {
                                 endedAsTimeout = true
                             )
                             Log.w(TAG, "[SPO2] TIMEOUT status=$status → stopping session early")
-                            stopSpo2Session("status_timeout")
                             transitionToPpgPhase()
                             return@post
                         } else {
@@ -799,13 +796,13 @@ class SkinTempService : Service() {
                     }
                 } catch (t: Throwable) {
                     Log.e(TAG, "[SPO2] onDataReceived error", t)
+                    stopSpo2Session("error")
                     handleSpo2InvalidOutcome(
                         reason = InvalidReason.ERROR,
                         ts = System.currentTimeMillis(),
                         status = -1,
                         endedAsTimeout = true
                     )
-                    stopSpo2Session("error")
                     transitionToPpgPhase()
                 }
             }
@@ -816,31 +813,41 @@ class SkinTempService : Service() {
             backgroundHandler.post {
                 if (measureState.get() != MeasurementState.SPO2_RUNNING) return@post
                 Log.e(TAG, "[SPO2] Error: $error")
+                stopSpo2Session("onError:$error")
                 handleSpo2InvalidOutcome(
                     reason = InvalidReason.ERROR,
                     ts = System.currentTimeMillis(),
                     status = -1,
                     endedAsTimeout = true
                 )
-                stopSpo2Session("onError:$error")
                 transitionToPpgPhase()
             }
         }
     }
 
-    private fun startSpo2ThenPpgCycle() {
+    private fun spo2MotionOk(): Boolean = spo2StillnessAllowed(
+        sharedRepo.stationaryMotion.state.value,
+        sharedRepo.latestActivityRecognized.value,
+        sharedRepo.latestActivityConfidence.value,
+        SystemClock.elapsedRealtimeNanos(),
+    )
+
+    private fun startSpo2ThenPpgCycle() = backgroundHandler.post {
+        if (!deviceWorn || measureState.get() != MeasurementState.IDLE) return@post
         if (crmPpgSamplingRequested || crmPpgSamplingActive) {
             Log.d(
                 TAG,
                 "[SPO2] Skipping scheduled cycle while CRM PPG sampling is active"
             )
-            return
+            return@post
         }
-        // Stillness + strict 1-hour throttle (monotonic) with additive timeout backoff
-        if (!isStill || lastActivityConfidence < ACTIVITY_STILL_CONFIDENCE_MIN) {
-            //Log.i(TAG, "[SPO2] Skipping: not STILL/conf too low (isStill=$isStill, conf=$lastActivityConfidence, min=$ACTIVITY_STILL_CONFIDENCE_MIN)")
-            //writeToLogFileLocation(logFile, "[SPO2] Skip: not STILL/conf too low (isStill=$isStill conf=$lastActivityConfidence)")
-            return
+        // Read current state on the tracker thread, not the asynchronously cached activity.
+        // A skip is retried only at the next scheduled opportunity and spends no attempt.
+        if (!spo2MotionOk()) {
+            AppDiagnostics.record(DiagnosticEvent.SPO2_SKIPPED_MOTION,
+                mapOf(DiagnosticMetric.SKIPPED to 1L))
+            Log.d(TAG, "[SPO2] Not still; deferring to next scheduled opportunity")
+            return@post
         }
         val nowElapsed = SystemClock.elapsedRealtime()
         val baseReadyAt = lastSpo2AttemptElapsedMs + SPO2_MIN_GAP_MS
@@ -848,65 +855,63 @@ class SkinTempService : Service() {
         val readyAt = baseReadyAt + timeoutPenalty
         if (lastSpo2AttemptElapsedMs != 0L && nowElapsed < readyAt) {
             val remaining = readyAt - nowElapsed
-            val msg = "[SPO2] Skipping (throttle/backoff). remainingMs=$remaining still=$isStill conf=$lastActivityConfidence timeoutBackoffApplied=$lastSpo2EndedAsTimeout"
-            //Log.d(TAG, msg)
-            //writeToLogFileLocation(logFile, msg)
-            return
+            Log.d(TAG, "[SPO2] Skipping (throttle/backoff). remainingMs=$remaining timeoutBackoffApplied=$lastSpo2EndedAsTimeout")
+            return@post
         }
-        // Record attempt at decision time (monotonic)
-        lastSpo2AttemptElapsedMs = nowElapsed
-
         if (!measureState.compareAndSet(MeasurementState.IDLE, MeasurementState.SPO2_RUNNING)) {
             Log.d(TAG, "[MEAS] Cycle request ignored, state=${measureState.get()}")
-            return
+            return@post
         }
+        lastSpo2AttemptElapsedMs = nowElapsed
         Log.i(TAG, "[MEAS] Cycle start → SPO2_RUNNING")
-        backgroundHandler.post {
-            // Pause continuous PPG to avoid optical contention
-            pausePpgContinuousForSpo2()
-            Log.d(TAG, "[PPG] Paused for SPO2")
-            if (!::spo2Tracker.isInitialized) {
-                Log.w(TAG, "[SPO2] Tracker unavailable, skipping to PPG")
-                // Ensure PPG is resumed if we paused
-                resumePpgContinuousAfterSpo2()
-                Log.d(TAG, "[PPG] Resumed after SPO2")
-                measureState.set(MeasurementState.PPG_RUNNING)
-                startPpgPhase()
-                return@post
-            }
-            try {
-                DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_SPO2, spo2Tracker, timeoutMs = SPO2_TIMEOUT_MS) {
-                    spo2Tracker.setEventListener(spo2StrictListener)
-                }
-                Log.i(TAG, "[SPO2] Started (timeout ${SPO2_TIMEOUT_MS/1000}s)")
-            } catch (ex: Throwable) {
-                Log.e(TAG, "[SPO2] start failed", ex)
-                // Ensure PPG is resumed if we paused
-                resumePpgContinuousAfterSpo2()
-                Log.d(TAG, "[PPG] Resumed after SPO2")
-                measureState.set(MeasurementState.PPG_RUNNING)
-                startPpgPhase()
-                return@post
-            }
-            spo2TimeoutRunnable = Runnable {
-                if (measureState.get() == MeasurementState.SPO2_RUNNING) {
-                    Log.w(TAG, "[SPO2] Timeout reached → stopping session, moving to PPG")
-                    handleSpo2InvalidOutcome(
-                        reason = InvalidReason.TIMEOUT,
-                        ts = System.currentTimeMillis(),
-                        status = SPO2_STATUS_TIMEOUT,
-                        endedAsTimeout = true
-                    )
-                    stopSpo2Session("timeout_runnable")
-                    measureState.set(MeasurementState.PPG_RUNNING)
-                    startPpgPhase()
-                }
-            }
-            backgroundHandler.postDelayed(spo2TimeoutRunnable!!, SPO2_TIMEOUT_MS)
+        // Pause continuous PPG to avoid optical contention
+        pausePpgContinuousForSpo2()
+        Log.d(TAG, "[PPG] Paused for SPO2")
+        if (!::spo2Tracker.isInitialized) {
+            Log.w(TAG, "[SPO2] Tracker unavailable, skipping to PPG")
+            // Ensure PPG is resumed if we paused
+            resumePpgContinuousAfterSpo2()
+            Log.d(TAG, "[PPG] Resumed after SPO2")
+            measureState.set(MeasurementState.PPG_RUNNING)
+            startPpgPhase()
+            return@post
         }
+        try {
+            DiagnosticResources.acquire(DiagnosticResource.SAMSUNG_SPO2, spo2Tracker, timeoutMs = SPO2_TIMEOUT_MS) {
+                spo2Tracker.setEventListener(spo2StrictListener)
+            }
+            Log.i(TAG, "[SPO2] Started (timeout ${SPO2_TIMEOUT_MS/1000}s)")
+        } catch (ex: Throwable) {
+            Log.e(TAG, "[SPO2] start failed", ex)
+            // Ensure PPG is resumed if we paused
+            resumePpgContinuousAfterSpo2()
+            Log.d(TAG, "[PPG] Resumed after SPO2")
+            measureState.set(MeasurementState.PPG_RUNNING)
+            startPpgPhase()
+            return@post
+        }
+        spo2TimeoutRunnable = Runnable {
+            if (measureState.get() == MeasurementState.SPO2_RUNNING) {
+                Log.w(TAG, "[SPO2] Timeout reached; stopping optical cycle")
+                stopSpo2Session("timeout_runnable")
+                handleSpo2InvalidOutcome(
+                    reason = InvalidReason.TIMEOUT,
+                    ts = System.currentTimeMillis(),
+                    status = SPO2_STATUS_TIMEOUT,
+                    endedAsTimeout = true
+                )
+                transitionToPpgPhase()
+            }
+        }
+        backgroundHandler.postDelayed(spo2TimeoutRunnable!!, SPO2_TIMEOUT_MS)
     }
 
     private fun transitionToPpgPhase() {
+        // A failed SpO2 attempt must not spend another on-demand optical burst.
+        if (lastSpo2EndedAsTimeout) {
+            finishMeasurementCycle()
+            return
+        }
         if (!measureState.compareAndSet(MeasurementState.SPO2_RUNNING, MeasurementState.PPG_RUNNING)) {
             Log.d(TAG, "[MEAS] Unexpected state ${measureState.get()} when transitioning to PPG")
             measureState.set(MeasurementState.PPG_RUNNING)
@@ -1420,16 +1425,6 @@ class SkinTempService : Service() {
             }
         }
 
-        // Subscribe to ActivityRecognition state for stillness gating
-        CoroutineScope(Dispatchers.Default).launch {
-            try {
-                sharedRepo.latestActivityRecognized.collect { act ->
-                    isStill = (act == ActivityRecognitionService.Companion.ActivityRecognized.STILL)
-                }
-            } catch (t: Throwable) {
-                Log.e(TAG, "Activity recognized flow collect failed", t)
-            }
-        }
         CoroutineScope(Dispatchers.Default).launch {
             try {
                 sharedRepo.latestActivityConfidence.collect { conf ->
@@ -1705,7 +1700,7 @@ class SkinTempService : Service() {
                                 pct = pct,
                                 ts = spo2Ts,
                                 statusOk = (lastSpo2Status == 2),
-                                motionOk = isStill && lastActivityConfidence >= ACTIVITY_STILL_CONFIDENCE_MIN,
+                                motionOk = spo2MotionOk(),
                                 ppgRedSustainedMs = ppgRedSustainedMs,
                                 ppgAmplitude = lastPpgAmp,
                                 ppgQuality = lastPpgQuality,

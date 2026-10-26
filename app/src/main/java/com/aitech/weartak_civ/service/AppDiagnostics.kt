@@ -46,7 +46,7 @@ enum class DiagnosticEvent {
     MOTION_CONFIRMATION, POWER_CONTEXT, DEVICE_SETTING, RESOURCE_LIFETIME,
     MISSION_LIST, // RESULT: 0 paused, 1 fetched, 2 unchanged, 3 failed
     OFF_BODY_TAK,
-    BLE_DISCOVERY
+    BLE_DISCOVERY, SPO2_SKIPPED_MOTION
 }
 
 @Keep
