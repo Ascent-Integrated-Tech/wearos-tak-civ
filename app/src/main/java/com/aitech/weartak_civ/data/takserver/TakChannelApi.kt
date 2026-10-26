@@ -241,7 +241,7 @@ internal class TakChannelApi(
         }
         val startedAtNanos = System.nanoTime()
         try {
-            return client.newCall(request).withSessionResponse(session) { response ->
+            return (session?.route(client) ?: client).newCall(request).withSessionResponse(session) { response ->
                 val body = response.body?.string().orEmpty()
                 val durationMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
                 Log.i(

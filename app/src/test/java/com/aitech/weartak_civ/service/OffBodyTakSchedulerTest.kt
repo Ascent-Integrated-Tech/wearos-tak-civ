@@ -1,0 +1,129 @@
+package com.aitech.weartak_civ.service
+
+import android.app.AlarmManager
+import android.app.Application
+import android.os.Looper
+import android.os.SystemClock
+import org.junit.Assert.*
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
+import org.robolectric.annotation.LooperMode
+import java.time.Duration
+import io.mockk.every
+import io.mockk.just
+import io.mockk.Runs
+import io.mockk.mockkObject
+import io.mockk.unmockkAll
+import io.mockk.verify
+import org.junit.After
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [34], manifest = Config.NONE, application = Application::class)
+@LooperMode(LooperMode.Mode.PAUSED)
+class OffBodyTakSchedulerTest {
+    private val context get() = RuntimeEnvironment.getApplication()
+    private val alarms get() = shadowOf(context.getSystemService(AlarmManager::class.java))
+    private var connects = 0
+    private var closes = 0
+    private lateinit var scheduler: OffBodyTakScheduler
+
+    @Before fun setup() {
+        scheduler = OffBodyTakScheduler(context, { connects++ }, { closes++ })
+    }
+
+    @After fun cleanup() {
+        scheduler.stop()
+        unmockkAll()
+    }
+
+    @Test fun recordsSleepWindowAndContinuousTransitionsWithoutPayloads() {
+        mockkObject(AppDiagnostics.Companion)
+        every { AppDiagnostics.record(any(), any()) } just Runs
+        scheduler.update(false, true)
+        alarms.nextScheduledAlarm.onAlarmListener.onAlarm()
+        scheduler.update(true, true)
+        listOf(0L, 2L, 1L).forEach { mode ->
+            verify { AppDiagnostics.record(DiagnosticEvent.OFF_BODY_TAK, match {
+                it[DiagnosticMetric.MODE] == mode &&
+                    it[DiagnosticMetric.INTERVAL_SECONDS] == 180L &&
+                    it[DiagnosticMetric.DURATION_MS] == 30_000L
+            }) }
+        }
+    }
+
+    @Test fun offWristSchedulesInexactOpportunityAndBoundsWindow() {
+        val start = SystemClock.elapsedRealtime()
+        scheduler.update(false, true)
+        assertFalse(scheduler.allows())
+        assertEquals(1, closes)
+        val alarm = alarms.nextScheduledAlarm
+        assertEquals(AlarmManager.ELAPSED_REALTIME_WAKEUP, alarm.type)
+        assertEquals(start + 180_000L, alarm.triggerAtTime)
+        assertNotEquals(0L, alarm.windowLengthMs)
+        alarm.onAlarmListener.onAlarm()
+        assertEquals(1, connects)
+        assertTrue(scheduler.allows())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30))
+        assertFalse(scheduler.allows())
+        assertEquals(2, closes)
+        scheduler.stop()
+        assertTrue(alarms.scheduledAlarms.isEmpty())
+    }
+
+    @Test fun wristOnCancelsAlarmsAndIgnoresStaleDelivery() {
+        scheduler.update(false, true)
+        val stale = alarms.nextScheduledAlarm
+        scheduler.update(true, true)
+        assertTrue(scheduler.allows())
+        assertEquals(1, connects)
+        stale.onAlarmListener.onAlarm()
+        assertEquals(1, connects)
+        assertTrue(alarms.scheduledAlarms.isEmpty())
+        scheduler.stop()
+    }
+
+    @Test fun disabledCompanionOrNetworkGateCancelsWindowAndFutureWork() {
+        scheduler.update(false, true)
+        val alarm = alarms.nextScheduledAlarm
+        alarm.onAlarmListener.onAlarm()
+        scheduler.update(false, false)
+        assertFalse(scheduler.allows())
+        assertTrue(alarms.scheduledAlarms.isEmpty())
+        val before = connects
+        alarm.onAlarmListener.onAlarm()
+        assertEquals(before, connects)
+        scheduler.update(false, true)
+        assertFalse(scheduler.allows())
+        assertEquals(1, alarms.scheduledAlarms.size)
+        scheduler.stop()
+    }
+
+    @Test fun duplicateObservationsAndShutdownCannotRestartWork() {
+        scheduler.update(false, true)
+        val alarm = alarms.scheduledAlarms.first()
+        scheduler.update(false, true)
+        assertEquals(1, alarms.scheduledAlarms.size)
+        scheduler.stop()
+        scheduler.update(false, true)
+        alarm.onAlarmListener.onAlarm()
+        assertEquals(0, connects)
+        assertTrue(alarms.scheduledAlarms.isEmpty())
+    }
+
+    @Test fun unknownRestoresContinuousAndCancelsWindowClose() {
+        scheduler.update(false, true)
+        alarms.nextScheduledAlarm.onAlarmListener.onAlarm()
+        scheduler.update(null, true)
+        val before = closes
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(4))
+        assertTrue(scheduler.allows())
+        assertEquals(before, closes)
+        assertEquals(2, connects)
+        scheduler.stop()
+    }
+}
