@@ -205,7 +205,7 @@ class ConnectionDiagnosticsTest {
     fun delayedRetryRecordsStaleFenceWithoutStartingAnotherAttempt() = runTest {
         diagnostics.setEnabled(true)
         val detail = detail()
-        detail.runtime.generation = 2
+        detail.runtime.generation = 1
         val scopeField = TAKConnectService::class.java.getDeclaredField("connectionScope").apply { isAccessible = true }
         val oldScope = scopeField.get(null)
         val oldNetwork = TAKConnectService.isNetworkConnected
@@ -215,6 +215,7 @@ class ConnectionDiagnosticsTest {
             TAKConnectService.isNetworkConnected = true
             TAKConnectService.serviceStopping = false
             scheduleRetry(detail, 1)
+            detail.runtime.generation = 2
             advanceUntilIdle()
             val all = records().map { it["metrics"].asJsonObject }
             assertTrue(all.any { it["KIND"].asLong == ConnectionTransition.RETRY_SCHEDULED.code })
@@ -243,11 +244,11 @@ class ConnectionDiagnosticsTest {
             scopeField.set(null, this)
             TAKConnectService.isNetworkConnected = true
             TAKConnectService.serviceStopping = false
-            companionConnected.value = true
             scheduleRetry(detail, 1)
+            companionConnected.value = true
             advanceUntilIdle()
             val all = records().map { it["metrics"].asJsonObject }
-            assertTrue(all.any { it["KIND"].asLong == ConnectionTransition.RETRY_STARTED.code })
+            assertFalse(all.any { it["KIND"].asLong == ConnectionTransition.RETRY_STARTED.code })
             assertTrue(all.any { it["KIND"].asLong == ConnectionTransition.SKIPPED.code &&
                 it["RESULT"].asLong == ConnectionReason.COMPANION.code })
             assertNull(detail.runtime.currentAttempt)
