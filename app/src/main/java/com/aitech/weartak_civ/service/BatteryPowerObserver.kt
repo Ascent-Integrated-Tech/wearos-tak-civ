@@ -9,17 +9,12 @@
 
 package com.aitech.weartak_civ.service
 
-import android.app.NotificationManager
-import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.BatteryManager
-import android.os.IBinder
 import android.util.Log
-import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
-import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
-import com.aitech.weartak_civ.presentation.MainActivity.Constants.dataRepository
+import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,30 +22,22 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicBoolean
 
-class BatteryService: Service() {
-    private val serviceScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+/** Battery has process-wide consumers even with alerts off; no independent FGS is needed. */
+class BatteryPowerObserver(context: Context, private val dataRepository: DataRepository) {
+    private val context = context.applicationContext
+    private var serviceScope: CoroutineScope? = null
+    private var registered = false
     private var lastDockType: DockType? = null
     private var lastBatteryPct: Int? = null
     private var lastChargingOrFull: Boolean? = null
 
-    override fun onCreate() {
-        super.onCreate()
-        Log.d(TAG, "BatteryService onCreate()")
-        isRunning.set(true)
-        startForegroundServiceCompat(
-            BATTERY_MONITOR_SERVICE_NOTIFICATION_ID,
-            importance = NotificationManager.IMPORTANCE_LOW
-        )
-        startBatteryPowerMonitoring()
-    }
-
-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
-        Log.d(TAG, "BatteryService onStartCommand()")
-        return START_NOT_STICKY
-    }
-
-    private fun startBatteryPowerMonitoring() {
-        registerReceiver(
+    fun start() {
+        if (registered) return
+        lastDockType = null
+        lastBatteryPct = null
+        lastChargingOrFull = null
+        serviceScope = CoroutineScope(Dispatchers.Main.immediate + SupervisorJob())
+        val sticky = context.registerReceiver(
             batteryPowerReceiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_BATTERY_CHANGED)     // includes EXTRA_PLUGGED + status
@@ -58,27 +45,28 @@ class BatteryService: Service() {
                 addAction(Intent.ACTION_POWER_DISCONNECTED)  // edge-trigger signal
             }
         )
-
-        Log.d(TAG, "BatteryService: batteryPowerReceiver registered")
+        registered = true
+        isRunning.set(true)
+        sticky?.let { batteryPowerReceiver.onReceive(context, it) }
+        Log.d(TAG, "Battery power receiver registered")
     }
 
-    private fun stopBatteryPowerMonitoring() {
-        try {
-            unregisterReceiver(batteryPowerReceiver)
-            Log.d(TAG, "BatteryService: batteryPowerReceiver unregistered")
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "BatteryService: batteryPowerReceiver already unregistered?", e)
-        }
+    fun stop() {
+        if (!registered) return
+        registered = false
+        context.unregisterReceiver(batteryPowerReceiver)
+        isRunning.set(false)
+        serviceScope?.cancel()
+        serviceScope = null
     }
 
     private val batteryPowerReceiver = object : android.content.BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
+            if (!registered) return
             if (intent.action != Intent.ACTION_BATTERY_CHANGED &&
                 intent.action != Intent.ACTION_POWER_CONNECTED &&
                 intent.action != Intent.ACTION_POWER_DISCONNECTED
             ) return
-
-            //Log.v(TAG, "batteryPowerReceiver: intent.action --> ${intent.action}")
 
             // ACTION_BATTERY_CHANGED carries the extras we care about.
             // POWER_CONNECTED / DISCONNECTED may not include EXTRA_PLUGGED on all devices,
@@ -132,7 +120,7 @@ class BatteryService: Service() {
 
             Log.i(TAG, "batteryPowerReceiver: pct=$batteryPct dockType=$dockType (plugged=$plugged, status=$status, chargingOrFull=$chargingOrFull)")
 
-            serviceScope.launch {
+            serviceScope?.launch {
                 if (pctChanged) dataRepository.storeLatestBatteryPercentage(batteryPct)
                 if (dockChanged) dataRepository.updateDockType(dockType)
                 if (chargingChanged) dataRepository.updateChargingState(chargingOrFull)
@@ -146,23 +134,8 @@ class BatteryService: Service() {
         WIRELESS
     }
 
-    override fun onBind(intent: Intent): IBinder? {
-        throw UnsupportedOperationException("Not yet implemented")
-    }
-
-
-    override fun onDestroy() {
-        super.onDestroy()
-        Log.d(TAG, "BatteryService onDestroy()")
-        isRunning.set(false)
-        stopForegroundServiceCompat()
-        stopBatteryPowerMonitoring()
-        serviceScope.cancel()
-    }
-
     companion object {
-        private val TAG = "WearTAK-" + BatteryService::class.java.simpleName
-        const private val BATTERY_MONITOR_SERVICE_NOTIFICATION_ID = 102
+        private const val TAG = "WearTAK-BatteryPowerObserver"
         val isRunning : AtomicBoolean = AtomicBoolean(false)
     }
 }

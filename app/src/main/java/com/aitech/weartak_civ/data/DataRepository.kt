@@ -119,7 +119,7 @@ import com.aitech.weartak_civ.DEFAULT_WEIGHT
 import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.ReactiveServiceManager
-import com.aitech.weartak_civ.service.BatteryService.DockType
+import com.aitech.weartak_civ.service.BatteryPowerObserver.DockType
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope

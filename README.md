@@ -1956,6 +1956,47 @@ The home location-status icon opens existing reporting-rate settings without
 toggling location. Stay awake retains its label and real on/off control without
 row helper text; its service/notification behavior is unchanged.
 
+### Core observation lifetimes
+
+Weather runs only when the authoritative effective CEP configuration has a
+weather dependency, a nonblank OpenWeather key is built in, and the existing
+location-service dependency is available. All executing feature definitions count,
+including nested custom operators: the built-in wind-chill feature uses
+`ambient.temp_c` and `ambient.wind_mps`, and wetness uses `water_sensor.wet`.
+Rule conditions, render/message/snapshot keys and exit monitors also count.
+Managed/plugin composition installs and swaps update demand; rejected candidates
+do not. Removing only a rule does not stop weather if an executing feature still
+needs it. Absence is never replaced with zero. An inactive-to-active configuration
+transition does not inherit old weather ingestion state.
+
+Missing-key direct starts stop rather than retaining an idle foreground service.
+Weather stop cancels its HTTP call and clears the cached snapshot; failures wait
+for the existing backoff interval instead of spinning. Weather logs never include
+the key, request URL, coordinates, response body or exception details/chains.
+The existing successful-fetch time/distance gates are unchanged.
+
+Battery percentage, dock type and charging state are observed once per process,
+with an initial sticky sample and deduplicated updates, not by a separate battery
+foreground service. PLI, Ditto, plugins, UI/system snapshots, diagnostics and power
+cadence need these values even when battery alerts are disabled. `BATTERY` remains
+an observable virtual capability in service status. This observer does not itself
+keep a killed process alive; existing foreground owners retain their longevity.
+Legacy battery notification cleanup is retained for upgrades.
+
+Off-body observation remains active for its live CEP, physiology and self-status
+consumers; unknown is not off-wrist. Movement retains its dormant service host
+and existing rotation demand (active target, or interactive heading subscribers/
+complications), without changing background navigation. Power policy keeps its
+network/dock/settings events and foreground host, but schedules its one-time
+five-second startup in its existing cancellable coroutine scope rather than an
+otherwise idle dedicated thread. These lifecycle changes are not a measured
+physical energy-saving claim.
+
+Verbose service-state table generation is debug-only; normal service state
+publication remains available in release. Stay awake remains an intentional
+user-enabled feature: boot/package replacement restores it only with saved
+enabled intent, never on a fresh install or after explicit off.
+
 ### WEARTAK-130: chat commands
 
 Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change watch settings by sending chat commands. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. All commands accept direct messages, All Chat Rooms broadcasts, and groups containing the watch UID. Only messages from allowed callsigns are acted on. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.

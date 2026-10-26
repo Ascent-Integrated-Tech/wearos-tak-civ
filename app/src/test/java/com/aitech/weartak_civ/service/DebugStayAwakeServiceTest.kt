@@ -324,6 +324,17 @@ class DebugStayAwakeServiceTest {
     }
 
     @Test
+    fun freshInstallNeverStartsFromBootOrPackageReplacement() {
+        assertFalse(DebugStayAwakePreferences(service).enabled)
+        for (action in listOf(Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED)) {
+            DebugStayAwakeUpdateReceiver().onReceive(service, Intent(action))
+            assertEquals(null, shadowOf(RuntimeEnvironment.getApplication()).nextStartedService)
+        }
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(connectivity.requests.isEmpty())
+    }
+
+    @Test
     fun defaultOffAndExplicitOffNeverStartFromBootUpdateOrUnrelatedBroadcast() {
         for (enabled in listOf(false, true)) {
             DebugStayAwakePreferences(service).recordSession(enabled)

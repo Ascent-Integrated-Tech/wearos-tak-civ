@@ -236,6 +236,32 @@ private object NoopDiag : CepApplyDiagnostics {
     """.trimIndent()
 
     @Test
+    fun weatherDemandFollowsAppliedConfigurationButNotRejectedCandidate() = runBlocking {
+        val holder = CepEngineHolder()
+        val ex = newExecutor(RuntimeEnvironment.getApplication(), RecordingPersistence(), holder)
+        val empty = overlayJson(0L)
+        val withWeather = org.json.JSONObject(empty)
+            .put("featuresMode", "REPLACE")
+            .put("features", org.json.JSONArray("""[{
+                "type":"derived","id":"features.wind_chill.c",
+                "expr":{"wind_chill":{"temp_key":"ambient.temp_c","wind_key":"ambient.wind_mps"}}
+            }]""")).toString()
+        try {
+            val initial = ex.execute(empty, "", { false }) as CepProvider.ApplyResult.Applied
+            assertFalse(holder.weatherDemand.value)
+            val weather = ex.execute(withWeather, initial.effectiveHash, { false }) as CepProvider.ApplyResult.Applied
+            assertTrue(holder.weatherDemand.value)
+            val current = holder.current()
+            val rejected = ex.execute(poisonedPayload(1), weather.effectiveHash, { false })
+            assertTrue(rejected is CepProvider.ApplyResult.Rejected)
+            assertEquals(current, holder.current())
+            assertTrue(holder.weatherDemand.value)
+            assertTrue(ex.execute(empty, weather.effectiveHash, { false }) is CepProvider.ApplyResult.Applied)
+            assertFalse(holder.weatherDemand.value)
+        } finally { holder.current()?.cancel() }
+    }
+
+    @Test
     fun resetWithUnchangedDefinitionalHashStillSwapsAdvancesMirrorAndClearsSustain() {
         runBlocking {
         val app = RuntimeEnvironment.getApplication()

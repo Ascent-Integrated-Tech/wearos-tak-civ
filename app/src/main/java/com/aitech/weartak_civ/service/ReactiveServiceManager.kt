@@ -18,6 +18,7 @@ import androidx.core.content.ContextCompat
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.data.AudioCaptureRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
@@ -628,6 +629,7 @@ class ReactiveServiceManager : Service() {
         registry: ServiceRegistry,
         reason: RecType
     ) {
+        if (!BuildConfig.DEBUG) return
         val snap = repo.serviceDebugStateFlow.value
         printHeader(reason, changed = null)
 
@@ -654,6 +656,7 @@ class ReactiveServiceManager : Service() {
         registry: ServiceRegistry,
         reason: RecType
     ) {
+        if (!BuildConfig.DEBUG) return
         val snap = repo.serviceDebugStateFlow.value
         printHeader(reason, changed = null)
 
@@ -687,6 +690,7 @@ class ReactiveServiceManager : Service() {
         reason: RecType,
         changed: List<ServiceType> // from reconcileStates()
     ) {
+        if (!BuildConfig.DEBUG) return
         val snap = repo.serviceDebugStateFlow.value
         val newSnapshot: EnumMap<ServiceType, ServiceDebugState?> = EnumMap(ServiceType::class.java)
 
@@ -761,7 +765,7 @@ class ReactiveServiceManager : Service() {
             put(ServiceType.MOVEMENT_DETECTION,    MovementDetectionService.isRunning.get())
             put(ServiceType.ACTIVITY_RECOGNITION,  ActivityRecognitionService.isRunning.get())
             put(ServiceType.OFF_BODY_DETECT,       OffBodyDetectService.isRunning.get())
-            put(ServiceType.BATTERY,               BatteryService.isRunning.get())
+            put(ServiceType.BATTERY,               BatteryPowerObserver.isRunning.get())
             put(ServiceType.POWER_MGR,             PowerManagerService.isRunning.get())
             put(ServiceType.GEOFENCE,              GeofenceService.isRunning.get())
         }
@@ -802,6 +806,7 @@ class ReactiveServiceManager : Service() {
         reason: String,
         changed: List<ServiceType>? = null
     ) {
+        if (!BuildConfig.DEBUG) return
         val snap = repo.serviceDebugStateFlow.value   // EnumMap<ServiceType, ServiceDebugState>
         val header = "SERVICE | R-KNOX | LOCAL | CONFIG | DESIRED | RUNNING"
         val context = buildString {
@@ -839,6 +844,7 @@ class ReactiveServiceManager : Service() {
     }
 
     fun startManagedConfigUpdateCollector(repo: DataRepository, registry: ServiceRegistry) {
+        if (!BuildConfig.DEBUG) return
         scope.launch {
             repo.serviceDebugStateFlow
                 // filter to only collect config stage as it is only changed when handleManagedConfig is run.
@@ -892,7 +898,7 @@ class ReactiveServiceManager : Service() {
         DITTO(true, isKnoxMgdService = true),
         BLE_BEACON(true, isKnoxMgdService = true),
         OFF_BODY_DETECT(true, isKnoxMgdService = false),
-        BATTERY(true, isKnoxMgdService = false),
+        BATTERY(isNotRunnable = true),
         GEOFENCE(true, isKnoxMgdService = true),
         POWER_MGR(true, isKnoxMgdService = false),
         BLOOD_HOUND(true, isKnoxMgdService = false),

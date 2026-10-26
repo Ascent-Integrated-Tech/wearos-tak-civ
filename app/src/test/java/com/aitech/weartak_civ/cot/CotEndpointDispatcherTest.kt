@@ -1,7 +1,7 @@
 package com.aitech.weartak_civ.cot
 
 import com.aitech.weartak_civ.data.DataRepository
-import com.aitech.weartak_civ.service.BatteryService.DockType
+import com.aitech.weartak_civ.service.BatteryPowerObserver.DockType
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue

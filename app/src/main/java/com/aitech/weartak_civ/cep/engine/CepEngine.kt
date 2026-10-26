@@ -44,6 +44,7 @@ class CepEngine(
      */
     internal fun adoptWindowIngestionFrom(previous: CepEngine) {
         windows.adoptIngestionStateFrom(previous.windows)
+        if (!requiresWeather || !previous.requiresWeather) windows.clearWeatherState()
     }
 
     /**
@@ -60,6 +61,7 @@ class CepEngine(
      *  compute removed-rule sets across a swap so [AlertRegistry] entries can be cleared. */
     val ruleIds: Set<String> get() = config.rules.map { it.id }.toSet()
     val featureIds: Set<String> get() = config.features.map { it.id }.toSet()
+    val requiresWeather: Boolean = WeatherDependencies.requiresWeather(config)
 
     @Volatile
     private var sustainOverridesMain: Map<String, Long> = emptyMap()

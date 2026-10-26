@@ -12,8 +12,6 @@ package com.aitech.weartak_civ.service
 import android.app.NotificationManager
 import android.app.Service
 import android.content.Intent
-import android.os.Handler
-import android.os.HandlerThread
 import android.os.IBinder
 import android.util.Log
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
@@ -35,6 +33,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -45,11 +44,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 // This service acts as the orchestrator for all power optimizations
 class PowerManagerService : Service() {
-    private var powerManagerHandler: Handler? = null
-    private var powerManagerThread: HandlerThread? = null
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var dockedAndShouldThrottleDispatch: Boolean = false // gate for triggering a throttle dispatch. Determined by dock state and enableDispatchThrottleOnDevDock flag.
-    private var currentDockType: BatteryService.DockType = BatteryService.DockType.NONE  // Are docked via wireless, usb, or not at all
+    private var currentDockType: BatteryPowerObserver.DockType = BatteryPowerObserver.DockType.NONE  // Are docked via wireless, usb, or not at all
     private var enableDispatchThrottleOnDevDock = false // Default to false. when true, PLI dispatch interval is 15 minutes whenever charging, even on dev dock charger. Only make true when testing.
 
 
@@ -57,6 +54,9 @@ class PowerManagerService : Service() {
         super.onCreate()
         Log.d(TAG, "PowerManagerService onCreate()")
         isRunning.set(true)
+        initialStartDelayDone.set(false)
+        observationPowerThrottled = false
+        observationDockThrottled = false
         startForegroundServiceCompat(
             POWERMANAGER_SERVICE_NOTIFICATION_ID,
             importance = NotificationManager.IMPORTANCE_LOW
@@ -66,7 +66,14 @@ class PowerManagerService : Service() {
             EventBus.getDefault().register(this)
         }
 
-        startPowerManagerThread()
+        scope.launch {
+            delay(INITIAL_START_DELAY)
+            Log.d(TAG, "PowerManagerService Starting PowerManager Functionality")
+            dynamicUpdates(NetworkManager.isNetworkConnected, isWifiToInt(NetworkManager.isWifi),
+                NetworkManager.connectedWifiSsid, dataRepository.getEnableWifiBatteryOptimization.first(),
+                dataRepository.getEnableAllWifiBatteryOptimization.first(), dataRepository.getWifiSsidList.first())
+            initialStartDelayDone.set(true)
+        }
         collectDockState()
     }
 
@@ -84,30 +91,12 @@ class PowerManagerService : Service() {
         Log.d(TAG, "PowerManagerService onDestroy()")
         isRunning.set(false)
         stopForegroundServiceCompat()
-        stopPowerManagerThread()
         if (EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().unregister(this)
         }
         scope.cancel()
+        initialStartDelayDone.set(false)
         Log.d(TAG, "PowerManager Service destroyed")
-    }
-
-    private fun stopPowerManagerThread() {
-        Log.v(TAG, "PowerManagerService stopPowerManagerThread()")
-        powerManagerHandler?.removeCallbacks(initialPowerManagerStartRunnable)
-        powerManagerThread?.quitSafely()
-        powerManagerThread = null
-        powerManagerHandler = null
-    }
-
-    private fun startPowerManagerThread() {
-        Log.v(TAG, "PowerManagerService startPowerManagerThread()")
-        powerManagerThread = HandlerThread("PowerManagerThread")
-        powerManagerThread?.start()
-        powerManagerHandler = powerManagerThread?.looper?.let { Handler(it) }
-
-        // Schedule the first run
-        powerManagerHandler?.postDelayed(initialPowerManagerStartRunnable, INITIAL_START_DELAY)
     }
 
     private fun collectDockState() {
@@ -129,8 +118,8 @@ class PowerManagerService : Service() {
                 currentDockType = dockType
 
                 dockedAndShouldThrottleDispatch =
-                    dockType == BatteryService.DockType.WIRELESS ||
-                            (dockType == BatteryService.DockType.USB && enableDispatchThrottleOnDevDock)
+                    dockType == BatteryPowerObserver.DockType.WIRELESS ||
+                            (dockType == BatteryPowerObserver.DockType.USB && enableDispatchThrottleOnDevDock)
                 observationDockThrottled = dockedAndShouldThrottleDispatch
 
                 // ✅ Key fix:
@@ -301,17 +290,6 @@ class PowerManagerService : Service() {
 
     private fun isWifiToInt(isWifi: Boolean) : Int {
         return if (isWifi) { WIFI } else { CELLULAR }
-    }
-
-    private val initialPowerManagerStartRunnable = object : Runnable {
-        override fun run() {
-            Log.d(TAG, "PowerManagerService Starting PowerManager Functionality")
-            runBlocking {
-                dynamicUpdates(NetworkManager.isNetworkConnected, isWifiToInt(NetworkManager.isWifi), NetworkManager.connectedWifiSsid,
-                    dataRepository.getEnableWifiBatteryOptimization.first(), dataRepository.getEnableAllWifiBatteryOptimization.first(), dataRepository.getWifiSsidList.first())
-                initialStartDelayDone.set(true)
-            }
-        }
     }
 
     companion object {

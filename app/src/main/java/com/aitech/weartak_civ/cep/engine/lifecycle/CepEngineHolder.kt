@@ -1,6 +1,8 @@
 package com.aitech.weartak_civ.cep.engine.lifecycle
 
 import com.aitech.weartak_civ.cep.engine.CepEngine
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.util.concurrent.atomic.AtomicReference
 
 /**
@@ -16,6 +18,8 @@ import java.util.concurrent.atomic.AtomicReference
  */
 class CepEngineHolder {
     private val ref = AtomicReference<CepEngine?>(null)
+    private val _weatherDemand = MutableStateFlow(false)
+    val weatherDemand = _weatherDemand.asStateFlow()
 
     /** Authoritative read. Returns null until the first install. */
     fun current(): CepEngine? = ref.get()
@@ -29,12 +33,22 @@ class CepEngineHolder {
      * succeeds. Until that cancel completes, both engines are alive — only the new one is
      * authoritative.
      */
-    fun swap(newEngine: CepEngine): CepEngine? = ref.getAndSet(newEngine)
+    @Synchronized
+    fun swap(newEngine: CepEngine): CepEngine? {
+        val previous = ref.getAndSet(newEngine)
+        _weatherDemand.value = newEngine.requiresWeather
+        return previous
+    }
 
     /**
      * Initialize the holder with the cold-start engine. Must be called exactly once before
      * any [swap]. Treated as a swap with no prior engine, so callers cannot accidentally
      * replace a running engine via [install].
      */
-    fun install(initial: CepEngine): Boolean = ref.compareAndSet(null, initial)
+    @Synchronized
+    fun install(initial: CepEngine): Boolean {
+        if (!ref.compareAndSet(null, initial)) return false
+        _weatherDemand.value = initial.requiresWeather
+        return true
+    }
 }

@@ -6,7 +6,7 @@ import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.CompanionAppRepository
 import com.aitech.weartak_civ.presentation.MainActivity
-import com.aitech.weartak_civ.service.BatteryService.DockType
+import com.aitech.weartak_civ.service.BatteryPowerObserver.DockType
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import org.json.JSONObject

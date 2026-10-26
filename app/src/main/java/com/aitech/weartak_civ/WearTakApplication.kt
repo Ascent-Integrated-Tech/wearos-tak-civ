@@ -51,6 +51,7 @@ import kotlinx.coroutines.launch
 import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
 import com.aitech.weartak_civ.service.BondedLocationDiagnostics
 import com.aitech.weartak_civ.service.AppDiagnostics
+import com.aitech.weartak_civ.service.BatteryPowerObserver
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -61,6 +62,7 @@ class WearTakApplication : Application() {
     private val takServerMigrationReady = CompletableDeferred<Result<Unit>>()
 
     lateinit var repo: DataRepository; private set
+    private lateinit var batteryPowerObserver: BatteryPowerObserver
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
     lateinit var locationDiagnostics: BondedLocationDiagnostics; private set
@@ -103,6 +105,7 @@ class WearTakApplication : Application() {
         takServerRepo = TakServerSecretsRepository(TakServerEncryptedDataStore(applicationContext))
         repo = DataRepository(applicationContext)
         diagnostics.bindRepository(repo)
+        batteryPowerObserver = BatteryPowerObserver(this, repo).also { it.start() }
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             repo.unitPrefs.collect(com.aitech.weartak_civ.ui.formatter.UnitPrefsState::update)
         }
