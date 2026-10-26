@@ -13,6 +13,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
+import android.view.InputDevice
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -272,6 +274,26 @@ open class MapActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         requestedFocus.value = readFocus(intent)
+    }
+
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_SCROLL &&
+            event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)
+        ) {
+            val scroll = event.getAxisValue(MotionEvent.AXIS_SCROLL)
+
+            if (scroll != 0f && bezelZoomHandler?.invoke(scroll) == true) {
+                return true
+            }
+        }
+
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    private var bezelZoomHandler: ((Float) -> Boolean)? = null
+
+    fun setBezelZoomHandler(handler: ((Float) -> Boolean)?) {
+        bezelZoomHandler = handler
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -1960,6 +1982,25 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
     var showLayerToggle by remember { mutableStateOf(false) }
 
     var showChannelToggle by remember {mutableStateOf(false)}
+
+    val activity = LocalContext.current as? MapActivity
+
+    val layersMenuOpen by rememberUpdatedState(showLayerToggle)
+
+    DisposableEffect(activity) {
+        activity?.setBezelZoomHandler { scroll ->
+            if (layersMenuOpen) {
+                false
+            } else {
+                changeZoom(-scroll.toDouble())
+                true
+            }
+        }
+
+        onDispose {
+            activity?.setBezelZoomHandler(null)
+        }
+    }
 
     LaunchedEffect(networkSettingsLocked) {
         if (networkSettingsLocked) showChannelToggle = false
