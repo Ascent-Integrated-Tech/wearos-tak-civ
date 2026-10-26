@@ -65,7 +65,7 @@ class DittoBleDiscoverySessionTest {
             session = DittoBleDiscoverySession(application, repo, ditto, scope,
                 combine(master, companion, reconfiguring) { enabled, connected, changing ->
                     enabled && !connected && !changing
-                })
+                }, elapsedClock = { scope.testScheduler.currentTime })
             session.start()
         }
 
@@ -161,6 +161,12 @@ class DittoBleDiscoverySessionTest {
             assertEquals(listOf(true, false), f.changes)
             f.callback.captured(graph(listOf(lan)))
             runCurrent()
+            assertFalse(f.changes.last())
+            advanceTimeBy(DittoBleDiscovery.TOPOLOGY_BACKOFF_MS)
+            runCurrent()
+            assertFalse(f.changes.last())
+            f.callback.captured(graph())
+            runCurrent()
             assertTrue(f.changes.last())
         }
     }
@@ -221,6 +227,53 @@ class DittoBleDiscoverySessionTest {
         assertEquals(snapshot, blePeerSnapshot(graph.copy(
             remotePeers = listOf(peer("renamed", listOf(direct, indirect)))
         )))
+        assertEquals(snapshot, blePeerSnapshot(presenceGraph(
+            peer("watch", listOf(connection("new-direct-id", "watch", "phone", DittoConnectionType.Bluetooth))),
+            listOf(peer("phone", listOf(
+                connection("new-direct-id", "watch", "phone", DittoConnectionType.Bluetooth),
+                connection("new-indirect-id", "tablet", "phone", DittoConnectionType.Bluetooth)
+            )))
+        )))
+    }
+
+    @Test fun sdkRoleAndConnectionIdChangesNeverReapplyConfigOrDropAHealthyLink() = runTest {
+        Fixture(this).use { f ->
+            runCurrent()
+            repeat(87) { index ->
+                f.callback.captured(graph(listOf(connection(
+                    "physical-$index", if (index % 2 == 0) "watch" else "phone",
+                    if (index % 2 == 0) "phone" else "watch", DittoConnectionType.Bluetooth
+                ))))
+                runCurrent()
+                advanceTimeBy(36_000)
+                runCurrent()
+            }
+            assertEquals(listOf(true), f.changes)
+            verify(exactly = 0) { f.ditto.startSync() }
+            verify(exactly = 0) { f.ditto.stopSync() }
+        }
+    }
+
+    @Test fun idleLanConnectionIdAndRoleChurnCannotReopenDiscoveryEvenAfterCooldown() = runTest {
+        Fixture(this).use { f ->
+            runCurrent()
+            f.callback.captured(graph(listOf(connection(
+                "first", "watch", "phone", DittoConnectionType.AccessPoint
+            ))))
+            advanceTimeBy(DittoBleDiscovery.WINDOW_MS)
+            runCurrent()
+            assertEquals(listOf(true, false), f.changes)
+            advanceTimeBy(DittoBleDiscovery.TOPOLOGY_BACKOFF_MS)
+            repeat(87) { index ->
+                f.callback.captured(graph(listOf(connection(
+                    "new-physical-$index", "phone", "watch", DittoConnectionType.AccessPoint
+                ))))
+                runCurrent()
+                advanceTimeBy(36_000)
+                runCurrent()
+            }
+            assertEquals(listOf(true, false), f.changes)
+        }
     }
 
     companion object {

@@ -3,6 +3,7 @@ package com.aitech.weartak_civ.service
 import android.app.Activity
 import android.app.Application
 import android.os.Bundle
+import android.os.SystemClock
 import android.util.Log
 import com.aitech.weartak_civ.data.DataRepository
 import kotlinx.coroutines.CoroutineScope
@@ -29,12 +30,17 @@ internal enum class BleDiscoveryAction { START, STOP, BACKOFF }
 /**
  * One discovery window per event, not a periodic scan. A BLE-only peer arriving after
  * backoff is discoverable only on UI entry, wrist-on, Ditto settings/topology changes,
- * or service restart. LAN/WiFi peers alone never keep BLE enabled.
+ * or service restart. LAN/WiFi peers alone never keep BLE enabled. After an idle
+ * expiry, topology-triggered reopens are suppressed for five minutes; only a later
+ * event can reopen them, not a retry timer. Explicit user/wrist/settings triggers
+ * bypass that cooldown. V4 has no independent scanner gate: preserving a direct
+ * BLE connection also leaves SDK discovery on.
  */
 internal class DittoBleDiscovery(
     private val scope: CoroutineScope,
     private val setEnabled: (Boolean) -> Boolean,
-    private val record: (BleDiscoveryAction, BleDiscoveryReason, Int) -> Unit
+    private val record: (BleDiscoveryAction, BleDiscoveryReason, Int) -> Unit,
+    private val elapsedClock: () -> Long = SystemClock::elapsedRealtime
 ) : AutoCloseable {
     private var allowed = false
     private var closed = false
@@ -43,6 +49,7 @@ internal class DittoBleDiscovery(
     private var topology: Set<String>? = null
     private var deadline: Job? = null
     private var generation = 0L
+    private var topologyNotBefore = Long.MIN_VALUE
 
     @Synchronized
     fun setAllowed(value: Boolean) {
@@ -59,6 +66,8 @@ internal class DittoBleDiscovery(
     @Synchronized
     fun request(reason: BleDiscoveryReason) {
         if (closed || !allowed) return
+        if (reason == BleDiscoveryReason.PRESENCE && !enabled &&
+            elapsedClock() < topologyNotBefore) return
         if (!changeEnabled(true, reason)) return
         if (bleConnections == 0 && deadline == null) {
             val current = ++generation
@@ -88,6 +97,7 @@ internal class DittoBleDiscovery(
         if (closed || !allowed || current != generation || bleConnections > 0) return
         deadline = null
         if (changeEnabled(false, BleDiscoveryReason.WINDOW_EXPIRED)) {
+            topologyNotBefore = elapsedClock() + TOPOLOGY_BACKOFF_MS
             record(BleDiscoveryAction.BACKOFF, BleDiscoveryReason.WINDOW_EXPIRED, bleConnections)
         }
     }
@@ -117,6 +127,7 @@ internal class DittoBleDiscovery(
 
     companion object {
         const val WINDOW_MS = 30_000L
+        const val TOPOLOGY_BACKOFF_MS = 300_000L
     }
 }
 
@@ -127,7 +138,12 @@ internal fun blePeerSnapshot(graph: DittoPresenceGraph): BlePeerSnapshot {
     val connections = (graph.localPeer.connections + graph.remotePeers.flatMap { it.connections })
         .distinctBy { it.id }
     return BlePeerSnapshot(
-        connections.map { "${it.id}:${it.connectionType}" }.toSet(),
+        // SDK connection IDs and client/server roles churn for the same peer.
+        // Only logical endpoint/transport changes are discovery triggers.
+        connections.map {
+            "${minOf(it.peerKeyString1, it.peerKeyString2)}:" +
+                "${maxOf(it.peerKeyString1, it.peerKeyString2)}:${it.connectionType}"
+        }.toSet(),
         connections.count {
             it.connectionType == DittoConnectionType.Bluetooth &&
                 (it.peerKeyString1 == local || it.peerKeyString2 == local)
@@ -141,12 +157,13 @@ internal class DittoBleDiscoverySession(
     private val repo: DataRepository,
     private val ditto: Ditto,
     private val scope: CoroutineScope,
-    private val allowed: Flow<Boolean>
+    private val allowed: Flow<Boolean>,
+    elapsedClock: () -> Long = SystemClock::elapsedRealtime
 ) : Application.ActivityLifecycleCallbacks, AutoCloseable {
     private val jobs = mutableListOf<Job>()
     private val graphs = Channel<DittoPresenceGraph>(Channel.CONFLATED)
     private var observer: DittoPresenceObserver? = null
-    private val discovery = DittoBleDiscovery(scope, ::setBleEnabled) { action, reason, count ->
+    private val discovery = DittoBleDiscovery(scope, ::setBleEnabled, { action, reason, count ->
         AppDiagnostics.record(DiagnosticEvent.BLE_DISCOVERY, mapOf(
             DiagnosticMetric.KIND to action.ordinal.toLong(),
             DiagnosticMetric.REASON to reason.ordinal.toLong(),
@@ -154,7 +171,7 @@ internal class DittoBleDiscoverySession(
             DiagnosticMetric.WINDOW_MS to DittoBleDiscovery.WINDOW_MS,
             DiagnosticMetric.RESULT to 1L
         ))
-    }
+    }, elapsedClock)
 
     fun start() {
         updatePeers(ditto.presence.graph)

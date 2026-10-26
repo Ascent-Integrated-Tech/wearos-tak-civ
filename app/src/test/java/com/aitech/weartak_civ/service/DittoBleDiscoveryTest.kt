@@ -18,7 +18,8 @@ class DittoBleDiscoveryTest {
         val discovery = DittoBleDiscovery(scope, {
             if (succeeds) changes += it
             succeeds
-        }) { action, reason, _ -> events += action to reason }
+        }, { action, reason, _ -> events += action to reason },
+            elapsedClock = { scope.testScheduler.currentTime })
 
         init {
             discovery.peersChanged(emptySet(), 0)
@@ -54,6 +55,7 @@ class DittoBleDiscoveryTest {
             runCurrent()
             assertFalse(f.changes.last())
         }
+        advanceTimeBy(DittoBleDiscovery.TOPOLOGY_BACKOFF_MS)
         f.discovery.peersChanged(setOf("lan-1"), 0)
         runCurrent()
         assertTrue(f.changes.last())
@@ -171,6 +173,54 @@ class DittoBleDiscoveryTest {
         f.succeeds = true
         f.discovery.close()
         assertEquals(listOf(true, false), f.changes)
+    }
+
+    @Test fun topologyFeedbackCannotReopenDiscoveryUntilCooldownAndNoTimerRetriesIt() = runTest {
+        val f = Fixture(this)
+        f.discovery.setAllowed(true)
+        advanceUntilIdle()
+        repeat(299) {
+            advanceTimeBy(1_000)
+            f.discovery.peersChanged(setOf("lan-$it"), 0)
+            runCurrent()
+        }
+        assertEquals(listOf(true, false), f.changes)
+        advanceTimeBy(1_000)
+        runCurrent()
+        assertEquals(listOf(true, false), f.changes)
+        f.discovery.peersChanged(setOf("new-lan"), 0)
+        advanceUntilIdle()
+        assertEquals(listOf(true, false, true, false), f.changes)
+        f.discovery.close()
+    }
+
+    @Test fun explicitTriggersBypassTopologyCooldownButDoNotExtendAWindow() = runTest {
+        val f = Fixture(this)
+        f.discovery.setAllowed(true)
+        advanceUntilIdle()
+        listOf(BleDiscoveryReason.UI, BleDiscoveryReason.WRIST_ON, BleDiscoveryReason.SETTINGS).forEach {
+            f.discovery.request(it)
+            runCurrent()
+            assertTrue(f.changes.last())
+            advanceUntilIdle()
+            assertFalse(f.changes.last())
+        }
+        f.discovery.close()
+    }
+
+    @Test fun directConnectionIsRetainedEvenDuringTopologyCooldown() = runTest {
+        val f = Fixture(this)
+        f.discovery.setAllowed(true)
+        advanceUntilIdle()
+        f.discovery.peersChanged(setOf("ble"), 1)
+        runCurrent()
+        advanceTimeBy(600_000)
+        runCurrent()
+        assertEquals(listOf(true, false, true), f.changes)
+        f.discovery.peersChanged(emptySet(), 0)
+        advanceUntilIdle()
+        assertEquals(listOf(true, false, true, false), f.changes)
+        f.discovery.close()
     }
 
     @Test fun diagnosticIdIsAppendedWithoutChangingMotionConfirmation() {

@@ -66,6 +66,16 @@ internal class DittoCotReceiver(
             }
             override suspend fun onEmergency(event: CotEmergencyEvent, envelope: TakServerCotEnvelope) {
                 currentCoroutineContext().ensureActive()
+                // Expired snapshots may advance replay state, never create stale alerts.
+                // Cancellations must still clear an older live alert.
+                if (!event.cancelled && event.stale <= envelope.receivedAt) {
+                    val source = envelope.sourceServerId ?: "remote:${envelope.sourceServerAddress}"
+                    bloodhounds.removeMarkerCopy(
+                        event.uid, "emergency:$source", event.time, envelope.receivedAt
+                    )
+                    log("Ignoring expired Ditto emergency snapshot", null)
+                    return
+                }
                 bloodhounds.applyEmergencyEvent(event, envelope.sourceServerAddress,
                     envelope.sourceServerId, envelope.receivedAt, deviceUid())
             }

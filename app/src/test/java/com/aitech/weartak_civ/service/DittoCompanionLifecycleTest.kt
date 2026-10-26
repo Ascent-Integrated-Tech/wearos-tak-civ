@@ -77,8 +77,16 @@ class DittoCompanionLifecycleTest {
         val discovery = mockk<DittoBleDiscoverySession>(relaxed = true)
         field("bleDiscovery").set(service, discovery)
         val subscriptions = List(4) { mockk<DittoSyncSubscription>(relaxed = true) }
-        listOf("subscriptionTrack", "subscriptionMapItem", "subscriptionAlert", "subscriptionChat")
+        listOf("subscriptionTrack", "subscriptionMapItem", "subscriptionAlert")
             .zip(subscriptions).forEach { (name, subscription) -> field(name).set(service, subscription) }
+        val retention = DittoChatRetention(
+            service.getSharedPreferences("companion-retention-test", android.content.Context.MODE_PRIVATE),
+            subscribe = { subscriptions.last() },
+            evict = {},
+            onError = { throw it }
+        )
+        retention.start()
+        field("chatRetention").set(service, retention)
         val handler = Handler(Looper.getMainLooper())
         field("dittoUpdateHandler").set(service, handler)
         val runnable = field("dittoUpdateRunnable").get(service) as Runnable
