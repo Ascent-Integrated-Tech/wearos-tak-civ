@@ -57,7 +57,7 @@ class ChatCommandProcessor(
         val parsed = ChatCommandParser.parse(request.text)
         if (parsed is ChatCommandParse.NotACommand) return false
         com.aitech.weartak_civ.service.AppDiagnostics.record(com.aitech.weartak_civ.service.DiagnosticEvent.COMMAND)
-        if (!isEnabled()) return request.text.trimStart()
+        if (!isEnabled()) return SensitiveEnrollment.isSensitiveText(request.text) || request.text.trimStart()
             .substring(ChatCommandParser.PREFIX.length).trimStart().let {
                 it.startsWith("usep12", true) || it.startsWith("setpdl", true)
             }

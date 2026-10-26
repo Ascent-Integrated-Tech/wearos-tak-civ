@@ -62,10 +62,10 @@ class WifiMulticastReceiver internal constructor(
                     val xml = try {
                         TakDatagramDecoder.decode(packet.data, packet.offset, packet.length)
                     } catch (error: IOException) {
-                        Log.w("WearTAK-MulticastRx", "Rejecting datagram from ${packet.address}: ${error.message}")
+                        Log.w("WearTAK-MulticastRx", "Rejecting invalid TAK datagram")
                         continue
                     } catch (error: SAXException) {
-                        Log.w("WearTAK-MulticastRx", "Rejecting invalid TAK detail XML from ${packet.address}", error)
+                        Log.w("WearTAK-MulticastRx", "Rejecting invalid TAK detail XML")
                         continue
                     }
                     if (xml == null) {

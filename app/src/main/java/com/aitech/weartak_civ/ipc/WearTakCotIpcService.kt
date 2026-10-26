@@ -130,6 +130,7 @@ class WearTakCotIpcService : Service() {
     }
 
     private fun handleIncomingPayload(route: AtosIpcRoute, cotXml: String) {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(cotXml)) return
         if ((applicationContext as WearTakApplication).repo.isCompanionConnected.value) {
             Log.d(AtosIpcConstants.LOG_TAG, "Suppressing plugin CoT while bonded companion is connected")
             return
@@ -142,8 +143,11 @@ class WearTakCotIpcService : Service() {
         } else {
             callerPackages.joinToString(",")
         }
-        logIncomingPayloadPreview(route, size, callingUid, callerLabel, cotXml)
-        logIncomingPayloadFull(route, callingUid, callerLabel, cotXml)
+        // Chat and unparseable input never enter raw developer logging.
+        if (!CotMessageParser.isChatMessage(cotXml) && CotMessageParser.parseDocumentOrNull(cotXml) != null) {
+            logIncomingPayloadPreview(route, size, callingUid, callerLabel, cotXml)
+            logIncomingPayloadFull(route, callingUid, callerLabel, cotXml)
+        }
         if (PluginCotIngress.offer(
                 TakServerCotEnvelope(
                     "companion:$callingUid", callerLabel, System.currentTimeMillis(), cotXml

@@ -10,6 +10,7 @@ import io.mockk.every
 import io.mockk.mockk
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertThrows
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -61,5 +62,22 @@ class WearTakCotIpcServiceTest {
         val client = IWearTakAppCotListener.Stub.asInterface(service.onBind(Intent()))
         ShadowBinder.setCallingUid(345)
         assertThrows(SecurityException::class.java) { client.broadcastCot("<event/>") }
+    }
+
+    @Test fun enrollmentNeverEntersPreDispatchXmlLogsOrPluginForwarding() {
+        ShadowBinder.setCallingUid(234)
+        every { packages.getPackagesForUid(234) } returns arrayOf(AtosIpcConstants.EXPECTED_ATOS_PACKAGE)
+        val client = IWearTakAppCotListener.Stub.asInterface(service.onBind(Intent()))
+        for (xml in listOf(
+            "<event><remarks>#weartakcommand enrollserver Ops,host,8089,u,fake-secret</remarks></event>",
+            "<event><remarks>&#35;weartakcommandenrollserver Ops,host,8089,u,fake-secret</remarks></event>",
+            "<event><remarks>#weartakcommandenrollserver malformed,fake-secret")) {
+            // The Application fixture has no plugin host: forwarding would also fail this transaction.
+            client.receiveCotFromPlugin(xml)
+            client.broadcastCot(xml)
+        }
+        assertTrue(org.robolectric.shadows.ShadowLog.getLogs().none {
+            it.msg.contains("fake-secret") || it.msg.contains("payload full") || it.msg.contains("payload preview")
+        })
     }
 }

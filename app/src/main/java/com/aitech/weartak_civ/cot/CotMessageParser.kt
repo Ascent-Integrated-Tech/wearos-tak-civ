@@ -444,6 +444,7 @@ object CotMessageParser {
         }
         factory.newDocumentBuilder().apply {
             setEntityResolver { _, _ -> InputSource(StringReader("")) }
+            setErrorHandler(org.xml.sax.helpers.DefaultHandler())
         }.parse(InputSource(StringReader(cleaned)))
     } catch (_: Exception) {
         null

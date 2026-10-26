@@ -106,6 +106,10 @@ class CompanionAppRepository(private val context: Context) {
     val gatewayCotEvents = kotlinx.coroutines.channels.Channel<Pair<String, String>>(64)
 
     fun offerGatewayCot(xml: String): Boolean {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(xml)) {
+            Log.w(TAG, "Sensitive enrollment command excluded from gateway queue")
+            return false
+        }
         val token = gateway.session ?: return false
         return gatewayCotEvents.trySend(token to xml).isSuccess
     }
@@ -140,6 +144,10 @@ class CompanionAppRepository(private val context: Context) {
     }
 
     suspend fun enqueueChatSnapshotForBle(snapshot: DataRepository.ChatEventSnapshot) {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(snapshot.message)) {
+            Log.w(TAG, "Sensitive enrollment command excluded from companion chat queue")
+            return
+        }
         _outboundBleCotEvents.emit(OutboundCotEvent.Chat(snapshot))
     }
 

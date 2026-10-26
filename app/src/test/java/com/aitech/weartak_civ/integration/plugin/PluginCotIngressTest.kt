@@ -4,6 +4,7 @@ import com.aitech.weartak_civ.cot.TakServerCotEnvelope
 import io.mockk.mockk
 import io.mockk.verify
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -34,6 +35,15 @@ class PluginCotIngressTest {
                 "<event uid='test' type='a-f-G-U-C'><detail/></event>"),
             coordinator
         ))
+        verify(exactly = 0) { coordinator.invokeActionOnPluginsWithSetting(any(), any(), any()) }
+    }
+
+    @Test fun sensitiveEnrollmentIsConsumedWithoutCreatingPluginBundle() {
+        val coordinator = mockk<PluginSettingsCoordinator>(relaxed = true)
+        for (xml in listOf("<event><remarks>#weartakcommand enrollserver N,h,8089,u,fake-secret</remarks></event>",
+            "<event><remarks>#weartakcommandenrollserver malformed")) {
+            assertTrue(PluginCotIngress.offer(TakServerCotEnvelope("tak", "tak", 123L, xml), coordinator))
+        }
         verify(exactly = 0) { coordinator.invokeActionOnPluginsWithSetting(any(), any(), any()) }
     }
 }

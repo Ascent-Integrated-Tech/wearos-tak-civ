@@ -47,16 +47,18 @@ class SetLocationInputHandler(
 
 /**
  * `#weartakcommandenrollserver name=NCTAK url=takserver.nctak.gov port=8089`
- * Credentials are never accepted in chat; the user is prompted on the watch.
+ * Omitted credentials prompt on the watch; supplied credentials use the same enrollment flow.
  */
 class EnrollServerHandler(
     private val isLocked: suspend () -> Boolean,
-    private val prompt: suspend (ServerEnrollment) -> Unit
+    private val prompt: suspend (ServerEnrollment) -> Unit,
+    private val enroll: suspend (String, String, Int, String, String) -> ChatCommandResult =
+        { _, _, _, _, _ -> ChatCommandResult(false, "Server enrollment unavailable") }
 ) : ChatCommandHandler {
     override suspend fun execute(command: ChatCommand, request: ChatCommandRequest): ChatCommandResult {
-        val extra = command.args.keys - setOf("name", "url", "port")
+        val extra = command.args.keys - setOf("name", "url", "port", "username", "password")
         if (extra.isNotEmpty()) {
-            return ChatCommandResult(false, "enrollserver takes only name, url and port; enter credentials on the watch")
+            return ChatCommandResult(false, "enrollserver accepts name, url, port, username and password")
         }
         val name = ChatCommandValidation.serverName(command.args["name"])
         val address = ChatCommandValidation.serverAddress(command.args["url"])
@@ -64,7 +66,13 @@ class EnrollServerHandler(
         if (name == null || address == null || port == null) {
             return ChatCommandResult(false, "enrollserver needs name=<name> url=<host> [port=<1-65535>]")
         }
-        if (isLocked()) return ChatCommandResult(false, "Network settings are locked; server not added")
+        if (isLocked()) return ChatCommandResult(false, "Network settings are managed or locked; server not changed")
+        val username = command.args["username"]?.trim().orEmpty()
+        val password = command.args["password"]?.trim().orEmpty()
+        if (username.isBlank() != password.isBlank()) {
+            return ChatCommandResult(false, "Provide both username and password")
+        }
+        if (username.isNotEmpty()) return enroll(name, address, port, username, password)
         prompt(PendingServerEnrollment.offer(name, address, port))
         return ChatCommandResult(true, "Waiting for the user to enter credentials for $name on the watch")
     }

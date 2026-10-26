@@ -25,6 +25,7 @@ class ChatCommandProcessorTest {
     private val storedCallsigns = mutableListOf<String>()
     private val prompts = mutableListOf<ServerEnrollment>()
     private val locationInputs = mutableListOf<com.aitech.weartak_civ.data.LocationInput>()
+    private val enrollments = mutableListOf<List<String>>()
 
     private fun processor() = ChatCommandProcessor(
         isEnabled = { enabled },
@@ -32,7 +33,11 @@ class ChatCommandProcessorTest {
         handlers = mapOf(
             "setcallsign" to SetCallsignHandler({ locked }, { storedCallsigns += it }),
             "setlocationinput" to SetLocationInputHandler({ locked }, { locationInputs += it; true }),
-            "enrollserver" to EnrollServerHandler({ locked }, { prompts += it })
+            "enrollserver" to EnrollServerHandler({ locked }, { prompts += it },
+                { name, host, port, user, password ->
+                    enrollments += listOf(name, host, port.toString(), user, password)
+                    ChatCommandResult(true, "Server $name added")
+                })
         ),
         reply = { _, text -> replies += text },
         audit = { audits += it },
@@ -113,6 +118,10 @@ class ChatCommandProcessorTest {
         val p = processor()
         assertTrue(p.handle(request("#weartakcommandusep12 ab server=x")))
         assertTrue(p.handle(request("#weartakcommandsetpdl community")))
+        assertTrue(p.handle(request("#weartakcommand usep12 ab server=x")))
+        assertTrue(p.handle(request("#weartakcommand setpdl community")))
+        assertTrue(p.handle(request("#weartakcommand enrollserver N,h,8089,u,p")))
+        assertTrue(p.handle(request("#weartakcommandenrollserver malformed")))
         assertTrue(replies.isEmpty())
     }
 
@@ -127,7 +136,7 @@ class ChatCommandProcessorTest {
     }
 
     @Test
-    fun enrollServerPromptsAndRefusesCredentialsInChat() = runBlocking {
+    fun enrollServerPromptsAndRejectsPartialCredentials() = runBlocking {
         PendingServerEnrollment.clear()
         val p = processor()
         p.handle(request("#weartakcommandenrollserver name=\"TAK Ops\" url=cloud.tak-ops.com port=8089", id = "a"))
@@ -140,6 +149,28 @@ class ChatCommandProcessorTest {
         assertEquals(1, prompts.size)
         assertFalse(replies.any { it.contains("secret") })
         assertFalse(audits.any { it.contains("secret") })
+    }
+
+    @Test fun credentialsAreAcceptedOnEveryExistingChannelWithoutEchoAndOnlyOnce() = runBlocking {
+        val p = processor()
+        val text = "#weartakcommand enrollserver Ops,host.example,8089,operator,fake-secret,with commas"
+        for (source in listOf("srv", "multicast:224.10.10.1:17012", "ditto:peer", "sitx:flow",
+            "companion-gateway", "companion-phone")) {
+            val req = request(text, id = source).copy(sourceServerId = source, replyIsGroup = true)
+            p.handle(req)
+            p.handle(req)
+        }
+        assertEquals(6, enrollments.size)
+        assertTrue(enrollments.all { it.last() == "fake-secret,with commas" })
+        assertTrue(replies.all { it == "Server Ops added" })
+        assertFalse((replies + audits).any { it.contains("fake-secret") })
+        locked = true
+        p.handle(request(text, id = "locked"))
+        assertEquals(6, enrollments.size)
+        assertTrue(replies.last().contains("locked"))
+        p.handle(request(text, sender = "Eve", id = "unlisted"))
+        p.handle(request(text, id = "stale").copy(sentAtMs = 1))
+        assertEquals(7, replies.size)
     }
 
     @Test

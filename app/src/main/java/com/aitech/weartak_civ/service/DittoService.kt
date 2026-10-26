@@ -26,6 +26,7 @@ import android.widget.Toast
 import com.aitech.weartak_civ.Utils.startForegroundServiceCompat
 import com.aitech.weartak_civ.Utils.stopForegroundServiceCompat
 import com.aitech.weartak_civ.WearTakApplication
+import com.aitech.weartak_civ.command.SensitiveEnrollment
 import com.aitech.weartak_civ.cot.CotDetailBuilder
 import com.aitech.weartak_civ.cot.DittoChatDocument
 import com.aitech.weartak_civ.cot.DittoCotReceiver
@@ -234,6 +235,7 @@ class DittoService : Service() {
         ioScope.launch {
             try {
                 val raw = evt.cotXml
+                if (SensitiveEnrollment.containsSensitiveXml(raw)) return@launch
                 logVerbose { "Publishing Ditto document collection=${evt.collection}" }
                 if (evt.collection == "chat") {
                     publishDocument("chat", DittoChatDocument.encode(raw, localPeerKeyString))
@@ -381,7 +383,7 @@ class DittoService : Service() {
                 }
 
             } catch (t: Throwable) {
-                Log.e(TAG, "Ditto write failed", t)
+                Log.e(TAG, "Ditto write failed")
             }
 
         }
@@ -409,6 +411,7 @@ class DittoService : Service() {
     }
 
     internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {
+        if (SensitiveEnrollment.containsSensitiveDocument(document)) return false
         if (dataRepository.isCompanionConnected.value) {
             Log.d(TAG, "Suppressing direct Ditto publication while bonded companion is connected")
             return false
@@ -426,6 +429,7 @@ class DittoService : Service() {
     }
 
     internal fun writeDocument(collection: String, document: Map<String, Any?>) {
+        if (SensitiveEnrollment.containsSensitiveDocument(document)) return
         val properties = if (collection == "chat") document + ("_c" to DittoCounter()) else document
         ditto.store.write { tx -> tx.scoped(collection).upsert(properties) }
     }

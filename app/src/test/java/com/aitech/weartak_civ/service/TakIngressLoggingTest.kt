@@ -43,6 +43,18 @@ class TakIngressLoggingTest {
         rawXml = """<event uid="$uid" type="a-f-G-U-C"></event>""",
     )
 
+    @Test fun sensitiveEnrollmentHasNoPayloadHashOrDebugProjectionBeforeDispatch() = runBlocking {
+        ShadowLog.setLoggable(tag, Log.DEBUG)
+        val sensitive = envelope().copy(rawXml =
+            "<event><remarks>#weartakcommand enrollserver Ops,host,8089,u,fake-secret</remarks></event>")
+        TAKConnectService.ingestServerCot(sensitive, "Fixture",
+            activeChannels = { error("Sensitive payload must not enter debug projection") }) {
+            assertTrue(ShadowLog.getLogsForTag(tag).isEmpty())
+            TakServerCotIngestResult.COMMAND
+        }
+        assertTrue(ShadowLog.getLogsForTag(tag).isEmpty())
+    }
+
     @Test fun disabledDebugSkipsProjectionAndLogsButStillIngestsSameEnvelope() = runBlocking {
         ShadowLog.setLoggable(tag, Log.INFO)
         val envelope = envelope()

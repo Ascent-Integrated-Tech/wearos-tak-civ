@@ -64,6 +64,8 @@ class ChatService : Service() {
         _instance = this
         EventBus.getDefault().register(this)
         dataRepository = MainActivity.dataRepository
+        purgeSensitiveEnrollments()
+        com.aitech.weartak_civ.command.SensitiveEnrollment.purgeNotifications(this)
         openConversation(ChatDestinations.allRooms(getString(R.string.chat_all_rooms)))
 
         startSendChatReplyCollector()
@@ -95,6 +97,10 @@ class ChatService : Service() {
         val uid = req.dstUid
         val title = req.dstChatroom
         val message = req.message
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(message)) {
+            purgeSensitiveEnrollments()
+            return
+        }
         val timeMillis = req.timeMillis
         if (uid.isBlank() || title.isBlank() || message.isBlank()) return
 
@@ -204,7 +210,11 @@ class ChatService : Service() {
         Log.v(TAG, "Received TakChatEvent")
 
         // 2) Merge into in-memory inbox
-        incomingRooms.forEach { incoming ->
+        incomingRooms.forEach { rawRoom ->
+            val incoming = rawRoom.copy(messageList = rawRoom.messageList.filterNot {
+                com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(it.message)
+            })
+            if (incoming.messageList.isEmpty()) return@forEach
             chatRoomMap[incoming.uid] = ChatInboxMerge.merge(chatRoomMap[incoming.uid], incoming)
         }
 
@@ -225,6 +235,17 @@ class ChatService : Service() {
         CoroutineScope(Dispatchers.Default).launch {
             dataRepository.refreshUnreadCount()
         }
+    }
+
+    fun purgeSensitiveEnrollments() = synchronized(chatRoomMap) {
+        chatRoomMap.replaceAll { _, room ->
+            val messages = room.messageList.filterNot {
+                com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(it.message)
+            }
+            room.copy(messageList = messages,
+                newMessagesPresent = messages.any { it.timeReceived > room.timeLastClosed })
+        }
+        publishInboxToRepo()
     }
 
     /* Call publishInboxToRepo() wherever you previously did

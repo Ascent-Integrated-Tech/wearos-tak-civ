@@ -4073,10 +4073,19 @@ class DataRepository(
     }
 
     fun setChatRooms(rooms: List<ChatRoom>) {
-        _chatRoomsFlow.value = rooms
-        val anyUnread = rooms.any { it.newMessagesPresent }
+        val safeRooms = rooms.map { room ->
+            val messages = room.messageList.filterNot {
+                com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(it.message)
+            }
+            if (messages.size == room.messageList.size) room else room.copy(messageList = messages,
+                newMessagesPresent = messages.any { it.timeReceived > room.timeLastClosed })
+        }
+        _chatRoomsFlow.value = safeRooms
+        val anyUnread = safeRooms.any { it.newMessagesPresent && it.messageList.isNotEmpty() }
         newMessagesPresentPublicBoolean.postValue(anyUnread)
     }
+
+    internal fun purgeSensitiveChatRooms() = setChatRooms(_chatRoomsFlow.value)
 
     suspend fun markRoomRead(roomId: String) {
         ChatService.markRoomReadStatic(roomId)
@@ -4128,10 +4137,18 @@ class DataRepository(
     val automatedChatRequest: SharedFlow<SendChatRequest> = _automatedChatRequest
 
     suspend fun requestChatMessageSendFromUI(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(message)) {
+            Log.w(TAG, "Sensitive enrollment commands cannot be sent from watch chat")
+            return
+        }
         _chatRequestFromUI.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
     }
 
     suspend fun requestAutomatedChatSend(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(message)) {
+            Log.w(TAG, "Sensitive enrollment commands cannot enter automated chat")
+            return
+        }
         _automatedChatRequest.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis))
     }
 
@@ -4153,6 +4170,10 @@ class DataRepository(
     val chatRequestSend: SharedFlow<SendChatRequest> = _chatRequestSend
 
     suspend fun sendChatMessage(dstUid: String, dstChatroom: String, message: String, timeMillis: Long) {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(message)) {
+            Log.w(TAG, "Sensitive enrollment command excluded from chat dispatch")
+            return
+        }
         val room = chatRoomsFlow.value.firstOrNull { it.uid == dstUid }
         _chatRequestSend.emit(SendChatRequest(dstUid, dstChatroom, message, timeMillis,
             isGroup = dstUid == "All Chat Rooms" || room?.isGroup == true,
@@ -4402,6 +4423,48 @@ class DataRepository(
         val serverId: String? = null
     ) {
         override fun toString() = "TakServerItem(serverId=$serverId, enabled=$isEnabled, p12=$isP12Cert)"
+    }
+
+    internal enum class ChatEnrollmentStatus { ADDED, UPDATED, LOCKED, MANAGED, CONFLICT }
+    internal data class ChatEnrollmentSave(val status: ChatEnrollmentStatus, val serverId: String? = null)
+
+    internal fun mdmOwnsTakServers(): Boolean =
+        context.getSystemService(android.content.RestrictionsManager::class.java)
+            ?.applicationRestrictions?.containsKey("tak_server_list") == true
+
+    internal suspend fun chatEnrollmentBlocked(): Boolean =
+        phoneManagedSettingsLocked.first() || getNetworkPreferencesLocked.first() || mdmOwnsTakServers()
+
+    internal suspend fun saveChatEnrollment(
+        name: String, address: String, port: Int, username: String, password: String
+    ): ChatEnrollmentSave {
+        awaitTakServerMigration()
+        return TakServerEndpointIdentity.mutationMutex.withLock {
+            if (phoneManagedSettingsLocked.first() || getNetworkPreferencesLocked.first()) {
+                return@withLock ChatEnrollmentSave(ChatEnrollmentStatus.LOCKED)
+            }
+            if (mdmOwnsTakServers()) return@withLock ChatEnrollmentSave(ChatEnrollmentStatus.MANAGED)
+            val servers = readTakServerList()
+            val endpoint = TakServerEndpointIdentity.key(address, port)
+            val matches = servers.indices.filter { index ->
+                servers[index].name.trim().equals(name.trim(), ignoreCase = true) ||
+                    TakServerEndpointIdentity.key(servers[index]) == endpoint
+            }
+            if (matches.size > 1) return@withLock ChatEnrollmentSave(ChatEnrollmentStatus.CONFLICT)
+            val index = matches.singleOrNull()
+            val id = index?.let { servers[it].serverId } ?: TakServerId.ensureUnique(
+                null, servers.mapNotNullTo(mutableSetOf(), TakServerItem::serverId))
+            val item = TakServerItem(index?.let { servers[it].isEnabled } ?: true,
+                name, address, port, false, username, password, "", "", id)
+            if (index == null) servers.add(item) else servers[index] = item
+            // Policy can change while migration/decryption suspends.
+            if (phoneManagedSettingsLocked.first() || getNetworkPreferencesLocked.first()) {
+                return@withLock ChatEnrollmentSave(ChatEnrollmentStatus.LOCKED)
+            }
+            if (mdmOwnsTakServers()) return@withLock ChatEnrollmentSave(ChatEnrollmentStatus.MANAGED)
+            writeTakServerList(servers, "saveChatEnrollment")
+            ChatEnrollmentSave(if (index == null) ChatEnrollmentStatus.ADDED else ChatEnrollmentStatus.UPDATED, id)
+        }
     }
 
     internal suspend fun installChatP12(

@@ -91,6 +91,7 @@ object TakDatagramDecoder {
             isExpandEntityReferences = false
         }.newDocumentBuilder()
         builder.setEntityResolver { _, _ -> throw SAXException("External entities are not permitted") }
+        builder.setErrorHandler(org.xml.sax.helpers.DefaultHandler())
         val document = builder.parse(InputSource(StringReader(
             "<detail>$opaqueDetail</detail>"
         )))

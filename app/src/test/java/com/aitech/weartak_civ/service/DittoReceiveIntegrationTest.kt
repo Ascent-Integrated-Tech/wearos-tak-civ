@@ -296,6 +296,29 @@ class DittoReceiveIntegrationTest {
             return DittoChatDocument.encode(DittoCotDocument.decode(raw).xml, "remote-peer")
         }
 
+        fun sensitiveChat(uid: String = "enroll",
+                          text: String = "#weartakcommand enrollserver password=private-secret") =
+            nativeChat(uid).let { raw ->
+                raw + mapOf("msg" to text, "r" to (raw["r"] as String).replace("Hello", text))
+            }
+
+        fun trackEvictions(onEvict: (String, String) -> Unit) {
+            every { store.collection(any()) } answers {
+                val name = firstArg<String>()
+                mockk<live.ditto.DittoCollection> {
+                    every { find(any()) } answers {
+                        val query = firstArg<String>()
+                        mockk<live.ditto.DittoPendingCursorOperation> {
+                            every { evict() } answers {
+                                onEvict(name, query)
+                                emptyList()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         fun route(at: Long = time) = doc("route", "b-m-r", at, detail =
             "<detail><contact callsign='Patrol'/><link point='38,-77,50' callsign='Start'/>" +
                 "<link point='39,-78,60' callsign='End'/></detail>")
@@ -627,6 +650,198 @@ class DittoReceiveIntegrationTest {
         }
     }
 
+    @Test fun sensitivePublicationGuardsCoverNativeLegacyAndMalformedCommands() = runTest {
+        val f = Fixture(this)
+        val publisher = f.publisher(mutableListOf())
+        try {
+            listOf("#weartakcommand enrollserver password=private-secret",
+                "#WEARTAKCOMMANDENROLLSERVER", "#WearTakCommand enrollserver-bad").forEach { text ->
+                val native = f.sensitiveChat(text = text)
+                val legacy = f.chat(text = text)
+                assertFalse(publisher.publishDocument("chat", native))
+                assertFalse(publisher.publishDocument("mapitem", legacy))
+                val xml = DittoCotDocument.decode(legacy).xml
+                assertEquals("", DittoCotDocument.decode(legacy).fingerprint)
+                try {
+                    DittoChatDocument.encode(xml, "local-peer")
+                    fail("Sensitive GeoChat must not be encoded for publication")
+                } catch (error: IllegalArgumentException) {
+                    assertFalse(error.message.orEmpty().contains("private-secret"))
+                }
+                publisher.onDittoDoc(DittoDocumentEvent("chat", xml))
+                publisher.onDittoDoc(DittoDocumentEvent("mapitem", xml))
+            }
+            val job = (DittoService::class.java.getDeclaredField("ioScope")
+                .apply { isAccessible = true }.get(publisher) as kotlinx.coroutines.CoroutineScope)
+                .coroutineContext[Job]!!
+            job.children.toList().forEach { it.join() }
+            verify(exactly = 0) { publisher.writeDocument(any(), any()) }
+        } finally {
+            (DittoService::class.java.getDeclaredField("ioScope").apply { isAccessible = true }
+                .get(publisher) as kotlinx.coroutines.CoroutineScope).coroutineContext[Job]?.cancel()
+            f.close()
+        }
+    }
+
+    @Test fun sensitiveCommandsRunBeforeLocalEvictionAndJournalOnlyIdentifiersAndTimes() = runTest {
+        val f = Fixture(this)
+        try {
+            val order = mutableListOf<String>()
+            f.trackEvictions { collection, query -> order += "evict:$collection:$query" }
+            f.observers.close()
+            f.observers = f.start(commands = {
+                order += "command:${it.messageId}"
+                true
+            })
+            val native = f.sensitiveChat()
+            val legacy = f.chat("legacy-enroll", text = "#weartakcommandenrollserver password=private-secret")
+            f.emit("chat", native)
+            f.emit("mapitem", legacy)
+            f.drain()
+            assertEquals(4, order.size)
+            assertTrue(order.indexOf("command:enroll") < order.indexOf("evict:chat:_id == \"enroll\""))
+            assertTrue(order.indexOf("command:legacy-enroll") <
+                order.indexOf("evict:mapitem:_id == \"legacy-enroll\""))
+            assertEquals(2, f.journal.all.size)
+            assertTrue(f.journal.all.values.all {
+                (it as String).matches(Regex("[0-9]+:[0-9]+:"))
+            })
+            f.observers.close()
+            f.observers = f.start(commands = { fail("Enrollment must not replay after restart"); true })
+            f.emit("chat", native + mapOf("msg" to "#weartakcommand enrollserver password=changed",
+                "r" to (native["r"] as String).replace("private-secret", "changed")))
+            f.emit("mapitem", legacy)
+            f.drain()
+            assertEquals(6, order.size)
+            assertTrue(f.chats.isEmpty())
+            assertTrue(f.repo.chatRoomsFlow.value.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun sensitiveStartupSnapshotIsProcessedThenScrubbedWithoutWaitingForResync() = runTest {
+        val f = Fixture(this)
+        try {
+            val order = mutableListOf<String>()
+            f.trackEvictions { _, _ -> order += "evict" }
+            val result = mockk<DittoQueryResult>(relaxed = true)
+            every { result.items } returns listOf(mockk<DittoQueryResultItem> {
+                every { value } returns f.sensitiveChat().mapValues { requireNotNull(it.value) }
+            })
+            f.results += result
+            f.observers.close()
+            every {
+                f.store.registerObserver(any(), any(), any<(DittoQueryResult, () -> Unit) -> Unit>())
+            } answers {
+                if (firstArg<String>() == "SELECT * FROM chat") {
+                    thirdArg<(DittoQueryResult, () -> Unit) -> Unit>()(result) { order += "next" }
+                }
+                mockk<DittoStoreObserver>(relaxed = true)
+            }
+            f.observers = f.start(commands = { order += "command"; true })
+            runCurrent()
+            assertEquals(listOf("command", "evict", "next"), order)
+            assertTrue(f.chats.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun sensitiveCleanupCoversMalformedMismatchExpiryEchoAndHiddenSnapshots() = runTest {
+        val f = Fixture(this)
+        try {
+            val evictions = mutableListOf<Pair<String, String>>()
+            f.trackEvictions { collection, query -> evictions += collection to query }
+            val docs = listOf(
+                f.sensitiveChat("missing") - "b",
+                f.sensitiveChat("msg-only") + ("r" to f.nativeChat()["r"]),
+                f.nativeChat("detail-only") + ("r" to f.sensitiveChat("detail-only")["r"]),
+                f.sensitiveChat("expired") + ("o" to f.time),
+                f.sensitiveChat("echo") + ("a" to "local-peer"),
+                f.sensitiveChat("removed") + ("_r" to true),
+                f.sensitiveChat("invisible") + ("visible" to false),
+                f.sensitiveChat("future") + ("b" to f.time + 900_000),
+                f.sensitiveChat("broken-detail") + ("r" to "<detail><broken")
+            )
+            f.emit("chat", *docs.toTypedArray())
+            f.emit("mapitem", f.chat("broken-legacy",
+                text = "#weartakcommand enrollserver password=private-secret") - "b",
+                f.doc("malformed-legacy") + ("r" to "<detail><remarks>#WEARTAKCOMMANDENROLLSERVER private-secret"))
+            f.drain()
+            assertEquals(11, evictions.size)
+            assertTrue(evictions.all { !it.second.contains("private-secret") })
+            assertTrue(f.chats.isEmpty())
+            assertTrue(f.journal.all.isEmpty())
+            assertFalse(f.logs.any { it.contains("private-secret") })
+        } finally { f.close() }
+    }
+
+    @Test fun sensitiveCleanupRunsWithChatDisabledOrCompanionSuppressionAndRetriesSafely() = runTest {
+        val f = Fixture(this)
+        try {
+            var attempts = 0
+            f.trackEvictions { _, _ ->
+                attempts++
+                if (attempts == 1) throw IllegalStateException("private-secret")
+            }
+            f.repo.storeEnableChatService(false)
+            f.emit("chat", f.sensitiveChat())
+            f.drain()
+            assertEquals(1, attempts)
+            f.repo.setCompanionAppConnected()
+            f.emit("chat", f.sensitiveChat(), f.sensitiveChat("suppressed"))
+            f.emit("mapitem", f.chat("suppressed-legacy",
+                text = "#weartakcommand enrollserver password=private-secret"))
+            f.drain()
+            assertEquals(4, attempts)
+            assertTrue(f.chats.isEmpty())
+            assertTrue(ShadowLog.getLogsForTag("WearTAK-DittoObservers").any {
+                it.msg.contains("cleanup failed") && it.throwable == null
+            })
+            assertFalse(ShadowLog.getLogs().any {
+                it.msg.contains("private-secret") || it.throwable?.message?.contains("private-secret") == true
+            })
+        } finally {
+            f.repo.setCompanionAppDisconnected()
+            f.repo.storeEnableChatService(true)
+            f.close()
+        }
+    }
+
+    @Test fun sensitiveCancellationAndQueuedObserverCloseStillEvictEveryDocument() = runTest {
+        val f = Fixture(this)
+        try {
+            val evictions = mutableListOf<String>()
+            f.trackEvictions { _, query -> evictions += query }
+            f.observers.close()
+            f.observers = f.start(commands = { throw kotlinx.coroutines.CancellationException("private-secret") })
+            f.emit("chat", f.sensitiveChat(), f.sensitiveChat("unvisited"))
+            f.drain()
+            assertEquals(2, evictions.size)
+            f.emit("chat", f.sensitiveChat("queued"))
+            f.observers.close()
+            runCurrent()
+            assertEquals(3, evictions.size)
+            assertTrue(f.chats.isEmpty())
+            assertTrue(f.journal.all.isEmpty())
+        } finally { f.close() }
+    }
+
+    @Test fun sensitiveCleanupRunsEvenWhenSnapshotSizeLimitsRejectIngestion() = runTest {
+        val f = Fixture(this)
+        try {
+            var attempts = 0
+            f.trackEvictions { _, _ -> attempts++ }
+            f.emit("chat", f.sensitiveChat() + ("r" to
+                ("#weartakcommand enrollserver " + "x".repeat(DittoStoreObservers.MAX_SNAPSHOT_CHARACTERS))))
+            f.drain()
+            assertEquals(1, attempts)
+            f.emit("chat", *List(DittoStoreObservers.MAX_SNAPSHOT_DOCUMENTS + 1) { index ->
+                if (index == 0) f.sensitiveChat("oversized-count") else mapOf("_id" to "ordinary-$index")
+            }.toTypedArray())
+            f.drain()
+            assertEquals(2, attempts)
+            assertTrue(f.chats.isEmpty())
+        } finally { f.close() }
+    }
+
     @Test fun chatCollectionUsesNormalInboxAndDeduplicatesOtherTransportsInEitherOrder() = runTest {
         val f = Fixture(this)
         try {
@@ -939,8 +1154,7 @@ class DittoReceiveIntegrationTest {
             assertTrue(f.repo.receivedMarkerList.value.isEmpty())
             assertEquals("alice", f.repo.receivedUserList.value.single().uid)
             assertTrue(ShadowLog.getLogsForTag("WearTAK-DittoObservers").any {
-                it.msg.contains("Rejected Ditto mapitem snapshot") &&
-                    it.throwable?.message == "Too many Ditto documents"
+                it.msg.contains("Rejected Ditto mapitem snapshot") && it.throwable == null
             })
         } finally { f.close() }
     }
@@ -1117,8 +1331,7 @@ class DittoReceiveIntegrationTest {
             f.drain()
             assertEquals("point", f.repo.receivedMarkerList.value.single().uid)
             assertTrue(ShadowLog.getLogsForTag("WearTAK-DittoObservers").any {
-                it.msg.contains("Rejected Ditto mapitem snapshot") &&
-                    it.throwable?.message == "synthetic materialization failure"
+                it.msg.contains("Rejected Ditto mapitem snapshot") && it.throwable == null
             })
         } finally { f.close() }
     }
@@ -1173,7 +1386,7 @@ class DittoReceiveIntegrationTest {
             f.drain()
             assertEquals("point", f.repo.receivedMarkerList.value.single().uid)
             assertTrue(ShadowLog.getLogsForTag("WearTAK-DittoObservers").any {
-                it.msg.contains("unmaterializable") && it.throwable?.message == "synthetic invalid document"
+                it.msg.contains("unmaterializable") && it.throwable == null
             })
         } finally { f.close() }
     }
