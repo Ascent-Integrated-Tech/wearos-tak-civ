@@ -2334,6 +2334,15 @@ class DataRepository(
         },
         onReduction = { coalesced, skipped ->
             AppDiagnostics.recordIngestReduction(ProcessingStage.USER_STORE, coalesced, skipped)
+        },
+        // Event time still wins. Equal-time mesh/relay copies must not flip back to
+        // direct TAK just because the same PLI arrived over another transport later.
+        sourcePriorityOf = { item ->
+            when {
+                item.sourceServerId == COMPANION_USER_SOURCE_ID -> 2
+                item.sourceServerId?.startsWith("ditto:") == true -> 1
+                else -> 0
+            }
         }
     )
     val receivedUserList: StateFlow<List<ReceivedUser>> = receivedUserStore.visibleItems

@@ -31,6 +31,7 @@ data class SourceCotUpsertResult(
 
 /**
  * Keeps every source-owned copy while exposing the newest event-time copy of each CoT UID.
+ * An optional source priority breaks equal-event-time ties before arrival order.
  * All compound mutations and projections are serialized on [lock].
  */
 class SourceAwareCotStore<T>(
@@ -40,7 +41,8 @@ class SourceAwareCotStore<T>(
     private val receivedAtOf: (T) -> Long,
     private val publicationScope: CoroutineScope? = null,
     private val equivalent: (T, T) -> Boolean = { a, b -> a == b },
-    private val onReduction: (coalesced: Long, skipped: Long) -> Unit = { _, _ -> }
+    private val onReduction: (coalesced: Long, skipped: Long) -> Unit = { _, _ -> },
+    private val sourcePriorityOf: (T) -> Int = { 0 }
 ) {
     private data class Stored<T>(
         val value: T,
@@ -229,6 +231,7 @@ class SourceAwareCotStore<T>(
             .filter { it.key.cotUid == cotUid }
             .maxWithOrNull(
                 compareBy<Map.Entry<SourceCotKey, Stored<T>>> { eventTimeOf(it.value.value) }
+                    .thenBy { sourcePriorityOf(it.value.value) }
                     .thenBy { receivedAtOf(it.value.value) }
                     .thenBy { it.value.sequence }
             )
@@ -307,6 +310,7 @@ class SourceAwareCotStore<T>(
     private fun Stored<T>.isNewerThan(other: Stored<T>): Boolean {
         return isNewer(
             eventTime = eventTimeOf(value),
+            priority = sourcePriorityOf(value),
             receivedAt = receivedAtOf(value),
             sequence = sequence,
             other = other
@@ -315,12 +319,16 @@ class SourceAwareCotStore<T>(
 
     private fun isNewer(
         eventTime: Long,
+        priority: Int,
         receivedAt: Long,
         sequence: Long,
         other: Stored<T>
     ): Boolean {
         val eventTimeComparison = eventTime.compareTo(eventTimeOf(other.value))
         if (eventTimeComparison != 0) return eventTimeComparison > 0
+
+        val priorityComparison = priority.compareTo(sourcePriorityOf(other.value))
+        if (priorityComparison != 0) return priorityComparison > 0
 
         val receivedAtComparison = receivedAt.compareTo(receivedAtOf(other.value))
         return receivedAtComparison > 0 ||

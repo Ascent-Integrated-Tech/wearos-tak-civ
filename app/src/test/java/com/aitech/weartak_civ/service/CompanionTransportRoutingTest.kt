@@ -30,6 +30,7 @@ import java.util.UUID
 @Config(application = Application::class, sdk = [34])
 class CompanionTransportRoutingTest {
     @Test fun repositoryConnectionStateChangesSynchronouslyWithoutCollectorLag() {
+        com.aitech.weartak_civ.presentation.MainActivity.device_uid = "test-watch"
         val repo = DataRepository(RuntimeEnvironment.getApplication())
         assertFalse(repo.isCompanionConnected.value)
         repeat(3) {

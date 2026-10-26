@@ -88,6 +88,8 @@ class DittoService : Service() {
     private var bleDiscovery: DittoBleDiscoverySession? = null
     private var changeCounterTrackDocument: Int = 1
     private var ownsDitto = false
+    private val peerLock = Any()
+    @Volatile private var peerStopped = false
 
     private val model = Build.MODEL
     private val manufacturer = Build.MANUFACTURER
@@ -104,11 +106,13 @@ class DittoService : Service() {
         val application = applicationContext as WearTakApplication
         dataRepository = application.repo
         activeService.value = this
-        if (reconfiguring.value) {
+        if (reconfiguring.value || dataRepository.isCompanionConnected.value) {
+            Log.i(TAG, "Ditto startup suppressed: identity changing or bonded companion ready")
             stopSelf()
             return
         }
 
+        observeCompanionConnection()
         if (!EventBus.getDefault().isRegistered(this)) {
             EventBus.getDefault().register(this)
         }
@@ -144,8 +148,10 @@ class DittoService : Service() {
                     chatCommandHandler = ChatCommandRuntime.create(applicationContext, dataRepository)
                 )
             )
-            ditto.startSync() // Start syncing
-            syncActiveState.value = true
+            if (!startPeerSync()) {
+                stopSelf()
+                return
+            }
             bleDiscovery = DittoBleDiscoverySession(
                 application, dataRepository, ditto, ioScope,
                 kotlinx.coroutines.flow.combine(
@@ -181,6 +187,51 @@ class DittoService : Service() {
         }
     }
 
+    internal fun startPeerSync(): Boolean = synchronized(peerLock) {
+        if (peerStopped || dataRepository.isCompanionConnected.value) return@synchronized false
+        ditto.startSync()
+        syncActiveState.value = true
+        true
+    }
+
+    internal fun observeCompanionConnection() {
+        ioScope.launch(Dispatchers.Main.immediate) {
+            dataRepository.isCompanionConnected.collect { connected ->
+                if (connected) {
+                    Log.i(TAG, "Bonded companion ready; stopping watch Ditto peer and workers")
+                    stopPeer()
+                    stopSelf()
+                }
+            }
+        }
+    }
+
+    private fun stopPeer() = synchronized(peerLock) {
+        if (peerStopped) return@synchronized
+        peerStopped = true
+        if (ownsDitto) {
+            try {
+                getDittoInstance()?.stopSync()
+                Log.i(TAG, "Watch Ditto sync stopped (all peer transports)")
+            } catch (error: DittoError) {
+                Log.e(TAG, "Error stopping Ditto sync", error)
+            }
+        }
+        syncActiveState.value = false
+        dittoUpdateHandler?.removeCallbacks(dittoUpdateRunnable)
+        dittoUpdateThread?.quitSafely()
+        dittoUpdateHandler = null
+        dittoUpdateThread = null
+        storeObservers?.close()
+        storeObservers = null
+        bleDiscovery?.close()
+        bleDiscovery = null
+        ioScope.cancel()
+        unSubscribeToCollections()
+        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.DITTO)
+        if (EventBus.getDefault().isRegistered(this)) EventBus.getDefault().unregister(this)
+    }
+
     private fun subscribeToCollections() {
         Log.d(TAG, "DittoService subscribeToCollections(): [ track, alert, mapitem, chat ]")
         subscriptionTrack = ditto.sync.registerSubscription("SELECT * FROM track")
@@ -214,6 +265,7 @@ class DittoService : Service() {
 
     private val dittoUpdateRunnable = object : Runnable {
         override fun run() {
+            if (peerStopped || dataRepository.isCompanionConnected.value) return
             ioScope.launch {
 
                 val battery = dataRepository.latestBatteryPercentage.value
@@ -425,8 +477,8 @@ class DittoService : Service() {
 
     internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {
         if (SensitiveEnrollment.containsSensitiveDocument(document)) return false
-        if (dataRepository.isCompanionConnected.value) {
-            Log.d(TAG, "Suppressing direct Ditto publication while bonded companion is connected")
+        if (peerStopped || dataRepository.isCompanionConnected.value) {
+            Log.d(TAG, "Suppressing direct Ditto publication: peer stopped or bonded companion connected")
             return false
         }
         if (collection == "mapitem" && CotMessageParser.isMarkerType(document["w"] as? String ?: "")) {
@@ -443,8 +495,13 @@ class DittoService : Service() {
 
     internal fun writeDocument(collection: String, document: Map<String, Any?>) {
         if (SensitiveEnrollment.containsSensitiveDocument(document)) return
-        val properties = if (collection == "chat") document + ("_c" to DittoCounter()) else document
-        ditto.store.write { tx -> tx.scoped(collection).upsert(properties) }
+        synchronized(peerLock) {
+            check(!peerStopped && !dataRepository.isCompanionConnected.value) {
+                "Ditto peer stopped or handed off to Companion before document write"
+            }
+            val properties = if (collection == "chat") document + ("_c" to DittoCounter()) else document
+            ditto.store.write { tx -> tx.scoped(collection).upsert(properties) }
+        }
     }
 
     private fun writeOwnedPointDocument(document: Map<String, Any?>) {
@@ -604,39 +661,7 @@ class DittoService : Service() {
         Log.d(TAG, "DittoService onDestroy()")
         isRunning.set(false)
         stopForegroundServiceCompat()
-        dittoUpdateHandler?.removeCallbacks(dittoUpdateRunnable)
-        dittoUpdateThread?.quitSafely()
-        dittoUpdateHandler = null
-        dittoUpdateThread = null
-        storeObservers?.close()
-        storeObservers = null
-        bleDiscovery?.close()
-        bleDiscovery = null
-        ioScope.cancel()
-
-        val initializedDitto = getDittoInstance()
-
-        if (ownsDitto && initializedDitto != null) {
-            try {
-                initializedDitto.stopSync()
-                syncActiveState.value = false
-                Log.d(TAG, "Sync stopped")
-            } catch (error: DittoError) {
-                Log.e(
-                    TAG,
-                    "Error stopping sync"
-                )
-            }
-        } else {
-            Log.d(TAG, "Ditto was not initialized; skipping stopSync")
-        }
-
-        unSubscribeToCollections()
-        dataRepository.setEndpointDisconnected(DataRepository.Endpoint.DITTO)
-
-        if (EventBus.getDefault().isRegistered(this)) {
-            EventBus.getDefault().unregister(this)
-        }
+        stopPeer()
         if (activeService.value === this) activeService.value = null
     }
 
