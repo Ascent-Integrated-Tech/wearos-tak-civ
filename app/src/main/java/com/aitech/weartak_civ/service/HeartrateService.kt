@@ -16,9 +16,12 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
-import android.hardware.SensorEventListener
+import android.hardware.SensorEventListener2
 import android.hardware.SensorManager
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.MutableLiveData
@@ -51,7 +54,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -65,6 +67,17 @@ class HeartrateService: Service() {
     private var sensorRegistered = false
     private var active = false
     private var registrationStartedAtNanos = 0L
+    private var registeredLatencyUs: Int? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile private var samsungSource: SamsungHeartRateSource? = null
+    private var observedSamsungSource: SamsungHeartRateSource? = null
+    private var failedSamsungSource: SamsungHeartRateSource? = null
+    @Volatile private var sourceGeneration = 0
+    @Volatile private var sampleSession = 0
+    private var awaitingAndroidFlush = false
+    private var androidFlushed = false
+    private var latestMeasuredAtMillis = 0L
+    private var lastComplicationUpdateMillis = 0L
 
     private var offWristHrClearJob: Job? = null
 
@@ -100,6 +113,11 @@ class HeartrateService: Service() {
         observeMetrics()
 
         sensorManager = getSystemService(SENSOR_SERVICE) as SensorManager
+        scope.launch {
+            combine(HeartRateDelivery.samsungSource, HeartRateDelivery.live) { source, live ->
+                source to live
+            }.collect { reconcileSensors() }
+        }
         scope.launch {
             combine(sharedRepository.getEnablePhysiologicalServices,
                 sharedRepository.getEnableHeartRateService,
@@ -156,7 +174,44 @@ class HeartrateService: Service() {
             stopSensors()
             return
         }
-        if (!sensorRegistered) startSensors()
+        val available = HeartRateDelivery.samsungSource.value
+        if (available !== observedSamsungSource) {
+            observedSamsungSource = available
+            failedSamsungSource = null
+        }
+        if (samsungSource != null &&
+            (samsungSource !== available || samsungSource === failedSamsungSource) &&
+            !stopSamsungSource()) return
+        if (samsungSource != null) return
+        if (available != null && available !== failedSamsungSource) {
+            if (!drainAndroidSensor()) return
+            stopAndroidSensor()
+            val generation = ++sourceGeneration
+            samsungSource = available
+            val started = available.start(
+                onSample = { sample ->
+                    val session = sampleSession
+                    if (generation == sourceGeneration && samsungSource === available) {
+                        mainHandler.post {
+                            // Keep samples already received before a source handover, not late callbacks.
+                            if (session == sampleSession) acceptSample(sample)
+                        }
+                    }
+                },
+                onFailure = {
+                    mainHandler.post {
+                        if (generation == sourceGeneration && samsungSource === available) {
+                            failedSamsungSource = available
+                            reconcileSensors()
+                        }
+                    }
+                }
+            )
+            if (started) return
+            failedSamsungSource = available
+            if (!stopSamsungSource()) return
+        }
+        startSensors()
     }
 
     private fun cancelOffWristHrClearJob() {
@@ -187,14 +242,25 @@ class HeartrateService: Service() {
     }
 
     private fun startSensors() {
-        Log.d(TAG, "HeartrateService startSensors()")
+        val latencyUs = if (HeartRateDelivery.live.value) 0 else MAX_REPORT_LATENCY_US
+        if (sensorRegistered && registeredLatencyUs == latencyUs) return
+        val newSession = !sensorRegistered
+        if (sensorRegistered) {
+            if (!drainAndroidSensor()) return
+            // Android rejects duplicate registration; drain before changing latency.
+            stopAndroidSensor()
+        }
         heartRateSensor = sensorManager.getDefaultSensor(Sensor.TYPE_HEART_RATE)
         if (null != heartRateSensor) {
             try {
-                registrationStartedAtNanos = android.os.SystemClock.elapsedRealtimeNanos()
-                sensorRegistered = DiagnosticResources.acquire(DiagnosticResource.HEART_RATE, sensorEventListener,
+                if (newSession) registrationStartedAtNanos = SystemClock.elapsedRealtimeNanos()
+                val registered = DiagnosticResources.acquire(DiagnosticResource.HEART_RATE, sensorEventListener,
                     periodUs = SAMPLING_PERIOD_US.toLong(), successful = { it }) {
-                    sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US)
+                    sensorManager.registerListener(sensorEventListener, heartRateSensor, SAMPLING_PERIOD_US, latencyUs)
+                }
+                if (registered) {
+                    sensorRegistered = true
+                    registeredLatencyUs = latencyUs
                 }
                 AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
                     DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to if (sensorRegistered) 1L else 0L))
@@ -214,20 +280,97 @@ class HeartrateService: Service() {
     }
 
     private fun stopSensors() {
+        ++sampleSession
+        stopSamsungSource()
+        stopAndroidSensor()
+    }
+
+    private fun drainAndroidSensor(): Boolean {
+        if (!sensorRegistered || androidFlushed) return true
+        if (awaitingAndroidFlush) return false
+        awaitingAndroidFlush = true
+        try {
+            if (sensorManager.flush(sensorEventListener)) return false
+        } catch (error: SecurityException) {
+            permission = false
+            Log.w(TAG, "Heart-rate permission revoked during FIFO flush", error)
+            stopAndroidSensor()
+            return false
+        }
+        awaitingAndroidFlush = false
+        Log.w(TAG, "HR FIFO flush unsupported; batching cannot be guaranteed on this sensor")
+        return true
+    }
+
+    private fun stopSamsungSource(): Boolean {
+        ++sourceGeneration
+        if (samsungSource?.stop() == false) {
+            failedSamsungSource = samsungSource
+            Log.e(TAG, "Cannot detach Samsung HR; refusing to start a second HR source")
+            return false
+        }
+        samsungSource = null
+        return true
+    }
+
+    private fun stopAndroidSensor() {
+        awaitingAndroidFlush = false
+        androidFlushed = false
         if (!sensorRegistered) return
         Log.d(TAG, "HeartrateService stopSensors(): active=$active monitoring=$monitoringEnabled worn=${sharedRepository.latestIsDeviceWorn.value} permission=$permission")
         DiagnosticResources.release(DiagnosticResource.HEART_RATE, sensorEventListener) {
             sensorManager.unregisterListener(sensorEventListener)
         }
         sensorRegistered = false
+        registeredLatencyUs = null
         AppDiagnostics.record(DiagnosticEvent.SENSOR, mapOf(
             DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 0L))
     }
 
-    private val sensorEventListener = object : SensorEventListener {
-        var localHr = 0
+    private fun acceptSample(sample: HeartRateSample) {
+        if (!active || !monitoringEnabled || !checkPermissions() ||
+            !sharedRepository.latestIsDeviceWorn.value) return
+        val now = System.currentTimeMillis()
+        if (sample.bpm <= 0 || sample.measuredAtMillis <= 0 || sample.measuredAtMillis > now) {
+            Log.w(TAG, "Ignoring invalid HR sample: $sample")
+            return
+        }
+        val newest = sample.measuredAtMillis >= latestMeasuredAtMillis
+        if (newest) {
+            latestMeasuredAtMillis = sample.measuredAtMillis
+            hr = sample.bpm
+            hrStringLiveData.value = sample.bpm.toString()
+            sharedRepository.recordHeartRateSample(sample.bpm, sample.measuredAtMillis)
+        }
+        scope.launch {
+            CepBus.emit(CepEvent(
+                topic = Topics.HEART_RATE,
+                payload = HeartRatePayload(bpm = sample.bpm.toDouble(), ts = sample.measuredAtMillis),
+                ts = sample.measuredAtMillis
+            ))
+            if (sample.measuredAtMillis >= latestMeasuredAtMillis) {
+                sharedRepository.storeLatestHeartRate(sample.bpm, sample.measuredAtMillis)
+            }
+        }
+        if (lastComplicationUpdateMillis == 0L || now - lastComplicationUpdateMillis >= 30_000L) {
+            lastComplicationUpdateMillis = now
+            requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
+        }
+    }
+
+    private val sensorEventListener = object : SensorEventListener2 {
         var accuracyVal = -1
-        var lastTimeHrSent : Long = 0L
+
+        override fun onFlushCompleted(sensor: Sensor?) {
+            if (!awaitingAndroidFlush) return
+            mainHandler.post {
+                if (!awaitingAndroidFlush) return@post
+                awaitingAndroidFlush = false
+                androidFlushed = true
+                reconcileSensors()
+                androidFlushed = false
+            }
+        }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
             Log.d(TAG, "onAccuracyChanged called w/ accuracy: $accuracy")
@@ -235,62 +378,15 @@ class HeartrateService: Service() {
         }
 
         override fun onSensorChanged(event: SensorEvent) {
-            if (!active || !sensorRegistered || !monitoringEnabled || !checkPermissions() ||
+            if (!active || !sensorRegistered || !monitoringEnabled ||
                 !sharedRepository.latestIsDeviceWorn.value) return
-            if (event.timestamp < registrationStartedAtNanos) return
+            val elapsedNanos = SystemClock.elapsedRealtimeNanos()
+            if (event.timestamp < registrationStartedAtNanos || event.timestamp > elapsedNanos) return
             if (event.sensor.type == Sensor.TYPE_HEART_RATE) {
-                localHr = event.values[0].toInt()
-                //Log.i(TAG, "heartrate onSensorChanged w/ accuracy=$accuracyVal, hr=$localHr")
-                Log.e(
-                    "HR_SENSOR",
-                    "rawHr=$localHr accuracy=$accuracyVal"
-                )
-                if ((accuracyVal != 3)) {
-                    //Log.d(TAG, "Ignoring hr($localHr) with accuracyVal=$accuracyVal")
-                    return
-                }
-
-                if (localHr <= 0) {
-                    Log.e(
-                        "HR_STORE",
-                        "Ignoring invalid sensor sample localHr=$localHr"
-                    )
-                    return
-                }
-                // --- NEW: feed real HR into CEP ---
-                scope.launch {
-                    try {
-                        CepBus.emit(
-                            CepEvent(
-                                topic = Topics.HEART_RATE,
-                                payload = HeartRatePayload(bpm = localHr.toDouble())
-                            )
-                        )
-
-                        //Log.d("CEP-HR", "Emitted HR=${localHr} bpm to CEP")
-                    } catch (ex: Exception) {
-                        Log.e("CEP-HR", "Failed to emit HR sample to CEP", ex)
-                    }
-                }
-
-                hr = localHr
-                //Log.d(TAG, "Obtained heartrate: $hr")
-
-                val currTime = System.currentTimeMillis()
-                val measuredAt = event.timestamp.takeIf { it > 0 }?.let {
-                    currTime - (android.os.SystemClock.elapsedRealtimeNanos() - it) / 1_000_000L
-                }
-                sharedRepository.recordHeartRateSample(localHr, measuredAt)
-                if ((lastTimeHrSent == 0L) || ((currTime - lastTimeHrSent) > CotDispatchService.actualReportingIntervalSecs * 1000L)) {
-                    lastTimeHrSent = currTime
-                    runBlocking {
-                        hrStringLiveData.postValue(hr.toString())
-                        requestPhysioStatusAndAlertingComplicationUpdate(applicationContext)
-//                        RestingHrManager.onHeartRateSample(localHr.toDouble()) // push all raw hr to manager for auto calculation of resting heart rate.
-                        Log.e("HR_STORE", "VALID HR storing heartRate=$hr")
-                        sharedRepository.storeLatestHeartRate(hr, measuredAt)
-                    }
-                }
+                val bpm = event.values.firstOrNull() ?: return
+                if (accuracyVal != SensorManager.SENSOR_STATUS_ACCURACY_HIGH || !bpm.isFinite()) return
+                val measuredAt = System.currentTimeMillis() - (elapsedNanos - event.timestamp) / 1_000_000L
+                acceptSample(HeartRateSample(bpm.toInt(), measuredAt))
             }
         }
     }
@@ -304,6 +400,7 @@ class HeartrateService: Service() {
         private const val HEARTRATE_SERVICE_NOTIFICATION_ID = 105
         private const val OFF_WRIST_HR_ALERT_CLEAR_DELAY_MS = 10_000L
         private const val SAMPLING_PERIOD_US = 1_000_000   // Every 1 seconds; NOTE: Could also be SensorManager.SENSOR_DELAY_NORMAL as it does not seem to matter. The HR sensor is polled every 1 second.
+        internal const val MAX_REPORT_LATENCY_US = 30_000_000
         private val HR_ALERT_CATEGORIES = setOf(
             "CAT_HR_LOW",
             "CAT_HR_REST_BRADY",
