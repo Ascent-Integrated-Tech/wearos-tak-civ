@@ -4900,6 +4900,8 @@ class DataRepository(private val context: Context) {
             prefs[key] = enabled
             if (key == ENABLE_TAK_ENDPOINT) {
                 prefs[TAK_ENDPOINT_USER_CHOICE] = enabled
+            } else if (key == ENABLE_MULTICAST) {
+                prefs[MULTICAST_USER_CHOICE] = enabled
             }
         }
     }
@@ -5948,6 +5950,7 @@ class DataRepository(private val context: Context) {
         private val UNIFORM_PANTS_LENGTH = intPreferencesKey("uniform_pants_length")
         private val LOADOUT_WEIGHT = intPreferencesKey("loadout_weight")
         private val ENABLE_MULTICAST = booleanPreferencesKey("enable_multicast")
+        private val MULTICAST_USER_CHOICE = booleanPreferencesKey("multicast_user_choice")
         private val MULTICAST_ADDRESS = stringPreferencesKey("multicast_address")
         private val MULTICAST_PROTOCOL = stringPreferencesKey("multicast_protocol")
         private val MULTICAST_PORT =intPreferencesKey("multicast_port")
