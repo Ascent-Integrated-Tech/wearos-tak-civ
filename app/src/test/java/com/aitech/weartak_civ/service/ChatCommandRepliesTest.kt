@@ -53,4 +53,33 @@ class ChatCommandRepliesTest {
         verify(exactly = 1) { SitxServiceCommandBus.trySend(SitxServiceCommand.SendCot("<safe-ack/>", "flow")) }
         assertFalse(ChatCommandReplies.send(app, repo, request.copy(sourceServerId = "companion-phone"), "status"))
     }
+
+    @Test fun strictWarningUsesCompletedWriteNotLegacyQueueAndRefusesQueueOnlyRoutes() = runBlocking {
+        val repo = mockk<DataRepository>()
+        val app = RuntimeEnvironment.getApplication()
+        val snapshot = mockk<DataRepository.ChatEventSnapshot>()
+        coEvery { repo.snapshotChatEvent(any(), any(), any(), any(), any()) } returns snapshot
+        mockkObject(CotMessageBuilder, TAKConnectService.Companion, NetworkUtils.MulticastPublisher,
+            DittoService.Companion, SitxServiceCommandBus)
+        every { CotMessageBuilder.chat(snapshot, any(), any(), any(), any()) } returns "<warning/>"
+        coEvery { TAKConnectService.sendCommandReplyWritten("server", "<warning/>") } returns true
+        every { NetworkUtils.MulticastPublisher.sendCommandReply("<warning/>", "239.2.3.1", 6969) } returns true
+        every { DittoService.publishCommandReply("<warning/>") } returns true
+        val request = ChatCommandRequest("sender", "ALPHA", "", "id", 1, 1, "server")
+        for (source in listOf("server", "multicast:239.2.3.1:6969", "ditto:peer")) {
+            assertTrue(ChatCommandReplies.sendConfirmedWrite(app, repo, request.copy(sourceServerId = source), "warning"))
+        }
+        for (source in listOf("sitx:flow", "companion-gateway", "companion-bluetooth")) {
+            assertFalse(ChatCommandReplies.sendConfirmedWrite(app, repo, request.copy(sourceServerId = source), "warning"))
+        }
+        coVerify(exactly = 1) { TAKConnectService.sendCommandReplyWritten("server", "<warning/>") }
+        verify(exactly = 0) { TAKConnectService.sendCommandReply(any(), any()) }
+        verify(exactly = 0) { SitxServiceCommandBus.trySend(any()) }
+        coEvery { TAKConnectService.sendCommandReplyWritten(any(), any()) } returns false
+        every { NetworkUtils.MulticastPublisher.sendCommandReply(any(), any(), any()) } returns false
+        every { DittoService.publishCommandReply(any()) } returns false
+        for (source in listOf("server", "multicast:239.2.3.1:6969", "ditto:peer")) {
+            assertFalse(ChatCommandReplies.sendConfirmedWrite(app, repo, request.copy(sourceServerId = source), "warning"))
+        }
+    }
 }

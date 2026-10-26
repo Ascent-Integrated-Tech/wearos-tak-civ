@@ -591,6 +591,42 @@ class DittoReceiveIntegrationTest {
         } finally { f.close() }
     }
 
+    @Test fun nativeDittoCanReenableTakAndMulticastThroughProductionCommandRuntime() = runTest {
+        val f = Fixture(this)
+        try {
+            f.repo.storeNetworkPreferencesLocked(false)
+            f.repo.storeEnableChatCommands(true)
+            f.repo.storeChatCommandCallsigns(listOf("alice"))
+            f.repo.storeEnableTakEndpoint(false)
+            f.repo.storeEnableMulticast(false)
+            mockkObject(ChatCommandReplies)
+            val outcomes = mutableListOf<String>()
+            coEvery { ChatCommandReplies.send(any(), any(), any(), any()) } coAnswers {
+                outcomes += arg<String>(3)
+                true
+            }
+            val handler = ChatCommandRuntime.build(f.app, f.repo)
+            f.observers.close()
+            f.observers = f.start(commands = handler)
+            f.emit("chat",
+                f.nativeChat("enable-tak", text = "#weartakcommand enabletakservers"),
+                f.nativeChat("enable-multicast", text = "#weartakcommand enablemulticast"))
+            f.drain()
+            assertTrue(outcomes.toString(),
+                f.repo.getEnableTakEndpoint.first())
+            assertTrue(f.repo.getEnableMulticast.first())
+            assertTrue(f.chats.isEmpty())
+            coVerify(exactly = 2) {
+                ChatCommandReplies.send(any(), any(), match { it.sourceServerId.startsWith("ditto:") }, any())
+            }
+        } finally {
+            f.repo.storeEnableTakEndpoint(true)
+            f.repo.storeEnableMulticast(true)
+            io.mockk.unmockkObject(ChatCommandReplies)
+            f.close()
+        }
+    }
+
     @Test fun chatCollectionUsesNormalInboxAndDeduplicatesOtherTransportsInEitherOrder() = runTest {
         val f = Fixture(this)
         try {

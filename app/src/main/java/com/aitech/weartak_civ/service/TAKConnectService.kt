@@ -166,6 +166,7 @@ class TAKConnectService: Service() {
     private var multicastWifiRequest: MulticastWifiRequest? = null
 
     class ConnectionAttempt(val generation: Long) {
+        val outputMutex = Mutex()
         val sessionId: String = java.util.UUID.randomUUID().toString()
         var job: Job? = null
         var socket: SSLSocket? = null
@@ -3624,19 +3625,38 @@ class TAKConnectService: Service() {
                     socket.isClosed || !socket.isConnected) return
             }
             connectionScope.launch {
-                try {
-                    if (!isCurrent(takServerDetail, attempt)) return@launch
-                    val outputStream = socket.getOutputStream()
-                    outputStream.write(msg.toByteArray(charset("UTF-8")))
-                    outputStream.flush()
-                    if (!isNotPli) {
-                        Log.i(TAG, "Outbound PLI write succeeded to ${takServerDetail.address}")
-                    }
-                } catch (e: IOException) {
-                    handleSocketFailure(takServerDetail, attempt, socket, e)
-                } catch (e: java.lang.Exception) {
-                    handleSocketFailure(takServerDetail, attempt, socket, e)
+                if (writeConnection(takServerDetail, attempt, socket, msg) && !isNotPli) {
+                    Log.i(TAG, "Outbound PLI write succeeded to ${takServerDetail.address}")
                 }
+            }
+        }
+
+        private suspend fun writeConnection(
+            detail: TakServerDetail,
+            attempt: ConnectionAttempt,
+            socket: SSLSocket,
+            xml: String,
+            beforeWrite: () -> Boolean = { true }
+        ): Boolean = attempt.outputMutex.withLock {
+            currentCoroutineContext().ensureActive()
+            synchronized(detail.runtime.lock) {
+                if (!isCurrent(detail, attempt) || attempt.socket !== socket ||
+                    detail.secureSocket !== socket || detail.duplicateEndpointSuppressed ||
+                    socket.isClosed || !socket.isConnected) return@withLock false
+            }
+            if (!beforeWrite()) return@withLock false
+            currentCoroutineContext().ensureActive()
+            try {
+                socket.outputStream.apply {
+                    write(xml.toByteArray(Charsets.UTF_8))
+                    flush()
+                }
+                true
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                handleSocketFailure(detail, attempt, socket, error)
+                false
             }
         }
 
@@ -3949,6 +3969,60 @@ class TAKConnectService: Service() {
                 detail.connectionStatus.get() != TAK_SERVER_CONNECTED_COT_PORT) return false
             sendData(detail, xml, true, System.currentTimeMillis())
             return true
+        }
+
+        internal suspend fun sendCommandReplyWritten(serverId: String, xml: String): Boolean =
+            withContext(Dispatchers.IO) {
+                if (dataRepository.isCompanionConnected.value || !isLicenseValid()) return@withContext false
+                val detail = takServerDetailsById[serverId] ?: return@withContext false
+                writeCommandReply(detail, xml)
+            }
+
+        internal suspend fun writeCommandReply(
+            detail: TakServerDetail, xml: String, timeoutMs: Long = 5_000L
+        ): Boolean {
+            val attempt: ConnectionAttempt
+            val socket: SSLSocket
+            synchronized(detail.runtime.lock) {
+                if (serviceStopping || !takEndpointEnabled || !detail.isEnabled ||
+                    detail.duplicateEndpointSuppressed || detail.runtime.terminated ||
+                    detail.connectionStatus.get() != TAK_SERVER_CONNECTED_COT_PORT) return false
+                attempt = detail.runtime.currentAttempt ?: return false
+                socket = detail.secureSocket ?: return false
+                if (detail.runtime.generation != attempt.generation || attempt.socket !== socket ||
+                    socket.isClosed || !socket.isConnected) return false
+            }
+            // The worker is not a child of the waiter: blocking socket I/O must not delay cancellation.
+            val result = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+                kotlinx.coroutines.suspendCancellableCoroutine<Boolean> { continuation ->
+                    val writing = java.util.concurrent.atomic.AtomicBoolean(false)
+                    val worker = connectionScope.launch {
+                        try {
+                            val accepted = writeConnection(detail, attempt, socket, xml) {
+                                writing.set(true)
+                                continuation.isActive
+                            }
+                            continuation.resumeWith(Result.success(accepted))
+                        } catch (error: CancellationException) {
+                            continuation.cancel(error)
+                        } catch (error: Exception) {
+                            continuation.resumeWith(Result.failure(error))
+                        }
+                    }
+                    continuation.invokeOnCancellation {
+                        Log.w(TAG, "Originating command acknowledgement cancelled or timed out")
+                        worker.cancel()
+                        if (writing.get()) {
+                            connectionScope.launch {
+                                handleSocketFailure(detail, attempt, socket,
+                                    IOException("Originating command acknowledgement cancelled or timed out"))
+                            }
+                        }
+                    }
+                }
+            }
+            if (result == null) Log.w(TAG, "Originating command acknowledgement timed out")
+            return result ?: false
         }
 
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {

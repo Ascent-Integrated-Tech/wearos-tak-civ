@@ -11,14 +11,28 @@ import com.aitech.weartak_civ.service.sitx.SitxServiceCommand
 import com.aitech.weartak_civ.service.sitx.SitxServiceCommandBus
 
 internal object ChatCommandReplies {
-    suspend fun send(context: Context, repo: DataRepository, request: ChatCommandRequest, text: String): Boolean {
+    suspend fun send(context: Context, repo: DataRepository, request: ChatCommandRequest, text: String): Boolean =
+        send(context, repo, request, text, requireWrite = false)
+
+    /** Write/store acceptance on the originating transport, not end-to-end delivery. */
+    suspend fun sendConfirmedWrite(
+        context: Context, repo: DataRepository, request: ChatCommandRequest, text: String
+    ): Boolean = send(context, repo, request, text, requireWrite = true)
+
+    private suspend fun send(
+        context: Context, repo: DataRepository, request: ChatCommandRequest, text: String, requireWrite: Boolean
+    ): Boolean {
+        val source = request.sourceServerId
+        if (requireWrite && (source.startsWith("sitx:") || source.startsWith("companion-"))) {
+            android.util.Log.w("WearTAK-ChatCommands", "Disable refused: originating route supports queue acceptance only")
+            return false
+        }
         val snapshot = repo.snapshotChatEvent(
             roomUid = if (request.replyIsGroup) requireNotNull(request.replyRoomUid) else request.senderUid,
             roomTitle = if (request.replyIsGroup) requireNotNull(request.replyRoomTitle) else request.senderCallsign,
             message = text, isGroup = request.replyIsGroup, participantUids = request.replyParticipantUids
         )
         val xml = CotMessageBuilder.chat(snapshot, MainActivity.callsign, MainActivity.device_uid)
-        val source = request.sourceServerId
         return when {
             source.startsWith("ditto:") -> DittoService.publishCommandReply(xml)
             source.startsWith("multicast:") -> {
@@ -38,7 +52,8 @@ internal object ChatCommandReplies {
                     true
                 }
             }
-            else -> TAKConnectService.sendCommandReply(source, xml)
+            else -> if (requireWrite) TAKConnectService.sendCommandReplyWritten(source, xml)
+                else TAKConnectService.sendCommandReply(source, xml)
         }
     }
 }

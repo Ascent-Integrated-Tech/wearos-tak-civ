@@ -13,6 +13,7 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.junit.After
@@ -69,6 +70,7 @@ class MulticastChatCommandsTest {
             replies += arg<String>(3)
             true
         }
+        coEvery { ChatCommandReplies.sendConfirmedWrite(any(), any(), any(), any()) } returns true
         mockkObject(DittoService.Companion)
         coEvery { DittoService.applySelectedIdentity(any(), any()) } returns true
         // Re-run the production lazy initializer against this repository, not another fixture's
@@ -86,6 +88,7 @@ class MulticastChatCommandsTest {
         caseId++
         if (::delivery.isInitialized) EventBus.getDefault().unregister(delivery)
         repo.storeEnableChatCommands(true)
+        repo.storeNetworkPreferencesLocked(false)
         repo.storeChatCommandCallsigns(listOf("ALPHA-TEST"))
         every { repo.phoneManagedSettingsLocked } answers { callOriginal() }
         MainActivity.callsign = "TEST-WATCH"
@@ -126,12 +129,24 @@ class MulticastChatCommandsTest {
             ::managedIdentityLockStillRejectsAllowedMulticastCommand,
             ::existingHeightAndEnrollmentHandlersRetainValidationAndCredentialPrompt,
             ::duplicateServerAndMulticastCommandExecutesAndRepliesOnceInEitherOrder,
+            ::networkMasterCommandsExecuteOverMulticastAndCanReenableTak,
             ::ordinaryChatAcrossTransportsRetainsSingleInboxMessageAndUnreadCount
         )
         for (case in cases) {
             resetCase()
             case()
         }
+    }
+
+    private fun networkMasterCommandsExecuteOverMulticastAndCanReenableTak() = runBlocking {
+        multicast(xml(id = "tak-off", text = "#weartakcommand disabletakservers"))
+        assertFalse(repo.getEnableTakEndpoint.first())
+        multicast(xml(id = "tak-on", text = "#weartakcommand enabletakservers"))
+        assertTrue(repo.getEnableTakEndpoint.first())
+        multicast(xml(id = "multicast-off", text = "#weartakcommand disablemulticast"))
+        assertFalse(repo.getEnableMulticast.first())
+        assertTrue(delivery.events.isEmpty())
+        coVerify(exactly = 2) { ChatCommandReplies.sendConfirmedWrite(any(), any(), any(), any()) }
     }
 
     private fun allowlistedDirectMulticastUsesExistingRuntimeAndDoesNotRenderOrRelayCommand() = runBlocking {

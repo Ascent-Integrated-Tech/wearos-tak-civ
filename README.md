@@ -1996,6 +1996,8 @@ timestamps are stale, never replaced with receipt time. Named groups require
 verified watch-UID membership; a room title alone never establishes membership.
 
 Format: `#weartakcommand<name> key=value key2="value with spaces"`
+Whitespace after `#weartakcommand` is also accepted; existing joined commands
+remain supported.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
@@ -2004,6 +2006,8 @@ Format: `#weartakcommand<name> key=value key2="value with spaces"`
 | `setlocationinput` | Exactly `input=enhancedgnss` or `input=gnss` | Selects real Fused Location or satellite-only Internal GNSS respectively. Persists the same setting as Reporting, invalidates prior-input fixes and starts fresh acquisition without fallback. Refused when settings are phone-managed. The acknowledgement confirms the selection, not a successful position fix. |
 | `setpdl` | One positional argument: `community` or an encoded SharedKey v2 PDL | Validates the selected identity and expiry, atomically saves source/custom identity, then recreates Ditto with the new identity. Refused when network settings are locked or phone-managed. Does not change the Ditto enable toggle. |
 | `toggleditto` | Exactly one positional `on` or `off` | Persists the same enable setting as the UI, preserving selected identity and normal runtime gates. Repeated on/on or off/off is safe. |
+| `enabletakservers` / `disabletakservers` | None | Explicitly enables/disables the TAK master switch, preserving individual servers and credentials. |
+| `enablemulticast` / `disablemulticast` | None | Explicitly enables/disables multicast, preserving its address and port. |
 | `usep12` | `<hex> server=<configured-id> [password="..."]` | Installs one validated client P12 on exactly the existing server ID. Missing/unknown ID or managed network settings changes nothing. Standard Base64 is also accepted. |
 
 For example, `#weartakcommandsetpdl community` selects the unchanged built-in
@@ -2030,6 +2034,33 @@ remains disabled on Ditto ingress.
 `#weartakcommandtoggleditto off` received over Ditto attempts a native originating-room
 acknowledgement before shutdown, explicitly stating that delivery is not confirmed.
 Once disabled, `on` must arrive through another active route or the UI.
+
+The four network-master commands accept exactly these forms:
+`#weartakcommand enabletakservers`, `#weartakcommand disabletakservers`,
+`#weartakcommand enablemulticast`, and `#weartakcommand disablemulticast`.
+They are idempotent explicit settings, not toggles. Accepted changes atomically
+save the same local-choice markers as the watch switches. Network locks, active
+phone management, or a present explicit Android managed restriction
+(`select_data_endpoints` for TAK; `multicast_service_enabled` for multicast)
+refuse either direction, even when the managed value matches the request.
+Missing restrictions do not override a choice; malformed present policy fails
+closed with a reason and log.
+
+Both disable commands require a warning written on the originating path before
+any setting changes. TAK acknowledgement waits for socket write and flush;
+multicast waits for datagram send; Ditto waits for its local chat store write.
+Normal and confirmed TAK output share a per-connection serializer, without holding
+the connection lifecycle monitor during I/O. The TAK warning wait is limited to
+five seconds; timeout or cancellation refuses the change and closes an in-progress
+warning socket without affecting a replacement connection.
+These confirm local transport/store acceptance, **not end-to-end delivery**.
+Queue-only Sit(x) and Companion reply paths cannot meet this requirement, so
+disable commands arriving there are refused. A failed/throwing warning write
+leaves the setting and marker untouched. Locks and policy are rechecked during
+the actual atomic apply after the warning; a new restriction refuses the change.
+Re-enable on the watch at any time, or via another configured, active command
+transport such as Ditto or multicast. A disabled transport cannot receive its own
+re-enable command. Existing `toggleditto` acknowledgement behavior is unchanged.
 
 `usep12` always requires the exact configured stable server ID, never a host name,
 implicit source server or all-server target. Omitted password uses the conventional
