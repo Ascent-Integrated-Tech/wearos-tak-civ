@@ -13,6 +13,12 @@ import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -160,6 +166,24 @@ class NetworkMasterCommandRuntimeTest {
             assertNull(repo.legacyDataStore().data.first()[marker(true)])
             assertNull(repo.legacyDataStore().data.first()[enabled(false)])
             assertNull(repo.legacyDataStore().data.first()[marker(false)])
+        }
+    }
+
+    @Test fun cancelledWarningWaitNeverAppliesOrMarksEitherMaster() = runBlocking {
+        for (name in listOf("disabletakservers", "disablemulticast")) {
+            val entered = CompletableDeferred<Unit>()
+            coEvery { ChatCommandReplies.sendConfirmedWrite(any(), any(), any(), any()) } coAnswers {
+                entered.complete(Unit)
+                awaitCancellation()
+            }
+            val job = launch(Dispatchers.Default) { command(name) }
+            withTimeout(2_000) { entered.await() }
+            withTimeout(2_000) { job.cancelAndJoin() }
+            val prefs = repo.legacyDataStore().data.first()
+            for (tak in listOf(false, true)) {
+                assertNull(prefs[enabled(tak)])
+                assertNull(prefs[marker(tak)])
+            }
         }
     }
 

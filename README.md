@@ -2049,6 +2049,10 @@ closed with a reason and log.
 Both disable commands require a warning written on the originating path before
 any setting changes. TAK acknowledgement waits for socket write and flush;
 multicast waits for datagram send; Ditto waits for its local chat store write.
+Normal and confirmed TAK output share a per-connection serializer, without holding
+the connection lifecycle monitor during I/O. The TAK warning wait is limited to
+five seconds; timeout or cancellation refuses the change and closes an in-progress
+warning socket without affecting a replacement connection.
 These confirm local transport/store acceptance, **not end-to-end delivery**.
 Queue-only Sit(x) and Companion reply paths cannot meet this requirement, so
 disable commands arriving there are refused. A failed/throwing warning write

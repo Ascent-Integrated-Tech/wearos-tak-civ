@@ -7,18 +7,22 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.*
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.ByteArrayOutputStream
 import java.io.IOException
 import java.io.OutputStream
 import java.net.DatagramPacket
 import java.net.MulticastSocket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLSocket
 
 @RunWith(RobolectricTestRunner::class)
@@ -32,6 +36,9 @@ class CommandReplyWriteTest {
     private lateinit var detail: TAKConnectService.TakServerDetail
 
     @Before fun setup() {
+        val activity = mockk<MainActivity>(relaxed = true)
+        every { activity.applicationContext } returns RuntimeEnvironment.getApplication()
+        MainActivity.mainActivity = activity
         previousStopping = TAKConnectService.serviceStopping
         previousEnabled = TAKConnectService.takEndpointEnabled
         previousMulticast = MainActivity.enableMulticastOnWifi
@@ -65,7 +72,7 @@ class CommandReplyWriteTest {
         unmockkAll()
     }
 
-    @Test fun takTrueRequiresActualWriteAndFlushBeforeReturning() {
+    @Test fun takTrueRequiresActualWriteAndFlushBeforeReturning() = runBlocking {
         val bytes = ByteArrayOutputStream()
         var flushed = false
         every { socket.outputStream } returns object : OutputStream() {
@@ -77,7 +84,7 @@ class CommandReplyWriteTest {
         assertTrue(flushed)
     }
 
-    @Test fun failedWriteOrFlushNeverReturnsSuccess() {
+    @Test fun failedWriteOrFlushNeverReturnsSuccess() = runBlocking {
         for (failOnFlush in listOf(false, true)) {
             detail.secureSocket = socket
             detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
@@ -94,7 +101,7 @@ class CommandReplyWriteTest {
         }
     }
 
-    @Test fun unavailableOrStaleTakSessionCannotReportWriteAccepted() {
+    @Test fun unavailableOrStaleTakSessionCannotReportWriteAccepted() = runBlocking {
         detail.runtime.generation++
         assertFalse(TAKConnectService.writeCommandReply(detail, "<warning/>"))
         detail.runtime.generation--
@@ -104,6 +111,123 @@ class CommandReplyWriteTest {
         TAKConnectService.takEndpointEnabled = false
         assertFalse(TAKConnectService.writeCommandReply(detail, "<warning/>"))
         verify(exactly = 0) { socket.outputStream }
+    }
+
+    @Test fun normalAndConfirmedWritesShareOneConnectionSerializer() = runBlocking {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val bytes = ByteArrayOutputStream()
+        var flushes = 0
+        every { socket.outputStream } returns object : OutputStream() {
+            override fun write(b: Int) = bytes.write(b)
+            override fun write(b: ByteArray) {
+                bytes.write(b[0].toInt())
+                if (b.toString(Charsets.UTF_8) == "normal") {
+                    entered.countDown()
+                    check(release.await(3, TimeUnit.SECONDS))
+                }
+                bytes.write(b, 1, b.size - 1)
+            }
+            override fun flush() { flushes++ }
+        }
+        try {
+            TAKConnectService.sendData(detail, "normal", true, 0)
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            val warning = async(Dispatchers.Default) { TAKConnectService.writeCommandReply(detail, "warning") }
+            delay(100)
+            assertFalse(warning.isCompleted)
+            assertEquals("n", bytes.toString("UTF-8"))
+            release.countDown()
+            assertTrue(warning.await())
+            assertEquals("normalwarning", bytes.toString("UTF-8"))
+            assertEquals(2, flushes)
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test fun blockedWriteDoesNotHoldLifecycleMonitorAndTimeoutClosesOnlyItsSocket() = runBlocking {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        every { socket.close() } answers { closed.countDown(); release.countDown() }
+        every { socket.outputStream } returns object : OutputStream() {
+            override fun write(b: Int) {
+                entered.countDown()
+                check(release.await(3, TimeUnit.SECONDS))
+                throw IOException("closed")
+            }
+        }
+        try {
+            val warning = async(Dispatchers.Default) { TAKConnectService.writeCommandReply(detail, "warning", 500) }
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            val replacement = mockk<SSLSocket>(relaxed = true)
+            withTimeout(1_000) {
+                withContext(Dispatchers.Default) {
+                    synchronized(detail.runtime.lock) {
+                        detail.runtime.generation++
+                        detail.runtime.currentAttempt = TAKConnectService.ConnectionAttempt(8).apply { socket = replacement }
+                        detail.secureSocket = replacement
+                    }
+                }
+            }
+            assertFalse(withTimeout(1_500) { warning.await() })
+            assertTrue(closed.await(2, TimeUnit.SECONDS))
+            assertSame(replacement, detail.secureSocket)
+            verify(exactly = 0) { replacement.close() }
+        } finally {
+            release.countDown()
+        }
+    }
+
+    @Test fun cancellationOfBlockedWriteReturnsPromptlyAndNeverReportsAccepted() = runBlocking {
+        val entered = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val closed = CountDownLatch(1)
+        val finished = CountDownLatch(1)
+        every { socket.close() } answers { closed.countDown() }
+        every { socket.outputStream } returns object : OutputStream() {
+            override fun write(b: Int) {
+                entered.countDown()
+                check(release.await(3, TimeUnit.SECONDS))
+            }
+            override fun flush() { finished.countDown() }
+        }
+        var accepted = false
+        try {
+            val warning = launch(Dispatchers.Default) {
+                accepted = TAKConnectService.writeCommandReply(detail, "warning")
+            }
+            assertTrue(entered.await(2, TimeUnit.SECONDS))
+            withTimeout(1_000) { warning.cancelAndJoin() }
+            assertTrue(closed.await(2, TimeUnit.SECONDS))
+            assertFalse(accepted)
+        } finally {
+            release.countDown()
+            assertTrue(finished.await(2, TimeUnit.SECONDS))
+        }
+    }
+
+    @Test fun cancelledQueuedWriteDoesNotWriteAndStaleQueuedAttemptIsRevalidated() = runBlocking {
+        val attempt = detail.runtime.currentAttempt!!
+        val bytes = ByteArrayOutputStream()
+        every { socket.outputStream } returns bytes
+        attempt.outputMutex.lock()
+        try {
+            assertFalse(TAKConnectService.writeCommandReply(detail, "timed out in queue", 100))
+            val cancelled = async(Dispatchers.Default) { TAKConnectService.writeCommandReply(detail, "cancelled") }
+            delay(100)
+            withTimeout(1_000) { cancelled.cancelAndJoin() }
+            val stale = async(Dispatchers.Default) { TAKConnectService.writeCommandReply(detail, "stale") }
+            delay(100)
+            synchronized(detail.runtime.lock) { detail.runtime.generation++ }
+            attempt.outputMutex.unlock()
+            assertFalse(stale.await())
+            assertEquals(0, bytes.size())
+            verify(exactly = 0) { socket.close() }
+        } finally {
+            if (attempt.outputMutex.isLocked) attempt.outputMutex.unlock()
+        }
     }
 
     @Test fun multicastTrueRequiresDatagramSendAndSendFailurePropagates() {

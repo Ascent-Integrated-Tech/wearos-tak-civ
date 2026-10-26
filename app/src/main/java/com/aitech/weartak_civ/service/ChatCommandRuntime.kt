@@ -170,10 +170,13 @@ object ChatCommandRuntime {
             }
         )
         val mutex = kotlinx.coroutines.sync.Mutex()
-        return { request -> commandScope.async {
-            mutex.lock()
-            try { processor.handle(request) } finally { mutex.unlock() }
-        }.await() }
+        return { request ->
+            val execution = commandScope.async {
+                mutex.lock()
+                try { processor.handle(request) } finally { mutex.unlock() }
+            }
+            try { execution.await() } finally { execution.cancel() }
+        }
     }
 
     /** Presets are JSON files in the app's external files folder, pushed to the watch with adb. */
