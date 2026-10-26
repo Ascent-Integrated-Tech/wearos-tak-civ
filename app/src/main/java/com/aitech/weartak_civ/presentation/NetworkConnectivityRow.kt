@@ -12,8 +12,18 @@ internal data class NetworkConnectivityRow(
     val subtitle: String,
     val checked: Boolean,
     val toggle: (Boolean) -> Unit,
-    val statusDescription: String = subtitle
+    val statusDescription: String = subtitle,
+    val settingsRoute: String? = networkSettingsRoute(key)
 )
+
+internal fun networkSettingsRoute(key: String): String? = when (key) {
+    "tak" -> "tak_servers"
+    "companion" -> COMPANION_DETAILS_ROUTE
+    "multicast" -> "tak_sa_multicast"
+    "sitx" -> "sitx_tak_screen"
+    "ditto" -> "ditto_pdl"
+    else -> null
+}
 
 internal fun List<NetworkConnectivityRow>.alphabetizedConnections(locale: Locale): List<NetworkConnectivityRow> {
     val collator = Collator.getInstance(locale).apply { strength = Collator.PRIMARY }
