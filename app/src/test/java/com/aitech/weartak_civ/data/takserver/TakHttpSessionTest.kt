@@ -20,6 +20,7 @@ class TakHttpSessionTest {
         old.register(pending)
         replacement.register(newCall)
         old.cancel()
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
         verify(exactly = 1) { pending.cancel() }
         verify(exactly = 0) { newCall.cancel() }
         val delayed = mockk<Call>(relaxed = true)
@@ -42,7 +43,27 @@ class TakHttpSessionTest {
         assertThrows(IOException::class.java) {
             call.withSessionResponse(session) { session.cancel() }
         }
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
         verify(exactly = 1) { call.cancel() }
+    }
+
+    @Test fun cancelNeverClosesTransportOnCallingThreadAndCloserIsSerialized() {
+        val caller = Thread.currentThread()
+        val call = mockk<Call>(relaxed = true)
+        var cancelThread: Thread? = null
+        every { call.cancel() } answers { cancelThread = Thread.currentThread() }
+        val session = TakHttpSession { true }
+        session.register(call)
+        val release = java.util.concurrent.CountDownLatch(1)
+        TakConnectionCloser.execute { release.await() }
+        session.cancel()
+        assertThrows(IOException::class.java) { session.ensureCurrent() }
+        verify(exactly = 0) { call.cancel() }
+        assertFalse(TakConnectionCloser.awaitPendingCloses(timeoutMs = 50))
+        release.countDown()
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
+        assertNotSame(caller, cancelThread)
+        assertEquals(TakConnectionCloser.THREAD_NAME, cancelThread?.name)
     }
 
     @Test fun completedAndFailedCallsAreRemoved() {
@@ -51,6 +72,7 @@ class TakHttpSessionTest {
         every { call.execute() } throws IOException("offline")
         assertThrows(IOException::class.java) { call.withSessionResponse(session) {} }
         session.cancel()
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
         verify(exactly = 0) { call.cancel() }
     }
 }

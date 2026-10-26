@@ -7,6 +7,7 @@ import org.robolectric.Shadows.shadowOf
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.model.TakChannelStatus
 import com.aitech.weartak_civ.data.takserver.TakConnectionFailure
+import com.aitech.weartak_civ.data.takserver.TakConnectionCloser
 import com.aitech.weartak_civ.data.takserver.TakEnrollmentException
 import com.aitech.weartak_civ.data.takserver.TakEnrollmentStage
 import com.aitech.weartak_civ.data.takserver.TakFailureCategory
@@ -131,6 +132,7 @@ class TAKConnectServiceLifecycleTest {
         detail.runtime.retryJob = retry
         worn.value = false
         shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
         verify { socket.close(); raw.close(); call.cancel() }
         assertTrue(retry.isCancelled)
         assertNull(detail.runtime.currentAttempt)
@@ -244,6 +246,7 @@ class TAKConnectServiceLifecycleTest {
         val replacementChild = newScope.launch { awaitCancellation() }
         withTimeout(5_000) { oldChild.join() }
         assertTrue(oldScope.coroutineContext[Job]!!.isCancelled)
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
         verify(exactly = 1) { oldSocket.close() }
         assertConnectionAndChannelLaunchesRun()
         val detail = TAKConnectService.getTakServerDetail(serverId)!!
@@ -258,6 +261,7 @@ class TAKConnectServiceLifecycleTest {
         assertFalse(TAKConnectService.serviceStopping)
         assertTrue(TAKConnectService.isRunning.get())
         assertSame(attempt, detail.runtime.currentAttempt)
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
         verify(exactly = 0) { replacementSocket.close() }
 
         replacement.destroy()
@@ -265,7 +269,99 @@ class TAKConnectServiceLifecycleTest {
         withTimeout(5_000) { replacementChild.join() }
         assertTrue(TAKConnectService.serviceStopping)
         assertFalse(TAKConnectService.isRunning.get())
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
         verify(exactly = 1) { replacementSocket.close() }
+    }
+
+    @Test
+    fun offWristAtServiceStartClosesActiveTlsAndHttpOffMainThread() {
+        createService()
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        val mainThread = Thread.currentThread()
+        val closeThreads = java.util.Collections.synchronizedList(mutableListOf<Thread>())
+        val socket = mockk<SSLSocket>(relaxed = true)
+        every { socket.close() } answers {
+            closeThreads += Thread.currentThread()
+            if (Thread.currentThread() === mainThread) throw android.os.NetworkOnMainThreadException()
+        }
+        val call = mockk<okhttp3.Call>(relaxed = true)
+        every { call.cancel() } answers { closeThreads += Thread.currentThread() }
+        val session = com.aitech.weartak_civ.data.takserver.TakHttpSession { true }
+        session.register(call)
+        val attempt = TAKConnectService.ConnectionAttempt(detail.runtime.generation)
+        attempt.httpSession = session
+        attempt.socket = socket
+        detail.runtime.currentAttempt = attempt
+        detail.secureSocket = socket
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+
+        // p368: process restart while off-wrist; onCreate and the Main.immediate off-body
+        // collector both tear down the live TLS/HTTP session on the main thread.
+        worn.value = false
+        createService()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertNull(detail.runtime.currentAttempt)
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
+        verify(exactly = 1) { socket.close() }
+        verify(exactly = 1) { call.cancel() }
+        assertEquals(2, closeThreads.size)
+        assertTrue(closeThreads.none { it === mainThread })
+        assertTrue(closeThreads.all { it.name == TakConnectionCloser.THREAD_NAME })
+    }
+
+    @Test
+    fun screenOffWifiDropWhileWornClosesActiveTlsAndHttpOffMainThread() {
+        worn.value = true
+        takEnabled.value = false // keep the network change from launching a real reconnect
+        val controller = createService()
+        selectedTakNetwork(controller.get()).value = mockk<Network>(relaxed = true)
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        val mainThread = Thread.currentThread()
+        val closeThreads = java.util.Collections.synchronizedList(mutableListOf<Thread>())
+        val socket = mockk<SSLSocket>(relaxed = true)
+        every { socket.close() } answers {
+            closeThreads += Thread.currentThread()
+            if (Thread.currentThread() === mainThread) throw android.os.NetworkOnMainThreadException()
+        }
+        val call = mockk<okhttp3.Call>(relaxed = true)
+        every { call.cancel() } answers { closeThreads += Thread.currentThread() }
+        val session = com.aitech.weartak_civ.data.takserver.TakHttpSession { true }
+        session.register(call)
+        val attempt = TAKConnectService.ConnectionAttempt(detail.runtime.generation)
+        attempt.httpSession = session
+        attempt.socket = socket
+        detail.runtime.currentAttempt = attempt
+        detail.secureSocket = socket
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+        val app = RuntimeEnvironment.getApplication()
+        val power = app.getSystemService(android.os.PowerManager::class.java)
+
+        // p368 on-wrist: screen goes dark, WearWifiMediator toggles the Wi-Fi radio and the
+        // main-looper network callback changes the selected TAK network on the main thread.
+        shadowOf(power).setIsInteractive(false)
+        app.sendBroadcast(android.content.Intent(android.content.Intent.ACTION_SCREEN_OFF))
+        selectedTakNetwork(controller.get()).value = null
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertFalse(power.isInteractive)
+        assertNull(detail.runtime.currentAttempt)
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
+        verify(exactly = 1) { socket.close() }
+        verify(exactly = 1) { call.cancel() }
+        assertEquals(2, closeThreads.size)
+        assertTrue(closeThreads.none { it === mainThread })
+        assertTrue(closeThreads.all { it.name == TakConnectionCloser.THREAD_NAME })
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun selectedTakNetwork(service: TAKConnectService): MutableStateFlow<Network?> {
+        val preference = TAKConnectService::class.java.getDeclaredField("takNetworkPreference")
+            .apply { isAccessible = true }.get(service)!!
+        return preference.javaClass.getDeclaredField("selected")
+            .apply { isAccessible = true }.get(preference) as MutableStateFlow<Network?>
     }
 
     @Test

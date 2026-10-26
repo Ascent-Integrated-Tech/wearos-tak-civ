@@ -36,7 +36,9 @@ class RoutineServiceNotificationTest {
     @Before
     fun setUp() {
         ForegroundShadow.denied = null
+        ForegroundShadow.refused = null
         manager = RuntimeEnvironment.getApplication().getSystemService(NotificationManager::class.java)
+        RoutineServiceNotification.resetForTest()
         RoutineServiceNotification.reconcileProcessStart(RuntimeEnvironment.getApplication())
     }
 
@@ -133,6 +135,29 @@ class RoutineServiceNotificationTest {
     }
 
     @Test
+    fun refusedForegroundStartStopsServiceWithoutCrashingAndKeepsOtherOwners() {
+        val good = service(ChatService::class.java)
+        good.startForegroundServiceCompat(101, importance = NotificationManager.IMPORTANCE_LOW)
+        val activity = service(ActivityRecognitionService::class.java)
+        ForegroundShadow.refused = activity
+        assertFalse(activity.startForegroundServiceCompat(192, importance = NotificationManager.IMPORTANCE_LOW))
+        assertTrue(shadowOf(activity).isStoppedBySelf)
+        assertEquals("1 background service running", card().extras.getString(Notification.EXTRA_TEXT))
+        assertFalse(card().extras.getString(Notification.EXTRA_BIG_TEXT)!!.contains("Activity"))
+
+        val dedicated = service(AudioCaptureService::class.java)
+        ForegroundShadow.refused = dedicated
+        assertFalse(dedicated.startForegroundServiceCompat(201, importance = NotificationManager.IMPORTANCE_LOW))
+        assertTrue(shadowOf(dedicated).isStoppedBySelf)
+
+        ForegroundShadow.refused = null
+        val retried = service(ActivityRecognitionService::class.java)
+        assertTrue(retried.startForegroundServiceCompat(192, importance = NotificationManager.IMPORTANCE_LOW))
+        assertFalse(shadowOf(retried).isStoppedBySelf)
+        assertEquals("2 background services running", card().extras.getString(Notification.EXTRA_TEXT))
+    }
+
+    @Test
     fun startupRemovesOnlyKnownLegacyRoutineCardsAndRebuildsFromNewOwners() {
         post(101, "ChatService_channel")
         post(102, "BatteryService_channel")
@@ -191,6 +216,7 @@ class RoutineServiceNotificationTest {
     }
     class TAKConnectService : ChatService()
     class AudioCaptureService : ChatService()
+    class ActivityRecognitionService : ChatService()
 
     @Implements(Service::class)
     class ForegroundShadow : ShadowService() {
@@ -200,11 +226,14 @@ class RoutineServiceNotificationTest {
         @Implementation
         override fun startForeground(id: Int, notification: Notification) {
             if (service === denied) throw SecurityException("foreground permission denied")
+            if (service === refused) throw android.app.ForegroundServiceStartNotAllowedException(
+                "startForeground() not allowed due to mAllowStartForeground false")
             super.startForeground(id, notification)
         }
 
         companion object {
             @Volatile var denied: Service? = null
+            @Volatile var refused: Service? = null
         }
     }
 }

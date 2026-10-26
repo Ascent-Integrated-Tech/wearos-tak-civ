@@ -1,5 +1,6 @@
 package com.aitech.weartak_civ.service
 
+import android.app.ForegroundServiceStartNotAllowedException
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,6 +8,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import androidx.annotation.StringRes
 import androidx.core.app.NotificationCompat
@@ -56,25 +58,33 @@ internal object RoutineServiceNotification {
     private val owners = IdentityHashMap<Service, Int>()
 
     @Synchronized
-    fun startIfRoutine(service: Service): Boolean {
-        val capability = capabilities[service.javaClass.simpleName] ?: return false
-        start(service, capability.label)
-        return true
+    fun startIfRoutine(service: Service): Boolean? {
+        val capability = capabilities[service.javaClass.simpleName] ?: return null
+        return start(service, capability.label)
     }
 
+    /** Returns false when Android refuses foreground promotion (app not in an FGS-allowed state). */
     @Synchronized
-    internal fun start(service: Service, @StringRes label: Int) {
+    internal fun start(service: Service, @StringRes label: Int): Boolean {
         val previous = owners.put(service, label)
         try {
             val notification = build(service)
             service.startForeground(ID, notification)
+            return true
         } catch (error: RuntimeException) {
             if (previous == null) owners.remove(service) else owners[service] = previous
-            Log.e(TAG, "Failed to promote routine foreground service", error)
             if (owners.isNotEmpty()) publish(service) else manager(service).cancel(ID)
+            if (isForegroundStartRefusal(error)) {
+                Log.w(TAG, "Foreground start refused for ${service.javaClass.simpleName}", error)
+                return false
+            }
+            Log.e(TAG, "Failed to promote routine foreground service", error)
             throw error
         }
     }
+
+    fun isForegroundStartRefusal(error: Throwable): Boolean =
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && error is ForegroundServiceStartNotAllowedException
 
     @Synchronized
     fun stopIfRoutine(service: Service): Boolean {
@@ -91,6 +101,10 @@ internal object RoutineServiceNotification {
         owners.remove(service)
         if (owners.isEmpty()) manager(service).cancel(ID) else publish(service)
     }
+
+    /** Robolectric shares this object across test classes; drop owners leaked by other tests. */
+    @Synchronized
+    internal fun resetForTest() = owners.clear()
 
     @Synchronized
     fun reconcileProcessStart(context: Context) {

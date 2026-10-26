@@ -48,13 +48,16 @@ class TakHttpSession(val network: Network? = null, private val allowed: () -> Bo
         }
     }
 
+    /** Marks the session closed immediately; call cancellation and pool eviction run off-thread. */
     fun cancel() {
         val pending = synchronized(lock) {
             closed = true
             calls.toList()
         }
-        pending.forEach(Call::cancel)
-        pool.evictAll()
+        TakConnectionCloser.execute {
+            pending.forEach { runCatching { it.cancel() } }
+            pool.evictAll()
+        }
     }
 }
 

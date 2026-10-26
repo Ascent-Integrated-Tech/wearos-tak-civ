@@ -504,10 +504,16 @@ class ReactiveServiceManager : Service() {
         val cls = registry.getServiceClass(t) ?: return
         Log.i(TAG, "ReactiveServiceManager Starting: ${t.name}")
         val intent = Intent(this, cls)
-        if (t.isForegroundService) {
-            startForegroundService(intent)
-        } else {
-            startService(intent)
+        try {
+            if (t.isForegroundService) {
+                startForegroundService(intent)
+            } else {
+                startService(intent)
+            }
+        } catch (error: RuntimeException) {
+            if (!RoutineServiceNotification.isForegroundStartRefusal(error)) throw error
+            Log.w(TAG, "Start of ${t.name} refused while in background; retrying on next reconcile", error)
+            return
         }
         registry.setServiceRunning(t, true)
         AppDiagnostics.record(DiagnosticEvent.SERVICE_REQUEST, mapOf(
