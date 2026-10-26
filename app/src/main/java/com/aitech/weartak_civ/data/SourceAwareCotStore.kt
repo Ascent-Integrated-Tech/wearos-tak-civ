@@ -272,12 +272,17 @@ class SourceAwareCotStore<T>(
         }
         if (coalesce && publicationScope != null && upsertKey != null) {
             if (!pendingKeys.add(upsertKey)) onReduction(1, 0)
-            if (publicationJob == null) {
+            if (publicationJob?.isActive != true) {
                 val generation = ++publicationGeneration
                 publicationJob = publicationScope.launch(start = CoroutineStart.UNDISPATCHED) {
-                    delay(1_500)
-                    synchronized(lock) {
-                        if (generation == publicationGeneration) publishLocked()
+                    try {
+                        delay(1_500)
+                    } finally {
+                        // Cancellation must not leave an accepted projection permanently pending.
+                        // Invalidated timers cannot publish after an immediate mutation or clear.
+                        synchronized(lock) {
+                            if (generation == publicationGeneration) publishLocked()
+                        }
                     }
                 }
             }

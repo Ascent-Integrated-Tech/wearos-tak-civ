@@ -1,6 +1,9 @@
 package com.aitech.weartak_civ.data
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -141,5 +144,27 @@ class SourceAwareCotCoalescingTest {
         assertSame(visible, store.visibleItems.value)
         assertEquals(200L, store.allItems.value[SourceCotKey("ble", "track")]!!.time)
         assertFalse(store.hasPendingProjection(SourceCotKey("ble", "track")))
+    }
+
+    @Test fun cancelledPublicationScopeFlushesAcceptedStateAndNeverStrandsFutureUpdates() = runTest {
+        val scope = CoroutineScope(coroutineContext + Job())
+        val store = SourceAwareCotStore(Item::source, Item::uid, Item::time, Item::receipt,
+            publicationScope = scope)
+        val key = SourceCotKey("tcp", "track")
+        store.upsert(Item())
+        store.upsertWithResult(Item(time = 200, position = 2), true)
+        assertTrue(store.hasPendingProjection(key))
+        scope.cancel()
+        runCurrent()
+        assertFalse(store.hasPendingProjection(key))
+        assertEquals(2, store.visibleItems.value.single().position)
+        store.upsertWithResult(Item(time = 300, position = 3), true)
+        runCurrent()
+        assertFalse(store.hasPendingProjection(key))
+        assertEquals(3, store.visibleItems.value.single().position)
+        store.clear()
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertTrue(store.allItems.value.isEmpty())
     }
 }

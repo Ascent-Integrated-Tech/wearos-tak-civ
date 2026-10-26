@@ -627,6 +627,8 @@ identity/session change, source clear or delete. Clears, deletes, local/user act
 chat, alerts/emergency, human-generated points, plugin injections and assignments remain immediate;
 an immediate mutation also flushes any pending projection. Emergency/alert-bearing
 `a-*` details are explicitly excluded from batching.
+Cancelling the projection scope flushes accepted state and clears pending keys;
+subsequent updates on a cancelled scope publish immediately instead of becoming stranded.
 
 No-op projection suppression compares position and all stored attributes, retaining
 authoritative timing/order metadata even when no UI write is needed. Expiry changes
