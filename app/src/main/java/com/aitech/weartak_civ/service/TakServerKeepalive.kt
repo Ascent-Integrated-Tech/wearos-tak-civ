@@ -5,6 +5,11 @@ import android.content.RestrictionsManager
 import com.aitech.weartak_civ.DEFAULT_TAK_SERVER_KEEPALIVE_SECONDS
 import com.aitech.weartak_civ.cot.CotEventTimeFactory
 import com.aitech.weartak_civ.cot.CotTimeOffset
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * Receive-silence keepalive for TAK Server streams, modeled on ATAK commo's stream monitor
@@ -29,10 +34,45 @@ class TakServerKeepalive(silenceSeconds: Int) {
         return if (!pingedSinceRx || nowMs - lastPingMs >= PING_REPEAT_MS) Action.PING else Action.NONE
     }
 
+    fun nextDeadlineMs(nowMs: Long, lastRxMs: Long, lastPingMs: Long): Long? {
+        if (!enabled) return null
+        if (next(nowMs, lastRxMs, lastPingMs) != Action.NONE) return nowMs
+        val silenceAt = lastRxMs + silenceMs
+        return if (nowMs < silenceAt) silenceAt else
+            minOf(lastPingMs + PING_REPEAT_MS, silenceAt + RESPONSE_TIMEOUT_MS)
+    }
+
+    internal suspend fun watch(
+        lastRxMs: AtomicLong,
+        received: ReceiveChannel<Unit>,
+        isCurrent: () -> Boolean,
+        nowMs: () -> Long = System::currentTimeMillis,
+        perform: (Action, Long) -> Unit
+    ) {
+        if (!enabled) return
+        var lastPingMs = 0L
+        while (currentCoroutineContext().isActive && isCurrent()) {
+            val now = nowMs()
+            when (val action = next(now, lastRxMs.get(), lastPingMs)) {
+                Action.PING -> {
+                    lastPingMs = now
+                    perform(action, now)
+                }
+                Action.RECONNECT -> {
+                    perform(action, now)
+                    return
+                }
+                Action.NONE -> Unit
+            }
+            val waitMs = (requireNotNull(nextDeadlineMs(now, lastRxMs.get(), lastPingMs)) - now)
+                .coerceAtLeast(1L)
+            withTimeoutOrNull(waitMs) { received.receive() }
+        }
+    }
+
     companion object {
         const val RESTRICTION_KEY = "tak_server_keepalive_seconds"
         const val MIN_SILENCE_SECONDS = 15
-        const val CHECK_INTERVAL_MS = 5_000L
         const val PING_REPEAT_MS = 10_000L
         const val RESPONSE_TIMEOUT_MS = 30_000L
         private const val PING_STALE_SECONDS = 20

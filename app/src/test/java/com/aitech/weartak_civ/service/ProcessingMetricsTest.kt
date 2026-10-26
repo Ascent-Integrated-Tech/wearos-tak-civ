@@ -116,6 +116,52 @@ class ProcessingMetricsTest {
         assertTrue(metrics.entrySet().all { it.value.isJsonPrimitive && it.value.asJsonPrimitive.isNumber })
     }
 
+    @Test fun receiveActivityWorksWithLoggingOffAndIgnoresEmptyReadsAndEof() = runBlocking {
+        diagnostics.setEnabled(false)
+        var received = 0
+        ProcessingInputStream(ByteArrayInputStream(byteArrayOf(0, 1, 2))) { received++ }.use { input ->
+            assertEquals(0, input.read())
+            assertEquals(1, received)
+            val buffer = ByteArray(2)
+            assertEquals(0, input.read(buffer, 0, 0))
+            assertEquals(1, received)
+            assertEquals(2, input.read(buffer))
+            assertArrayEquals(byteArrayOf(1, 2), buffer)
+            assertEquals(2, received)
+            assertEquals(-1, input.read())
+            assertEquals(-1, input.read(buffer))
+            assertEquals(2, received)
+        }
+        assertTrue(records().isEmpty())
+    }
+
+    @Test fun partialFrameNotifiesReceiveBeforeBufferedReaderCanReturnALine() = runBlocking {
+        diagnostics.setEnabled(false)
+        var received = 0
+        val payload = "<event uid='fixture'".toByteArray()
+        val incomplete = IOException("Incomplete fixture")
+        val source = object : InputStream() {
+            var first = true
+            override fun read(): Int = error("Expected buffered read")
+            override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                if (first) {
+                    first = false
+                    payload.copyInto(buffer, offset)
+                    return payload.size
+                }
+                assertEquals(1, received)
+                throw incomplete
+            }
+        }
+        try {
+            ProcessingInputStream(source) { received++ }.bufferedReader().use { it.readLine() }
+            fail("Incomplete frame must not complete a line")
+        } catch (actual: IOException) {
+            assertSame(incomplete, actual)
+        }
+        assertEquals(1, received)
+    }
+
     @Test fun failuresPropagateAndAreCountedWithoutExceptionText() = runBlocking {
         diagnostics.setEnabled(true)
         val failure = IOException("private payload credential")

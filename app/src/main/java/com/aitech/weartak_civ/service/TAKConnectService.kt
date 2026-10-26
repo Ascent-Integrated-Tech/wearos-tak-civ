@@ -3740,12 +3740,17 @@ class TAKConnectService: Service() {
             attempt: ConnectionAttempt
         ) {
             val lastRxMs = AtomicLong(System.currentTimeMillis())
-            val keepaliveJob = startKeepaliveWatchdog(takServerDetail, socket, attempt, lastRxMs)
+            val received = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
+            val keepaliveJob = startKeepaliveWatchdog(takServerDetail, socket, attempt, lastRxMs, received)
             // start a background COT‐reader on the same socket
             val job = connectionScope.launch {
                 var readerEndReason = ConnectionReason.END_OF_STREAM
                 try {
-                    BufferedReader(InputStreamReader(ProcessingInputStream(socket.inputStream))).use { reader ->
+                    val input = ProcessingInputStream(socket.inputStream) {
+                        lastRxMs.set(System.currentTimeMillis())
+                        received.trySend(Unit)
+                    }
+                    BufferedReader(InputStreamReader(input)).use { reader ->
                         val framer = CotStreamFramer { reason ->
                             Log.w(
                                 TAG,
@@ -3760,8 +3765,6 @@ class TAKConnectService: Service() {
                                 // Timeout just re-checks enabled state and cancellation.
                                 continue
                             } ?: break
-                            lastRxMs.set(System.currentTimeMillis())
-
                             val framed = AppDiagnostics.measureProcessing(
                                 ProcessingStage.TCP_FRAMING, frames = { it.size.toLong() },
                             ) { framer.append(line) }
@@ -3837,7 +3840,8 @@ class TAKConnectService: Service() {
             takServerDetail: TakServerDetail,
             socket: SSLSocket,
             attempt: ConnectionAttempt,
-            lastRxMs: AtomicLong
+            lastRxMs: AtomicLong,
+            received: kotlinx.coroutines.channels.ReceiveChannel<Unit>
         ): Job? {
             val keepalive = TakServerKeepalive(TakServerKeepalive.configuredSilenceSeconds(context))
             if (!keepalive.enabled) {
@@ -3845,14 +3849,11 @@ class TAKConnectService: Service() {
                 return null
             }
             return connectionScope.launch {
-                var lastPingMs = 0L
-                while (isActive) {
-                    delay(TakServerKeepalive.CHECK_INTERVAL_MS)
-                    if (!isCurrent(takServerDetail, attempt) || socket.isClosed) break
-                    val now = System.currentTimeMillis()
-                    when (keepalive.next(now, lastRxMs.get(), lastPingMs)) {
+                keepalive.watch(lastRxMs, received,
+                    isCurrent = { isCurrent(takServerDetail, attempt) && !socket.isClosed }
+                ) { action, now ->
+                    when (action) {
                         TakServerKeepalive.Action.PING -> {
-                            lastPingMs = now
                             Log.d(TAG, "TAK keepalive ping serverId=${takServerDetail.serverId} " +
                                 "silenceMs=${now - lastRxMs.get()}")
                             sendData(takServerDetail, TakServerKeepalive.pingCot(MainActivity.device_uid, now), true, now)
@@ -3864,7 +3865,6 @@ class TAKConnectService: Service() {
                                 "silenceMs=${now - lastRxMs.get()}; resetting connection")
                             // Closing unblocks the reader, whose finally block schedules the reconnect.
                             runCatching { socket.close() }
-                            break
                         }
                         TakServerKeepalive.Action.NONE -> Unit
                     }
