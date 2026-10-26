@@ -1,0 +1,109 @@
+package com.aitech.weartak_civ.presentation
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Switch
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.Text
+import androidx.wear.compose.material.ToggleChipDefaults
+import com.aitech.weartak_civ.R
+
+@Composable
+internal fun NetworkConnectivityChip(
+    row: NetworkConnectivityRow,
+    networkPreferencesLocked: Boolean,
+    phoneManagedSettings: Boolean,
+    navigate: (String) -> Unit,
+    showPhoneManagedNotice: () -> Unit,
+    showNetworkLockedNotice: () -> Unit,
+    appIcon: @Composable () -> Unit = {}
+) {
+    val toggleEnabled = !networkPreferencesLocked && !phoneManagedSettings
+    val route = row.settingsRoute
+    if (route == null) {
+        WearTAKToggleChip(
+            checkedLive = row.checked,
+            onCheckedChange = row.toggle,
+            title = row.title,
+            description = row.subtitle,
+            statusDescription = row.statusDescription,
+            appIcon = appIcon,
+            enabled = toggleEnabled
+        )
+        return
+    }
+
+    val openSettings = stringResource(R.string.open_transport_settings, row.title)
+    val state = stringResource(if (row.checked) R.string.toggle_state_on else R.string.toggle_state_off)
+    val colors = ToggleChipDefaults.splitToggleChipColors()
+    // Wear Compose 1.4 SplitToggleChip has one enabled flag for both actions.
+    // Keep the same split pattern, but disable only the switch when settings are locked.
+    Row(
+        modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min)
+            .clip(MaterialTheme.shapes.large)
+            .background(colors.backgroundColor(enabled = true).value),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            modifier = Modifier.weight(1f).fillMaxHeight().heightIn(min = 48.dp)
+                .clickable(role = Role.Button, onClickLabel = openSettings) {
+                    when {
+                        row.key == "tak" && phoneManagedSettings -> showPhoneManagedNotice()
+                        row.key == "tak" && networkPreferencesLocked -> showNetworkLockedNotice()
+                        else -> navigate(route)
+                    }
+                }
+                .padding(horizontal = 14.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            appIcon()
+            Column {
+                Text(row.title, style = MaterialTheme.typography.button,
+                    color = colors.contentColor(enabled = true).value,
+                    maxLines = 3, overflow = TextOverflow.Ellipsis)
+                if (row.subtitle.isNotEmpty()) {
+                    Text(row.subtitle, style = MaterialTheme.typography.caption2,
+                        color = colors.secondaryContentColor(enabled = true).value,
+                        maxLines = 2, overflow = TextOverflow.Ellipsis)
+                }
+            }
+        }
+        Box(
+            modifier = Modifier.width(52.dp).fillMaxHeight().heightIn(min = 48.dp)
+                .background(colors.splitBackgroundOverlay(toggleEnabled, row.checked).value)
+                .semantics {
+                    contentDescription = row.title
+                    stateDescription = if (row.statusDescription.isEmpty()) state else "$state, ${row.statusDescription}"
+                }
+                .toggleable(value = row.checked, enabled = toggleEnabled, role = Role.Switch,
+                    onValueChange = row.toggle),
+            contentAlignment = Alignment.Center
+        ) {
+            Switch(checked = row.checked, onCheckedChange = null, enabled = toggleEnabled,
+                modifier = Modifier.size(25.dp))
+        }
+    }
+}

@@ -1503,12 +1503,15 @@ fun WearTAKSettingsNav(
                 "Network Preferences",
                 columnContent = {
                     itemsIndexed(rows, key = { _, row -> row.key }) { _, row ->
-                        WearTAKToggleChip(
-                            checkedLive = row.checked,
-                            onCheckedChange = row.toggle,
-                            title = row.title,
-                            description = row.subtitle,
-                            statusDescription = row.statusDescription,
+                        NetworkConnectivityChip(
+                            row = row,
+                            networkPreferencesLocked = networkPreferencesLocked,
+                            phoneManagedSettings = phoneManagedSettings,
+                            navigate = { navController.navigate(it) },
+                            showPhoneManagedNotice = showPhoneManagedNotice,
+                            showNetworkLockedNotice = {
+                                Toast.makeText(context, networkLockedNotice, Toast.LENGTH_SHORT).show()
+                            },
                             appIcon = {
                                 if (row.key == "tak") {
                                     Image(
@@ -1517,8 +1520,7 @@ fun WearTAKSettingsNav(
                                         modifier = Modifier.size(25.dp)
                                     )
                                 }
-                            },
-                            enabled = !networkPreferencesLocked && !phoneManagedSettings
+                            }
                         )
                     }
                     item { HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp)) }

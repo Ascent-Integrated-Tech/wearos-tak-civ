@@ -1,4 +1,5 @@
 <resources>
+    <string name="open_transport_settings">Open %1$s settings</string>
     <string name="invalid_managed_network_configuration">Invalid managed network configuration. Settings were not applied. Contact your administrator.</string>
     <string name="tak_status_no_server">No server configured</string>
     <string name="tak_status_off">Switched off</string>
