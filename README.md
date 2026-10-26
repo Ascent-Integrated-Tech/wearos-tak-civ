@@ -591,7 +591,7 @@ Native location requests still start independently for scheduled observation
 and explicit interactions, with their existing six-second and five-second
 deadlines. An already-arrived usable fix may complete other active consumers
 only after each passes its own selected-provider/input-generation, request
-timestamp, deadline and latest-action checks. No initial request waits for or
+fix-age, deadline and latest-action checks. No initial request waits for or
 skips another request. Completion removes only the eligible one-shot owners;
 periodic ownership and original timeout deadlines remain intact. Cancelled
 callbacks cannot deliver to replacement requests.
@@ -602,6 +602,27 @@ not a periodic-cadence substitute. Only the last completed/normal fix snapshots
 are retained in memory and cleared on request-generation reset; no location
 contents enter the Logging journal. This reuses fix completion, not proof of
 reduced native GPS acquisitions or measured energy savings.
+
+Scheduled one-shot observations back off after three consecutive timeouts or
+acquisition failures: the normal interval doubles on the third failure, doubles
+again on each subsequent failure, and caps at five minutes (a configured interval
+longer than five minutes is never shortened). Usable fixes, detected movement,
+explicit interaction refreshes, configuration and power-policy changes reset the
+failure streak. Cancellation, stale callbacks and permission gates do not count
+as acquisition failures. Logging records numeric `BACKOFF_LEVEL` on requests and
+observation schedules, plus fused request `PRIORITY` (high=100, balanced=102)
+and `MAX_AGE_MS` (0 or 30000). This changes acquisition cadence, not saved PLI rates.
+
+When existing valid speed or enabled, permitted activity recognition indicates
+stationary, scheduled fused observations use Balanced accuracy, allow fixes up to
+30 seconds before the request, and do not wait for accurate location. Recognized
+movement overrides stationary speed; unknown state does not imply stationary.
+Moving/unknown and explicit interaction requests use high accuracy and require
+a post-request fix. No stationary observations are skipped. Selected native GNSS
+and network inputs retain their provider contracts, without fallback. Cached
+fixes retain their actual timestamps and accuracy (including CoT `ce`) and do not
+renew an old speed's full validity window. These are acquisition-policy changes,
+not evidence of measured energy savings.
 
 Rotation-sensor acquisition is demand-driven, not implied by the core movement
 service running. Interactive dashboard/map/marker and Bloodhound views use their
