@@ -95,6 +95,21 @@ class WearTakApplication : Application() {
             ChatActivity.dataRepository = application.repo
             PhysioAlertsActivity.dataRepository = application.repo
         }
+
+        // Bloodhound screens are SA viewers, and the active target keeps live positions.
+        internal fun installPassiveSaDemand(repo: DataRepository, bhRepo: BloodhoundRepository) {
+            val demand = repo.passiveSaDemand
+            val bloodhoundViewer = Any()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            scope.launch {
+                bhRepo.presentationTargets.collect { targets ->
+                    if (targets == null || targets.isNotEmpty()) demand.request(bloodhoundViewer)
+                    else demand.release(bloodhoundViewer)
+                }
+            }
+            scope.launch { bhRepo.activeUid.collect(demand::setExemptUid) }
+            demand.enable()
+        }
     }
 
     override fun onCreate() {
@@ -111,6 +126,7 @@ class WearTakApplication : Application() {
             repo.unitPrefs.collect(com.aitech.weartak_civ.ui.formatter.UnitPrefsState::update)
         }
         bhRepo = BloodhoundRepository(applicationContext)
+        installPassiveSaDemand(repo, bhRepo)
         bhRepo.restoreRouteSession(repo.visibleTakRoutes, repo.routePersistence)
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             repo.takRoutes.collect { routes -> bhRepo.reconcileRoutes(routes) }

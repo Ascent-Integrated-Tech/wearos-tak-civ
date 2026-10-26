@@ -10,6 +10,7 @@
 package com.aitech.weartak_civ.data
 
 import com.aitech.weartak_civ.cot.canCoalesceTrack
+import com.aitech.weartak_civ.cot.isPassiveTrack
 import com.aitech.weartak_civ.service.AppDiagnostics
 import com.aitech.weartak_civ.service.ProcessingStage
 
@@ -226,6 +227,7 @@ class DataRepository(
     private val projectionScope: CoroutineScope = repoScope,
 ) {
     internal val stationaryMotion = com.aitech.weartak_civ.service.StationaryMotionPolicy()
+    internal val passiveSaDemand = PassiveSaDemand()
     internal val headingComplications = HeadingComplicationDemand(
         context.getSharedPreferences("heading-complications", Context.MODE_PRIVATE)
     )
@@ -2343,9 +2345,20 @@ class DataRepository(
                 item.sourceServerId?.startsWith("ditto:") == true -> 1
                 else -> 0
             }
+        },
+        deferProjection = { key -> passiveSaDemand.shouldDefer(key.cotUid) },
+        onDeferred = {
+            passiveSaDemand.recordDeferred()
+            AppDiagnostics.recordIngestReduction(ProcessingStage.SA_DEFERRED, 1, 0)
         }
     )
     val receivedUserList: StateFlow<List<ReceivedUser>> = receivedUserStore.visibleItems
+
+    init {
+        passiveSaDemand.setOnDemand {
+            if (receivedUserStore.flushDeferred()) passiveSaDemand.recordFlush()
+        }
+    }
 
     fun receiveCompanionUserEvent(event: CotUserPositionEvent, receivedAt: Long): Boolean {
         pruneCompanionUsers(receivedAt)
@@ -2447,7 +2460,8 @@ class DataRepository(
             isCamera = event.detail.isCamera
         )
         val result = receivedUserStore.upsertWithResult(item,
-            coalesce = event.detail.canCoalesceTrack(event.type, event.how, sourceServerId))
+            coalesce = event.detail.canCoalesceTrack(event.type, event.how, sourceServerId),
+            deferrable = event.detail.isPassiveTrack(event.type, sourceServerId))
         Log.d(
             TAG,
             "Map state user upsert uid=${event.uid} sourceServerId=$sourceServerId sourceAddress=$source " +

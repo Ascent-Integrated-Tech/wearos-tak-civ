@@ -110,6 +110,13 @@ internal fun CotMarkerDetail.canCoalesceTrack(type: String, how: String, sourceI
         how.startsWith("m-", ignoreCase = true) && !hasUrgentDetail && remarks.isNullOrBlank() &&
         link?.uid.isNullOrBlank()
 
+/**
+ * Passive SA: another user's or a sensor's track position. Its projection may wait for a
+ * viewer because the source-owned store always keeps the newest copy.
+ */
+internal fun CotMarkerDetail.isPassiveTrack(type: String, sourceId: String?): Boolean =
+    sourceId?.startsWith("plugin:") != true && type.startsWith("a-") && !hasUrgentDetail
+
 data class CotDeletion(val uid: String, val time: Long)
 
 data class CotLink(

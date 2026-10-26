@@ -42,7 +42,11 @@ class SourceAwareCotStore<T>(
     private val publicationScope: CoroutineScope? = null,
     private val equivalent: (T, T) -> Boolean = { a, b -> a == b },
     private val onReduction: (coalesced: Long, skipped: Long) -> Unit = { _, _ -> },
-    private val sourcePriorityOf: (T) -> Int = { 0 }
+    private val sourcePriorityOf: (T) -> Int = { 0 },
+    // Coalescible updates for which this returns true stay pending until [flushDeferred]
+    // or the next immediate mutation; no timer or projection runs for them.
+    private val deferProjection: (SourceCotKey) -> Boolean = { false },
+    private val onDeferred: () -> Unit = {}
 ) {
     private data class Stored<T>(
         val value: T,
@@ -71,7 +75,11 @@ class SourceAwareCotStore<T>(
 
     fun upsert(item: T): SourceCotKey = upsertWithResult(item).key
 
-    fun upsertWithResult(item: T, coalesce: Boolean = false): SourceCotUpsertResult = synchronized(lock) {
+    fun upsertWithResult(
+        item: T,
+        coalesce: Boolean = false,
+        deferrable: Boolean = false
+    ): SourceCotUpsertResult = synchronized(lock) {
         val key = SourceCotKey(sourceIdOf(item), cotUidOf(item))
         require(key.sourceId.isNotBlank()) { "Source ID cannot be blank" }
         require(key.cotUid.isNotBlank()) { "CoT UID cannot be blank" }
@@ -90,11 +98,18 @@ class SourceAwareCotStore<T>(
         val visible = visibleByUid[key.cotUid]
         val unchanged = coalesce && current != null && equivalent(current.value, item) &&
             visible?.let { sourceIdOf(it.value) == key.sourceId } == true
-        publishLocked(key, coalesce && current != null, unchanged)
+        publishLocked(key, coalesce && current != null, unchanged, deferrable && current != null)
         SourceCotUpsertResult(key, applied = true, skipped = unchanged)
     }
 
     fun hasPendingProjection(key: SourceCotKey): Boolean = synchronized(lock) { key in pendingKeys }
+
+    /** Projects all pending updates once; returns false when nothing was pending. */
+    fun flushDeferred(): Boolean = synchronized(lock) {
+        if (pendingKeys.isEmpty()) return@synchronized false
+        publishLocked()
+        true
+    }
 
     /** Authoritative state, including accepted updates not yet projected to observers. */
     fun snapshot(): Map<SourceCotKey, T> = synchronized(lock) {
@@ -245,7 +260,8 @@ class SourceAwareCotStore<T>(
     private fun publishLocked(
         upsertKey: SourceCotKey? = null,
         coalesce: Boolean = false,
-        unchanged: Boolean = false
+        unchanged: Boolean = false,
+        deferrable: Boolean = false
     ) {
         var visibleChanged = true
         val upserted = upsertKey?.let(storedByKey::get)
@@ -271,6 +287,11 @@ class SourceAwareCotStore<T>(
         // never owns an event, so source/session clears and deletes cannot replay queued data.
         if (unchanged) {
             onReduction(0, 1)
+            return
+        }
+        if (deferrable && upsertKey != null && deferProjection(upsertKey)) {
+            if (!pendingKeys.add(upsertKey)) onReduction(1, 0)
+            onDeferred()
             return
         }
         if (coalesce && publicationScope != null && upsertKey != null) {
