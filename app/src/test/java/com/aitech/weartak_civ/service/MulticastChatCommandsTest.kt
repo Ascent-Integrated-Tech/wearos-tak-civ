@@ -272,7 +272,7 @@ class MulticastChatCommandsTest {
         coVerify(exactly = 1) { repo.storePhysiologicalMetricHeightInches(8) }
         assertEquals(3, replies.size)
         assertTrue(replies[1].contains("enter credentials"))
-        assertTrue(replies[2].contains("takes only name, url and port"))
+        assertTrue(replies[2].contains("both username and password"))
         assertFalse(replies.any { it.contains("synthetic-only") })
     }
 

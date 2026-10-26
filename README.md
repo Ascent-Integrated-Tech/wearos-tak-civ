@@ -2069,19 +2069,19 @@ across every ingress route, including either arrival order. It remembers the
 last 128 accepted pairs, not a durable execution ledger across app restarts.
 Consumed commands are not inserted as ordinary chat or rebroadcast; one normal
 outcome reply is generated for a newly accepted command. With Commands disabled,
-addressed command-looking text retains normal chat behavior, except `usep12` and
-`setpdl` are always consumed to keep credentials out of the local inbox.
+addressed command-looking text retains normal chat behavior, except `usep12`,
+`setpdl`, and `enrollserver` are always consumed to keep credentials out of the local inbox.
 The legacy phone bridge must supply original Unix-millisecond `sentAt`; missing
 timestamps are stale, never replaced with receipt time. Named groups require
 verified watch-UID membership; a room title alone never establishes membership.
 
-Format: `#weartakcommand<name> key=value key2="value with spaces"`
-Whitespace after `#weartakcommand` is also accepted; existing joined commands
-remain supported.
+Format: `#weartakcommand<name> key=value key2="value with spaces"` (a space after
+`#weartakcommand` is also accepted). See [chat enrollment](ENROLLSERVER.md) for
+credential syntax, update behavior and plaintext/purge limitations.
 
 | Command | Arguments | Effect |
 | --- | --- | --- |
-| `enrollserver` | `name`, `url` (host name or IP), `port` (default 8089) | Posts a notification on the watch. Tapping it opens the New Server screen pre-filled; the user enters the username and password there and they are stored like any other TAK server. Credentials are never accepted in chat. Refused when network settings are locked or phone-managed. |
+| `enrollserver` | `name, address, port[, username, password]`, or legacy `name`, `url`, optional `port`, paired `username`/`password` | With credentials, adds or updates a matching server and starts normal registration using encrypted UI storage. Without credentials, prompts on the watch. Any allowlisted channel is accepted; locks and MDM server authority win. See [security and purge limits](ENROLLSERVER.md). |
 | `setcallsign` | `callsign` (1-32 letters, digits, space, `.`, `_`, `-`) | Sets the callsign. Refused when settings are managed by the phone. |
 | `setlocationinput` | Exactly `input=enhancedgnss` or `input=gnss` | Selects real Fused Location or satellite-only Internal GNSS respectively. Persists the same setting as Reporting, invalidates prior-input fixes and starts fresh acquisition without fallback. Refused when settings are phone-managed. The acknowledgement confirms the selection, not a successful position fix. |
 | `setpdl` | One positional argument: `community` or an encoded SharedKey v2 PDL | Validates the selected identity and expiry, atomically saves source/custom identity, then recreates Ditto with the new identity. Refused when network settings are locked or phone-managed. Does not change the Ditto enable toggle. |

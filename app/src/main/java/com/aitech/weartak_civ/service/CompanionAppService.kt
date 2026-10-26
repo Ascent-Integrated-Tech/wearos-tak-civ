@@ -736,7 +736,9 @@ class CompanionAppService : Service() {
     }
 
     private fun enqueueJson(json: String) {
+        if (isSensitiveChatJson(json)) return
         synchronized(pendingLock) {
+            pendingJson.removeAll(::isSensitiveChatJson)
             while (pendingJson.size >= MAX_PENDING_JSON) {
                 pendingJson.removeFirst()
             }
@@ -746,7 +748,7 @@ class CompanionAppService : Service() {
 
     private fun drainPending(): List<String> {
         synchronized(pendingLock) {
-            val out = pendingJson.toList()
+            val out = pendingJson.filterNot(::isSensitiveChatJson)
             pendingJson.clear()
             return out
         }
@@ -754,6 +756,22 @@ class CompanionAppService : Service() {
 
     private fun clearPendingQueue() {
         synchronized(pendingLock) { pendingJson.clear() }
+    }
+
+    @org.greenrobot.eventbus.Subscribe
+    fun onPurgeSensitiveEnrollments(@Suppress("UNUSED_PARAMETER") event:
+        com.aitech.weartak_civ.command.PurgeSensitiveEnrollmentCopies) {
+        synchronized(pendingLock) { pendingJson.removeAll(::isSensitiveChatJson) }
+    }
+
+    private fun isSensitiveChatJson(json: String): Boolean {
+        val envelope = try { org.json.JSONObject(json) } catch (_: org.json.JSONException) {
+            Log.w(TAG, "Invalid queued companion envelope discarded")
+            return true
+        }
+        if (envelope.optString("msgType") != "chat") return false
+        return com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(
+            envelope.optJSONObject("payload")?.optString("msg").orEmpty())
     }
 
     private fun registerBondReceiver() {
@@ -853,6 +871,7 @@ class CompanionAppService : Service() {
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADVERTISE])
     override fun onCreate() {
         super.onCreate()
+        EventBus.getDefault().register(this)
         Log.w(TAG, "Repo identity = ${System.identityHashCode(repo)}")
         Log.d(TAG, "CompanionAppService onCreate()")
         isRunning.set(true)
@@ -940,6 +959,7 @@ class CompanionAppService : Service() {
         }
         serviceScope.launch {
             for ((token, xml) in capRepo.gatewayCotEvents) {
+                if (com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(xml)) continue
                 if (token != capRepo.gateway.session) continue
                 val deadline = System.currentTimeMillis() + 10_000L
                 while (token == capRepo.gateway.session && !capRepo.gateway.ready &&
@@ -961,8 +981,10 @@ class CompanionAppService : Service() {
         }
         serviceScope.launch {
             capRepo.outboundBleCotEvents.collect { event ->
+                if (event is CompanionAppRepository.OutboundCotEvent.Chat &&
+                    com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(event.snapshot.message)) return@collect
                 if (!capRepo.companionAppReady.value) {
-                    Log.i(TAG, "Companion not ready; queueing BLE event $event")
+                    Log.i(TAG, "Companion not ready; queueing BLE event")
                     // build json as normal below and enqueueJson(json)
                     // but we need json first, so don't return here
                 }
@@ -1004,7 +1026,7 @@ class CompanionAppService : Service() {
                 }
 
                 if (!capRepo.companionAppReady.value || !notificationsEnabled) {
-                    Log.i(TAG, "Companion not ready; queueing BLE event $event")
+                    Log.i(TAG, "Companion not ready; queueing BLE event")
                     enqueueJson(json)
                     return@collect
                 }
@@ -1093,6 +1115,7 @@ class CompanionAppService : Service() {
 
     @RequiresPermission(allOf = [Manifest.permission.BLUETOOTH_ADVERTISE, Manifest.permission.BLUETOOTH_CONNECT])
     override fun onDestroy() {
+        EventBus.getDefault().unregister(this)
         Log.d(TAG, "CompanionAppService onDestroy()")
         // Fence late GATT callbacks and queued starts before tearing down the transport.
         synchronized(advertisingLock) {
@@ -1668,6 +1691,7 @@ class CompanionAppService : Service() {
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun sendJsonForPeer(json: String, address: String?, generation: Long) {
+        if (isSensitiveChatJson(json)) return
         if (address == null || !currentPeer(address, generation)) {
             Log.w(TAG, "Dropping companion JSON for ended/unready connection")
             return

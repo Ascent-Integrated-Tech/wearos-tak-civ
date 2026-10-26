@@ -1,5 +1,6 @@
 package com.aitech.weartak_civ.cot
 
+import com.aitech.weartak_civ.command.SensitiveEnrollment
 import java.security.MessageDigest
 import java.time.Instant
 
@@ -15,7 +16,8 @@ internal data class DittoCotDocument(
 ) {
     val sourceId: String get() = "ditto:${digest(peer)}"
     val key: String get() = digest("$peer\u0000$uid")
-    val fingerprint: String get() = digest(xml)
+    val fingerprint: String get() =
+        if (SensitiveEnrollment.containsSensitiveXml(xml)) "" else digest(xml)
 
     companion object {
         const val MAX_PAYLOAD_BYTES = 256 * 1024

@@ -103,6 +103,9 @@ class TakServerCotIngestor(
         }
 
         val isChat = CotMessageParser.isChatMessage(rawXml)
+        if (!isChat && com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(rawXml)) {
+            return TakServerCotIngestResult.COMMAND
+        }
         if (!isChat && sink.onInboundCot(envelope)) {
             return TakServerCotIngestResult.CONFIGURATION
         }
@@ -147,6 +150,9 @@ class TakServerCotIngestor(
             }
         }
 
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(rawXml)) {
+            return TakServerCotIngestResult.COMMAND
+        }
         if (isChat && sink.onInboundCot(envelope)) {
             return TakServerCotIngestResult.CONFIGURATION
         }

@@ -8,7 +8,7 @@
  */
 package com.aitech.weartak_civ.command
 
-/** Remote chat command; setpdl takes one positional value, other commands use key=value. */
+/** Remote chat command. Values must never be included in diagnostics. */
 data class ChatCommand(val name: String, val args: Map<String, String>) {
     override fun toString() = "ChatCommand(name=$name, keys=${args.keys})"
 }
@@ -48,6 +48,27 @@ object ChatCommandParser {
                 return ChatCommandParse.Malformed("$name takes no arguments")
             }
             return ChatCommandParse.Parsed(ChatCommand(name, emptyMap()))
+        }
+        if (name == "enrollserver") {
+            val input = rest.substring(nameEnd).trim()
+            if (!Regex("^(name|url|port|username|password)=", RegexOption.IGNORE_CASE).containsMatchIn(input)) {
+                val fields = input.split(',', limit = 5).map(String::trim)
+                if (fields.size !in setOf(3, 5) || fields.take(3).any(String::isBlank) ||
+                    fields.any { field -> field.any(Char::isISOControl) }) {
+                    return ChatCommandParse.Malformed("enrollserver needs name, address, port[, username, password]")
+                }
+                val args = linkedMapOf("name" to fields[0], "url" to fields[1], "port" to fields[2])
+                if (fields.size == 5) {
+                    if (fields[3].isBlank() != fields[4].isBlank()) {
+                        return ChatCommandParse.Malformed("Provide both username and password")
+                    }
+                    if (fields[3].isNotEmpty()) {
+                        args["username"] = fields[3]
+                        args["password"] = fields[4]
+                    }
+                }
+                return ChatCommandParse.Parsed(ChatCommand(name, args))
+            }
         }
         if (isPdlCommand) {
             val value = rest.substring(nameEnd).trim()

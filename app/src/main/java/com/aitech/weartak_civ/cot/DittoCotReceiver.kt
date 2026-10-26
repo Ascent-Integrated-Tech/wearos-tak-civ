@@ -2,6 +2,7 @@ package com.aitech.weartak_civ.cot
 
 import android.content.SharedPreferences
 import android.util.Log
+import com.aitech.weartak_civ.command.SensitiveEnrollment
 import com.aitech.weartak_civ.data.BloodhoundRepository
 import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.model.GeofenceCot
@@ -32,10 +33,12 @@ internal class DittoCotReceiver(
     private val mutex = Mutex()
     private val seen = mutableMapOf<String, Boolean>()
     private val watermarks = journal.all.toMutableMap()
+    private var processingSensitiveDocument = false
     private val ingestor = TakServerCotIngestor(
         sink = object : TakServerCotSink {
             override suspend fun onChat(event: TakChatEvent) {
                 currentCoroutineContext().ensureActive()
+                if (SensitiveEnrollment.containsSensitiveXml(event.rawXml)) return
                 postChat(event)
             }
             override suspend fun onGeofence(geofence: GeofenceCot) = Unit
@@ -72,10 +75,37 @@ internal class DittoCotReceiver(
         deviceUid = deviceUid,
         deviceCallsign = callsign,
         chatCommandHandler = chatCommandHandler,
-        logger = log
+        logger = { message, error ->
+            if (processingSensitiveDocument) log("Sensitive Ditto ingestion diagnostic", null)
+            else log(message, error)
+        }
     )
 
-    suspend fun receive(collection: String, documents: List<Map<String, Any?>>) = mutex.withLock {
+    suspend fun receive(
+        collection: String,
+        documents: List<Map<String, Any?>>,
+        cleanup: (String, Map<String, Any?>) -> Unit = { _, _ -> }
+    ) {
+        try {
+            receiveDocuments(collection, documents)
+        } finally {
+            // The entire snapshot must be cleaned, including unvisited documents on cancellation
+            // or companion suppression. Native eviction is synchronous and needs no active Job.
+            documents.forEach { raw ->
+                if (SensitiveEnrollment.containsSensitiveDocument(raw)) {
+                    try {
+                        cleanup(collection, raw)
+                    } catch (_: Exception) {
+                        log("Sensitive Ditto cleanup failed; retrying on the next snapshot", null)
+                    }
+                }
+            }
+        }
+    }
+
+    private suspend fun receiveDocuments(
+        collection: String, documents: List<Map<String, Any?>>
+    ) = mutex.withLock {
         require(collection in DittoCotDocument.COLLECTIONS)
         for (raw in documents) {
             currentCoroutineContext().ensureActive()
@@ -84,7 +114,9 @@ internal class DittoCotReceiver(
                 return@withLock
             }
             // A hidden/removed document is not a signed deletion instruction.
+            val sensitive = SensitiveEnrollment.containsSensitiveDocument(raw)
             try {
+                processingSensitiveDocument = sensitive
                 if (DittoPointLedger.METADATA in raw) {
                     require(collection == "mapitem") { "WearTAK point contract outside mapitem" }
                     val point = repository.dittoPointIngress.decode(raw)
@@ -129,12 +161,12 @@ internal class DittoCotReceiver(
                 val expired = doc.stale <= currentTime
                 if (expired && doc.type == "b-t-f") continue
                 val key = doc.key
-                val fingerprint = doc.fingerprint
+                val fingerprint = if (sensitive) "" else doc.fingerprint
                 val previous = (watermarks[key] as? String)?.split(':', limit = 3)
                 if (previous != null) {
                     val time = previous[0].toLong()
                     if (doc.time < time ||
-                        (doc.time == time && (previous[2] != fingerprint ||
+                        (doc.time == time && (sensitive || previous[2] != fingerprint ||
                             seen[key] == expired || doc.type == "b-t-f"))) continue
                 }
                 if (key !in watermarks && watermarks.size >= MAX_JOURNAL_ENTRIES) {
@@ -168,7 +200,10 @@ internal class DittoCotReceiver(
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                log("Rejected Ditto $collection document: ${error.message}", error)
+                if (sensitive) log("Rejected sensitive Ditto document", null)
+                else log("Rejected Ditto $collection document: ${error.message}", error)
+            } finally {
+                processingSensitiveDocument = false
             }
         }
     }

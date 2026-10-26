@@ -1,5 +1,6 @@
 package com.aitech.weartak_civ.cot
 
+import com.aitech.weartak_civ.command.SensitiveEnrollment
 import java.io.StringWriter
 import java.time.Instant
 import javax.xml.transform.OutputKeys
@@ -13,6 +14,9 @@ internal object DittoChatDocument {
     const val TTL_MILLIS = 86_400_000L
 
     fun encode(xml: String, peer: String): Map<String, Any?> {
+        require(!SensitiveEnrollment.containsSensitiveXml(xml)) {
+            "Sensitive enrollment commands cannot be published to Ditto"
+        }
         require(xml.toByteArray(Charsets.UTF_8).size <= DittoCotDocument.MAX_PAYLOAD_BYTES) {
             "Oversized GeoChat"
         }

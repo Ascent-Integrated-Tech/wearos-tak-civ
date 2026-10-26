@@ -8,6 +8,7 @@ internal object PluginCotIngress {
     const val ACTION_COT_INBOUND = "cot.inbound"
 
     fun offer(envelope: TakServerCotEnvelope, coordinator: PluginSettingsCoordinator): Boolean {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(envelope.rawXml)) return true
         val args = Bundle().apply {
             putString("xml", envelope.rawXml)
             putString("source", envelope.sourceServerId)

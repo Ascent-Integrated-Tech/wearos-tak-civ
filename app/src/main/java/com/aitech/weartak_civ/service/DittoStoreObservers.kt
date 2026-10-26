@@ -1,20 +1,24 @@
 package com.aitech.weartak_civ.service
 
 import android.util.Log
+import com.aitech.weartak_civ.command.SensitiveEnrollment
 import com.aitech.weartak_civ.cot.DittoCotDocument
 import com.aitech.weartak_civ.cot.DittoCotReceiver
 import java.io.Closeable
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import live.ditto.DittoQueryResult
 import live.ditto.DittoStore
+import org.json.JSONObject
 
 /** Materializes native results inside the SDK callback; only detached maps cross threads. */
 internal class DittoStoreObservers(
-    store: DittoStore,
+    private val store: DittoStore,
     parentScope: CoroutineScope,
     private val receiver: DittoCotReceiver
 ) : Closeable {
@@ -40,21 +44,33 @@ internal class DittoStoreObservers(
         }
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun onSnapshot(collection: String, result: DittoQueryResult, next: () -> Unit) {
         synchronized(lock) {
+            var detached = emptyList<Map<String, Any?>>()
             val snapshot = try {
                 result.use {
                     if (closed) return
                     val items = it.items
-                    require(items.size <= MAX_SNAPSHOT_DOCUMENTS) { "Too many Ditto documents" }
+                    if (items.size > MAX_SNAPSHOT_DOCUMENTS) {
+                        items.forEach { item ->
+                            try {
+                                evictSensitiveDocument(collection, item.value)
+                            } catch (_: Exception) {
+                                Log.w(TAG, "Could not inspect Ditto document for cleanup")
+                            }
+                        }
+                        throw IllegalArgumentException("Too many Ditto documents")
+                    }
                     items.mapNotNull { item ->
                         try {
                             item.value
                         } catch (error: Exception) {
-                            Log.w(TAG, "Rejected unmaterializable Ditto $collection document", error)
+                            Log.w(TAG, "Rejected unmaterializable Ditto $collection document")
                             null
                         }
                     }.also { docs ->
+                        detached = docs
                         require(docs.sumOf { doc ->
                             ((doc["r"] as? String)?.length?.toLong() ?: 0L) +
                                 ((doc["msg"] as? String)?.length?.toLong() ?: 0L)
@@ -62,21 +78,41 @@ internal class DittoStoreObservers(
                     }
                 }
             } catch (error: Exception) {
-                Log.w(TAG, "Rejected Ditto $collection snapshot", error)
+                detached.forEach { evictSensitiveDocument(collection, it) }
+                Log.w(TAG, "Rejected Ditto $collection snapshot")
                 signalNext(next)
                 return
             }
-            scope.launch {
+            // Initial snapshots scrub existing local stores; subsequent snapshots scrub resyncs.
+            // ATOMIC enters receive's finally even if close cancels a queued ingestion.
+            scope.launch(start = CoroutineStart.ATOMIC) {
                 try {
-                    receiver.receive(collection, snapshot)
+                    receiver.receive(collection, snapshot, ::evictSensitiveDocument)
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
-                    Log.e(TAG, "Ditto $collection ingestion failed", error)
+                    Log.e(TAG, "Ditto $collection ingestion failed")
                 } finally {
                     synchronized(lock) { if (!closed) signalNext(next) }
                 }
             }
+        }
+    }
+
+    private fun evictSensitiveDocument(collection: String, document: Map<String, Any?>) {
+        if (!SensitiveEnrollment.containsSensitiveDocument(document)) return
+        try {
+            val id = requireNotNull(document["_id"])
+            // Use local eviction, never a replicated deletion or a payload-bearing predicate.
+            val literal = when (id) {
+                is String -> JSONObject.quote(id)
+                is Map<*, *> -> JSONObject(id).toString()
+                is Number, is Boolean -> id.toString()
+                else -> throw IllegalArgumentException("Unsupported Ditto document ID")
+            }
+            store.collection(collection).find("_id == $literal").evict()
+        } catch (_: Exception) {
+            Log.w(TAG, "Sensitive Ditto cleanup failed; retrying on the next snapshot")
         }
     }
 

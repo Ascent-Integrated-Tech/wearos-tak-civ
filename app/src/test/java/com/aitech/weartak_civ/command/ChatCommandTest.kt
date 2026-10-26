@@ -42,6 +42,31 @@ class ChatCommandTest {
         assertEquals(emptyMap<String, String>(), parsed("#weartakcommandping").args)
     }
 
+    @Test fun enrollmentPositionalOnlySplitsFirstFourCommas() {
+        for (prefix in listOf("#weartakcommandenrollserver", "#WearTAKCommand enrollserver")) {
+            val args = parsed("$prefix  TAK Ops , host.example , 8089 , user name ,  a,b=c,\"d\"  ").args
+            assertEquals("TAK Ops", args["name"])
+            assertEquals("host.example", args["url"])
+            assertEquals("8089", args["port"])
+            assertEquals("user name", args["username"])
+            assertEquals("a,b=c,\"d\"", args["password"])
+            assertEquals(setOf("name", "url", "port"), parsed("$prefix TAK,host,8089").args.keys)
+            assertEquals(setOf("name", "url", "port"), parsed("$prefix TAK,host,8089, , ").args.keys)
+        }
+    }
+
+    @Test fun enrollmentMissingFieldsAndBoundsAreRejectedWithoutEcho() {
+        for (args in listOf("N,h", "N,h,8089,u", "N,h,8089,u,", "N,h,8089,,p", ",h,8089,u,p",
+            "N,,8089,u,p", "N,h,,u,p", "N,h,8089,u,a\u0000b", "N,h,8089,u," + "x".repeat(768))) {
+            val result = ChatCommandParser.parse("#weartakcommand enrollserver $args")
+            assertTrue(result is ChatCommandParse.Malformed)
+            assertTrue(!result.toString().contains(args))
+        }
+        val legacy = parsed("#weartakcommand enrollserver name=N url=host username=user password=\"a,b c\"")
+        assertEquals("a,b c", legacy.args["password"])
+        assertEquals(null, legacy.args["port"])
+    }
+
     @Test
     fun onlyPdlCommandValueHasLargerBoundedLimit() {
         val value = "a".repeat(ChatCommandParser.MAX_PDL_LENGTH)

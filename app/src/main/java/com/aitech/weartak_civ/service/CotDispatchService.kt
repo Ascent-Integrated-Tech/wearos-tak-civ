@@ -127,7 +127,7 @@ class CotDispatchService : Service() {
     private val markerDropMap = java.util.concurrent.ConcurrentHashMap<String, DataRepository.DroppedMarker>()
     private val pendingMarkerCotList = java.util.concurrent.CopyOnWriteArrayList<DataRepository.DroppedMarker>()
 
-    private val pendingChatMsgQueue = ArrayDeque<DataRepository.SendChatRequest>()
+    private val pendingChatMsgQueue = java.util.concurrent.ConcurrentLinkedDeque<DataRepository.SendChatRequest>()
 
     private var combatId: Int = 0
 
@@ -809,6 +809,7 @@ class CotDispatchService : Service() {
     private fun startSendChatMessageCollector() {
         serviceScope.launch {
             dataRepository.chatRequestSend.collect { req ->
+                if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(req.message)) return@collect
                 Log.i(TAG, "Received request to send chat message")
                 if (hasConnectedEndpoint()) {
                     sendAllChatMessages(req)
@@ -821,13 +822,16 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun sendPendingChatMessages(): Boolean {
+        pendingChatMsgQueue.removeAll {
+            com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(it.message)
+        }
         var sentAll = true
         Log.i(TAG, "pendingChatMsgQueue.size=${pendingChatMsgQueue.size}")
         while (pendingChatMsgQueue.isNotEmpty()) {
-            val chatMsg = pendingChatMsgQueue.first()
+            val chatMsg = pendingChatMsgQueue.peekFirst() ?: break
             Log.i(TAG, "Trying to send pending chat message: $chatMsg")
             if (sendChatMessage(chatMsg)) {
-                pendingChatMsgQueue.removeFirst()
+                pendingChatMsgQueue.remove(chatMsg)
             } else {
                 sentAll = false
                 break
@@ -837,6 +841,10 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun sendChatMessage(chatMsg: DataRepository.SendChatRequest): Boolean {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(chatMsg.message)) {
+            Log.w(TAG, "Sensitive enrollment command discarded before chat transmission")
+            return false
+        }
         val chatSnap = dataRepository.snapshotChatEvent(
             roomUid = chatMsg.dstUid, roomTitle = chatMsg.dstChatroom, message = chatMsg.message,
             isGroup = chatMsg.isGroup, participantUids = chatMsg.participantUids
@@ -860,10 +868,19 @@ class CotDispatchService : Service() {
         return sent
     }
 
+    @Subscribe
+    fun onPurgeSensitiveEnrollments(@Suppress("UNUSED_PARAMETER") event:
+        com.aitech.weartak_civ.command.PurgeSensitiveEnrollmentCopies) {
+        pendingChatMsgQueue.removeAll {
+            com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(it.message)
+        }
+    }
+
     private suspend fun sendAllChatMessages(chatReq: DataRepository.SendChatRequest?) {
         val sentPendingChatMessages = sendPendingChatMessages()
 
         if (null == chatReq) return
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(chatReq.message)) return
 
         if (sentPendingChatMessages) {
             if (!sendChatMessage(chatReq)) {
@@ -1216,6 +1233,10 @@ class CotDispatchService : Service() {
     }
 
     private suspend fun dispatch(message: CotOutboundMessage): Boolean {
+        if (com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(message.xml)) {
+            Log.w(TAG, "Sensitive enrollment command excluded from outbound CoT")
+            return false
+        }
         val started = android.os.SystemClock.elapsedRealtime()
         var accepted: Boolean? = null
         if (message.kind == CotMessageKind.PLI) AppDiagnostics.record(DiagnosticEvent.PLI_ATTEMPT)

@@ -15,7 +15,8 @@ enum class ChatCommandDecision { ALLOWED, SENDER_NOT_ALLOWED, STALE, DUPLICATE }
 /**
  * Decides whether a parsed chat command may run. Senders are matched by callsign (case-insensitive),
  * so the allow-list is a convenience filter, not authentication: anyone who can pick an allowed
- * callsign on the same server can send commands, which is why server enrollment still prompts.
+ * callsign on the same channel can send commands. Credential enrollment explicitly accepts
+ * this risk; transport addressing and this filter must not be described as authentication.
  */
 class ChatCommandAuthorizer(
     private val maxAgeMs: Long = 5 * 60_000L,

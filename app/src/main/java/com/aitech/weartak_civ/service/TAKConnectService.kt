@@ -114,7 +114,6 @@ import org.greenrobot.eventbus.EventBus
 import org.greenrobot.eventbus.Subscribe
 import org.greenrobot.eventbus.ThreadMode
 import org.w3c.dom.Document
-import org.xml.sax.InputSource
 import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.IOException
@@ -150,7 +149,6 @@ import com.aitech.weartak_civ.data.model.TakMissionStatus
 import com.aitech.weartak_civ.data.model.TakMissionState
 import com.aitech.weartak_civ.data.model.TakServerMissions
 import kotlinx.coroutines.currentCoroutineContext
-import javax.xml.parsers.DocumentBuilderFactory
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -215,7 +213,9 @@ class TAKConnectService: Service() {
         val channelMutex: Mutex = Mutex(),
         val runtime: ConnectionRuntime = ConnectionRuntime(),
         var duplicateEndpointSuppressed: Boolean = false,
-    )
+    ) {
+        override fun toString() = "TakServerDetail(serverId=$serverId, enabled=$isEnabled, p12=$isP12Cert)"
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -2297,7 +2297,8 @@ class TAKConnectService: Service() {
                 Log.i(TAG, "Suppressing TAK server ingress while TAK Servers is disabled")
                 return TakServerCotIngestResult.SUPPRESSED
             }
-            val diagnostics = if (Log.isLoggable(TAG, Log.DEBUG)) {
+            val diagnostics = if (Log.isLoggable(TAG, Log.DEBUG) &&
+                !com.aitech.weartak_civ.command.SensitiveEnrollment.containsSensitiveXml(envelope.rawXml)) {
                 CotMessageParser.ingressDiagnostics(envelope.rawXml).also { diagnostics ->
                     val channels = activeChannels()
                     Log.d(
@@ -2806,7 +2807,7 @@ class TAKConnectService: Service() {
                         subjectStr = "$subjectStr, ${nameValueEntry.name}=${escapeDnValue(nameValueEntry.value)}"
                     }
                 }
-                Log.d(TAG, "subjectStr =($subjectStr)")
+                Log.d(TAG, "Certificate request subject prepared")
                 val subject = X500Name(subjectStr)
 
                 // 4. Create the CSR builder
@@ -2824,7 +2825,7 @@ class TAKConnectService: Service() {
 
                 base64CSR = Base64.getEncoder().encodeToString(csr.encoded)
             } catch (e: Exception) {
-                Log.e(TAG, "ERROR in generateBase64CSR: ${e.message}", e)
+                Log.e(TAG, "Certificate request generation failed")
             }
             return base64CSR
         }
@@ -2861,8 +2862,6 @@ class TAKConnectService: Service() {
                     if (null == responseBody) {
                         Log.e(TAG, "ERROR fetch certification config response is null")
                         return nameValueList
-                    } else {
-                        Log.d(TAG, "fetchAndParseCertificateConfig received response: $responseBody")
                     }
 
                     // Parse XML response
@@ -2877,7 +2876,7 @@ class TAKConnectService: Service() {
                             }
                     }
 
-                    Log.d(TAG, "fetchAndParseCertificateConfig: Received nameEntry Pairs: $nameValueList")
+                    Log.d(TAG, "fetchAndParseCertificateConfig: received ${nameValueList.size} name entries")
                     return nameValueList
                 }
             } catch (e: com.aitech.weartak_civ.data.takserver.TakEnrollmentException) {
@@ -2885,20 +2884,17 @@ class TAKConnectService: Service() {
             } catch (e: IOException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                Log.e(TAG, "Certificate configuration rejected")
                 return null
             } catch (e: IllegalArgumentException) {
-                Log.e(TAG, "ERROR in fetchAndParseCertificateConfig: ${e.message}", e)
+                Log.e(TAG, "Certificate configuration rejected")
                 return null
             }
             return nameValueList
         }
 
         fun parseXml(xml: String): Document {
-            val factory = DocumentBuilderFactory.newInstance()
-            val builder = factory.newDocumentBuilder()
-            val inputSource = InputSource(StringReader(xml))
-            return builder.parse(inputSource)
+            return com.aitech.weartak_civ.data.takserver.TakEnrollment.parseXml(xml)
         }
 
         // Returns null on ERROR else response body as String
@@ -2947,7 +2943,7 @@ class TAKConnectService: Service() {
                                     TakFailureCategory.AUTHENTICATION else TakFailureCategory.HTTP, response.code))
                     }
                     val responseBodyString = response.body?.string()
-                    Log.v(TAG, "postCsrAndGetResponse: obtained response body $responseBodyString")
+                    Log.v(TAG, "postCsrAndGetResponse: received certificate response")
                     // Return the response body as string
                     return responseBodyString
                 }
@@ -2956,7 +2952,7 @@ class TAKConnectService: Service() {
             } catch (e: IOException) {
                 throw e
             } catch (e: Exception) {
-                Log.e(TAG, "postCsrAndGetResponse ERROR: ${e.message}", e)
+                Log.e(TAG, "Certificate signing response rejected")
             }
             return null
         }
@@ -2975,10 +2971,9 @@ class TAKConnectService: Service() {
                 try {
                     // Servers may return any number of caN entries (e.g. TAK Ops returns ca0..ca2).
                     result = TakEnrollment.parseSignResponse(csrResponse)
-                    Log.i(TAG, "postCsrAndParse: signed certificate with ${result.authorities.size} CA(s) " +
-                        result.authorities.joinToString { it.first })
+                    Log.i(TAG, "postCsrAndParse: signed certificate with ${result.authorities.size} CA(s)")
                 } catch (e: Exception) {
-                    Log.e(TAG, "postCsrAndParse: could not parse response", e)
+                    Log.e(TAG, "postCsrAndParse: could not parse response")
                 }
             }
             return result

@@ -120,7 +120,12 @@ Example JSON (the native `_c` CRDT is created by the SDK, so is omitted here):
   Native replies retain the original direct/group/broadcast room and verified
   roster, and publish only to Ditto. `toggleditto off` attempts its acknowledgement
   before stopping Ditto; publication does not confirm remote delivery.
-  `setpdl`/`usep12` never enter the local inbox, even with Commands disabled.
+  `setpdl`/`usep12`/`enrollserver` never enter the local inbox, even with Commands disabled.
+  Enrollment commands are not published by the watch; received native/legacy
+  enrollment documents are locally evicted after processing and on subsequent
+  snapshots. Their replay marker is payload-independent. SDK persistence/relay
+  before observer dispatch and copies on other peers cannot be undone; see
+  [chat enrollment](ENROLLSERVER.md).
   Other configuration/plugin/package handlers remain unavailable via mesh.
 - Recipient filtering is UI addressing, not encryption or peer access control.
 

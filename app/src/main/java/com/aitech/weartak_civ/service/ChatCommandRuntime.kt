@@ -153,10 +153,13 @@ object ChatCommandRuntime {
                     store = repo::storeLocationInput
                 ),
                 "enrollserver" to EnrollServerHandler(
-                    isLocked = {
-                        repo.phoneManagedSettingsLocked.first() || repo.getNetworkPreferencesLocked.first()
-                    },
-                    prompt = { promptForCredentials(appContext, it) }
+                    isLocked = repo::chatEnrollmentBlocked,
+                    prompt = { promptForCredentials(appContext, it) },
+                    enroll = { name, address, port, username, password ->
+                        enrollServer(repo, name, address, port, username, password) { id ->
+                            TAKConnectService.getInstance().registerServer(id)
+                        }
+                    }
                 )
             ),
             reply = { request, text ->
@@ -173,9 +176,41 @@ object ChatCommandRuntime {
         return { request ->
             val execution = commandScope.async {
                 mutex.lock()
-                try { processor.handle(request) } finally { mutex.unlock() }
+                try { processor.handle(request) } finally {
+                    try {
+                        if (com.aitech.weartak_civ.command.SensitiveEnrollment.isSensitiveText(request.text)) {
+                            ChatService.getInstance()?.purgeSensitiveEnrollments()
+                            repo.purgeSensitiveChatRooms()
+                            com.aitech.weartak_civ.command.SensitiveEnrollment.purgeNotifications(appContext)
+                            org.greenrobot.eventbus.EventBus.getDefault().post(
+                                com.aitech.weartak_civ.command.PurgeSensitiveEnrollmentCopies())
+                        }
+                    } finally { mutex.unlock() }
+                }
             }
             try { execution.await() } finally { execution.cancel() }
+        }
+    }
+
+    internal suspend fun enrollServer(
+        repo: DataRepository, name: String, address: String, port: Int, username: String, password: String,
+        register: suspend (String) -> Unit
+    ): com.aitech.weartak_civ.command.ChatCommandResult {
+        val saved = repo.saveChatEnrollment(name, address, port, username, password)
+        return when (saved.status) {
+            DataRepository.ChatEnrollmentStatus.LOCKED, DataRepository.ChatEnrollmentStatus.MANAGED ->
+                com.aitech.weartak_civ.command.ChatCommandResult(false,
+                    "Network settings are managed or locked; server not changed")
+            DataRepository.ChatEnrollmentStatus.CONFLICT ->
+                com.aitech.weartak_civ.command.ChatCommandResult(false,
+                    "Server name and endpoint match different servers; server not changed")
+            DataRepository.ChatEnrollmentStatus.ADDED, DataRepository.ChatEnrollmentStatus.UPDATED -> {
+                val id = requireNotNull(saved.serverId)
+                TAKConnectService.serverRegistration.saveAndConnect(id,
+                    save = { TakServerRegistration.SaveResult.SAVED }, connect = { register(id) })
+                val verb = if (saved.status == DataRepository.ChatEnrollmentStatus.UPDATED) "updated" else "added"
+                com.aitech.weartak_civ.command.ChatCommandResult(true, "Server $name $verb")
+            }
         }
     }
 
