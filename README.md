@@ -138,6 +138,12 @@ status artwork, subtitles, switch state, lock handling and settings navigation
 are preserved. This checklist does not add transport polling or change the main
 screen or watchface complication indicators.
 
+While a live phone-managed Companion bond locks network controls, their
+checklist subtitles show **Bonded**, replacing any prior subtitle (or adding
+one when empty). The TAK master and plugin forwarding equivalents use the
+same label. A network-preferences policy lock alone does not display Bonded;
+neither does a saved phone-management choice without an active managed session.
+
 ### Received CoT marker symbols
 
 TAK and Companion marker ingress accept generic `a-<affiliation>-...` atom types,

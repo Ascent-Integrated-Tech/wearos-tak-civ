@@ -49,6 +49,10 @@ internal fun ScalingLazyListScope.networkPreferencesChecklist(
 }
 
 @Composable
+internal fun networkControlSubtitle(subtitle: String, phoneManagedSettings: Boolean): String =
+    if (phoneManagedSettings) stringResource(R.string.network_control_bonded) else subtitle
+
+@Composable
 internal fun NetworkConnectivityChip(
     row: NetworkConnectivityRow,
     networkPreferencesLocked: Boolean,
@@ -59,14 +63,16 @@ internal fun NetworkConnectivityChip(
     appIcon: @Composable () -> Unit = { NetworkConnectivityIcon(row) }
 ) {
     val toggleEnabled = !networkPreferencesLocked && !phoneManagedSettings
+    val subtitle = networkControlSubtitle(row.subtitle, phoneManagedSettings)
+    val statusDescription = networkControlSubtitle(row.statusDescription, phoneManagedSettings)
     val route = row.settingsRoute
     if (route == null) {
         WearTAKToggleChip(
             checkedLive = row.checked,
             onCheckedChange = row.toggle,
             title = row.title,
-            description = row.subtitle,
-            statusDescription = row.statusDescription,
+            description = subtitle,
+            statusDescription = statusDescription,
             appIcon = appIcon,
             enabled = toggleEnabled
         )
@@ -101,8 +107,8 @@ internal fun NetworkConnectivityChip(
                 Text(row.title, style = MaterialTheme.typography.button,
                     color = colors.contentColor(enabled = true).value,
                     maxLines = 3, overflow = TextOverflow.Ellipsis)
-                if (row.subtitle.isNotEmpty()) {
-                    Text(row.subtitle, style = MaterialTheme.typography.caption2,
+                if (subtitle.isNotEmpty()) {
+                    Text(subtitle, style = MaterialTheme.typography.caption2,
                         color = colors.secondaryContentColor(enabled = true).value,
                         maxLines = 2, overflow = TextOverflow.Ellipsis)
                 }
@@ -113,7 +119,7 @@ internal fun NetworkConnectivityChip(
                 .background(colors.splitBackgroundOverlay(toggleEnabled, row.checked).value)
                 .semantics {
                     contentDescription = row.title
-                    stateDescription = if (row.statusDescription.isEmpty()) state else "$state, ${row.statusDescription}"
+                    stateDescription = if (statusDescription.isEmpty()) state else "$state, $statusDescription"
                 }
                 .toggleable(value = row.checked, enabled = toggleEnabled, role = Role.Switch,
                     onValueChange = row.toggle),
