@@ -154,9 +154,11 @@ class TAKConnectServiceLifecycleTest {
         val detail = TAKConnectService.getTakServerDetail(serverId)!!
         TAKConnectService.getClientCertificateAndConnect(detail)
         assertNull(detail.runtime.currentAttempt)
+        assertTrue(TAKConnectService.offBodyTakWaiting.value)
 
         charging.value = true
         shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(TAKConnectService.offBodyTakWaiting.value)
         verify(timeout = 5_000) { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) }
         dock.value = BatteryPowerObserver.DockType.WIRELESS
         charging.value = false
@@ -166,8 +168,43 @@ class TAKConnectServiceLifecycleTest {
         dock.value = BatteryPowerObserver.DockType.NONE
         shadowOf(Looper.getMainLooper()).idle()
         assertNull(detail.runtime.currentAttempt)
+        assertTrue(TAKConnectService.offBodyTakWaiting.value)
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
         TAKConnectService.getClientCertificateAndConnect(detail)
         assertNull(detail.runtime.currentAttempt)
+    }
+
+    @Test
+    fun connectionFailureRemainsVisibleAfterOffWristWindowCloses() = runBlocking {
+        worn.value = false
+        val selected = MutableStateFlow<Network?>(mockk(relaxed = true))
+        mockkConstructor(TakNetworkPreference::class)
+        every { anyConstructed<TakNetworkPreference>().start() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().stop() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().network } returns selected
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) } throws
+            TakEnrollmentException(TakConnectionFailure(
+                TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401))
+        createService()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(TAKConnectService.offBodyTakWaiting.value)
+        val app = RuntimeEnvironment.getApplication()
+        val alarm = shadowOf(app.getSystemService(android.app.AlarmManager::class.java))
+            .nextScheduledAlarm
+        alarm.onAlarmListener.onAlarm()
+        assertFalse(TAKConnectService.offBodyTakWaiting.value)
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        verify(timeout = 5_000) { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) }
+        withTimeout(5_000) { detail.runtime.currentAttempt!!.job!!.join() }
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+        shadowOf(Looper.getMainLooper()).idleFor(java.time.Duration.ofSeconds(30))
+        assertTrue(TAKConnectService.offBodyTakWaiting.value)
+        assertNull(detail.runtime.currentAttempt)
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED_STRING,
+            detail.connectionStatusLiveData.value)
     }
 
     @Test

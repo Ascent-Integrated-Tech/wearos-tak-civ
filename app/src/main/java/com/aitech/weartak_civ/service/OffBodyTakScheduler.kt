@@ -11,7 +11,8 @@ import android.os.SystemClock
 internal class OffBodyTakScheduler(
     context: Context,
     private val connect: () -> Unit,
-    private val disconnect: () -> Unit
+    private val disconnect: () -> Unit,
+    private val waitingChanged: (Boolean) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val alarms = context.getSystemService(AlarmManager::class.java)
@@ -72,6 +73,7 @@ internal class OffBodyTakScheduler(
     }
 
     private fun record(mode: Long) {
+        waitingChanged(mode == 0L && eligible && policy.batching && !stopped)
         AppDiagnostics.record(DiagnosticEvent.OFF_BODY_TAK, mapOf(
             DiagnosticMetric.MODE to mode,
             DiagnosticMetric.ENABLED to if (eligible) 1L else 0L,
@@ -94,5 +96,6 @@ internal class OffBodyTakScheduler(
         stopped = true
         cancel()
         policy.close()
+        waitingChanged(false)
     }
 }
