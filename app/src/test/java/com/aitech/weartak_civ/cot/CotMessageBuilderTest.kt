@@ -61,7 +61,28 @@ class CotMessageBuilderTest {
     fun pliMatchesLegacyStructureWithStatus() {
         val actual = CotMessageBuilder.pli(pliSnapshot(), CotMessageBuilder.PliOptions("EAGLE", "Team Member", "Cyan", false, "<hail/>"))
         val legacy = "<?xml version='1.0' encoding='UTF-8' standalone='yes'?><event version='2.0' uid='watch-1' type='a-f-G-U-C' time='$START' start='$START' stale='$STALE' how='m-g'><point lat='41.000000' lon='-87.000000' hae='100.0' ce='4' le='5'/><detail><status readiness='true' battery='80'/><remarks/><contact endpoint='*:-1:stcp' callsign='EAGLE'/><__group role='Team Member' name='Cyan'/><track course='45' speed='3'/><hail/></detail></event>"
-        assertEquals(project(legacy.replace("<detail>", "<detail>${CotDetailBuilder.takv()}")), project(actual))
+        val expected = legacy.replace("<detail>", "<detail>${CotDetailBuilder.takv()}")
+            .replace("<remarks/>", "<remarks/>${CotDetailBuilder.biometrics("watch-1", null, 80)}")
+        assertEquals(project(expected), project(actual))
+    }
+
+    @Test fun pliBiometricsIsIndependentOfBatdokAndGatesVitalsOnMonitoredPhysio() {
+        for (monitoring in listOf(false, true)) {
+            for (batdok in listOf(false, true)) {
+                val snapshot = pliSnapshot().copy(monitoredPhysio = physio().data.takeIf { monitoring })
+                val xml = CotMessageBuilder.pli(snapshot,
+                    CotMessageBuilder.PliOptions("EAGLE", "Medic", "Blue", batdok, ""))
+                assertTrue(xml.contains(CotDetailBuilder.biometrics("watch-1", snapshot.monitoredPhysio, 80)))
+                val root = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                    .parse(InputSource(StringReader(xml))).documentElement
+                val biometrics = root.getElementsByTagName("biometrics").item(0) as Element
+                for ((tag, value) in listOf("hr" to "72", "skt" to "98.6", "exert" to "0.25")) {
+                    assertEquals(if (monitoring) 1 else 0, biometrics.getElementsByTagName(tag).length)
+                    if (monitoring) assertEquals(value, biometrics.getElementsByTagName(tag).item(0).textContent)
+                }
+                assertEquals(if (batdok) 1 else 0, root.getElementsByTagName("_atmist_").length)
+            }
+        }
     }
 
     @Test

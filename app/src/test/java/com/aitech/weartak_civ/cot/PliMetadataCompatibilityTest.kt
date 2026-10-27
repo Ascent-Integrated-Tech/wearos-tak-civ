@@ -38,6 +38,10 @@ class PliMetadataCompatibilityTest {
             assertEquals(Build.VERSION.SDK_INT.toString(), takv.getAttribute("os"))
             assertEquals(BuildConfig.VERSION_NAME, takv.getAttribute("version"))
             assertEquals("72", child(detail, "status").getAttribute("battery"))
+            val device = child(child(detail, "biometrics"), "device")
+            assertEquals("65", child(device, "hr").textContent)
+            assertEquals("97", child(device, "skt").textContent)
+            assertEquals("0.25", child(device, "exert").textContent)
             assertEquals("Medic", child(detail, "__group").getAttribute("role"))
             assertEquals("Blue", child(detail, "__group").getAttribute("name"))
         }
@@ -73,6 +77,10 @@ class PliMetadataCompatibilityTest {
                 if (battery != null && battery in 0..100) {
                     assertEquals(battery.toString(), status.getAttribute("battery"))
                 }
+                val device = child(child(detail, "biometrics"), "device")
+                val biometricBattery = device.getElementsByTagName("bat")
+                assertEquals(if (battery != null && battery in 0..100) 1 else 0, biometricBattery.length)
+                if (biometricBattery.length == 1) assertEquals(battery.toString(), biometricBattery.item(0).textContent)
             }
             assertEquals("true", child(direct, "status").getAttribute("readiness"))
             assertEquals(REMARKS, child(direct, "remarks").textContent)
@@ -202,7 +210,7 @@ class PliMetadataCompatibilityTest {
         uid: String = "metadata-test-watch",
         peer: String = "synthetic-peer",
     ) = CotDetailBuilder.dittoTrack(
-        heartRate = 65, battery = battery, callsign = callsign, role = role, team = team, uid = uid,
+        monitoredPhysio = snapshot().physioData.data, battery = battery, callsign = callsign, role = role, team = team, uid = uid,
         course = 0f, speed = 0f,
         dittoA = peer, dittoVersion = peer, dittoDeviceName = peer,
         remarks = REMARKS,
@@ -227,7 +235,7 @@ class PliMetadataCompatibilityTest {
             DataRepository.SystemStates(0, DockType.NONE, false, true, 30, 30), role = "Medic", team = "Blue",
         ),
         remarks = REMARKS,
-    )
+    ).let { it.copy(monitoredPhysio = it.physioData.data) }
 
     private fun parse(xml: String): Element = DocumentBuilderFactory.newInstance().newDocumentBuilder()
         .parse(InputSource(StringReader(xml))).documentElement

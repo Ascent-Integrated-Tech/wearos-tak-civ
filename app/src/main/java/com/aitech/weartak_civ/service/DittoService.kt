@@ -603,8 +603,7 @@ class DittoService : Service() {
                 Log.i(TAG, "Skipping Ditto track: awaiting first valid location fix")
                 return@launch
             }
-            val heartRate = if (freshSnapshot != null) freshSnapshot.physioData.data.heartRateBpm ?: -1
-                else dataRepository.latestHeartRate.value ?: -1
+            val pliSnapshot = freshSnapshot ?: dataRepository.snapshotPli()
             val battery = freshSnapshot?.systemData?.batteryPercent ?: dataRepository.latestBatteryPercentage.value ?: -1
             val callsign = freshSnapshot?.systemData?.callsign ?: MainActivity.callsign
             val role = freshSnapshot?.systemData?.role ?: MainActivity.role
@@ -627,7 +626,7 @@ class DittoService : Service() {
             // 2) Merged version (original + ditto + remarks/biometrics/track)
             val cotDetail = CotDetailBuilder.dittoTrack(
                 // your original args:
-                heartRate = heartRate,
+                monitoredPhysio = pliSnapshot.monitoredPhysio,
                 battery = battery,
                 callsign = callsign,
                 role = role,
@@ -644,7 +643,7 @@ class DittoService : Service() {
                 dittoIp = "0.0.0.0",                         // "Undefined"
                 dittoVersion = dittoVersion,                            // "m-g"
                 dittoDeviceName = callsign,
-                remarks = freshSnapshot?.remarks ?: dataRepository.snapshotSelfStatusRemarks(),
+                remarks = pliSnapshot.remarks,
             ).let { detail ->
                 if (timeMs - location.timeMillis > 3_000) {
                     detail.replace("</detail>", CotXml.element("weartak_location",

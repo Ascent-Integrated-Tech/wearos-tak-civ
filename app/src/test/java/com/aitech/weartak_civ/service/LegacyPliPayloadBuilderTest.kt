@@ -10,6 +10,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LegacyPliPayloadBuilderTest {
@@ -39,11 +40,42 @@ class LegacyPliPayloadBuilderTest {
         val tablet = JSONObject(payloads.tabletCommandJson!!)
         val tabletBiometrics = tablet.getJSONArray("biometrics").getJSONObject(0)
         assertEquals("watch-1", tablet.getString("id"))
-        assertEquals(80, tabletBiometrics.getInt("hr"))
+        assertEquals(72, tabletBiometrics.getInt("hr"))
+        assertEquals(80, tabletBiometrics.getInt("batt"))
+        assertEquals(80, tablet.getInt("batt"))
+        for (biometrics in listOf(esriBiometrics, tabletBiometrics)) {
+            assertEquals(98.6, biometrics.getDouble("skintemp"), 0.0)
+            assertEquals(.25, biometrics.getDouble("exertion"), 0.0)
+            for (field in listOf("hribi", "hrv", "spo2", "ambienttemp", "coretemp", "vo2", "vo2max", "sweatloss",
+                "sweatlossduration", "sleepscore", "sleepduration", "deepsleepduration",
+                "energyscore", "fatmass", "musclemass")) assertEquals(-1, biometrics.getInt(field))
+            for (field in listOf("spo2measuretimeutc", "vo2measuretimeutc", "vo2maxmeasuretimeutc", "sweatlossmeasuretimeutc",
+                "sleepscoremeasuretimeutc", "energyscoremeasuretimeutc", "biameasuretimeutc")) {
+                assertEquals("", biometrics.getString(field))
+            }
+            assertFalse(biometrics.has("mopp"))
+        }
         assertEquals(123, tabletBiometrics.getInt("steps"))
         assertEquals(7, tabletBiometrics.getInt("floors"))
         assertFalse(tabletBiometrics.has("calories"))
         assertNotNull(payloads.tabletCommandJson)
+    }
+
+    @Test fun monitoringOffNeverExportsCachedVitalsOrActivityToEitherLegacyRoute() {
+        val payloads = LegacyPliPayloadBuilder.build(snapshot().copy(monitoredPhysio = null),
+            LegacyPliPayloadBuilder.Options("EAGLE", "Medic", "Blue", true, true, true))
+        val esri = JSONObject(payloads.esriGeoJson!!).getJSONArray("features")
+            .getJSONObject(0).getJSONObject("properties").getJSONArray("biometrics").getJSONObject(0)
+        val tablet = JSONObject(payloads.tabletCommandJson!!).getJSONArray("biometrics").getJSONObject(0)
+        for (biometrics in listOf(esri, tablet)) {
+            for (field in listOf("hr", "hribi", "hrv", "skintemp", "exertion", "spo2", "steps", "floors")) {
+                assertEquals(-1, biometrics.getInt(field))
+            }
+            assertEquals("", biometrics.getString("spo2measuretimeutc"))
+            assertFalse(biometrics.getBoolean("isworn"))
+            assertEquals(80, biometrics.getInt("batt"))
+            assertTrue(biometrics.has("model"))
+        }
     }
 
     @Test
@@ -103,7 +135,7 @@ class LegacyPliPayloadBuilderTest {
             10,
             DataRepository.SystemStates(0, DockType.NONE, false, true, 10, 10),
         ),
-    )
+    ).let { it.copy(monitoredPhysio = it.physioData.data) }
 
     private companion object {
         const val START = "2026-08-19T12:00:00.000Z"
