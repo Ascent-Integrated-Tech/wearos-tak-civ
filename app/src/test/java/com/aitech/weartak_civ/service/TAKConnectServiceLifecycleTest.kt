@@ -49,6 +49,7 @@ import org.junit.After
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -74,6 +75,8 @@ class TAKConnectServiceLifecycleTest {
     private val companionGraceActive = MutableStateFlow(false)
     private val takEnabled = MutableStateFlow(true)
     private val worn = MutableStateFlow<Boolean?>(null)
+    private val charging = MutableStateFlow(false)
+    private val dock = MutableStateFlow(BatteryPowerObserver.DockType.NONE)
 
     @Before
     fun setUp() {
@@ -91,6 +94,8 @@ class TAKConnectServiceLifecycleTest {
         every { repository.getEnableEsriEndpoint } returns flowOf(false)
         every { repository.getEnableTakEndpoint } returns takEnabled
         every { repository.latestDeviceWornObservation } returns worn
+        every { repository.chargingState } returns charging
+        every { repository.dockType } returns dock
         every { repository.getEsriEndpoint } returns flowOf("")
         every { repository.takServerConfigurationRefreshes } returns emptyFlow()
         every { repository.geofenceServiceEnabled } returns MutableStateFlow(false)
@@ -129,6 +134,40 @@ class TAKConnectServiceLifecycleTest {
         TAKConnectService.isRunning.set(previousRunning)
         TAKConnectService.takEndpointEnabled = true
         unmockkAll()
+    }
+
+    @Test
+    fun powerChangesLiveRestoreContinuousOffWristAdmissionAndUnpluggingClosesIt() {
+        worn.value = false
+        val selected = MutableStateFlow<Network?>(mockk(relaxed = true))
+        mockkConstructor(TakNetworkPreference::class)
+        every { anyConstructed<TakNetworkPreference>().start() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().stop() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().network } returns selected
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) } throws
+            TakEnrollmentException(TakConnectionFailure(
+                TakEnrollmentStage.CONFIG, TakFailureCategory.AUTHENTICATION, 401))
+        createService()
+        shadowOf(Looper.getMainLooper()).idle()
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        assertNull(detail.runtime.currentAttempt)
+
+        charging.value = true
+        shadowOf(Looper.getMainLooper()).idle()
+        verify(timeout = 5_000) { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) }
+        dock.value = BatteryPowerObserver.DockType.WIRELESS
+        charging.value = false
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNotNull(detail.runtime.currentAttempt)
+
+        dock.value = BatteryPowerObserver.DockType.NONE
+        shadowOf(Looper.getMainLooper()).idle()
+        assertNull(detail.runtime.currentAttempt)
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        assertNull(detail.runtime.currentAttempt)
     }
 
     @Test

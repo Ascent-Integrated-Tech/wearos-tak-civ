@@ -1590,6 +1590,11 @@ failed connection. Initial route collection also replaces pre-collector attempts
 TLS handshakes have a 15-second read deadline; connected CoT readers remain blocking.
 Sideloaded PKCS12 passwords stay in runtime state rather than changing the saved
 configuration used to decide whether a connection needs replacing.
+While charging or docked, off-wrist TAK connections stay continuous under the
+existing server, network and Companion gates. Plugging in reconnects immediately
+and cancels pending off-body window closes. Unplugging while off wrist resumes
+30-second connection windows at inexact 180-second intervals; on-wrist behavior
+is unchanged. Power changes reuse the process-wide battery observer.
 
 CEP simulation is disabled in release and ordinary debug builds: it is excluded
 from managed service registration/startup, its Android component is disabled, and
