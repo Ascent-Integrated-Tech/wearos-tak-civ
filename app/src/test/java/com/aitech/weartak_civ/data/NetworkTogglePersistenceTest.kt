@@ -18,6 +18,19 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class NetworkTogglePersistenceTest {
+    @Test fun multicastBondRejectsWritesWithoutChangingSavedChoiceAndReleaseRestoresControl() = runBlocking {
+        val repo = DataRepository(RuntimeEnvironment.getApplication())
+        repo.storeEnableMulticast(true)
+        repo.enablePhoneManagedSettings("AA:BB")
+        repo.setPhoneManagementSessionActive(true)
+        repo.storeEnableMulticast(false)
+        assertTrue(repo.getEnableMulticast.first())
+        repo.setPhoneManagementSessionActive(false)
+        assertTrue(repo.getEnableMulticast.first())
+        repo.storeEnableMulticast(false)
+        assertFalse(repo.getEnableMulticast.first())
+    }
+
     @Test fun bondLockRequiresBothSavedManagementAndLiveManagedSessionNotJustCompanionReadiness() = runBlocking {
         val repo = DataRepository(RuntimeEnvironment.getApplication())
         assertFalse(repo.phoneManagedSettingsLocked.first())
@@ -151,9 +164,9 @@ class NetworkTogglePersistenceTest {
         try {
             repo.storeEnableTakEndpoint(false)
             assertTrue(repo.getEnableTakEndpoint.first())
+            repo.storeNetworkPreferencesLocked(true)
             assertNull(repo.clearPhoneManagedSettingsFromNetworkSettings("AA:BB"))
             assertTrue(repo.phoneManagedSettingsEnabled.first())
-            repo.storeNetworkPreferencesLocked(true)
             repo.storeManagedNetworkToggles(false, false, false, false, false)
             assertFalse(repo.getEnableTakEndpoint.first())
             assertFalse(repo.getEnableMulticast.first())

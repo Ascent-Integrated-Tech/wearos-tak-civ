@@ -3579,7 +3579,7 @@ class DataRepository(
         var before: PhoneManagedSettingsValues? = null
         var after: PhoneManagedSettingsValues? = null
         context.dataStore.edit { prefs ->
-            if (requireNetworkUnlocked && prefs.networkTogglesLocked()) {
+            if (requireNetworkUnlocked && prefs[NETWORK_PREFERENCES_LOCKED] == true) {
                 Log.w(TAG, "Companion management release rejected while network settings are locked")
                 return@edit
             }
