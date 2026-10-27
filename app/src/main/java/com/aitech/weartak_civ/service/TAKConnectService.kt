@@ -196,6 +196,7 @@ class TAKConnectService: Service() {
         var shortSessionStreak: Int = 0
         var retryJob: Job? = null
         var transientFailureStreak: Int = 0
+        var sideloadedP12Password: String? = null
     }
 
     data class NameValueEntry(
@@ -265,7 +266,8 @@ class TAKConnectService: Service() {
         setFromDatastore()
         updateOffBodyPolicy()
         scope.launch(Dispatchers.Main.immediate) {
-            var previousNetwork = takNetworkPreference?.network?.value
+            var previousNetwork: android.net.Network? = null
+            var routeInitialized = false
             combine(dataRepository.latestDeviceWornObservation,
                 dataRepository.getEnableTakEndpoint,
                 dataRepository.watchTransportSuppressed,
@@ -273,15 +275,26 @@ class TAKConnectService: Service() {
                 enabled to network
             }.collect { (enabled, network) ->
                 takEndpointEnabled = enabled
-                if (network != previousNetwork) {
+                if (!routeInitialized || network != previousNetwork) {
+                    val routeChanged = if (routeInitialized) network != previousNetwork else
+                        takServerDetails.any { detail ->
+                            synchronized(detail.runtime.lock) {
+                                detail.runtime.currentAttempt?.let { attempt ->
+                                    network == null || attempt.httpSession?.network != network
+                                } == true
+                            }
+                        }
+                    routeInitialized = true
                     previousNetwork = network
                     isNetworkConnected = network != null
                     isWifiConnected = network?.let {
                         getSystemService(ConnectivityManager::class.java).getNetworkCapabilities(it)
                             ?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
                     } == true
-                    closeTakServerSockets()
-                    resetTakServerConnectionDetails()
+                    if (routeChanged) {
+                        closeTakServerSockets()
+                        resetTakServerConnectionDetails()
+                    }
                     AppDiagnostics.record(DiagnosticEvent.OFF_BODY_TAK,
                         mapOf(DiagnosticMetric.MODE to 3L))
                     updateOffBodyPolicy()
@@ -460,27 +473,14 @@ class TAKConnectService: Service() {
 
     fun setFromDatastore() {
         runBlocking {
-            val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
-                ?: return@runBlocking
-            takServerDetails = mutableListOf()
-            takServerDetailsById.clear()
-            for (takServer in takServers) {
-                val detail = takServer.toRuntimeDetail()
-                takServerDetails.add(detail)
-                takServerDetailsById[detail.serverId] = detail
-                Log.d(
-                    TAG,
-                    "setFromDatastore serverId=${detail.serverId} name=${detail.name} " +
-                        "address=${detail.address}:${detail.port} enabled=${detail.isEnabled} " +
-                        "isP12=${detail.isP12Cert} hasP12=${!detail.p12Cert.isNullOrBlank()}"
-                )
+            configurationMutex.withLock {
+                val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
+                    ?: return@withLock
+                enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
+                takEndpointEnabled = dataRepository.getEnableTakEndpoint.first()
+                esriEndpoint = dataRepository.getEsriEndpoint.first()
+                reconcileTakServers(takServers)
             }
-            _takServerRuntimeDetails.value = takServerDetails.toList()
-            refreshDuplicateEndpointSuppression()
-            enableEsriEndpoint = dataRepository.getEnableEsriEndpoint.first()
-            takEndpointEnabled = dataRepository.getEnableTakEndpoint.first()
-            esriEndpoint = dataRepository.getEsriEndpoint.first()
-
         }
     }
 
@@ -547,9 +547,20 @@ class TAKConnectService: Service() {
         }
     }
 
-    private suspend fun reloadProvisionedTakServers(registrationServerId: String? = null) {
+    private suspend fun reloadProvisionedTakServers(
+        registrationServerId: String? = null,
+        retryFailed: Boolean = false,
+    ) = configurationMutex.withLock {
         val storedServers = dataRepository.tryAwaitTakServerList()
             ?: error("Persisted TAK server list is unavailable")
+        reconcileTakServers(storedServers, registrationServerId, retryFailed)
+    }
+
+    private fun reconcileTakServers(
+        storedServers: List<TakServerItem>,
+        registrationServerId: String? = null,
+        retryFailed: Boolean = false,
+    ) {
         val previousById = takServerDetails.associateBy(TakServerDetail::serverId)
         val retainedIds = mutableSetOf<String>()
         var replacedCount = 0
@@ -557,7 +568,8 @@ class TAKConnectService: Service() {
             val serverId = requireNotNull(TakServerId.normalizeOrNull(stored.serverId))
             retainedIds += serverId
             val previous = previousById[serverId]
-            if (previous != null && previous.hasSameRuntimeConfiguration(stored)) {
+            if (previous != null && !previous.runtime.terminated &&
+                previous.hasSameRuntimeConfiguration(stored)) {
                 previous.name = stored.name
                 dataRepository.takChannels.value
                     .firstOrNull { it.serverId == serverId }
@@ -568,6 +580,9 @@ class TAKConnectService: Service() {
             } else {
                 val replacement = stored.toRuntimeDetail()
                 if (previous != null) {
+                    if (previous.isEnabled && !stored.isEnabled) {
+                        dataRepository.removeTakServerChannels(serverId)
+                    }
                     serverRegistration.replaceRuntime(serverId, previous, replacement)
                     invalidateConnection(previous, terminate = true)
                     if (previous.hasChangedCredentialMaterial(stored)) {
@@ -588,7 +603,10 @@ class TAKConnectService: Service() {
         previousById
             .filterKeys { it !in retainedIds }
             .values
-            .forEach { removed -> invalidateConnection(removed, terminate = true) }
+            .forEach { removed ->
+                invalidateConnection(removed, terminate = true)
+                dataRepository.removeTakServerChannels(removed.serverId)
+            }
 
         takServerDetails = refreshed.toMutableList()
         takServerDetailsById.clear()
@@ -611,7 +629,8 @@ class TAKConnectService: Service() {
                     (serverRegistration.isPendingRuntime(detail) ||
                     (!watchTransportSuppressed && isNetworkConnected && detail.isEnabled &&
                         !detail.duplicateEndpointSuppressed &&
-                        detail.connectionStatus.get() == TAK_SERVER_DISCONNECTED))
+                        (detail.connectionStatus.get() == TAK_SERVER_DISCONNECTED ||
+                            (retryFailed && !hasActiveConnection(detail)))))
             }
             .forEach(::getClientCertificateAndConnect)
     }
@@ -718,194 +737,22 @@ class TAKConnectService: Service() {
         recordConnectionCounts()
     }
 
-    // TODO:
-    // Item 1: TEST newServerAddedViaUi
-    // Item 2: Why last ServerRegistrationDialog is shown??
-    // Item 3: Why 3 times when editServer is called
-    // Item 4: Why we keep trying for junk connections when sending out data
-    // Item 5: All TODOs
-    // Item 6: Why GPS changes between 10 and 20s
-
-    private fun onServerAdded(message: String, index: Int) {
-        Log.d(TAG, "Received $message message with index($index)")
-        runBlocking {
-            val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
-                ?: return@runBlocking
-            if (takServers.size - 1 != index) {
-                // We could do nothing here but if there is a bug we are trying to take care of it
-                Log.w(TAG, "SERVER_ADDED index($index) != takServers.size(${takServers.size})-1")
-            }
-            val takServer = takServers.last()
-            val takServerDetail = TakServerDetail(
-                serverId = requireNotNull(TakServerId.normalizeOrNull(takServer.serverId)),
-                isEnabled = takServer.isEnabled,
-                name = takServer.name,
-                address = takServer.address.trim(),
-                port = takServer.port,
-                isP12Cert = takServer.isP12Cert,
-                username = takServer.username,
-                password = takServer.password,
-                p12Cert = takServer.p12Cert,
-                p12CertPassword = takServer.p12CertPassword
-            )
-            if (takServerDetails.size == index) {
-                Log.d(TAG, "Adding server at index $index")
-                takServerDetails.add(takServerDetail)
-            } else {
-                Log.d(TAG, "Updating server at index $index")
-                val replaced = takServerDetails[index]
-                invalidateConnection(replaced, terminate = true)
-                takServerDetailsById.remove(replaced.serverId, replaced)
-                takServerDetails.set(index, takServerDetail)
-            }
-            takServerDetailsById[takServerDetail.serverId] = takServerDetail
-            refreshDuplicateEndpointSuppression()
-            // Delete server name file (if it exists)
-            Companion.deleteFile(certificateCacheFileName(takServerDetail))
-            if (isNetworkConnected) {
-                if (SERVER_ADDED_VIA_UI == message) {
-                    Log.d(TAG, "Previous newServerAddedViaUi=$newServerAddedViaUi; newServerAddedViaUiConnectionStatusLiveData=${newServerAddedViaUiConnectionStatusLiveData.value}")
-                    newServerAddedViaUi = true
-                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
-                }
-                setIsAnyNetworkConnected()
-                setIsAnyNetworkConnecting()
-                getClientCertificateAndConnect(takServerDetail)
-            } else {
-                Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
-                isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
-                isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
-                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
-
-                requestStatusIconsComplicationUpdate(context)
-
-                if (SERVER_ADDED_VIA_UI == message) {
-                    newServerAddedViaUi = false
-                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTION_FAILED_STRING)
-                }
-            }
-        }
-    }
-
-    private fun onServerChanged(index: Int) {
-        val oldTakServerDetail = takServerDetails.get(index)
-        Log.d(TAG, "Received SERVER_DETAILS_CHANGED message for index($index): ${oldTakServerDetail.address}")
-        val oldAddress = oldTakServerDetail.address
-        var serverConnDetailsChanged = false
-        runBlocking {
-            val takServers: List<TakServerItem> = dataRepository.tryAwaitTakServerList()
-                ?: return@runBlocking
-            val takServer = takServers.get(index)
-            if (takServer.address != oldAddress || takServer.port != oldTakServerDetail.port ||
-                takServer.isEnabled != oldTakServerDetail.isEnabled || takServer.isP12Cert != oldTakServerDetail.isP12Cert ||
-                takServer.username != oldTakServerDetail.username || takServer.password != oldTakServerDetail.password ||
-                takServer.p12Cert != oldTakServerDetail.p12Cert || takServer.p12CertPassword != oldTakServerDetail.p12CertPassword) {
-                serverConnDetailsChanged = true
-            }
-            val takServerDetail = takServerDetails[index]
-            takServerDetail.isEnabled = takServer.isEnabled; takServerDetail.name = takServer.name
-            takServerDetail.address = takServer.address.trim(); takServerDetail.port = takServer.port
-            takServerDetail.isP12Cert = takServer.isP12Cert;
-            takServerDetail.username = takServer.username; takServerDetail.password = takServer.password
-            takServerDetail.p12Cert = takServer.p12Cert; takServerDetail.p12CertPassword = takServer.p12CertPassword
-            takServerDetail.numConnAttempts = 0
-            dataRepository.takChannels.value
-                .firstOrNull { it.serverId == takServerDetail.serverId }
-                ?.let { current ->
-                    dataRepository.updateTakServerChannels(current.copy(serverName = takServerDetail.name))
-                }
-            refreshDuplicateEndpointSuppression()
-        }
-        if (serverConnDetailsChanged) {
-            Log.d(TAG, "serverConnDetailsChanged $serverConnDetailsChanged")
-            // Delete old server name file
-            Companion.deleteFile(certificateCacheFileName(oldTakServerDetail))
-            val newTakServerDetail = takServerDetails.get(index)
-            // Delete new server name file (if it exists)
-            val oldEndpointKey = TakServerEndpointIdentity.key(oldTakServerDetail.address, oldTakServerDetail.port)
-            val newEndpointKey = TakServerEndpointIdentity.key(newTakServerDetail.address, newTakServerDetail.port)
-            if (oldEndpointKey != newEndpointKey) {
-                Companion.deleteFile(certificateCacheFileName(newTakServerDetail))
-            }
-            invalidateConnection(newTakServerDetail)
-            if (isNetworkConnected) {
-                setIsAnyNetworkConnected()
-                setIsAnyNetworkConnecting()
-                if (newTakServerDetail.isEnabled && !newTakServerDetail.duplicateEndpointSuppressed) {
-                    getClientCertificateAndConnect(newTakServerDetail)
-                }
-            } else {
-                Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
-                isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
-                isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
-                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
-
-                requestStatusIconsComplicationUpdate(context)
-
-            }
-        }
-    }
-
-    private fun onServerToggled(index: Int) {
-        val takServerDetail = takServerDetails.get(index)
-        Log.d(TAG, "Received SERVER_TOGGLED message for index($index): ${takServerDetail.address}: Going to set isEnabled to ${!takServerDetail.isEnabled}")
-        takServerDetail.numConnAttempts = 0
-        takServerDetail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
-        takServerDetail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
-        if (takServerDetail.isEnabled) {
-            takServerDetail.isEnabled = false
-            invalidateConnection(takServerDetail)
-            dataRepository.removeTakServerChannels(takServerDetail.serverId)
-            setIsAnyNetworkConnected()
-            setIsAnyNetworkConnecting()
-        } else {
-            takServerDetail.isEnabled = true
-            if (isNetworkConnected) {
-                setIsAnyNetworkConnected()
-                setIsAnyNetworkConnecting()
-                getClientCertificateAndConnect(takServerDetail)
-            } else {
-                Log.w(TAG, "Network is NOT connected. Hence NOT trying to connect to TAK server")
-                isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
-                isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
-                dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
-
-                requestStatusIconsComplicationUpdate(context)
-
-            }
-        }
-    }
-
-    private fun onServerRemoved(index: Int) {
-        val takServerDetail = takServerDetails.get(index)
-        Log.d(TAG, "Received SERVER_REMOVED message for index($index): ${takServerDetail.address}")
-        takServerDetail.numConnAttempts = 0
-        invalidateConnection(takServerDetail, terminate = true)
-        setIsAnyNetworkConnected()
-        setIsAnyNetworkConnecting()
-        takServerDetailsById.remove(takServerDetail.serverId, takServerDetail)
-        takServerDetails.removeAt(index)
-        dataRepository.removeTakServerChannels(takServerDetail.serverId)
-        refreshDuplicateEndpointSuppression()
-    }
-
     @Subscribe(threadMode = ThreadMode.ASYNC)
     public fun onMessageEvent(event: MessageEvent) {
         val message = event.message
-        val addlIntInfo = event.addlIntInfo // This is the TAK Server index
+        // Events carry a historical index. Storage is authoritative: removals/reorders
+        // and a provisioning refresh may have already shifted that index.
         try {
-            if (SERVER_CHANGED == message) {
-                onServerChanged(addlIntInfo)
-            } else if ((SERVER_ADDED == message) || (SERVER_ADDED_VIA_UI == message)) {
-                onServerAdded(message, addlIntInfo)
-            } else if (SERVER_TOGGLED == message) {
-                onServerToggled(addlIntInfo)
-            } else if (SERVER_REMOVED == message) {
-                onServerRemoved(addlIntInfo)
+            if (message in setOf(SERVER_CHANGED, SERVER_ADDED, SERVER_ADDED_VIA_UI,
+                    SERVER_TOGGLED, SERVER_REMOVED)) {
+                if (message == SERVER_ADDED_VIA_UI) {
+                    newServerAddedViaUi = true
+                    newServerAddedViaUiConnectionStatusLiveData.postValue(TAK_SERVER_CONNECTING_STRING)
+                }
+                runBlocking { reloadProvisionedTakServers(retryFailed = message == SERVER_TOGGLED) }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "ERROR in MessageEvent ($message) w/ $addlIntInfo: ${e.message}")
-            Log.w(TAG, "${e.printStackTrace()}")
+            Log.e(TAG, "Unable to reconcile TAK configuration after $message", e)
         } finally {
             updateOffBodyPolicy()
         }
@@ -938,7 +785,7 @@ class TAKConnectService: Service() {
         refreshDuplicateEndpointSuppression()
         val hasActiveConnection = takServerDetails.any { detail ->
             detail.isEnabled && !detail.duplicateEndpointSuppressed &&
-                isConnectionActiveStatus(detail.connectionStatus.get())
+                hasActiveConnection(detail)
         }
         if (!hasActiveConnection) {
             isAnyTakConnected = false
@@ -950,7 +797,7 @@ class TAKConnectService: Service() {
         }
         for (takServer in takServerDetails) {
             if (takServer.isEnabled && !takServer.duplicateEndpointSuppressed &&
-                !isConnectionActiveStatus(takServer.connectionStatus.get())
+                !hasActiveConnection(takServer)
             ) {
                 getClientCertificateAndConnect(takServer)
             }
@@ -972,6 +819,7 @@ class TAKConnectService: Service() {
     }
 
     companion object {
+        private val configurationMutex = Mutex()
         private const val SHA256_ALGORITHM = "SHA-256"
         const val TAK_SERVER_DISCONNECTED = 0
         const val TAK_SERVER_DISCONNECTED_STRING = "DISCONNECTED"
@@ -2643,7 +2491,7 @@ class TAKConnectService: Service() {
         }
 
         private fun beginConnectionAttempt(detail: TakServerDetail): ConnectionAttempt? {
-            val oldSockets: MutableList<SSLSocket> = mutableListOf()
+            val oldSockets: MutableList<java.net.Socket> = mutableListOf()
             val attempt: ConnectionAttempt
             synchronized(detail.runtime.lock) {
                 if (!offBodyAllowsConnection() || !takEndpointEnabled || serviceStopping || detail.runtime.terminated ||
@@ -2652,13 +2500,14 @@ class TAKConnectService: Service() {
                     recordConnection(detail, ConnectionTransition.SKIPPED, connectionGateReason(detail))
                     return null
                 }
-                if (isConnectionActiveStatus(detail.connectionStatus.get())) {
+                if (hasActiveConnection(detail)) {
                     recordConnection(detail, ConnectionTransition.SKIPPED, ConnectionReason.ACTIVE_ATTEMPT)
                     return null
                 }
                 detail.runtime.connectJob?.cancel()
                 detail.runtime.readerJob?.cancel()
                 detail.runtime.currentAttempt?.httpSession?.cancel()
+                detail.runtime.currentAttempt?.rawSocket?.let { oldSockets.add(it) }
                 detail.runtime.retryJob?.cancel()
                 detail.runtime.retryJob = null
                 detail.runtime.connectingSocket?.let { oldSockets.add(it) }
@@ -2686,6 +2535,12 @@ class TAKConnectService: Service() {
                 status == TAK_SERVER_OBTAINED_CLIENT_CERT ||
                 status == TAK_SERVER_CONNECTING_COT_PORT ||
                 status == TAK_SERVER_CONNECTED_COT_PORT
+
+        private fun hasActiveConnection(detail: TakServerDetail): Boolean =
+            synchronized(detail.runtime.lock) {
+                isConnectionActiveStatus(detail.connectionStatus.get()) &&
+                    detail.runtime.currentAttempt?.let { isCurrent(detail, it) } == true
+            }
 
         private fun invalidateConnection(detail: TakServerDetail, terminate: Boolean = false) {
             val sockets: MutableList<java.net.Socket> = mutableListOf()
@@ -2741,6 +2596,7 @@ class TAKConnectService: Service() {
 
         // does this tak server connection have a side loaded cert in  /sdcard/Android/data/com.aitech.weartak_civ/files/certs
         private fun maybeLoadP12FromDisk(t: TakServerDetail): Boolean {
+            t.runtime.sideloadedP12Password = null
             val certDir = java.io.File(context.getExternalFilesDir(null), "certs")
             val binP12 = java.io.File(certDir, "${t.address}.p12")
             val b64P12 = java.io.File(certDir, "${t.address}.p12.b64")
@@ -2777,9 +2633,8 @@ class TAKConnectService: Service() {
                     }
                 }
 
-                // We’re now using a file-based P12; mark password for KeyManagerFactory.init in connectTAKServer
-                t.isP12Cert = true                 // drive P12 path semantics later (password handling)
-                t.p12CertPassword = pwd
+                // Keep effective key material separate from saved configuration comparisons.
+                t.runtime.sideloadedP12Password = pwd
 
                 // Optional but very helpful during bring-up:
                 dumpKeyStoreAliases(t.keyStore, "$TAG/${t.address}")
@@ -3214,7 +3069,7 @@ class TAKConnectService: Service() {
                 !takEndpointEnabled || serviceStopping || takServerDetail.runtime.terminated || !takServerDetail.isEnabled ||
                 !connectionScope.isActive) {
                 recordConnection(takServerDetail, ConnectionTransition.SKIPPED, connectionGateReason(takServerDetail))
-                Log.w(TAG, "TAK connection unavailable: companion, service or server gate")
+                Log.w(TAG, "TAK connection unavailable: ${connectionGateReason(takServerDetail)}")
                 serverRegistration.publish(
                     takServerDetail.serverId, takServerDetail, TakServerRegistration.Status.FAILED,
                     serverRegistration.unavailable()
@@ -3499,8 +3354,10 @@ class TAKConnectService: Service() {
                     dumpKeyStoreAliases(takServerDetail.keyStore, TAG)
                     // Initialize the KeyManagerFactory with the client certificate
                     val keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm())
-                    if (takServerDetail.isP12Cert) {
-                        keyManagerFactory.init(takServerDetail.keyStore, takServerDetail.p12CertPassword?.toCharArray()?:"".toCharArray())
+                    val sideloadedPassword = takServerDetail.runtime.sideloadedP12Password
+                    if (sideloadedPassword != null || takServerDetail.isP12Cert) {
+                        keyManagerFactory.init(takServerDetail.keyStore,
+                            (sideloadedPassword ?: takServerDetail.p12CertPassword.orEmpty()).toCharArray())
                     } else {
                         keyManagerFactory.init(takServerDetail.keyStore, KEYSTORE_PASS.toCharArray())
                     }
@@ -3569,7 +3426,9 @@ class TAKConnectService: Service() {
                         takServerDetail.runtime.connectingSocket = socket
                     }
                     Log.d(TAG, "Starting secureSocket handshake")
+                    socket.soTimeout = 15_000
                     socket.startHandshake()
+                    socket.soTimeout = 0
                     synchronized(takServerDetail.runtime.lock) {
                         if (!isCurrent(takServerDetail, attempt) ||
                             !takServerDetail.isEnabled || !isNetworkConnected) {

@@ -1576,6 +1576,15 @@ credentials or certificates. The TAK foreground service, multicast and shared
 coroutine scope stay alive. Turning it on resumes eligible servers under existing
 network and companion-exclusive routing gates.
 
+TAK server edits and provisioning reloads reconcile serially against saved server
+IDs, not delayed UI indexes. Unchanged servers retain their in-flight connections;
+removed or replaced runtimes are fenced and eligible replacements reconnect.
+Enable notifications use saved intent (they never invert it), and can retry a
+failed connection. Initial route collection also replaces pre-collector attempts.
+TLS handshakes have a 15-second read deadline; connected CoT readers remain blocking.
+Sideloaded PKCS12 passwords stay in runtime state rather than changing the saved
+configuration used to decide whether a connection needs replacing.
+
 CEP simulation is disabled in release and ordinary debug builds: it is excluded
 from managed service registration/startup, its Android component is disabled, and
 direct entry points cannot create notification 8123. Explicit debug test builds

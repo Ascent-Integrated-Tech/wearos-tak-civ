@@ -15,6 +15,7 @@ import com.aitech.weartak_civ.data.takserver.TakServerRegistration
 import com.aitech.weartak_civ.manager.NetworkManager
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.coEvery
+import io.mockk.mockkConstructor
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkObject
@@ -31,9 +32,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.Assert.assertNull
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -51,6 +60,7 @@ import org.robolectric.RuntimeEnvironment
 import org.robolectric.android.controller.ServiceController
 import org.robolectric.annotation.Config
 import javax.net.ssl.SSLSocket
+import com.aitech.weartak_civ.manager.TakNetworkPreference
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34], manifest = Config.NONE, application = Application::class)
@@ -426,6 +436,128 @@ class TAKConnectServiceLifecycleTest {
         withTimeout(5_000) { initialChild.join() }
         assertNotSame(initialScope, currentConnectionScope())
         assertTrue(currentConnectionScope().coroutineContext[Job]!!.isActive)
+    }
+
+    @Test
+    fun startupConfigurationReemissionKeepsAllThreeLiveSocketsAndChangedServerReconnects(): Unit = runBlocking {
+        var stored = (0..2).map { index ->
+            DataRepository.TakServerItem(
+                true, "Server $index", "tak$index.example.invalid", 8089, false,
+                "user", "password", "", "", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa$index",
+            )
+        }
+        coEvery { repository.tryAwaitTakServerList() } answers { stored }
+        val refreshes = Channel<DataRepository.TakServerConfigurationRefresh>(Channel.UNLIMITED)
+        every { repository.takServerConfigurationRefreshes } returns refreshes.receiveAsFlow()
+        createService()
+        shadowOf(Looper.getMainLooper()).idle()
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
+        val original = TAKConnectService.takServerDetails.toList()
+        val sockets = original.map { detail ->
+            val socket = mockk<SSLSocket>(relaxed = true)
+            detail.runtime.currentAttempt = TAKConnectService.ConnectionAttempt(detail.runtime.generation)
+            detail.secureSocket = socket
+            detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+            socket
+        }
+
+        suspend fun refresh() {
+            val request = DataRepository.TakServerConfigurationRefresh()
+            refreshes.send(request)
+            withTimeout(5_000) { request.result.await().getOrThrow() }
+        }
+        repeat(2) { refresh() }
+        controllers.single().get().setFromDatastore()
+        assertTrue(TakConnectionCloser.awaitPendingCloses())
+        original.forEachIndexed { index, detail ->
+            assertSame(detail, TAKConnectService.getTakServerDetail(detail.serverId))
+            assertSame(sockets[index], detail.secureSocket)
+            assertFalse(detail.runtime.terminated)
+            assertEquals(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT, detail.connectionStatus.get())
+            verify(exactly = 0) { sockets[index].close() }
+        }
+
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.loadKeyStore(any(), any(), any()) } returns false
+        every { TAKConnectService.fetchAndParseCertificateConfig(any(), any()) } throws
+            java.net.ConnectException("Replacement must own a retry")
+        TAKConnectService.isNetworkConnected = true
+        stored = stored.mapIndexed { index, item ->
+            if (index == 1) item.copy(password = "changed-password") else item
+        }
+        refresh()
+        val replacement = TAKConnectService.getTakServerDetail(original[1].serverId)!!
+        assertNotSame(original[1], replacement)
+        assertTrue(original[1].runtime.terminated)
+        verify(timeout = 5_000) { TAKConnectService.fetchAndParseCertificateConfig(replacement, any()) }
+        withTimeout(5_000) { replacement.runtime.currentAttempt!!.job!!.join() }
+        assertTrue(replacement.runtime.retryJob!!.isActive)
+        assertSame(sockets[0], original[0].secureSocket)
+        assertSame(sockets[2], original[2].secureSocket)
+        refreshes.close()
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun firstRouteCollectionReplacesAttemptStartedBeforeCollectorWasScheduled() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val selected = MutableStateFlow<Network?>(null)
+        mockkConstructor(TakNetworkPreference::class)
+        every { anyConstructed<TakNetworkPreference>().start() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().stop() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().network } returns selected
+        try {
+            createService()
+            val detail = TAKConnectService.getTakServerDetail(serverId)!!
+            val stale = TAKConnectService.ConnectionAttempt(detail.runtime.generation)
+            detail.runtime.currentAttempt = stale
+            detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTING_COT_PORT)
+            mockkObject(TAKConnectService.Companion)
+            every { TAKConnectService.getClientCertificateAndConnect(any()) } returns Unit
+            // Route selection changed after onCreate but before its Main collector ran.
+            selected.value = mockk(relaxed = true)
+            runCurrent()
+            assertNull(detail.runtime.currentAttempt)
+            assertEquals(TAKConnectService.TAK_SERVER_DISCONNECTED, detail.connectionStatus.get())
+            assertTrue(TAKConnectService.isNetworkConnected)
+            verify(atLeast = 1) { TAKConnectService.getClientCertificateAndConnect(detail) }
+        } finally {
+            controllers.asReversed().forEach { it.destroy() }
+            controllers.clear()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun firstRouteCollectionKeepsConnectionAlreadyUsingSelectedNetwork() = runTest {
+        Dispatchers.setMain(StandardTestDispatcher(testScheduler))
+        val selected = MutableStateFlow<Network?>(null)
+        mockkConstructor(TakNetworkPreference::class)
+        every { anyConstructed<TakNetworkPreference>().start() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().stop() } returns Unit
+        every { anyConstructed<TakNetworkPreference>().network } returns selected
+        try {
+            createService()
+            val detail = TAKConnectService.getTakServerDetail(serverId)!!
+            val network = mockk<Network>(relaxed = true)
+            selected.value = network
+            val attempt = TAKConnectService.ConnectionAttempt(detail.runtime.generation).apply {
+                httpSession = com.aitech.weartak_civ.data.takserver.TakHttpSession(network) { true }
+            }
+            val socket = mockk<SSLSocket>(relaxed = true)
+            detail.runtime.currentAttempt = attempt
+            detail.secureSocket = socket
+            detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+            runCurrent()
+            assertSame(attempt, detail.runtime.currentAttempt)
+            assertSame(socket, detail.secureSocket)
+            verify(exactly = 0) { socket.close() }
+        } finally {
+            controllers.asReversed().forEach { it.destroy() }
+            controllers.clear()
+            Dispatchers.resetMain()
+        }
     }
 
     @Test
