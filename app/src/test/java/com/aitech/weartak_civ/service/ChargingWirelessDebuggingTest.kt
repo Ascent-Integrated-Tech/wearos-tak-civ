@@ -51,17 +51,17 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun defaultsOffEvenWhenPlugged() {
-        assertFalse(preferences.wirelessDebuggingEnabled)
+        assertFalse(preferences.chargingEnabled)
         debugging.reconcile(true)
         assertSettings("0", "0")
         assertNoWrites()
     }
 
     @Test fun permissionMissingDoesNotWriteEvenWithSavedOptIn() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         shadowOf(app).denyPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         assertFalse(ChargingWirelessDebugging.hasPermission(app))
-        assertFalse(ChargingWirelessDebugging.requested(app))
+        assertTrue(preferences.chargingEnabled)
         debugging.reconcile(true)
         debugging.stop()
         assertSettings("0", "0")
@@ -69,43 +69,43 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun enabledOffChargerDoesNothing() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(false)
         assertSettings("0", "0")
         assertNoWrites()
     }
 
     @Test fun pluggedEnablesBothAndUnplugRestores() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         assertSettings("1", "1")
         debugging.reconcile(false)
         assertSettings("0", "0")
-        assertTrue(preferences.wirelessDebuggingEnabled)
+        assertTrue(preferences.chargingEnabled)
         assertTrue(app.getSharedPreferences("debug_wireless_originals", 0).all.isEmpty())
     }
 
     @Test fun toggleOffWhilePluggedRestores() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
-        preferences.setWirelessDebuggingEnabled(false)
+        preferences.setChargingEnabled(false)
         debugging.reconcile(true)
         assertSettings("0", "0")
     }
 
     @Test fun managerStopRestoresWithoutErasingOptIn() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         debugging.stop()
         assertSettings("0", "0")
-        assertTrue(preferences.wirelessDebuggingEnabled)
+        assertTrue(preferences.chargingEnabled)
     }
 
     @Test fun existingAdbEnabledIsNotOwnedOrWritten() {
         Settings.Global.putString(resolver, "adb_enabled", "1")
         idle()
         writes = 0
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         idle()
         assertEquals(1, writes)
@@ -115,7 +115,7 @@ class ChargingWirelessDebuggingTest {
 
     @Test fun alreadyEnabledWirelessIsNotDisabled() {
         Settings.Global.putString(resolver, "adb_wifi_enabled", "1")
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         debugging.stop()
         assertSettings("0", "1")
@@ -124,7 +124,7 @@ class ChargingWirelessDebuggingTest {
     @Test fun exactAbsentAndNonBooleanOriginalsAreRestored() {
         Settings.Global.putString(resolver, "adb_enabled", null)
         Settings.Global.putString(resolver, "adb_wifi_enabled", "2")
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         assertSettings("1", "1")
         debugging.stop()
@@ -132,14 +132,14 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun persistedOriginalsRestoreOnNextUnpluggedStart() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         ChargingWirelessDebugging(app).reconcile(false)
         assertSettings("0", "0")
     }
 
     @Test fun restartWhilePluggedDoesNotReplaceSavedOriginalsWithOnes() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         val restarted = ChargingWirelessDebugging(app)
         try {
@@ -153,15 +153,15 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun pendingOriginalsRestoreOnDisabledStart() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
-        preferences.setWirelessDebuggingEnabled(false)
+        preferences.setChargingEnabled(false)
         ChargingWirelessDebugging(app).reconcile(true)
         assertSettings("0", "0")
     }
 
     @Test fun externalChangeIsPreservedAndNotReenabledDuringSameCycle() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         Settings.Global.putString(resolver, "adb_wifi_enabled", "2")
         idle()
@@ -172,7 +172,7 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun observedExternalChangeBackToOneIsNotOverwritten() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         Settings.Global.putString(resolver, "adb_wifi_enabled", "0")
         idle()
@@ -183,7 +183,7 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun revokedPermissionKeepsJournalForNextGrantedStart() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         shadowOf(app).denyPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         debugging.stop()
@@ -195,30 +195,30 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun applicationStartupRestoresPendingBeforeManagerStartsEvenWhenPlugged() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         ChargingWirelessDebugging.restorePending(app)
         assertSettings("0", "0")
-        assertTrue(preferences.wirelessDebuggingEnabled)
+        assertTrue(preferences.chargingEnabled)
     }
 
     @Test fun toggleOffWithoutManagerRestoresPendingOriginals() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
-        ChargingWirelessDebugging.setEnabled(app, false)
+        ChargingStayAwake.setEnabled(app, false)
         assertSettings("0", "0")
-        assertFalse(preferences.wirelessDebuggingEnabled)
+        assertFalse(preferences.chargingEnabled)
     }
 
-    @Test fun deniedEnableDoesNotPersistChoiceOrWrite() {
+    @Test fun missingGrantDoesNotPreventSavingCombinedChoiceOrWriteSettings() {
         shadowOf(app).denyPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
-        ChargingWirelessDebugging.setEnabled(app, true)
-        assertFalse(preferences.wirelessDebuggingEnabled)
+        ChargingStayAwake.setEnabled(app, true)
+        assertTrue(preferences.chargingEnabled)
         assertNoWrites()
     }
 
     @Test fun secureWriteFailureRollsBackPartialEnableAndLogs() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         FailingGlobalSettings.rejectWireless = true
         debugging.reconcile(true)
         assertSettings("0", "0")
@@ -227,7 +227,7 @@ class ChargingWirelessDebuggingTest {
     }
 
     @Test fun restoreFailureRetainsOriginalForRetryOnNextStart() {
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         debugging.reconcile(true)
         FailingGlobalSettings.rejectWireless = true
         debugging.stop()

@@ -28,13 +28,17 @@ fields: they are not part of the TAK biometrics contract. No new MOPP, elevation
 calorie or sample timestamp keys are added to these legacy schemas; they have no
 established corresponding fields here. MOPP remains in TAK/Ditto remarks.
 
-### Charging stay awake (opt-in)
+### While charging (opt-in)
 
-**Developer Preferences > Stay awake when charging** is a second toggle directly
-under **Stay awake**, using the same row style. It defaults to off. When enabled,
+**Developer Preferences > While charging** is one combined toggle directly
+under the unchanged manual **Stay awake** switch, using the same row style.
+It defaults to off in both release and debug builds. Existing installations migrate
+to on if either former charging toggle was on; migration runs once and never
+overwrites a later choice. When enabled,
 WearTAK's running service manager starts the existing stay-awake foreground service
 on external power (including a full battery), holding screen, CPU and Wi-Fi locks
-plus an active Wi-Fi network request. Charging-only mode uses Android's dim screen
+plus an active Wi-Fi network request, and enables wireless debugging if the
+secure settings grant is present. Charging-only mode uses Android's dim screen
 wake lock immediately to reduce OLED burn-in risk, including outside WearTAK.
 Unplugging, unknown power state, disabling the charging toggle, or stopping the
 service manager releases this mode's demand. The saved charging choice survives
@@ -45,17 +49,17 @@ The main **Stay awake** switch takes priority with a bright screen while plugged
 disabling the charging toggle cannot stop manual mode. Manual mode still requires
 external power and turns itself off on unplug, preserving its original behavior.
 Turning manual mode off falls back to charging-only mode if eligible. Notification
-Stop disables both choices. Neither mode changes system stay-awake, Wi-Fi or ADB
+Stop disables both choices. Neither mode changes system stay-awake or Wi-Fi radio
 settings, and neither guarantees that vendor firmware preserves an ADB session.
 
-### Wireless debugging when charging (Developer preferences)
+### Wireless debugging setup for While charging
 
-**Developer Preferences > Wireless debugging when charging** follows the two
-Stay awake switches in both release and debug builds and defaults to off.
+Wireless debugging is part of the **While charging** toggle, not a separate switch.
 It is a developer-menu option, not a debug-build-only feature. The release
 application ID is `com.aitech.weartak_civ`; the debug build adds `.dev`
-in `app/build.gradle`. The switch is disabled and unchecked, with no settings
-writes or wireless-debugging Wi-Fi demand, until the one-time grant is made
+in `app/build.gradle`. Without the grant, the toggle remains usable and retains
+its saved choice: stay-awake still works, no ADB settings are written, and the
+row subtitle says **Wireless debugging needs adb grant**. Make the one-time grant
 from a trusted computer. For the signed release APK:
 
 ```text
@@ -71,11 +75,12 @@ values are logged under `WearTAK-ChargingADB`.
 
 While the service manager runs and the shared battery source confirms external
 power, this option enables `adb_enabled` only if needed and `adb_wifi_enabled`.
-It also requests the existing dim-screen/CPU/Wi-Fi charging service and active
-Wi-Fi network request, independently of Stay awake when charging. It does not
+The same opt-in requests the existing dim-screen/CPU/Wi-Fi charging service and active
+Wi-Fi network request, independently of permission to change ADB settings. It does not
 change manual Stay awake semantics or turn on the Wi-Fi radio. Notification Stop
-disables all three choices. Unplug, unknown power, toggle-off and manager stop
-restore the ADB settings; no new settings are enabled off the charger.
+disables both manual and combined charging choices. Unplug, unknown power,
+toggle-off and manager stop restore the ADB settings; no new settings are
+enabled off the charger.
 
 Before each change, a synchronous write-ahead journal saves the exact original
 string (including an absent value). It survives process death; application startup
@@ -1699,7 +1704,7 @@ permissions and Knox authorization remain independent and unchanged. Hiding
 the menus immediately removes access to their pages, not those restrictions.
 The unlock gesture no longer changes airplane mode. **Logging** and **Stay awake**
 are simple toggle rows at the top, alphabetized within that group, without helper text.
-**Stay awake when charging** follows **Stay awake** directly in every locale.
+**While charging** follows **Stay awake** directly in every locale.
 The remaining developer entries are sorted by their current localized visible labels,
 with the title and Back navigation kept outside the sorted entries.
 
@@ -2025,10 +2030,10 @@ explicit opt-in, local export/clear and bounded retention still apply.
 
 ### Dev Mode Stay Awake
 
-Debug and release APKs include opt-in **Stay awake** and **Stay awake when charging** toggle rows in
+Debug and release APKs include opt-in **Stay awake** and **While charging** toggle rows in
 **Developer Preferences** (tap the
 version eight times in Preferences to reveal these tools). This standalone demo/development
-session control does not require Wireless debugging or read its system setting. Starting
+manual session control does not require Wireless debugging or read its system setting. Starting
 requires an enabled Wi-Fi radio and known external power. Otherwise a brief toast
 explains the refusal and the manual switch stays off. Charging-only mode
 additionally requires a running WearTAK service manager.

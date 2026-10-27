@@ -9,29 +9,25 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 internal class DebugStayAwakePreferences(context: Context) {
     private val preferences = context.getSharedPreferences("debug_stay_awake", Context.MODE_PRIVATE)
 
-    // Reuse the legacy session key so enabled users migrate regardless of the old update opt-in.
-    val enabled: Boolean get() = preferences.getBoolean("session_active", false)
-    val chargingEnabled: Boolean get() = preferences.getBoolean("when_charging", false)
-    val wirelessDebuggingEnabled: Boolean get() = preferences.getBoolean("wireless_when_charging", false)
-
-    val wirelessDebuggingEnabledFlow get() = callbackFlow {
-        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "wireless_when_charging") trySend(wirelessDebuggingEnabled)
-        }
-        preferences.registerOnSharedPreferenceChangeListener(listener)
-        trySend(wirelessDebuggingEnabled)
-        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
-    }.distinctUntilChanged()
-
-    fun setWirelessDebuggingEnabled(enabled: Boolean) {
-        check(preferences.edit().putBoolean("wireless_when_charging", enabled).commit()) {
-            "Unable to save Wireless debugging when charging"
+    init {
+        synchronized(DebugStayAwakePreferences::class.java) {
+            if (!preferences.contains(CHARGING_KEY)) {
+                val charging = preferences.getBoolean("when_charging", false) ||
+                    preferences.getBoolean("wireless_when_charging", false)
+                check(preferences.edit().putBoolean(CHARGING_KEY, charging).commit()) {
+                    "Unable to migrate While charging"
+                }
+            }
         }
     }
 
+    // Reuse the legacy session key so enabled users migrate regardless of the old update opt-in.
+    val enabled: Boolean get() = preferences.getBoolean("session_active", false)
+    val chargingEnabled: Boolean get() = preferences.getBoolean(CHARGING_KEY, false)
+
     val chargingEnabledFlow get() = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-            if (key == "when_charging") trySend(chargingEnabled)
+            if (key == CHARGING_KEY) trySend(chargingEnabled)
         }
         preferences.registerOnSharedPreferenceChangeListener(listener)
         trySend(chargingEnabled)
@@ -39,8 +35,8 @@ internal class DebugStayAwakePreferences(context: Context) {
     }.distinctUntilChanged()
 
     fun setChargingEnabled(enabled: Boolean) {
-        check(preferences.edit().putBoolean("when_charging", enabled).commit()) {
-            "Unable to save Stay awake when charging"
+        check(preferences.edit().putBoolean(CHARGING_KEY, enabled).commit()) {
+            "Unable to save While charging"
         }
     }
 
@@ -59,5 +55,9 @@ internal class DebugStayAwakePreferences(context: Context) {
             .commit()) {
             "Unable to save Stay awake session state"
         }
+    }
+
+    companion object {
+        const val CHARGING_KEY = "developer_when_charging"
     }
 }

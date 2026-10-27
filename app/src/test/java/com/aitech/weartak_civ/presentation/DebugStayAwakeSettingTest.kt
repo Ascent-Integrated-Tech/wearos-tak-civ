@@ -41,41 +41,48 @@ class DebugStayAwakeSettingTest {
     @Test fun smallRoundHasSimpleTopTogglesWithoutHelperText() = verifyTopSplitChip()
 
     @Test fun chargingToggleDefaultsOffAndPersistsIndependently() {
-        compose.setContent { ChargingStayAwakeSetting() }
-        compose.onNodeWithText("Stay awake when charging").assertIsOff().performClick()
+        compose.setContent { ChargingDeveloperSetting() }
+        compose.onNodeWithText("While charging").assertIsOff().performClick()
         compose.waitUntil { DebugStayAwakePreferences(app).chargingEnabled }
-        compose.onNodeWithText("Stay awake when charging").assertIsOn()
+        compose.onNodeWithText("While charging").assertIsOn()
         compose.runOnIdle {
             assertFalse(DebugStayAwakePreferences(app).enabled)
             assertNull(shadowOf(app).nextStartedService)
         }
 
-        compose.onNodeWithText("Stay awake when charging").performClick()
+        compose.onNodeWithText("While charging").performClick()
         compose.waitUntil { !DebugStayAwakePreferences(app).chargingEnabled }
-        compose.onNodeWithText("Stay awake when charging").assertIsOff()
+        compose.onNodeWithText("While charging").assertIsOff()
     }
 
-    @Test fun wirelessPermissionMissingDisablesAndUnchecksSavedChoiceAndShowsActualGrant() {
+    @Test fun missingPermissionPreservesEnabledChoiceAndShowsGrantSubtitle() {
         shadowOf(app).denyPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
-        DebugStayAwakePreferences(app).setWirelessDebuggingEnabled(true)
-        compose.setContent { ChargingWirelessDebuggingSetting() }
-        compose.onNodeWithText("Wireless debugging when charging").assertIsOff().assertIsNotEnabled()
+        DebugStayAwakePreferences(app).setChargingEnabled(true)
+        compose.setContent { ChargingDeveloperSetting() }
+        compose.onNodeWithText("While charging").assertIsOn().assertIsEnabled()
+        compose.onNodeWithText("Wireless debugging needs adb grant").assertExists()
         compose.onNodeWithText(
             "adb shell pm grant ${BuildConfig.APPLICATION_ID} android.permission.WRITE_SECURE_SETTINGS",
             substring = true
         ).assertExists()
-        compose.runOnIdle { assertFalse(DebugStayAwakePreferences(app).wirelessDebuggingEnabled) }
+        compose.runOnIdle { assertTrue(DebugStayAwakePreferences(app).chargingEnabled) }
+        compose.onNodeWithText("While charging").performClick()
+        compose.waitUntil { !DebugStayAwakePreferences(app).chargingEnabled }
+        compose.onNodeWithText("While charging").assertIsOff().performClick()
+        compose.waitUntil { DebugStayAwakePreferences(app).chargingEnabled }
+        compose.onNodeWithText("While charging").assertIsOn()
     }
 
     @Test fun wirelessGrantedDefaultsOffAndPersistsIndependently() {
         shadowOf(app).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
-        compose.setContent { ChargingWirelessDebuggingSetting() }
-        compose.onNodeWithText("Wireless debugging when charging").assertIsOff().assertIsEnabled().performClick()
-        compose.waitUntil { DebugStayAwakePreferences(app).wirelessDebuggingEnabled }
-        compose.onNodeWithText("Wireless debugging when charging").assertIsOn()
+        compose.setContent { ChargingDeveloperSetting() }
+        compose.onNodeWithText("While charging").assertIsOff().assertIsEnabled().performClick()
+        compose.waitUntil { DebugStayAwakePreferences(app).chargingEnabled }
+        compose.onNodeWithText("While charging").assertIsOn()
+        compose.onNodeWithText("Stay awake and wireless debugging").assertExists()
         compose.runOnIdle {
             assertFalse(DebugStayAwakePreferences(app).enabled)
-            assertFalse(DebugStayAwakePreferences(app).chargingEnabled)
+            assertTrue(DebugStayAwakePreferences(app).chargingEnabled)
         }
     }
 
@@ -160,10 +167,10 @@ class DebugStayAwakeSettingTest {
         stayAwake.assertIsOff()
         val stopped = shadowOf(app).nextStoppedService
         assertEquals(DebugStayAwakeService::class.java.name, stopped?.component?.className)
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Stay awake when charging"))
-        compose.onNodeWithText("Stay awake when charging").assertIsDisplayed().assertIsOff()
-        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Wireless debugging when charging"))
-        compose.onNodeWithText("Wireless debugging when charging").assertIsDisplayed().assertIsOff()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("While charging"))
+        compose.onNodeWithText("While charging").assertIsDisplayed().assertIsOff()
+        compose.onNodeWithText("Stay awake when charging").assertDoesNotExist()
+        compose.onNodeWithText("Wireless debugging when charging").assertDoesNotExist()
     }
 
     @Test fun savedOnIsNotShownAsOffWhenAndroidHasNotStartedService() {

@@ -17,6 +17,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.BuildConfig
 import com.aitech.weartak_civ.service.ChargingWirelessDebugging
+import com.aitech.weartak_civ.service.ChargingStayAwake
 import com.aitech.weartak_civ.service.DebugStayAwakePreferences
 import com.aitech.weartak_civ.service.DebugStayAwakeService
 
@@ -41,31 +42,16 @@ fun DebugStayAwakeSetting() {
 }
 
 @Composable
-fun ChargingStayAwakeSetting() {
-    val context = LocalContext.current
-    val preferences = remember(context) { DebugStayAwakePreferences(context) }
-    val enabled by remember(preferences) { preferences.chargingEnabledFlow }
-        .collectAsState(initial = preferences.chargingEnabled)
-    WearTAKToggleChip(
-        title = stringResource(R.string.debug_stay_awake_charging),
-        checkedLive = enabled,
-        onCheckedChange = { preferences.setChargingEnabled(it) })
-}
-
-@Composable
-fun ChargingWirelessDebuggingSetting() {
+fun ChargingDeveloperSetting() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val preferences = remember(context) { DebugStayAwakePreferences(context) }
     var permitted by remember(context) { mutableStateOf(ChargingWirelessDebugging.hasPermission(context)) }
-    val enabled by remember(preferences) { preferences.wirelessDebuggingEnabledFlow }
-        .collectAsState(initial = preferences.wirelessDebuggingEnabled)
+    val enabled by remember(preferences) { preferences.chargingEnabledFlow }
+        .collectAsState(initial = preferences.chargingEnabled)
     DisposableEffect(context, lifecycleOwner) {
         fun refreshPermission() {
             permitted = ChargingWirelessDebugging.hasPermission(context)
-            if (!permitted && preferences.wirelessDebuggingEnabled) {
-                ChargingWirelessDebugging.setEnabled(context, false)
-            }
         }
         refreshPermission()
         val observer = LifecycleEventObserver { _, event ->
@@ -76,14 +62,12 @@ fun ChargingWirelessDebuggingSetting() {
     }
     Column {
         WearTAKToggleChip(
-            title = stringResource(R.string.debug_wireless_charging),
-            checkedLive = permitted && enabled,
-            enabled = permitted,
-            onCheckedChange = {
-                if (ChargingWirelessDebugging.hasPermission(context)) {
-                    ChargingWirelessDebugging.setEnabled(context, it)
-                }
-            })
+            title = stringResource(R.string.debug_while_charging),
+            description = stringResource(
+                if (permitted) R.string.debug_while_charging_description
+                else R.string.debug_while_charging_needs_grant),
+            checkedLive = enabled,
+            onCheckedChange = { ChargingStayAwake.setEnabled(context, it) })
         if (!permitted) Text(stringResource(R.string.debug_wireless_grant, BuildConfig.APPLICATION_ID))
     }
 }
