@@ -1613,6 +1613,11 @@ existing server, network and Companion gates. Plugging in reconnects immediately
 and cancels pending off-body window closes. Unplugging while off wrist resumes
 30-second connection windows at inexact 180-second intervals; on-wrist behavior
 is unchanged. Power changes reuse the process-wide battery observer.
+During an eligible off-wrist batching gap, enabled TAK server rows and details
+and the TAK status in Network Preferences show **Off-Wrist**, matching the main
+display. Connection windows retain normal connected/connecting status; charging,
+docking, disabled servers and inactive transport gates never show the gap label.
+Connection failures take precedence and remain visible when a batch window closes.
 
 CEP simulation is disabled in release and ordinary debug builds: it is excluded
 from managed service registration/startup, its Android component is disabled, and

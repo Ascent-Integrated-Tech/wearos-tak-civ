@@ -263,7 +263,8 @@ class TAKConnectService: Service() {
         takNetworkPreference = TakNetworkPreference(this).also { it.start() }
         offBodyScheduler = OffBodyTakScheduler(this,
             connect = { connectToTakServers() },
-            disconnect = { closeTakServerSockets(); resetTakServerConnectionDetails() })
+            disconnect = { resetTakServerConnectionDetails(preserveFailures = true) },
+            waitingChanged = { _offBodyTakWaiting.value = it })
         updateOffBodyPolicy()
         setFromDatastore()
         updateOffBodyPolicy()
@@ -686,13 +687,13 @@ class TAKConnectService: Service() {
         super.onDestroy()
     }
 
-    private fun resetTakServerConnectionDetails() {
+    private fun resetTakServerConnectionDetails(preserveFailures: Boolean = false) {
         isAnyTakConnected = false; isAnyTakConnectedLiveData.postValue(false)
         isAnyTakConnecting = false; isAnyTakConnectingLiveData.postValue(false)
         requestStatusIconsComplicationUpdate(context)
         for (takServerDetail in takServerDetails) {
             takServerDetail.numConnAttempts = 0
-            invalidateConnection(takServerDetail)
+            invalidateConnection(takServerDetail, preserveFailure = preserveFailures)
         }
         dataRepository.setEndpointDisconnected(DataRepository.Endpoint.TAK_SERVER)
         recordConnectionCounts()
@@ -822,6 +823,8 @@ class TAKConnectService: Service() {
     }
 
     companion object {
+        private val _offBodyTakWaiting = MutableStateFlow(false)
+        val offBodyTakWaiting: StateFlow<Boolean> = _offBodyTakWaiting.asStateFlow()
         private val configurationMutex = Mutex()
         private const val SHA256_ALGORITHM = "SHA-256"
         const val TAK_SERVER_DISCONNECTED = 0
@@ -2545,9 +2548,14 @@ class TAKConnectService: Service() {
                     detail.runtime.currentAttempt?.let { isCurrent(detail, it) } == true
             }
 
-        private fun invalidateConnection(detail: TakServerDetail, terminate: Boolean = false) {
+        private fun invalidateConnection(
+            detail: TakServerDetail,
+            terminate: Boolean = false,
+            preserveFailure: Boolean = false,
+        ) {
             val sockets: MutableList<java.net.Socket> = mutableListOf()
             synchronized(detail.runtime.lock) {
+                val failed = preserveFailure && detail.connectionStatus.get() == TAK_SERVER_CONNECTION_FAILED
                 serverRegistration.publish(
                     detail.serverId, detail, TakServerRegistration.Status.FAILED,
                     serverRegistration.unavailable()
@@ -2571,8 +2579,9 @@ class TAKConnectService: Service() {
                 detail.channelSslContext = null
                 detail.channelTrustManager = null
                 detail.channelHostnameVerifier = null
-                detail.connectionStatus.set(TAK_SERVER_DISCONNECTED)
-                detail.connectionStatusLiveData.postValue(TAK_SERVER_DISCONNECTED_STRING)
+                detail.connectionStatus.set(if (failed) TAK_SERVER_CONNECTION_FAILED else TAK_SERVER_DISCONNECTED)
+                detail.connectionStatusLiveData.postValue(
+                    if (failed) TAK_SERVER_CONNECTION_FAILED_STRING else TAK_SERVER_DISCONNECTED_STRING)
                 recordConnection(detail, ConnectionTransition.INVALIDATED,
                     if (terminate) ConnectionReason.TERMINATED else connectionGateReason(detail, ConnectionReason.RESET))
             }

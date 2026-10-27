@@ -162,8 +162,9 @@ class TakTransientRecoveryTest {
         TAKConnectService.recoverTransientFailure(detail, attempt, ConnectException())
         val retry = detail.runtime.retryJob!!
         TAKConnectService.Companion::class.java.getDeclaredMethod("invalidateConnection",
-            TAKConnectService.TakServerDetail::class.java, Boolean::class.javaPrimitiveType)
-            .apply { isAccessible = true }.invoke(TAKConnectService.Companion, detail, true)
+            TAKConnectService.TakServerDetail::class.java, Boolean::class.javaPrimitiveType,
+            Boolean::class.javaPrimitiveType)
+            .apply { isAccessible = true }.invoke(TAKConnectService.Companion, detail, true, false)
         assertTrue(retry.isCancelled)
         assertNull(detail.runtime.retryJob)
         assertEquals(0, detail.runtime.transientFailureStreak)

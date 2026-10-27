@@ -1464,10 +1464,17 @@ fun WearTAKSettingsNav(
             val checklistEnabled by dataRepository.networkPreferencesChecklistEnabled
                 .collectAsStateWithLifecycle(initialValue = false)
             val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
-            val connected = runtimeDetails.map { detail ->
+            val offBodyWaiting by TAKConnectService.offBodyTakWaiting.collectAsStateWithLifecycle()
+            val statuses = runtimeDetails.associate { detail ->
                 val status by detail.connectionStatusLiveData.observeAsState(TAK_SERVER_DISCONNECTED_STRING)
-                detail.serverId.takeIf { status == TAK_SERVER_CONNECTED_STRING }
-            }.filterNotNull().toSet()
+                detail.serverId to status
+            }
+            val connected = statuses.filterValues { it == TAK_SERVER_CONNECTED_STRING }.keys
+            val takStatusOverride = takNetworkStatusOverride(enableTakEndpoint,
+                takServerList.filter { it.isEnabled }.map {
+                    statuses[it.serverId] ?: TAK_SERVER_DISCONNECTED_STRING
+                }, offBodyWaiting)
+            val takSubtitleOverride = takStatusOverride?.let { stringResource(it) }
             val pluginToggles by pluginVm.connectivityToggles.collectAsStateWithLifecycle()
             val companionStatus = companionPluginStatus(enableCompanionAppService)
             val enabledLabel = stringResource(R.string.enabled)
@@ -1480,9 +1487,10 @@ fun WearTAKSettingsNav(
             val takConnectedCount = if (enableTakEndpoint) takServerList.count { it.isEnabled && it.serverId in connected } else 0
             val rows = (listOf(
                 NetworkConnectivityRow("tak", stringResource(R.string.tak_servers),
-                    stringResource(R.string.network_server_ratio, takConnectedCount, takServerList.size),
+                    takSubtitleOverride ?: stringResource(R.string.network_server_ratio, takConnectedCount, takServerList.size),
                     enableTakEndpoint, settingsVm::storeEnableTakEndpoint,
-                    statusDescription = stringResource(R.string.tak_status_with_count, stringResource(takIndicator.label),
+                    statusDescription = stringResource(R.string.tak_status_with_count,
+                        takSubtitleOverride ?: stringResource(takIndicator.label),
                         androidx.compose.ui.res.pluralStringResource(R.plurals.network_server_count,
                             takServerList.size, takConnectedCount, takServerList.size)),
                     iconRes = takIndicator.drawable),
@@ -1532,9 +1540,10 @@ fun WearTAKSettingsNav(
                                 onClick = showPhoneManagedNotice
                             )
                         } else {
-                            WearTAKTitleChip(
+                            WearTAKTitleChipWithState(
                                 route = "tak_servers",
                                 title = stringResource(R.string.tak_servers),
+                                state = takSubtitleOverride.orEmpty(),
                                 navController = navController
                             )
                         }
@@ -1623,6 +1632,7 @@ fun WearTAKSettingsNav(
         }
         composable("tak_servers") {
             val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
+            val offBodyWaiting by TAKConnectService.offBodyTakWaiting.collectAsStateWithLifecycle()
             val disconnectedStatus = remember { androidx.lifecycle.MutableLiveData(TAK_SERVER_DISCONNECTED_STRING) }
             WearTAKPageWithBackArrow(
                 stringResource(R.string.tak_servers_title),
@@ -1685,7 +1695,8 @@ fun WearTAKSettingsNav(
                                         )
                                     },
                                     title = takServerItem.name,
-                                    label = takServerItem.address,
+                                    label = stringResource(takServerStatusLabel(
+                                        enableTakEndpoint && takServerChecked, takServerStatus, offBodyWaiting)),
                                     checked = takServerChecked,
                                     onCheckedChange = {
                                         Log.d(TAG, "onCheckedChange index($index): $it")
@@ -1827,6 +1838,14 @@ fun WearTAKSettingsNav(
             var password by remember { mutableStateOf(takServerList.getOrNull(index)?.password.orEmpty()) }
             var isP12Cert by remember { mutableStateOf(takServerList.get(index)?.isP12Cert ?: false) }
             val serverConnSettingsChanged = remember { mutableStateOf(false) }
+            val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
+            val offBodyWaiting by TAKConnectService.offBodyTakWaiting.collectAsStateWithLifecycle()
+            val disconnectedStatus = remember { androidx.lifecycle.MutableLiveData(TAK_SERVER_DISCONNECTED_STRING) }
+            val savedServer = takServerList.getOrNull(index)
+            val connectionStatus by (runtimeDetails
+                .firstOrNull { it.serverId == savedServer?.serverId }
+                ?.connectionStatusLiveData ?: disconnectedStatus)
+                .observeAsState(TAK_SERVER_DISCONNECTED_STRING)
             val certStatus = rememberSideloadedCertStatus(address)
             val credentialsOptional = certStatus is SideloadedClientCert.Status.Found
             Log.d(TAG, "address=$address, serverSettingsChanged=${serverConnSettingsChanged.value}")
@@ -1834,6 +1853,16 @@ fun WearTAKSettingsNav(
             WearTAKPageWithConfirmCancel(
                 title = stringResource(R.string.edit_server),
                 columnContent = {
+                    item {
+                        Text(
+                            stringResource(takServerStatusLabel(
+                                enableTakEndpoint && savedServer?.isEnabled == true,
+                                connectionStatus, offBodyWaiting)),
+                            style = MaterialTheme.typography.caption2,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth().padding(5.dp),
+                        )
+                    }
                     item {
                         name = WearTAKOutlinedTextField(
                             string = name,

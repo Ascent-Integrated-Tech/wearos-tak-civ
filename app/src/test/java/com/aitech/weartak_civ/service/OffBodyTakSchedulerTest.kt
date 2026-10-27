@@ -30,10 +30,11 @@ class OffBodyTakSchedulerTest {
     private val alarms get() = shadowOf(context.getSystemService(AlarmManager::class.java))
     private var connects = 0
     private var closes = 0
+    private val waiting = mutableListOf<Boolean>()
     private lateinit var scheduler: OffBodyTakScheduler
 
     @Before fun setup() {
-        scheduler = OffBodyTakScheduler(context, { connects++ }, { closes++ })
+        scheduler = OffBodyTakScheduler(context, { connects++ }, { closes++ }, waiting::add)
     }
 
     @After fun cleanup() {
@@ -54,6 +55,25 @@ class OffBodyTakSchedulerTest {
                     it[DiagnosticMetric.DURATION_MS] == 30_000L
             }) }
         }
+    }
+
+    @Test fun waitingStateTracksOnlyEligibleGapsAndClearsDuringWindowsPowerAndShutdown() {
+        scheduler.update(false, true)
+        assertEquals(true, waiting.last())
+        alarms.nextScheduledAlarm.onAlarmListener.onAlarm()
+        assertEquals(false, waiting.last())
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30))
+        assertEquals(true, waiting.last())
+        scheduler.update(false, true, chargingOrDocked = true)
+        assertEquals(false, waiting.last())
+        scheduler.update(false, true, chargingOrDocked = false)
+        assertEquals(true, waiting.last())
+        scheduler.update(false, false)
+        assertEquals(false, waiting.last())
+        scheduler.update(false, true)
+        assertEquals(true, waiting.last())
+        scheduler.stop()
+        assertEquals(false, waiting.last())
     }
 
     @Test fun offWristSchedulesInexactOpportunityAndBoundsWindow() {
