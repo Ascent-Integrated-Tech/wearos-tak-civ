@@ -1,4 +1,10 @@
 <resources>
+    <string name="connection_route_multicast">Multicast</string>
+    <string name="connection_route_sitx">SITX</string>
+    <string name="connection_route_suppressed">Paused for Companion</string>
+    <string name="connection_route_status">%1$s: %2$s</string>
+    <string name="connection_servers_status">TAK Servers: %1$d of %2$d connected</string>
+    <string name="connection_battery">Battery: %1$d%%</string>
     <string name="open_transport_settings">Open %1$s settings</string>
     <string name="invalid_managed_network_configuration">Invalid managed network configuration. Settings were not applied. Contact your administrator.</string>
     <string name="tak_status_no_server">No server configured</string>
