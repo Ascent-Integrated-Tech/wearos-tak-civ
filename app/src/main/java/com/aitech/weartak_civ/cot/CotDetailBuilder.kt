@@ -32,6 +32,7 @@ object CotDetailBuilder {
         dittoVersion: String,
         dittoDeviceName: String,
         endpoint: String = "*:-1:stcp",
+        remarks: String = "",
     ): String = CotXml.element("detail", content =
         takv() +
             CotXml.element("contact", listOf("endpoint" to CotXml.escape(endpoint), "callsign" to CotXml.escape(callsign))) +
@@ -41,7 +42,7 @@ object CotDetailBuilder {
             )) +
             CotXml.element("__group", listOf("role" to CotXml.escape(role), "name" to CotXml.escape(team))) +
             status(battery) +
-            "<remarks>HR: $heartRate bpm; Batt: $battery%</remarks>" +
+            "<remarks>${CotXml.escape(remarks)}</remarks>" +
             "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics>" +
             CotXml.element("track", listOf("course" to course, "speed" to speed)) +
             CotXml.element("ditto", listOf(

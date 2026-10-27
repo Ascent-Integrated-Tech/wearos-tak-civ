@@ -2087,7 +2087,8 @@ class DataRepository(
         val loc: LocationSnapshot?,
         val time: CotEventTime,
         val physioData: PhysioSnapshot,
-        val systemData: SystemSnapshot
+        val systemData: SystemSnapshot,
+        val remarks: String = "",
     )
 
     suspend fun snapshotPliLocation(): LocationSnapshot? =
@@ -2105,8 +2106,15 @@ class DataRepository(
             loc = snapshotPliLocation(),
             time = timeSnap,
             physioData = snapshotPhysio(),
-            systemData = snapshotSystem()
+            systemData = snapshotSystem(),
+            remarks = snapshotSelfStatusRemarks(),
         )
+    }
+
+    internal suspend fun snapshotSelfStatusRemarks(): String {
+        val input = selfStatusInputs().first()
+        val now = System.currentTimeMillis()
+        return selfStatusSnapshot(input, now).remarksLine(now)
     }
 
     suspend fun snapshotInteractionPli(location: Location): PliSnapshot =

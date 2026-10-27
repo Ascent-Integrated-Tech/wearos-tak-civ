@@ -36,10 +36,6 @@ object CotMessageBuilder {
         val heartRate = rectifiedInt(physio.heartRateBpm)
         val skinTemp = rectifiedNumber(physio.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)
         val exertion = rectifiedNumber(physio.exertion, "%.2f", zeroIsInvalid = false)
-        // <exert> stays a 0..1 fraction for existing consumers; remarks show the watch's percent.
-        val exertionPercent = physio.exertion?.takeIf { it.isFinite() && it >= 0.0 }
-            ?.let { "${(it * 100).toInt()}%" } ?: "N/A"
-        val remarks = "Exert:$exertionPercent;HR:$heartRate;SkinTemp:$skinTemp"
         val batdok = if (options.includeBatdok) batdokDetail(physio, time, heartRate, skinTemp) else ""
         val biometrics = if (options.includeBatdok) {
             "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid><hr>$heartRate</hr><skt>$skinTemp</skt><exert>$exertion</exert></device></biometrics>"
@@ -61,7 +57,7 @@ object CotMessageBuilder {
                     (location.takeIf { time.time - it.timeMillis > 3_000L }?.let {
                         CotXml.element("weartak_location", listOf("timeMillis" to it.timeMillis))
                     } ?: "") +
-                    "<remarks>$remarks</remarks>$batdok$biometrics" +
+                    "<remarks>${CotXml.escape(snapshot.remarks)}</remarks>$batdok$biometrics" +
                     CotXml.element(
                         "contact",
                         listOf(

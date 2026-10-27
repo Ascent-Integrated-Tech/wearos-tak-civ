@@ -75,8 +75,8 @@ class PliMetadataCompatibilityTest {
                 }
             }
             assertEquals("true", child(direct, "status").getAttribute("readiness"))
-            assertEquals("Exert:25%;HR:65;SkinTemp:97", child(direct, "remarks").textContent)
-            assertEquals("HR: 65 bpm; Batt: ${battery ?: -1}%", child(ditto, "remarks").textContent)
+            assertEquals(REMARKS, child(direct, "remarks").textContent)
+            assertEquals(REMARKS, child(ditto, "remarks").textContent)
         }
     }
 
@@ -205,6 +205,7 @@ class PliMetadataCompatibilityTest {
         heartRate = 65, battery = battery, callsign = callsign, role = role, team = team, uid = uid,
         course = 0f, speed = 0f,
         dittoA = peer, dittoVersion = peer, dittoDeviceName = peer,
+        remarks = REMARKS,
     )
 
     @Test fun companionPliNeverInventsCoordinatesForMissingFix() {
@@ -225,6 +226,7 @@ class PliMetadataCompatibilityTest {
             0, 72, "TEST WATCH", "metadata-test-watch", "synthetic-snapshot-version", 30,
             DataRepository.SystemStates(0, DockType.NONE, false, true, 30, 30), role = "Medic", team = "Blue",
         ),
+        remarks = REMARKS,
     )
 
     private fun parse(xml: String): Element = DocumentBuilderFactory.newInstance().newDocumentBuilder()
@@ -240,6 +242,7 @@ class PliMetadataCompatibilityTest {
     }
 
     private companion object {
+        const val REMARKS = "MOPP0; HR: 65 bpm @ 12:00:00Z; Skin: 97.0F @ 12:00:00Z; Exert: 25% @ 12:00:00Z"
         const val START = "2026-10-22T12:00:00.000Z"
     }
 }

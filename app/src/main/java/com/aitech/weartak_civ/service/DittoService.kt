@@ -643,7 +643,8 @@ class DittoService : Service() {
                 dittoA = localPeerKeyString,                     // "a-f-G-U-C"
                 dittoIp = "0.0.0.0",                         // "Undefined"
                 dittoVersion = dittoVersion,                            // "m-g"
-                dittoDeviceName = callsign
+                dittoDeviceName = callsign,
+                remarks = freshSnapshot?.remarks ?: dataRepository.snapshotSelfStatusRemarks(),
             ).let { detail ->
                 if (timeMs - location.timeMillis > 3_000) {
                     detail.replace("</detail>", CotXml.element("weartak_location",
