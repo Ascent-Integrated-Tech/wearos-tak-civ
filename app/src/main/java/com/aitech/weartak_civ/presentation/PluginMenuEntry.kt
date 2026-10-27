@@ -1,6 +1,7 @@
 package com.aitech.weartak_civ.presentation
 
 import androidx.annotation.DrawableRes
+import androidx.compose.runtime.Composable
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.integration.plugin.PluginUI
 
@@ -16,7 +17,35 @@ internal enum class BuiltInPlugin(@DrawableRes val brandIconRes: Int? = null) {
     GOTENNA(R.drawable.ic_integration_gotenna),
     MOPP(R.drawable.ic_mopp),
     SENSOR_MANAGER(R.drawable.ic_sensor_manager),
-    SOMEWEAR_LABS(R.drawable.ic_integration_somewear),
+    SOMEWEAR_LABS(R.drawable.ic_integration_somewear);
+
+    val locksDuringPhoneManagement: Boolean
+        get() = when (this) {
+            DATA_SYNC, DITTO, EVERYWHERE_COMMS, GOTENNA, SOMEWEAR_LABS -> true
+            else -> false
+        }
+}
+
+@Composable
+internal fun BuiltInPluginToggleChip(
+    kind: BuiltInPlugin,
+    phoneManagedSettings: Boolean,
+    title: String,
+    label: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    onClick: () -> Unit
+) {
+    val bonded = phoneManagedSettings && kind.locksDuringPhoneManagement
+    WearTAKSplitToggleChip(
+        appIcon = { BuiltInPluginBrandIcon(kind) },
+        title = title,
+        label = networkControlSubtitle(label, bonded),
+        checked = checked,
+        onCheckedChange = onCheckedChange,
+        onClick = onClick,
+        enabled = !bonded
+    )
 }
 
 internal sealed interface PluginMenuEntry {
