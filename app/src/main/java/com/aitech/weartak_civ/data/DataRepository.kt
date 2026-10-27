@@ -2089,6 +2089,7 @@ class DataRepository(
         val physioData: PhysioSnapshot,
         val systemData: SystemSnapshot,
         val remarks: String = "",
+        val monitoredPhysio: PhysioData? = null,
     )
 
     suspend fun snapshotPliLocation(): LocationSnapshot? =
@@ -2102,12 +2103,25 @@ class DataRepository(
             staleOffset = pliStaleOffset()
         )
 
+        val physio = snapshotPhysio()
+        val now = System.currentTimeMillis()
+        val input = selfStatusInputs().first()
+        val selfStatus = selfStatusSnapshot(input, now)
+        val policy = input.policy
         return PliSnapshot(
             loc = snapshotPliLocation(),
             time = timeSnap,
-            physioData = snapshotPhysio(),
+            physioData = physio,
             systemData = snapshotSystem(),
-            remarks = snapshotSelfStatusRemarks(),
+            remarks = selfStatus.remarksLine(now),
+            monitoredPhysio = physio.data.takeIf { policy.monitoring && policy.worn }?.let {
+                it.copy(
+                    heartRateBpm = selfStatus.physio?.hr,
+                    skinTempF = selfStatus.physio?.sktF,
+                    exertion = selfStatus.physio?.exert,
+                    exertionClass = selfStatus.physio?.exert?.let(Utils.PhysioUtils::classifyExertion),
+                )
+            },
         )
     }
 
@@ -2128,12 +2142,12 @@ class DataRepository(
 
     suspend fun snapshotOutboundAnnouncement(location: Location): PliSnapshot {
         val snapshot = snapshotInteractionPli(location)
-        val current = selfStatusSnapshot(selfStatusInputs().first(), System.currentTimeMillis()).physio
+        val current = snapshot.monitoredPhysio
         return snapshot.copy(physioData = snapshot.physioData.copy(data = snapshot.physioData.data.copy(
-            heartRateBpm = current?.hr,
-            skinTempF = current?.sktF,
-            exertion = current?.exert,
-            exertionClass = current?.exert?.let(Utils.PhysioUtils::classifyExertion),
+            heartRateBpm = current?.heartRateBpm,
+            skinTempF = current?.skinTempF,
+            exertion = current?.exertion,
+            exertionClass = current?.exertionClass,
             dailyMetrics = null,
         )))
     }

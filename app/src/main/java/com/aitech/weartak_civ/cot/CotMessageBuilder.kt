@@ -35,11 +35,8 @@ object CotMessageBuilder {
         val uid = snapshot.systemData.deviceId
         val heartRate = rectifiedInt(physio.heartRateBpm)
         val skinTemp = rectifiedNumber(physio.skinTempF, "%.1f", negIsInvalid = false, zeroIsInvalid = false)
-        val exertion = rectifiedNumber(physio.exertion, "%.2f", zeroIsInvalid = false)
         val batdok = if (options.includeBatdok) batdokDetail(physio, time, heartRate, skinTemp) else ""
-        val biometrics = if (options.includeBatdok) {
-            "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid><hr>$heartRate</hr><skt>$skinTemp</skt><exert>$exertion</exert></device></biometrics>"
-        } else ""
+        val biometrics = CotDetailBuilder.biometrics(uid, snapshot.monitoredPhysio, snapshot.systemData.batteryPercent)
 
         val status = CotDetailBuilder.status(snapshot.systemData.batteryPercent, readiness = true)
 

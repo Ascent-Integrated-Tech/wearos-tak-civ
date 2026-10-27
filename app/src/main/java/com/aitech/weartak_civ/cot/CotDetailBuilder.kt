@@ -2,6 +2,8 @@ package com.aitech.weartak_civ.cot
 
 import android.os.Build
 import com.aitech.weartak_civ.BuildConfig
+import com.aitech.weartak_civ.data.DataRepository
+import java.util.Locale
 
 object CotDetailBuilder {
     fun takv(): String = CotXml.element("takv", listOf(
@@ -16,8 +18,25 @@ object CotDetailBuilder {
         battery?.takeIf { it in 0..100 }?.let { add("battery" to it) }
     })
 
+    // Keep device identity even without vitals: CoT consumers use it to identify WearTAK.
+    fun biometrics(uid: String, physio: DataRepository.PhysioData?, battery: Int?): String {
+        fun number(value: Number, format: String) =
+            String.format(Locale.US, format, value.toDouble()).trimEnd('0').trimEnd('.')
+        return "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid>" +
+            buildString {
+                physio?.heartRateBpm?.takeIf { it in 20..250 }?.let { append("<hr>$it</hr>") }
+                physio?.skinTempF?.takeIf { it.isFinite() && it in 59f..113f }?.let {
+                    append("<skt>${number(it, "%.1f")}</skt>")
+                }
+                physio?.exertion?.takeIf { it.isFinite() && it in 0.0..1.0 }?.let {
+                    append("<exert>${number(it, "%.2f")}</exert>")
+                }
+                battery?.takeIf { it in 0..100 }?.let { append("<bat>$it</bat>") }
+            } + "</device></biometrics>"
+    }
+
     fun dittoTrack(
-        heartRate: Int,
+        monitoredPhysio: DataRepository.PhysioData?,
         battery: Int,
         callsign: String,
         role: String,
@@ -43,7 +62,7 @@ object CotDetailBuilder {
             CotXml.element("__group", listOf("role" to CotXml.escape(role), "name" to CotXml.escape(team))) +
             status(battery) +
             "<remarks>${CotXml.escape(remarks)}</remarks>" +
-            "<biometrics><device><model>WEAROS</model><uid>${CotXml.escape(uid)}</uid><hr>$heartRate</hr><bat>$battery</bat></device></biometrics>" +
+            biometrics(uid, monitoredPhysio, battery) +
             CotXml.element("track", listOf("course" to course, "speed" to speed)) +
             CotXml.element("ditto", listOf(
                 "a" to CotXml.escape(dittoA), "ip" to CotXml.escape(dittoIp),

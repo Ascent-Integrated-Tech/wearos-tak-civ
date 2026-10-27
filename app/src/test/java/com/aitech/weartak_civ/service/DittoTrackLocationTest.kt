@@ -7,6 +7,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.data.MoppStatus
 import com.aitech.weartak_civ.data.CompanionSelfStatus
 import com.aitech.weartak_civ.cot.CotMessageBuilder
+import com.aitech.weartak_civ.cot.CotDetailBuilder
 import com.aitech.weartak_civ.events.OutboundDittoTrackRefresh
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.*
@@ -85,6 +86,7 @@ class DittoTrackLocationTest {
             assertTrue((document["r"] as String).contains("role='Medic'"))
             assertFalse((document["r"] as String).contains("180"))
             assertTrue((document["r"] as String).contains("<remarks>MOPP3</remarks>"))
+            for (tag in listOf("hr", "skt", "exert")) assertFalse((document["r"] as String).contains("<$tag>"))
             assertEquals("MOPP3", pairedPli.remarks)
             assertNull(repo.latestLocation.value)
             repo.setCompanionAppConnected()
@@ -172,13 +174,67 @@ class DittoTrackLocationTest {
                 val direct = CotMessageBuilder.pli(snapshot,
                     CotMessageBuilder.PliOptions("WATCH", "Team Member", "Blue", false, ""))
                 assertTrue(direct.contains("<remarks>${snapshot.remarks}</remarks>"))
+                val biometrics = CotDetailBuilder.biometrics("test-watch", snapshot.monitoredPhysio,
+                    snapshot.systemData.batteryPercent)
+                assertTrue(biometrics.contains("<hr>79</hr><skt>91.1</skt><exert>"))
+                assertTrue(direct.contains(biometrics))
                 tick()
                 assertTrue((documents.last()["r"] as String).contains("<remarks>${snapshot.remarks}</remarks>"))
+                assertTrue((documents.last()["r"] as String).contains(biometrics))
             }
+            val now = System.currentTimeMillis()
+            var snapshot = repo.snapshotPli()
+            fun assertLegacy(snapshot: DataRepository.PliSnapshot, hasVitals: Boolean) {
+                val legacy = LegacyPliPayloadBuilder.build(snapshot,
+                    LegacyPliPayloadBuilder.Options("WATCH", "Medic", "Blue", true, true, true))
+                val esri = JSONObject(legacy.esriGeoJson!!).getJSONArray("features")
+                    .getJSONObject(0).getJSONObject("properties").getJSONArray("biometrics").getJSONObject(0)
+                val tablet = JSONObject(legacy.tabletCommandJson!!).getJSONArray("biometrics").getJSONObject(0)
+                for (biometrics in listOf(esri, tablet)) {
+                    assertEquals(if (hasVitals) 79 else -1, biometrics.getInt("hr"))
+                    assertEquals(if (hasVitals) 91.1 else -1.0, biometrics.getDouble("skintemp"), 0.0)
+                    assertEquals(snapshot.monitoredPhysio?.exertion ?: -1.0,
+                        biometrics.getDouble("exertion"), .005)
+                    for (field in listOf("hribi", "hrv", "spo2")) assertEquals(-1, biometrics.getInt(field))
+                    assertEquals("", biometrics.getString("spo2measuretimeutc"))
+                }
+            }
+            assertLegacy(snapshot, true)
+            for (invalidTime in listOf(now - 120_001, now + 31_000)) {
+                repo.storeLatestHeartRate(79, invalidTime)
+                repo.storeLatestSkinTemp(91.1f, invalidTime)
+                snapshot = repo.snapshotPli()
+                assertLegacy(snapshot, false)
+                tick()
+                val detail = documents.last()["r"] as String
+                assertTrue(detail.contains(CotDetailBuilder.biometrics("test-watch", snapshot.monitoredPhysio,
+                    snapshot.systemData.batteryPercent)))
+                for (tag in listOf("hr", "skt", "exert")) assertFalse(detail.contains("<$tag>"))
+            }
+            repo.storeLatestHeartRate(79, now)
+            repo.storeLatestSkinTemp(91.1f, now)
+            repo.storeEnableHeartRateService(false)
+            snapshot = repo.snapshotPli()
+            assertNull(snapshot.monitoredPhysio!!.heartRateBpm)
+            assertNull(snapshot.monitoredPhysio!!.exertion)
+            assertEquals(91.1f, snapshot.monitoredPhysio!!.skinTempF)
+            repo.storeEnableHeartRateService(true)
+            repo.storeEnableSkinTempService(false)
+            snapshot = repo.snapshotPli()
+            assertEquals(79, snapshot.monitoredPhysio!!.heartRateBpm)
+            assertNull(snapshot.monitoredPhysio!!.skinTempF)
+            repo.storeEnableSkinTempService(true)
+            repo.storeLatestIsDeviceWorn(false)
+            assertNull(repo.snapshotPli().monitoredPhysio)
+            assertLegacy(repo.snapshotPli(), false)
+            repo.storeLatestIsDeviceWorn(true)
             repo.storeEnableMopp(false)
             repo.storeEnablePhysiologicalServices(false)
             tick()
             assertTrue((documents.last()["r"] as String).contains("<remarks></remarks>"))
+            assertNull(repo.snapshotPli().monitoredPhysio)
+            assertLegacy(repo.snapshotPli(), false)
+            for (tag in listOf("hr", "skt", "exert")) assertFalse((documents.last()["r"] as String).contains("<$tag>"))
             val published = documents.size
             repo.setCompanionAppConnected()
             tick()
