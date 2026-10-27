@@ -22,6 +22,20 @@ data class CotEventTime(
     val staleCot: String,
 )
 
+internal object SelfPliStalePolicy {
+    fun offsetMillis(
+        companionBonded: Boolean,
+        effectiveIntervalSeconds: Int,
+        standaloneOffsetMillis: Long,
+    ): Long = if (companionBonded) {
+        2L * effectiveIntervalSeconds.coerceAtLeast(0) * 1_000L + COMPANION_GRACE_SECONDS * 1_000L
+    } else {
+        standaloneOffsetMillis
+    }
+
+    private const val COMPANION_GRACE_SECONDS = 15L
+}
+
 object CotEventTimeFactory {
     fun now(
         startOffset: CotTimeOffset = CotTimeOffset(),

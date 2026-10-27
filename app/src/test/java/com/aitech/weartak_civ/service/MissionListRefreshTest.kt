@@ -47,6 +47,7 @@ class MissionListRefreshTest {
         MainActivity.dataRepository = repository
         every { repository.getEnableDataSync } returns enabled
         every { repository.isCompanionConnected } returns companion
+        every { repository.shouldSuppressWatchTransportNow() } answers { companion.value }
         every { repository.takMissions } returns missions
         every { repository.takRouteCopies } returns emptyList()
         every { repository.getSubscribedMissions(any()) } answers {

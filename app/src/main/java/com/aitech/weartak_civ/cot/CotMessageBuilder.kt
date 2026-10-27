@@ -90,6 +90,46 @@ object CotMessageBuilder {
         ), point, detail)
     }
 
+    fun expiredSelfPli(
+        deviceUid: String,
+        callsign: String,
+        nowMillis: Long,
+        location: DataRepository.LocationSnapshot? = null,
+    ): String {
+        require(deviceUid.isNotBlank())
+        // Reuse the last fix so peers don't briefly redraw the expiring marker at 0,0.
+        val fix = location?.takeIf {
+            it.lat.isFinite() && it.lat in -90.0..90.0 && it.lon.isFinite() && it.lon in -180.0..180.0
+        }
+        val time = CotEventTimeFactory.at(nowMillis, staleOffset = CotTimeOffset())
+        val detail = CotXml.element(
+            "contact",
+            listOf(
+                "endpoint" to "*:-1:stcp",
+                "callsign" to CotXml.escape(callsign),
+            ),
+        )
+        return CotXml.event(
+            listOf(
+                "version" to "2.0",
+                "uid" to CotXml.escape(deviceUid),
+                "type" to "a-f-G-U-C",
+                "time" to time.timeCot,
+                "start" to time.startCot,
+                "stale" to time.staleCot,
+                "how" to "m-g",
+            ),
+            listOf(
+                "lat" to String.format(java.util.Locale.US, "%.6f", fix?.lat ?: 0.0),
+                "lon" to String.format(java.util.Locale.US, "%.6f", fix?.lon ?: 0.0),
+                "hae" to String.format(java.util.Locale.US, "%.1f", fix?.hae?.takeIf { it.isFinite() } ?: 0.0),
+                "ce" to 9999999,
+                "le" to 9999999,
+            ),
+            detail,
+        )
+    }
+
     fun emergency(snapshot: DataRepository.EmergencyEventSnapshot): String {
         val location = requireNotNull(snapshot.location?.takeIf {
             it.lat.isFinite() && it.lat in -90.0..90.0 &&

@@ -108,6 +108,13 @@ class CompanionAppService : Service() {
         }
     }
 
+    internal fun beginGraceForPreviouslyReadyCompanion() {
+        if (repo.companionEverReady.value == true) {
+            Log.i(TAG, "Previously ready Companion found; delaying direct transports until Companion is ready")
+            repo.setCompanionTransportPending()
+        }
+    }
+
     private val bhRepo by lazy { (applicationContext as WearTakApplication).bhRepo }
     private val bloodhoundSyncMutex = Mutex()
     private val bloodhoundConnectionGeneration = java.util.concurrent.atomic.AtomicLong()
@@ -828,6 +835,14 @@ class CompanionAppService : Service() {
             if (bondState != BluetoothDevice.BOND_NONE || prevBondState == BluetoothDevice.BOND_NONE) return
             clearPhoneManagedSettings(address)
             if (!isActive(device)) return
+            serviceScope.launch {
+                try {
+                    repo.clearCompanionAppReadinessHistory()
+                } catch (error: Exception) {
+                    if (error is kotlinx.coroutines.CancellationException) throw error
+                    Log.e(TAG, "Could not clear Companion readiness history after unpair", error)
+                }
+            }
 
             Log.w(TAG, "Active companion bond lost for $address; forcing BLE reset")
             forceBleReset("bond_lost:$address")
@@ -899,6 +914,11 @@ class CompanionAppService : Service() {
 
         phoneManagedRestoreNotBefore =
             android.os.SystemClock.elapsedRealtime() + PhoneManagementLease.TIMEOUT_MS
+
+        // Arm the startup grace before the BLE server can delay other service startup.
+        bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
+        bluetoothAdapter = bluetoothManager?.adapter
+        beginGraceForPreviouslyReadyCompanion()
 
         // 4) Initialize BLE server + GATT service
         initBle()
@@ -1599,11 +1619,25 @@ class CompanionAppService : Service() {
             if (enableNoti) {
                 beginCompanionSubscription()
                 notificationsEnabled = true
-                repo.setCompanionAppConnected()
                 disarmHandshakeWatchdog()
-                capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.SERVICES_READY)
 
                 serviceScope.launch {
+                    try {
+                        CotDispatchService.prepareForCompanionHandoffIfRunning()
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Failed to expire direct self PLI before Companion handoff", error)
+                    }
+                    try {
+                        DittoService.prepareForCompanionHandoffIfRunning()
+                    } catch (error: kotlinx.coroutines.CancellationException) {
+                        throw error
+                    } catch (error: Exception) {
+                        Log.e(TAG, "Failed to expire direct Ditto self track before Companion handoff", error)
+                    }
+                    repo.setCompanionAppConnected()
+                    capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.SERVICES_READY)
                     if (!helloSentForConnection) {
                         helloSentForConnection = true
                         val env = capRepo.buildWatchInfoEnvelope()

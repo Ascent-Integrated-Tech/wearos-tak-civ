@@ -149,7 +149,7 @@ object NetworkUtils {
         @Synchronized
         fun sendCommandReply(cotXml: String, destination: String, destinationPort: Int): Boolean {
             if (!running || !MainActivity.enableMulticastOnWifi ||
-                MainActivity.dataRepository.isCompanionConnected.value) return false
+                MainActivity.dataRepository.shouldSuppressWatchTransportNow()) return false
             val ms = socket ?: return false
             if (destinationPort !in 1..65535) return false
             val target = InetAddress.getByName(destination)
@@ -162,15 +162,24 @@ object NetworkUtils {
 
         @Synchronized
         fun send(cotXml: String) {
-            if (MainActivity.dataRepository.isCompanionConnected.value) return
+            send(cotXml, allowCompanionHandoffExpiry = false)
+        }
+
+        @Synchronized
+        fun sendFinalExpiredSelfPli(cotXml: String): Boolean =
+            send(cotXml, allowCompanionHandoffExpiry = true)
+
+        private fun send(cotXml: String, allowCompanionHandoffExpiry: Boolean): Boolean {
+            if (!allowCompanionHandoffExpiry &&
+                MainActivity.dataRepository.shouldSuppressWatchTransportNow()) return false
             //Log.i(TAG, "Checking socket")
-            val ms = socket ?: return
+            val ms = socket ?: return false
             //Log.i(TAG, "Checking group")
-            val grp = group ?: return
+            val grp = group ?: return false
             //Log.i(TAG, "Checking multicast publisher running status")
-            if (!running) return
+            if (!running) return false
             //Log.i(TAG, "Checking if multicast is enabled: ${MainActivity.enableMulticastOnWifi}")
-            if (!MainActivity.enableMulticastOnWifi) return
+            if (!MainActivity.enableMulticastOnWifi) return false
 
             val bytes = TakMulticastEndpoints.prepareOutbound(cotXml).toByteArray(Charsets.UTF_8)
             // Keep messages small; UDP can fragment.
@@ -182,8 +191,10 @@ object NetworkUtils {
                 val destination = if (endpoint.address == address) grp else InetAddress.getByName(endpoint.address)
                 ms.send(DatagramPacket(bytes, bytes.size, destination, endpoint.port))
                 //Log.i(TAG, "Sent Datagram to the multicast socket! $cotXml")
+                return true
             } catch (e: Exception) {
                 Log.e(TAG, "Multicast send() error: ${e.message}", e)
+                return false
             }
         }
     }

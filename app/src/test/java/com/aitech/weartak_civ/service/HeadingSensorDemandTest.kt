@@ -247,6 +247,7 @@ class HeadingSensorDemandTest {
             every { repository.azimuthTrueDegSmoothed } returns heading
             every { repository.latestLocation } returns MutableStateFlow<android.location.Location?>(null)
             every { repository.updateMagAzimuthTrue(any()) } returns Unit
+            every { repository.noteLocationMotion() } returns Unit
             every { manager.registerListener(service, sensor, any<Int>()) } returns true
             setField(service, "repo\$delegate", lazy { repository })
             setField(service, "sensorManager", manager)

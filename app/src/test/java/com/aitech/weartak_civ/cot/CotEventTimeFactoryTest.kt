@@ -19,4 +19,24 @@ class CotEventTimeFactoryTest {
         assertEquals("1969-12-31T23:59:56.000Z", time.startCot)
         assertEquals("1969-12-31T23:57:00.000Z", time.staleCot)
     }
+
+    @Test
+    fun companionBondUsesTwiceEffectiveIntervalPlusFifteenSecondsAndStandaloneIsUnchanged() {
+        assertEquals(
+            45_000L,
+            SelfPliStalePolicy.offsetMillis(
+                companionBonded = true,
+                effectiveIntervalSeconds = 15,
+                standaloneOffsetMillis = 5 * 60_000L,
+            ),
+        )
+        assertEquals(
+            5 * 60_000L,
+            SelfPliStalePolicy.offsetMillis(
+                companionBonded = false,
+                effectiveIntervalSeconds = 15,
+                standaloneOffsetMillis = 5 * 60_000L,
+            ),
+        )
+    }
 }

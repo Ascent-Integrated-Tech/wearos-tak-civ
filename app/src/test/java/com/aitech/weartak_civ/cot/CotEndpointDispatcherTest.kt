@@ -4,6 +4,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import com.aitech.weartak_civ.service.BatteryPowerObserver.DockType
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -109,6 +110,30 @@ class CotEndpointDispatcherTest {
             CotOutboundMessage("<pli/>", CotMessageKind.PLI, CotCompanionPayload.Pli(pliSnapshot())),
             CotEndpointAvailability(false, false, false, false, false))
         assertEquals(listOf("sitx:<pli/>", "pliMulticast:<pli/>"), calls)
+    }
+
+    @Test
+    fun finalSelfPliExpiryUsesOnlyConnectedTakAndMulticastRoutes() = runBlocking {
+        val calls = mutableListOf<String>()
+        val message = CotOutboundMessage("<expired-pli/>", CotMessageKind.PLI, CotCompanionPayload.Pli(pliSnapshot()))
+        val dispatcher = dispatcher(calls)
+
+        assertTrue(dispatcher.dispatchFinalSelfPliExpiry(
+            message,
+            CotEndpointAvailability(tak = true, sitx = true, ditto = true, multicast = true, companion = false),
+            sendTakExpiry = { calls += "final-tak:$it"; true },
+            sendMulticastExpiry = { calls += "final-multicast:$it"; true },
+        ))
+        assertEquals(listOf("final-tak:<expired-pli/>", "final-multicast:<expired-pli/>"), calls)
+
+        calls.clear()
+        assertFalse(dispatcher.dispatchFinalSelfPliExpiry(
+            message,
+            CotEndpointAvailability(tak = false, sitx = true, ditto = true, multicast = false, companion = false),
+            sendTakExpiry = { calls += "unexpected-tak"; true },
+            sendMulticastExpiry = { calls += "unexpected-multicast"; true },
+        ))
+        assertTrue(calls.isEmpty())
     }
 
     private fun dispatcher(calls: MutableList<String>) = CotEndpointDispatcher(

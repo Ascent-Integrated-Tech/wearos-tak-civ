@@ -1,9 +1,12 @@
 package com.aitech.weartak_civ.service
 
 import android.app.Application
+import com.aitech.weartak_civ.data.DataRepository
+import io.mockk.every
 import io.mockk.mockk
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -20,7 +23,10 @@ import org.robolectric.annotation.Config
 class WeatherDemandTest {
     @Test fun demandStartsAndStopsAcrossEffectiveConfigurationChanges() = runTest {
         val demand = MutableStateFlow(false)
-        val config = ServiceConfiguration(RuntimeEnvironment.getApplication(), mockk(), mockk(),
+        val repository = mockk<DataRepository>(relaxed = true) {
+            every { watchTransportSuppressed } returns flowOf(false)
+        }
+        val config = ServiceConfiguration(RuntimeEnvironment.getApplication(), repository, mockk(),
             demand, "test-key")
         val observed = mutableListOf<Boolean>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
@@ -35,7 +41,10 @@ class WeatherDemandTest {
     @Test fun absentKeyNeverRequestsServiceEvenWithActiveConsumers() = runTest {
         for (key in listOf(null, "", "  ")) {
             val demand = MutableStateFlow(true)
-            val config = ServiceConfiguration(RuntimeEnvironment.getApplication(), mockk(), mockk(), demand, key)
+            val repository = mockk<DataRepository>(relaxed = true) {
+                every { watchTransportSuppressed } returns flowOf(false)
+            }
+            val config = ServiceConfiguration(RuntimeEnvironment.getApplication(), repository, mockk(), demand, key)
             val observed = mutableListOf<Boolean>()
             val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
                 config.getServiceEnabledFlow(ReactiveServiceManager.ServiceType.WEATHER).collect { observed += it }

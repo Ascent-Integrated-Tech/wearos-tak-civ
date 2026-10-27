@@ -1308,9 +1308,11 @@ class DittoReceiveIntegrationTest {
             assertTrue(writes.isEmpty())
 
             f.repo.setCompanionAppDisconnected()
+            assertTrue("The disconnect grace suppresses direct publication", f.repo.shouldSuppressWatchTransportNow())
             f.emit("mapitem", incoming)
             f.drain()
             assertEquals(listOf("remote-point"), f.repo.receivedMarkerList.value.map { it.uid })
+            assertTrue(f.repo.resumeWatchTransportsImmediately())
             assertTrue(publisher.publishDocument("mapitem", f.ownedDoc()))
             assertEquals(1, writes.size)
         } finally { f.close() }

@@ -26,7 +26,12 @@ class DittoTrackLocationTest {
         MainActivity.callsign = "OLD"
         val app = RuntimeEnvironment.getApplication()
         shadowOf(app).grantPermissions(android.Manifest.permission.ACCESS_FINE_LOCATION)
-        val repo = DataRepository(app)
+        val repo = spyk(DataRepository(app))
+        repo.setCompanionAppConnected()
+        repo.setCompanionAppDisconnected()
+        repo.resumeWatchTransportsImmediately()
+        val previousReportingInterval = CotDispatchService.actualReportingIntervalSecs
+        CotDispatchService.actualReportingIntervalSecs = 15
         repo.storeEnableLocationService(true)
         repo.storeEnableDittoService(true)
         repo.storeCallsign("CURRENT")
@@ -62,6 +67,9 @@ class DittoTrackLocationTest {
             startup.value = true
             refresh()
             val document = documents.single()
+            assertEquals(fix.time + 45_000L, document["o"])
+            val pairedPli = repo.snapshotPli()
+            assertEquals(45_000L, pairedPli.time.stale - pairedPli.time.time)
             assertEquals(fix.time, document["b"])
             assertEquals(fix.time, document["n"])
             assertEquals("CURRENT", document["authorCs"])
@@ -79,7 +87,10 @@ class DittoTrackLocationTest {
             refresh()
             assertEquals(1, documents.size)
         } finally {
+            CotDispatchService.actualReportingIntervalSecs = previousReportingInterval
             startup.value = previous
+            repo.setCompanionAppDisconnected()
+            repo.clearCompanionAppReadinessHistory()
             scope.cancel()
             scope.coroutineContext[Job]?.join()
         }

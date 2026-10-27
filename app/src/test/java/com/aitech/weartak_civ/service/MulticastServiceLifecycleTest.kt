@@ -55,7 +55,7 @@ class MulticastServiceLifecycleTest {
         val collector = launch { service.collectMulticastWifiRequests(configs.receiveAsFlow(), requester) }
         val valid = TAKConnectService.MulticastConfig(null, true, "239.2.3.1", 6969)
         try {
-            listOf(valid.copy(enable = false), valid.copy(companionConnected = true),
+            listOf(valid.copy(enable = false), valid.copy(watchTransportSuppressed = true),
                 valid.copy(address = ""), valid.copy(address = "192.0.2.1"),
                 valid.copy(port = 0), valid.copy(port = 65536), valid.copy(port = null)
             ).forEach { configs.send(it) }
@@ -64,7 +64,7 @@ class MulticastServiceLifecycleTest {
             verify(exactly = 1) {
                 manager.requestNetwork(any(), any<ConnectivityManager.NetworkCallback>(), handler)
             }
-            configs.send(valid.copy(companionConnected = true))
+            configs.send(valid.copy(watchTransportSuppressed = true))
             withTimeout(3_000) { released.receive() }
             configs.send(valid.copy(port = 7000))
             withTimeout(3_000) { requested.receive() }
@@ -135,7 +135,7 @@ class MulticastServiceLifecycleTest {
             val third = withTimeout(3000) { opened.receive() }
             assertTrue(second.isClosed)
             repeat(2) {
-                configure(enabled.copy(companionConnected = true), false)
+                configure(enabled.copy(watchTransportSuppressed = true), false)
                 assertTrue(if (it == 0) third.isClosed else live.get() == 0)
                 configure(enabled, true)
                 withTimeout(3000) { opened.receive() }

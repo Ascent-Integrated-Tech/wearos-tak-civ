@@ -61,8 +61,8 @@ class ServiceConfiguration(
             dataRepository.getEnableLocationService.distinctUntilChanged()
 
         ServiceType.SITX_SERVICE ->
-            combine(dataRepository.getEnableSitxService, dataRepository.isCompanionConnected) {
-                enabled, connected -> enabled && !connected
+            combine(dataRepository.getEnableSitxService, dataRepository.watchTransportSuppressed) {
+                enabled, suppressed -> enabled && !suppressed
             }.distinctUntilChanged()
 
         /* PHYSIO Service is virtual group – not used to start a real service.
@@ -98,11 +98,11 @@ class ServiceConfiguration(
             actOn && (physioOn || (dynamic && locationOn))
         }.distinctUntilChanged()
 
-        // Companion stays running while reconnecting; only an active link suspends Ditto.
+        // Keep direct transports stopped briefly after a Companion drop to absorb reconnect flaps.
         ServiceType.DITTO -> combine(
-            dataRepository.getEnableDittoService, dataRepository.isCompanionConnected, DittoService.isReconfiguring
-        ) { enabled, connected, reconfiguring ->
-            enabled && !connected && !reconfiguring
+            dataRepository.getEnableDittoService, dataRepository.watchTransportSuppressed, DittoService.isReconfiguring
+        ) { enabled, suppressed, reconfiguring ->
+            enabled && !suppressed && !reconfiguring
         }.distinctUntilChanged()
         ServiceType.HAIL -> dataRepository.getEnableHailService.distinctUntilChanged()
         ServiceType.CHAT  -> dataRepository.getEnableChatService.distinctUntilChanged()

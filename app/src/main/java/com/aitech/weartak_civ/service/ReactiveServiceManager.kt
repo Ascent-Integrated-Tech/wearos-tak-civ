@@ -185,6 +185,7 @@ class ReactiveServiceManager : Service() {
 
     // ---------- Seeding & Observing ----------
     private suspend fun seedOnce() {
+        repo.awaitCompanionHistoryLoaded()
         // Initialize service state snapshot for real services
         runnableServicesList.forEach { type ->
             desiredServicesStateMap[type] = config.getServiceEnabledFlow(type).first()

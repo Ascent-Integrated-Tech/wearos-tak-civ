@@ -28,6 +28,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -60,6 +61,7 @@ class TAKConnectServiceLifecycleTest {
     private var previousStopping = false
     private var previousRunning = false
     private val companionConnected = MutableStateFlow(false)
+    private val companionGraceActive = MutableStateFlow(false)
     private val takEnabled = MutableStateFlow(true)
     private val worn = MutableStateFlow<Boolean?>(null)
 
@@ -86,6 +88,13 @@ class TAKConnectServiceLifecycleTest {
         every { repository.multicastAddress } returns MutableStateFlow(null)
         every { repository.multicastPort } returns MutableStateFlow(null)
         every { repository.isCompanionConnected } returns companionConnected
+        every { repository.companionDisconnectGraceActive } returns companionGraceActive
+        every { repository.watchTransportSuppressed } returns combine(
+            companionConnected, companionGraceActive
+        ) { connected, graceActive -> connected || graceActive }
+        every { repository.shouldSuppressWatchTransportNow() } answers {
+            companionConnected.value || companionGraceActive.value
+        }
         every { repository.takChannels } returns MutableStateFlow(emptyList())
         every { repository.networkSettingsLocked } returns flowOf(false)
         val networkManager = mockk<NetworkManager>(relaxed = true)
@@ -194,6 +203,45 @@ class TAKConnectServiceLifecycleTest {
         companionConnected.value = true
         TAKConnectService.getClientCertificateAndConnect(detail)
         verify(exactly = 1) { TAKConnectService.fetchAndParseCertificateConfig(detail, any()) }
+    }
+
+    @Test
+    fun finalSelfPliExpiryAttemptsEveryEligibleTakServer() {
+        fun connectedDetail(id: String) = TAKConnectService.TakServerDetail(
+            id, true, id, "tak.example.invalid", 8089, false,
+            "user", "password", null, null,
+        ).apply {
+            connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT)
+        }
+        val first = connectedDetail(serverId)
+        val second = connectedDetail("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        TAKConnectService.takServerDetails = mutableListOf(first, second)
+        TAKConnectService.isNetworkConnected = true
+        TAKConnectService.takEndpointEnabled = true
+        mockkObject(LicenseManager)
+        every { LicenseManager.isLicenseValid() } returns true
+        mockkObject(TAKConnectService.Companion)
+        every {
+            TAKConnectService.sendData(
+                any(), any(), isNotPli = false, currTime = any(),
+                allowFinalExpiryDuringCompanionGrace = true,
+            )
+        } returns true
+
+        assertTrue(TAKConnectService.sendFinalExpiredSelfPli("<event/>"))
+
+        verify(exactly = 1) {
+            TAKConnectService.sendData(
+                first, "<event/>", isNotPli = false, currTime = any(),
+                allowFinalExpiryDuringCompanionGrace = true,
+            )
+        }
+        verify(exactly = 1) {
+            TAKConnectService.sendData(
+                second, "<event/>", isNotPli = false, currTime = any(),
+                allowFinalExpiryDuringCompanionGrace = true,
+            )
+        }
     }
 
     @Test
