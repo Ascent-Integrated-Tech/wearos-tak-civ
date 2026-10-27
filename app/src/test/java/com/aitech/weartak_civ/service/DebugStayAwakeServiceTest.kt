@@ -410,6 +410,11 @@ class DebugStayAwakeServiceTest {
             .putExtra(BatteryManager.EXTRA_PLUGGED, 0))
     }
 
+    @Test
+    fun unknownBatteryStateAlsoStopsManualSession() {
+        verifyAutoOff(Intent(Intent.ACTION_BATTERY_CHANGED))
+    }
+
     private fun verifyAutoOff(trigger: Intent) {
         val app = RuntimeEnvironment.getApplication()
         val resources = mutableListOf<Map<DiagnosticMetric, Long>>()

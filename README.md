@@ -4,6 +4,26 @@ WearTAK-WearOS is a standalone Wear OS application that connects a watch to the 
 
 The app can connect directly to a TAK server and can optionally use SITX, Ditto mesh, BLE companion, and plugin integrations when those capabilities are configured. A phone is not required for the app's primary watch workflow.
 
+### Charging stay awake (opt-in)
+
+**Developer Preferences > Stay awake when charging** is a second toggle directly
+under **Stay awake**, using the same row style. It defaults to off. When enabled,
+WearTAK's running service manager starts the existing stay-awake foreground service
+on external power (including a full battery), holding screen, CPU and Wi-Fi locks
+plus an active Wi-Fi network request. Charging-only mode uses Android's dim screen
+wake lock immediately to reduce OLED burn-in risk, including outside WearTAK.
+Unplugging, unknown power state, disabling the charging toggle, or stopping the
+service manager releases this mode's demand. The saved charging choice survives
+unplugging, service stops, updates and restarts; it takes effect again when WearTAK
+is running on the charger. It does nothing off the charger.
+
+The main **Stay awake** switch takes priority with a bright screen while plugged in;
+disabling the charging toggle cannot stop manual mode. Manual mode still requires
+external power and turns itself off on unplug, preserving its original behavior.
+Turning manual mode off falls back to charging-only mode if eligible. Notification
+Stop disables both choices. Neither mode changes system stay-awake, Wi-Fi or ADB
+settings, and neither guarantees that vendor firmware preserves an ADB session.
+
 ### TAK master switch and upgrades
 
 Multicast choice now persists across upgrades. Multicast remains on by default;
@@ -1500,6 +1520,7 @@ permissions and Knox authorization remain independent and unchanged. Hiding
 the menus immediately removes access to their pages, not those restrictions.
 The unlock gesture no longer changes airplane mode. **Logging** and **Stay awake**
 are simple toggle rows at the top, alphabetized within that group, without helper text.
+**Stay awake when charging** follows **Stay awake** directly in every locale.
 The remaining developer entries are sorted by their current localized visible labels,
 with the title and Back navigation kept outside the sorted entries.
 
@@ -1825,31 +1846,36 @@ explicit opt-in, local export/clear and bounded retention still apply.
 
 ### Dev Mode Stay Awake
 
-Debug and release APKs include one opt-in **Stay awake** split-toggle chip in the alphabetized
+Debug and release APKs include opt-in **Stay awake** and **Stay awake when charging** toggle rows in
 **Developer Preferences** (tap the
 version eight times in Preferences to reveal these tools). This standalone demo/development
 session control does not require Wireless debugging or read its system setting. Starting
-requires an enabled Wi-Fi radio and external power (including a fully charged watch
-still on the charger). Otherwise a brief toast explains the refusal and the switch stays off.
+requires an enabled Wi-Fi radio and known external power. Otherwise a brief toast
+explains the refusal and the manual switch stays off. Charging-only mode
+additionally requires a running WearTAK service manager.
 The switch holds screen, CPU and Wi-Fi locks and keeps a Wi-Fi network actively requested, including
 while viewing system settings. The request does not require Internet access, so local-only
 hotspots can satisfy it. It shows an ongoing notification with a Stop action. It remains
 enabled until you turn off the switch, tap notification Stop, switch Wi-Fi off,
-or remove the watch from its charger. The switch reflects saved intent.
+or unplug the watch.
+The switches reflect their independent saved choices.
 Wi-Fi radio `DISABLING` or `DISABLED` broadcasts stop the session; ordinary AP
 disconnects, roaming, or loss of Internet validation do not. Power-disconnected
-and battery plugged-state broadcasts also stop it, without polling.
+and battery plugged-state broadcasts stop both modes without polling.
 Automatic shutoff releases the active network request and all locks immediately,
-unregisters its receivers, removes its notification, and persists disabled.
-Restoring Wi-Fi or power never re-enables it: enable it manually again.
+unregisters its service receivers and removes its notification. Wi-Fi shutoff
+persists manual mode disabled; the charging opt-in remains saved. Charging-only mode
+restarts on a later power-connected edge or WearTAK startup with known external power.
 Leaving the UI or swiping the recent task does not stop the foreground service.
 There is no separate update-persistence option: enabled users retain their choice
-regardless of the old checkbox, subject to the same Wi-Fi/power prerequisites.
-Explicitly or automatically disabled users stay disabled.
+regardless of the old checkbox, subject to Wi-Fi and power availability. Explicitly disabled
+choices stay disabled. The charging opt-in is also retained across updates/restarts,
+but does not start the full WearTAK service stack at boot.
 The service requests `START_STICKY` recovery after ordinary process death; the
 package-update and post-unlock boot receiver restore only this service when enabled.
 Opening WearTAK retries a previously blocked restore. Missing or unknown Wi-Fi/power
-prerequisites turn the saved choice off and explain the refusal with a toast.
+prerequisites turn the manual choice off and explain the refusal with a toast.
+Unknown power state fails closed for charging-only mode without erasing its opt-in.
 Other Android startup failures release partial locks and report an error without
 turning the saved choice off. These hooks never
 launch the main activity or enable the full WearTAK/Companion BLE service stack.
@@ -2213,8 +2239,9 @@ physical energy-saving claim.
 Verbose service-state table generation is debug-only; normal service state
 publication remains available in release. Stay awake remains an intentional
 user-enabled feature: boot/package replacement restores it only with saved
-enabled intent and valid Wi-Fi/power prerequisites, never on a fresh install or
-after explicit or automatic off.
+enabled manual intent and valid Wi-Fi/power prerequisites, never on a fresh install or
+after explicit or automatic manual off. The separate charging opt-in only runs
+with WearTAK's service manager and known external power.
 
 ### WEARTAK-130: chat commands
 

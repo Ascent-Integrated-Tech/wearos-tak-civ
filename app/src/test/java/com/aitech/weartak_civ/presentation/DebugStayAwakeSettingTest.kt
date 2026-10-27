@@ -38,6 +38,20 @@ class DebugStayAwakeSettingTest {
 
     @Test fun smallRoundHasSimpleTopTogglesWithoutHelperText() = verifyTopSplitChip()
 
+    @Test fun chargingToggleDefaultsOffAndPersistsIndependently() {
+        compose.setContent { ChargingStayAwakeSetting() }
+        compose.onNodeWithText("Stay awake when charging").assertIsOff().performClick()
+        compose.waitUntil { DebugStayAwakePreferences(app).chargingEnabled }
+        compose.onNodeWithText("Stay awake when charging").assertIsOn()
+        compose.runOnIdle {
+            assertFalse(DebugStayAwakePreferences(app).enabled)
+            assertNull(shadowOf(app).nextStartedService)
+        }
+        compose.onNodeWithText("Stay awake when charging").performClick()
+        compose.waitUntil { !DebugStayAwakePreferences(app).chargingEnabled }
+        compose.onNodeWithText("Stay awake when charging").assertIsOff()
+    }
+
     @Test
     @Config(qualifiers = "w227dp-h227dp-round")
     fun largerRoundHasSimpleTopTogglesWithoutHelperText() = verifyTopSplitChip()
@@ -119,6 +133,8 @@ class DebugStayAwakeSettingTest {
         stayAwake.assertIsOff()
         val stopped = shadowOf(app).nextStoppedService
         assertEquals(DebugStayAwakeService::class.java.name, stopped?.component?.className)
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Stay awake when charging"))
+        compose.onNodeWithText("Stay awake when charging").assertIsDisplayed().assertIsOff()
     }
 
     @Test fun savedOnIsNotShownAsOffWhenAndroidHasNotStartedService() {

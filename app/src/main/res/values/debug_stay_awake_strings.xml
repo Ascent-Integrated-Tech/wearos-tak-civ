@@ -1,11 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="debug_stay_awake">Stay awake</string>
+    <string name="debug_stay_awake_charging">Stay awake when charging</string>
     <string name="debug_stay_awake_warning">Extra battery use. May heat watch.</string>
-    <string name="debug_stay_awake_active">Turns off when Wi-Fi is switched off or the watch is unplugged. Re-enable manually.</string>
+    <string name="debug_stay_awake_active">Keeps screen, CPU and Wi-Fi awake while plugged in. Manual Stay awake takes priority over dim charging mode. Unplug stops both; Stop disables both choices.</string>
     <string name="debug_stay_awake_running">Running</string>
     <string name="debug_stay_awake_waiting">Enabled, not running</string>
-    <string name="debug_stay_awake_details">Keeps screen, CPU and Wi-Fi awake while Wi-Fi is on and the watch is plugged in. Switching Wi-Fi off or unplugging turns this setting off, including after updates and restart. Re-enable manually. Cannot unlock the watch or keep it awake while powered off.</string>
+    <string name="debug_stay_awake_details">Both modes require Wi-Fi and external power. Stay awake uses a bright screen and turns off on unplug. Stay awake when charging uses a dim screen while WearTAK is running; its choice survives unplugging, updates and restart. Manual Stay awake takes priority while plugged in. Switching Wi-Fi off stops the session. Cannot unlock the watch or keep it awake while powered off.</string>
     <string name="debug_stay_awake_channel">Debug stay awake</string>
     <string name="debug_stay_awake_stop">Stop</string>
     <string name="debug_stay_awake_failed">Stay awake is enabled but could not start. Open WearTAK to retry. See debug logs.</string>

@@ -157,6 +157,7 @@ class ReactiveServiceManager : Service() {
             channelId = CHANNEL_ID,
             channelName = CHANNEL_NAME
         )
+        (application as WearTakApplication).chargingStayAwake.start()
 
         scope.launch {
             seedOnce()
@@ -173,8 +174,9 @@ class ReactiveServiceManager : Service() {
     }
 
     override fun onDestroy() {
-        super.onDestroy()
         isRunning.set(false)
+        (application as WearTakApplication).chargingStayAwake.stop()
+        super.onDestroy()
         stopAll()
         scope.cancel()
         serviceLoop.close()

@@ -11,6 +11,22 @@ internal class DebugStayAwakePreferences(context: Context) {
 
     // Reuse the legacy session key so enabled users migrate regardless of the old update opt-in.
     val enabled: Boolean get() = preferences.getBoolean("session_active", false)
+    val chargingEnabled: Boolean get() = preferences.getBoolean("when_charging", false)
+
+    val chargingEnabledFlow get() = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "when_charging") trySend(chargingEnabled)
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        trySend(chargingEnabled)
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
+    fun setChargingEnabled(enabled: Boolean) {
+        check(preferences.edit().putBoolean("when_charging", enabled).commit()) {
+            "Unable to save Stay awake when charging"
+        }
+    }
 
     val enabledFlow get() = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
