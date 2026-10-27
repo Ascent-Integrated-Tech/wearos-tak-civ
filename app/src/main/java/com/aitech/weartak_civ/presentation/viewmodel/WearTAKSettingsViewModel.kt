@@ -166,6 +166,19 @@ import kotlinx.coroutines.launch
 import kotlin.Int
 import kotlin.String
 
+internal suspend fun updateCompanionServiceSetting(repository: DataRepository, enabled: Boolean) {
+    if (repository.getNetworkPreferencesLocked.first()) {
+        Log.w(TAG, "Companion change rejected while network preferences are locked")
+        return
+    }
+    if (!enabled) {
+        repository.phoneManagedCompanionAddress.first()?.let { peer ->
+            repository.clearPhoneManagedSettingsFromNetworkSettings(peer)?.applyToRuntimeConstants()
+        }
+    }
+    repository.storeEnableCompanionAppService(enabled)
+}
+
 class WearTAKSettingsViewModel : ViewModel() {
 
     private suspend fun refreshPhysioCepRuntime(reloadSustainOverrides: Boolean = false) {
@@ -948,14 +961,7 @@ fun displaySitxGroupDialog(
 
     fun storeEnableCompanionAppService(enable: Boolean) {
         viewModelScope.launch {
-            if (dataRepository.networkSettingsLocked.first()) return@launch
-            if (!enable) {
-                dataRepository.phoneManagedCompanionAddress.first()?.let { peer ->
-                    dataRepository.clearPhoneManagedSettingsFromNetworkSettings(peer)
-                        ?.applyToRuntimeConstants()
-                }
-            }
-            dataRepository.storeEnableCompanionAppService(enable)
+            updateCompanionServiceSetting(dataRepository, enable)
             enableCompanionAppService = dataRepository.getEnableCompanionAppService.first()
         }
     }

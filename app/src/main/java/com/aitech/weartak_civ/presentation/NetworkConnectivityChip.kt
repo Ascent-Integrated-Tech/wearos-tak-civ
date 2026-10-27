@@ -37,6 +37,41 @@ import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
 import androidx.wear.compose.foundation.lazy.items
 import androidx.compose.material3.HorizontalDivider
 import com.aitech.weartak_civ.R
+import androidx.navigation.NavController
+
+@Composable
+internal fun MulticastNetworkPreference(
+    enabled: Boolean,
+    phoneManagedSettings: Boolean,
+    navController: NavController,
+    showPhoneManagedNotice: () -> Unit
+) {
+    val title = stringResource(R.string.tak_sa_multicast)
+    if (phoneManagedSettings) {
+        WearTAKLockedTitleChip(title, stringResource(R.string.network_control_bonded), showPhoneManagedNotice)
+    } else {
+        WearTAKTitleChipWithState(
+            route = "tak_sa_multicast", title = title, state = enabled, navController = navController,
+            formatState = { stringResource(if (enabled) R.string.enabled else R.string.disabled) }
+        )
+    }
+}
+
+@Composable
+internal fun MulticastNetworkToggle(
+    enabled: Boolean,
+    phoneManagedSettings: Boolean,
+    networkPreferencesLocked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    WearTAKToggleChip(
+        checkedLive = enabled,
+        onCheckedChange = onCheckedChange,
+        title = stringResource(R.string.tak_sa_multicast),
+        description = networkControlSubtitle(stringResource(R.string.service_on_off), phoneManagedSettings),
+        enabled = !networkPreferencesLocked && !phoneManagedSettings
+    )
+}
 
 internal fun ScalingLazyListScope.networkPreferencesChecklist(
     enabled: Boolean,
@@ -62,9 +97,10 @@ internal fun NetworkConnectivityChip(
     showNetworkLockedNotice: () -> Unit,
     appIcon: @Composable () -> Unit = { NetworkConnectivityIcon(row) }
 ) {
-    val toggleEnabled = !networkPreferencesLocked && !phoneManagedSettings
-    val subtitle = networkControlSubtitle(row.subtitle, phoneManagedSettings)
-    val statusDescription = networkControlSubtitle(row.statusDescription, phoneManagedSettings)
+    val bondLocked = phoneManagedSettings && row.key != "companion"
+    val toggleEnabled = !networkPreferencesLocked && !bondLocked
+    val subtitle = networkControlSubtitle(row.subtitle, bondLocked)
+    val statusDescription = networkControlSubtitle(row.statusDescription, bondLocked)
     val route = row.settingsRoute
     if (route == null) {
         WearTAKToggleChip(

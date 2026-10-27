@@ -90,10 +90,10 @@ class NetworkConnectivityChipTest {
         toggle.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Off, Connected"))
     }
 
-    @Test fun eitherLockDisablesAllSwitchesButKeepsNonServerNavigation() {
+    @Test fun eitherLockDisablesTransportSwitchesButKeepsNonServerNavigation() {
         render()
         for (managed in listOf(false, true)) {
-            for (transport in listOf("companion", "multicast", "sitx", "ditto")) {
+            for (transport in listOf("multicast", "sitx", "ditto")) {
                 compose.runOnIdle {
                     key.value = transport
                     phoneManaged.value = managed
@@ -146,9 +146,23 @@ class NetworkConnectivityChipTest {
         compose.onNode(isToggleable()).assertIsNotEnabled()
     }
 
-    @Test fun bondReplacesSubtitleAndAccessibleStatusOnEveryChecklistAndPluginEquivalent() {
+    @Test fun companionKeepsOriginalStatusDuringBondButRespectsPolicyLock() {
+        key.value = "companion"
+        phoneManaged.value = true
         render()
-        for (transport in listOf("tak", "multicast", "sitx", "ditto", "companion", "plugin:example")) {
+        compose.onNodeWithText("Bonded").assertDoesNotExist()
+        compose.onNodeWithText("Subtitle").assertIsDisplayed()
+        compose.onNode(isToggleable()).assertIsEnabled().assert(
+            SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "On, Connected"))
+        compose.runOnIdle { networkLocked.value = true }
+        compose.onNode(isToggleable()).assertIsNotEnabled().performTouchInput { click() }
+        compose.runOnIdle { assertEquals(0, toggles) }
+        compose.onNodeWithText("Bonded").assertDoesNotExist()
+    }
+
+    @Test fun bondReplacesSubtitleAndAccessibleStatusOnLockedChecklistAndPluginEquivalent() {
+        render()
+        for (transport in listOf("tak", "multicast", "sitx", "ditto", "plugin:example")) {
             compose.runOnIdle { key.value = transport; phoneManaged.value = true }
             compose.onNodeWithText("Bonded").assertIsDisplayed()
             compose.onNodeWithText("Subtitle").assertDoesNotExist()

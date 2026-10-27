@@ -1540,18 +1540,11 @@ fun WearTAKSettingsNav(
                         }
                     }
                     item {
-                        WearTAKTitleChipWithState(
-                            route = "tak_sa_multicast",
-                            title = stringResource(R.string.tak_sa_multicast),
-                            state = enableMulticast,
+                        MulticastNetworkPreference(
+                            enabled = enableMulticast,
+                            phoneManagedSettings = phoneManagedSettings,
                             navController = navController,
-                            formatState = {
-                                if (enableMulticast) {
-                                    stringResource(R.string.enabled)
-                                } else {
-                                    stringResource(R.string.disabled)
-                                }
-                            }
+                            showPhoneManagedNotice = showPhoneManagedNotice
                         )
                     }
                     item {
@@ -1985,11 +1978,11 @@ fun WearTAKSettingsNav(
                 title = stringResource(R.string.tak_sa_multicast),
                 columnContent = {
                     item {
-                        WearTAKToggleChip(
-                            checkedLive = enableMulticast,
-                            onCheckedChange = { settingsVm.storeEnableMulticast(it) },
-                            title = stringResource(R.string.tak_sa_multicast),
-                            description = stringResource(R.string.service_on_off)
+                        MulticastNetworkToggle(
+                            enabled = enableMulticast,
+                            phoneManagedSettings = phoneManagedSettings,
+                            networkPreferencesLocked = networkPreferencesLocked,
+                            onCheckedChange = settingsVm::storeEnableMulticast
                         )
                     }
                     item {

@@ -113,6 +113,12 @@ class NetworkConnectivityIconsTest {
             toggle.performClick().assertIsOff()
             icon.assertIsDisplayed()
             compose.runOnIdle { bonded = true }
+            if (route == "companion") {
+                compose.onNodeWithText("Bonded").assertDoesNotExist()
+                compose.onNode(isToggleable()).assertIsEnabled()
+                compose.runOnIdle { bonded = false }
+                return@forEach
+            }
             val bondedText = compose.onNodeWithText("Bonded", useUnmergedTree = true)
             bondedText.assertIsDisplayed()
             if (label.second.isNotEmpty()) compose.onNodeWithText(label.second).assertDoesNotExist()

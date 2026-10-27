@@ -143,6 +143,15 @@ checklist subtitles show **Bonded**, replacing any prior subtitle (or adding
 one when empty). The TAK master and plugin forwarding equivalents use the
 same label. A network-preferences policy lock alone does not display Bonded;
 neither does a saved phone-management choice without an active managed session.
+The TAK SA Multicast navigation row also shows Bonded and blocks entry while
+bonded, and its detail-page switch uses the same bond/network-policy lock as
+the checklist. Releasing the bond restores the saved multicast choice and its
+original subtitle; the repository rejects local multicast-toggle writes while
+the live bond is active.
+WearTAK Companion is the exception: its checklist switch remains available
+while bonded so it can turn Companion off and release phone management,
+unlocking the other transports. An independent network-policy lock still blocks
+this action. Companion keeps its normal subtitle, never Bonded.
 
 ### Received CoT marker symbols
 
