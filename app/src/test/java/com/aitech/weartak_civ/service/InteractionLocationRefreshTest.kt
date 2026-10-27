@@ -164,6 +164,38 @@ class InteractionLocationRefreshTest {
         }
     }
 
+    @Test fun offBodyFusedUsesBalancedWithoutActivityButExplicitRefreshStillUsesHighAccuracy() {
+        val manager = mockk<LocationManager>(relaxed = true)
+        val client = mockk<FusedLocationProviderClient>()
+        val requests = mutableListOf<LocationRequest>()
+        every { client.requestLocationUpdates(capture(requests), any<LocationCallback>(), any<Looper>()) } returns Tasks.forResult(null)
+        every { client.removeLocationUpdates(any<LocationCallback>()) } returns Tasks.forResult(null)
+        val service = service(manager, LocationInput.FUSED, client)
+        shadowOf(RuntimeEnvironment.getApplication()).grantPermissions(Manifest.permission.ACCESS_FINE_LOCATION)
+        val previous = CotDispatchService.actualReportingIntervalSecs
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
+        every { com.aitech.weartak_civ.Utils.startGlobalTimer(any()) } just Runs
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 5
+            CotDispatchService.stationaryIntervalSeconds = 300
+            service.onLocationUpdateRequiredEvent(LocationUpdateRequired())
+            await { requests.size == 1 }
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_BALANCED_POWER_ACCURACY, requests[0].priority)
+            assertEquals(30_000L, requests[0].maxUpdateAgeMillis)
+            assertFalse(requests[0].isWaitForAccurateLocation)
+            service.onInteractionPliRefresh(InteractionPliRefresh(PliRefreshReason.MAP_OPENED))
+            await { requests.size == 2 }
+            assertEquals(com.google.android.gms.location.Priority.PRIORITY_HIGH_ACCURACY, requests[1].priority)
+            assertEquals(0L, requests[1].maxUpdateAgeMillis)
+        } finally {
+            CotDispatchService.stationaryLocation = false
+            CotDispatchService.actualReportingIntervalSecs = previous
+            service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
+        }
+    }
+
     @Test fun stationaryFusedUsesRecentHonestFixButInteractionRequiresFreshHighAccuracy() {
         val manager = mockk<LocationManager>(relaxed = true)
         val client = mockk<FusedLocationProviderClient>()
@@ -294,6 +326,8 @@ class InteractionLocationRefreshTest {
             Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACTIVITY_RECOGNITION)
         val previousInterval = CotDispatchService.actualReportingIntervalSecs
         val still = ActivityRecognitionService.Companion.ActivityRecognized.STILL
+        mockkObject(com.aitech.weartak_civ.Utils)
+        every { com.aitech.weartak_civ.Utils.runTimerJob(any()) } just Runs
         try {
             runBlocking {
                 MainActivity.dataRepository.storeEnableActivityRecognitionService(true)
@@ -331,6 +365,7 @@ class InteractionLocationRefreshTest {
         } finally {
             CotDispatchService.actualReportingIntervalSecs = previousInterval
             service.onDestroy()
+            unmockkObject(com.aitech.weartak_civ.Utils)
         }
     }
 

@@ -2158,7 +2158,8 @@ class DataRepository(
 
     private fun pliStaleOffset(): CotTimeOffset {
         val standaloneSeconds = com.aitech.weartak_civ.service.StationaryLocationPolicy.staleSeconds(
-            almightyReportingIntervalSecs.value, CotDispatchService.stationaryLocation)
+            almightyReportingIntervalSecs.value, CotDispatchService.stationaryLocation,
+            CotDispatchService.stationaryIntervalSeconds)
         val offsetMillis = com.aitech.weartak_civ.cot.SelfPliStalePolicy.offsetMillis(
             companionBonded = companionEverReady.value == true,
             effectiveIntervalSeconds = CotDispatchService.actualReportingIntervalSecs,
