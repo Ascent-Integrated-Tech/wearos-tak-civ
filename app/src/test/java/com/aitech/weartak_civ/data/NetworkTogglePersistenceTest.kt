@@ -18,6 +18,22 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34])
 class NetworkTogglePersistenceTest {
+    @Test fun bondLockRequiresBothSavedManagementAndLiveManagedSessionNotJustCompanionReadiness() = runBlocking {
+        val repo = DataRepository(RuntimeEnvironment.getApplication())
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        repo.setCompanionAppConnected()
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        repo.enablePhoneManagedSettings("AA:BB")
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        repo.setPhoneManagementSessionActive(true)
+        assertTrue(repo.phoneManagedSettingsLocked.first())
+        repo.setPhoneManagementSessionActive(false)
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+        repo.storeNetworkPreferencesLocked(true)
+        assertTrue(repo.networkSettingsLocked.first())
+        assertFalse(repo.phoneManagedSettingsLocked.first())
+    }
+
     @Before fun clearPreferences() = runBlocking {
         MainActivity.device_uid = "network-toggle-test"
         DataRepository(RuntimeEnvironment.getApplication()).legacyDataStore().edit { it.clear() }

@@ -1528,7 +1528,7 @@ fun WearTAKSettingsNav(
                         if (phoneManagedSettings) {
                             WearTAKLockedTitleChip(
                                 title = stringResource(R.string.tak_servers),
-                                lockedState = stringResource(R.string.phone_managed),
+                                lockedState = stringResource(R.string.network_control_bonded),
                                 onClick = showPhoneManagedNotice
                             )
                         } else {
@@ -1638,6 +1638,7 @@ fun WearTAKSettingsNav(
                             checkedLive = enableTakEndpoint,
                             onCheckedChange = settingsVm::storeEnableTakEndpoint,
                             title = stringResource(R.string.tak_servers),
+                            description = networkControlSubtitle("", phoneManagedSettings),
                             enabled = !networkPreferencesLocked && !phoneManagedSettings
                         )
                     }

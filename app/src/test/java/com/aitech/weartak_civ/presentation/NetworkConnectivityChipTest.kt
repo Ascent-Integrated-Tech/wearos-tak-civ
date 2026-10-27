@@ -2,6 +2,8 @@ package com.aitech.weartak_civ.presentation
 
 import android.app.Application
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.semantics.SemanticsActions
 import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
@@ -142,5 +144,41 @@ class NetworkConnectivityChipTest {
         compose.onNode(isToggleable()).assertIsNotEnabled().performTouchInput { click() }
         compose.runOnIdle { assertEquals(1, toggles); networkLocked.value = false; phoneManaged.value = true }
         compose.onNode(isToggleable()).assertIsNotEnabled()
+    }
+
+    @Test fun bondReplacesSubtitleAndAccessibleStatusOnEveryChecklistAndPluginEquivalent() {
+        render()
+        for (transport in listOf("tak", "multicast", "sitx", "ditto", "companion", "plugin:example")) {
+            compose.runOnIdle { key.value = transport; phoneManaged.value = true }
+            compose.onNodeWithText("Bonded").assertIsDisplayed()
+            compose.onNodeWithText("Subtitle").assertDoesNotExist()
+            val toggle = compose.onNode(isToggleable()).assertIsNotEnabled().assertIsOn()
+            if (transport.startsWith("plugin:")) {
+                toggle.assert(hasText("Bonded"))
+            } else {
+                toggle.assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "On, Bonded"))
+            }
+            compose.runOnIdle { phoneManaged.value = false; networkLocked.value = true }
+            compose.onNodeWithText("Bonded").assertDoesNotExist()
+            compose.onNodeWithText("Subtitle").assertIsDisplayed()
+            compose.onNode(isToggleable()).assertIsNotEnabled()
+            compose.runOnIdle { networkLocked.value = false }
+            compose.onNode(isToggleable()).assertIsEnabled()
+        }
+    }
+
+    @Test fun bondAddsSubtitleToEmptyRowsAndTakMasterEquivalentAndRestoresEmptyOnRelease() {
+        var bonded by androidx.compose.runtime.mutableStateOf(true)
+        compose.setContent {
+            WearTAKCIVTheme {
+                WearTAKToggleChip(true, {}, title = "TAK Servers",
+                    description = networkControlSubtitle("", bonded), enabled = !bonded)
+            }
+        }
+        compose.onNodeWithText("Bonded").assertIsDisplayed()
+        compose.onNode(isToggleable()).assertIsNotEnabled()
+        compose.runOnIdle { bonded = false }
+        compose.onNodeWithText("Bonded").assertDoesNotExist()
+        compose.onNode(isToggleable()).assertIsEnabled()
     }
 }

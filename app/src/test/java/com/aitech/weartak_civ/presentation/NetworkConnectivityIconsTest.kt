@@ -68,6 +68,7 @@ class NetworkConnectivityIconsTest {
             "companion" to ("WearTAK Companion" to ""))
         var key by mutableStateOf("tak")
         var checked by mutableStateOf(true)
+        var bonded by mutableStateOf(false)
         var density = 1f
         compose.setContent {
             density = LocalDensity.current.density
@@ -77,7 +78,7 @@ class NetworkConnectivityIconsTest {
                     val (title, subtitle) = labels.getValue(key)
                     NetworkConnectivityChip(
                         NetworkConnectivityRow(key, title, subtitle, checked, { checked = it }),
-                        false, false, {}, {}, {})
+                        false, bonded, {}, {}, {})
                 }
             }
         }
@@ -111,6 +112,22 @@ class NetworkConnectivityIconsTest {
             }
             toggle.performClick().assertIsOff()
             icon.assertIsDisplayed()
+            compose.runOnIdle { bonded = true }
+            val bondedText = compose.onNodeWithText("Bonded", useUnmergedTree = true)
+            bondedText.assertIsDisplayed()
+            if (label.second.isNotEmpty()) compose.onNodeWithText(label.second).assertDoesNotExist()
+            val bondedLayouts = mutableListOf<TextLayoutResult>()
+            bondedText.performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(bondedLayouts) }
+            assertFalse(bondedLayouts.single().didOverflowWidth)
+            assertFalse(bondedLayouts.single().didOverflowHeight)
+            val bondedBounds = bondedText.fetchSemanticsNode().boundsInRoot
+            for (corner in listOf(bondedBounds.topLeft, bondedBounds.topRight, bondedBounds.bottomLeft, bondedBounds.bottomRight)) {
+                val x = corner.x - radius
+                val y = corner.y - radius
+                assertTrue("Bonded clipped at $size: $bondedBounds", x * x + y * y <= radius * radius + 1)
+            }
+            compose.onNode(isToggleable()).assertIsNotEnabled()
+            compose.runOnIdle { bonded = false }
         }
     }
 
