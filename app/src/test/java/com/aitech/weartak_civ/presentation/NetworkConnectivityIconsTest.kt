@@ -2,6 +2,9 @@ package com.aitech.weartak_civ.presentation
 
 import android.app.Application
 import android.graphics.Color
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.drawable.ColorDrawable
 import android.widget.ImageView
 import android.view.View
@@ -21,6 +24,8 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.unit.dp
+import androidx.navigation.compose.rememberNavController
+import androidx.test.core.app.ApplicationProvider
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.presentation.theme.WearTAKCIVTheme
 import org.junit.Assert.*
@@ -30,18 +35,20 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
+import java.io.File
 
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [34], qualifiers = "w192dp-h192dp-round")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 class NetworkConnectivityIconsTest {
     @get:Rule val compose = createComposeRule()
+    private lateinit var renderedView: View
 
     @Test fun builtInArtworkMapsToEveryChecklistRoute() {
         val expected = mapOf(
             "tak" to R.drawable.tak_server_connected,
             "multicast" to R.drawable.multicast_connected,
-            "sitx" to R.drawable.ic_connection_sitx,
+            "sitx" to R.drawable.ic_connection_sitx_logo,
             "ditto" to R.drawable.ic_integration_ditto,
             "companion" to R.drawable.weartak_companion_plugin
         )
@@ -60,6 +67,63 @@ class NetworkConnectivityIconsTest {
     @Config(qualifiers = "w227dp-h227dp-round")
     fun checklistIconsLabelsAndSwitchesFit227dpRound() = verifyRound(227)
 
+    @Test fun sitxAssetIsTransparentWideAndSmall() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val bitmap = BitmapFactory.decodeResource(context.resources, R.drawable.ic_connection_sitx_logo)
+        assertEquals(128, bitmap.width)
+        assertEquals(48, bitmap.height)
+        assertEquals(0, Color.alpha(bitmap.getPixel(0, 0)))
+        assertTrue(bitmap.hasAlpha())
+    }
+
+    @Test fun sitxSettingsWordmarkFits192dpRound() = verifySitxSettings(192)
+
+    @Test
+    @Config(qualifiers = "w227dp-h227dp-round")
+    fun sitxSettingsWordmarkFits227dpRound() = verifySitxSettings(227)
+
+    private fun verifySitxSettings(size: Int) {
+        compose.setContent {
+            renderedView = LocalView.current
+            WearTAKCIVTheme {
+                Box(Modifier.requiredSize(size.dp).padding(horizontal = 7.dp),
+                    contentAlignment = Alignment.Center) {
+                    WearTAKTitleChipWithState(
+                        route = "sitx_tak_screen", title = "SITX TAK", state = true,
+                        icon = { SitxBrandIcon("Sit(x) logo") },
+                        navController = rememberNavController(),
+                        formatState = { "Enabled" }
+                    )
+                }
+            }
+        }
+        compose.onNodeWithText("SITX TAK").assertIsDisplayed()
+        verifyCyanWordmark(compose.onNodeWithContentDescription("Sit(x) logo", useUnmergedTree = true),
+            "sitx-settings-${size}dp")
+    }
+
+    private fun verifyCyanWordmark(icon: SemanticsNodeInteraction, name: String) {
+        val bounds = icon.assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        lateinit var bitmap: Bitmap
+        compose.runOnIdle {
+            bitmap = Bitmap.createBitmap(renderedView.width, renderedView.height, Bitmap.Config.ARGB_8888)
+            renderedView.draw(Canvas(bitmap))
+        }
+        val cyanPixels = (bounds.top.toInt() until bounds.bottom.toInt()).sumOf { y ->
+            (bounds.left.toInt() until bounds.right.toInt()).count { x ->
+                val color = bitmap.getPixel(x, y)
+                Color.red(color) < 80 && Color.green(color) > 120 && Color.blue(color) > 120
+            }
+        }
+        assertTrue("Sit(x) must retain its cyan pixels at row size: $name", cyanPixels > 20)
+        System.getenv("WEARTAK_SCREENSHOT_DIR")?.let { directory ->
+            val output = File(directory).apply { mkdirs() }
+            File(output, "$name.png").outputStream().use {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)
+            }
+        }
+    }
+
     private fun verifyRound(size: Int) {
         val labels = mapOf("tak" to ("TAK Servers" to "1/6"),
             "multicast" to ("TAK SA Multicast" to ""),
@@ -71,6 +135,7 @@ class NetworkConnectivityIconsTest {
         var bonded by mutableStateOf(false)
         var density = 1f
         compose.setContent {
+            renderedView = LocalView.current
             density = LocalDensity.current.density
             WearTAKCIVTheme {
                 Box(Modifier.requiredSize(size.dp).padding(horizontal = 7.dp),
@@ -87,6 +152,7 @@ class NetworkConnectivityIconsTest {
             val icon = compose.onNode(hasContentDescription(label.first) and !isToggleable(),
                 useUnmergedTree = true)
             icon.assertIsDisplayed()
+            if (route == "sitx") verifyCyanWordmark(icon, "sitx-checklist-${size}dp-on")
             val text = compose.onNodeWithText(label.first, useUnmergedTree = true)
             text.assertIsDisplayed()
             val textLayouts = mutableListOf<TextLayoutResult>()
@@ -112,6 +178,7 @@ class NetworkConnectivityIconsTest {
             }
             toggle.performClick().assertIsOff()
             icon.assertIsDisplayed()
+            if (route == "sitx") verifyCyanWordmark(icon, "sitx-checklist-${size}dp-off")
             compose.runOnIdle { bonded = true }
             if (route == "companion") {
                 compose.onNodeWithText("Bonded").assertDoesNotExist()
@@ -133,6 +200,7 @@ class NetworkConnectivityIconsTest {
                 assertTrue("Bonded clipped at $size: $bondedBounds", x * x + y * y <= radius * radius + 1)
             }
             compose.onNode(isToggleable()).assertIsNotEnabled()
+            if (route == "sitx") verifyCyanWordmark(icon, "sitx-checklist-${size}dp-bonded")
             compose.runOnIdle { bonded = false }
         }
     }

@@ -25,7 +25,7 @@ internal fun networkConnectivityIcon(key: String): Int? = when (key) {
     "tak" -> R.drawable.tak_server_connected
     "companion" -> R.drawable.weartak_companion_plugin
     "multicast" -> R.drawable.multicast_connected
-    "sitx" -> R.drawable.ic_connection_sitx
+    "sitx" -> R.drawable.ic_connection_sitx_logo
     "ditto" -> R.drawable.ic_integration_ditto
     else -> null
 }
