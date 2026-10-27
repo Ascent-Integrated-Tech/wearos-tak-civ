@@ -158,7 +158,9 @@ internal class DittoBleDiscoverySession(
     private val ditto: Ditto,
     private val scope: CoroutineScope,
     private val allowed: Flow<Boolean>,
-    elapsedClock: () -> Long = SystemClock::elapsedRealtime
+    elapsedClock: () -> Long = SystemClock::elapsedRealtime,
+    private val transportLock: Any = Any(),
+    private val transportChanged: (live.ditto.transports.DittoTransportConfig) -> Unit = {},
 ) : Application.ActivityLifecycleCallbacks, AutoCloseable {
     private val jobs = mutableListOf<Job>()
     private val graphs = Channel<DittoPresenceGraph>(Channel.CONFLATED)
@@ -207,19 +209,22 @@ internal class DittoBleDiscoverySession(
 
     private fun setBleEnabled(enabled: Boolean): Boolean {
         // Diagnostics describe requested SDK transport state, not hardware scan callbacks.
-        return try {
-            val config = ditto.transportConfig.clone()
-            config.peerToPeer.bluetoothLe.enabled = enabled
-            ditto.transportConfig = config
-            true
-        } catch (error: DittoError) {
-            Log.e("WearTAK-DittoBle", "Failed to change Ditto BLE transport (enabled=$enabled)", error)
-            AppDiagnostics.record(DiagnosticEvent.BLE_DISCOVERY, mapOf(
-                DiagnosticMetric.ENABLED to if (enabled) 1L else 0L,
-                DiagnosticMetric.RESULT to 0L,
-                DiagnosticMetric.FAILURES to 1L
-            ))
-            false
+        return synchronized(transportLock) {
+            try {
+                val config = ditto.transportConfig.clone()
+                config.peerToPeer.bluetoothLe.enabled = enabled
+                ditto.transportConfig = config
+                transportChanged(config)
+                true
+            } catch (error: DittoError) {
+                Log.e("WearTAK-DittoBle", "Failed to change Ditto BLE transport (enabled=$enabled)", error)
+                AppDiagnostics.record(DiagnosticEvent.BLE_DISCOVERY, mapOf(
+                    DiagnosticMetric.ENABLED to if (enabled) 1L else 0L,
+                    DiagnosticMetric.RESULT to 0L,
+                    DiagnosticMetric.FAILURES to 1L
+                ))
+                false
+            }
         }
     }
 

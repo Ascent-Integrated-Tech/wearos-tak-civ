@@ -65,9 +65,11 @@ class DittoChatRetentionTest {
             assertEquals(1, f.cutoffs.size)
             f.advance(10_000)
             policy.refreshIfDue()
-            assertEquals(listOf("evict", "subscribe", "close", "evict", "subscribe"), f.events)
+            assertEquals(2, f.events.count { it == "evict" })
+            assertEquals(25, f.events.count { it == "subscribe" })
+            assertEquals(24, f.events.count { it == "close" })
             assertEquals(listOf(f.wall - DittoChatRetention.INTERVAL_MS, f.wall), f.cutoffs)
-            assertEquals(f.cutoffs.map(DittoChatRetention::subscriptionQuery), f.queries)
+            assertEquals(DittoChatRetention.subscriptionQuery(f.wall), f.queries.last())
             assertTrue(f.errors.isEmpty())
         }
         assertEquals("close", f.events.last())
@@ -80,7 +82,7 @@ class DittoChatRetentionTest {
         f.policy().use {
             it.start()
             assertEquals(1, f.cutoffs.size)
-            assertEquals(f.queries[0], f.queries[1])
+            assertEquals(DittoChatRetention.subscriptionQuery(f.wall), f.queries.last())
             f.advance(DittoChatRetention.INTERVAL_MS - 3_600_001)
             it.refreshIfDue()
             assertEquals(1, f.cutoffs.size)
@@ -103,7 +105,7 @@ class DittoChatRetentionTest {
         f.policy().use {
             it.start()
             assertEquals(1, f.cutoffs.size)
-            assertEquals(f.queries[0], f.queries[1])
+            assertEquals(DittoChatRetention.subscriptionQuery(f.wall), f.queries.last())
             f.evictionFails = false
             f.advance(DittoChatRetention.INTERVAL_MS)
             it.refreshIfDue()

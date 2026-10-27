@@ -22,6 +22,7 @@ internal class DittoChatRetention(
 ) : Closeable {
     private var subscription: Closeable? = null
     private var nextAttempt = Long.MAX_VALUE
+    private var nextSubscription = Long.MAX_VALUE
     private var closed = false
 
     fun start() {
@@ -34,12 +35,20 @@ internal class DittoChatRetention(
         if (age >= INTERVAL_MS) refresh(now)
         else {
             nextAttempt = elapsedClock() + INTERVAL_MS - age
-            subscription = subscribe(subscriptionQuery(previous))
+            replaceSubscription(now)
         }
     }
 
     fun refreshIfDue() {
         if (!closed && elapsedClock() >= nextAttempt) refresh(wallClock())
+        else if (!closed && elapsedClock() >= nextSubscription) replaceSubscription(wallClock())
+    }
+
+    private fun replaceSubscription(cutoff: Long) {
+        subscription?.close()
+        subscription = null
+        subscription = subscribe(subscriptionQuery(cutoff))
+        nextSubscription = elapsedClock() + DittoSubscriptions.REFRESH_MS
     }
 
     private fun refresh(cutoff: Long) {
@@ -55,7 +64,7 @@ internal class DittoChatRetention(
             onError(error)
         } finally {
             // Even on cleanup failure, exclude stale history from the new subscription.
-            if (subscription == null) subscription = subscribe(subscriptionQuery(cutoff))
+            if (subscription == null) replaceSubscription(cutoff)
         }
     }
 

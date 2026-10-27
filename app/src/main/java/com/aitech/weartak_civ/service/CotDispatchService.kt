@@ -1258,7 +1258,7 @@ class CotDispatchService : Service() {
             return false
         }
         // Routine self PLI waits out the grace window; only active traffic forces direct transports back.
-        resumeWatchTransportsForDispatch(message.kind)
+        resumeWatchTransportsForDispatch(message.kind, emergencyNotice = message.emergencyDelivery != null)
         val started = android.os.SystemClock.elapsedRealtime()
         var accepted: Boolean? = null
         if (message.kind == CotMessageKind.PLI) AppDiagnostics.record(DiagnosticEvent.PLI_ATTEMPT)
@@ -1329,8 +1329,9 @@ class CotDispatchService : Service() {
         }
     }
 
-    internal fun resumeWatchTransportsForDispatch(kind: CotMessageKind) {
+    internal fun resumeWatchTransportsForDispatch(kind: CotMessageKind, emergencyNotice: Boolean = false) {
         if (kind != CotMessageKind.PLI) resumeWatchTransportsForPendingOutbound()
+        if (kind == CotMessageKind.EMERGENCY || emergencyNotice) DittoService.resumeSyncForAlert()
     }
 
     internal fun shouldDeferPliForTransportGrace(kind: CotMessageKind): Boolean =
