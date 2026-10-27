@@ -48,6 +48,50 @@ Turning manual mode off falls back to charging-only mode if eligible. Notificati
 Stop disables both choices. Neither mode changes system stay-awake, Wi-Fi or ADB
 settings, and neither guarantees that vendor firmware preserves an ADB session.
 
+### Wireless debugging when charging (Developer preferences)
+
+**Developer Preferences > Wireless debugging when charging** follows the two
+Stay awake switches in both release and debug builds and defaults to off.
+It is a developer-menu option, not a debug-build-only feature. The release
+application ID is `com.aitech.weartak_civ`; the debug build adds `.dev`
+in `app/build.gradle`. The switch is disabled and unchecked, with no settings
+writes or wireless-debugging Wi-Fi demand, until the one-time grant is made
+from a trusted computer. For the signed release APK:
+
+```text
+adb shell pm grant com.aitech.weartak_civ android.permission.WRITE_SECURE_SETTINGS
+```
+
+The permission is declared in the main manifest for both build types. The
+on-screen command uses `BuildConfig.APPLICATION_ID`, so a debug APK shows
+`com.aitech.weartak_civ.dev` instead. Reopen the screen after granting it.
+This option does not pair a computer, bypass watch authentication,
+or guarantee Samsung/Wear firmware support. Settings writes and their read-back
+values are logged under `WearTAK-ChargingADB`.
+
+While the service manager runs and the shared battery source confirms external
+power, this option enables `adb_enabled` only if needed and `adb_wifi_enabled`.
+It also requests the existing dim-screen/CPU/Wi-Fi charging service and active
+Wi-Fi network request, independently of Stay awake when charging. It does not
+change manual Stay awake semantics or turn on the Wi-Fi radio. Notification Stop
+disables all three choices. Unplug, unknown power, toggle-off and manager stop
+restore the ADB settings; no new settings are enabled off the charger.
+
+Before each change, a synchronous write-ahead journal saves the exact original
+string (including an absent value). It survives process death; application startup
+restores pending values before a new manager session can enable them again.
+A manager-only restart while still plugged retains the saved originals.
+Toggle-off also retries restoration even if the manager is not running.
+Restoration is conditional on the current
+value still being the `1` WearTAK wrote. A settings observer also relinquishes
+ownership when it sees another value, even if it later returns to `1`.
+Settings already enabled before this feature ran are never owned or restored.
+Failed restores retain their journal for retry on the next reconciliation/start.
+Android provides neither writer identity nor atomic compare-and-set for these
+settings: identical writes and changes racing the final read/write cannot be
+distinguished. This best-effort ownership check avoids overwriting detectable
+user changes, rather than blindly restoring a snapshot.
+
 ### TAK master switch and upgrades
 
 Multicast choice now persists across upgrades. Multicast remains on by default;

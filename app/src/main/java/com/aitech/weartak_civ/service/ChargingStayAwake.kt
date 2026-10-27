@@ -14,8 +14,9 @@ class ChargingStayAwake(private val context: Context) {
     private val preferences = DebugStayAwakePreferences(context)
     private val store = context.getSharedPreferences("debug_stay_awake", Context.MODE_PRIVATE)
     private var monitoring = false
+    private val wirelessDebugging = ChargingWirelessDebugging(context)
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "when_charging") reconcile(powerConnected)
+        if (key == "when_charging" || key == "wireless_when_charging") reconcile(powerConnected)
     }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -50,12 +51,16 @@ class ChargingStayAwake(private val context: Context) {
         powerConnected = false
         store.unregisterOnSharedPreferenceChangeListener(listener)
         context.unregisterReceiver(receiver)
+        wirelessDebugging.stop()
         if (!preferences.enabled) context.stopService(Intent(context, DebugStayAwakeService::class.java))
     }
 
     private fun reconcile(plugged: Boolean) {
-        if (!monitoring || preferences.enabled) return
-        if (preferences.chargingEnabled && plugged) {
+        if (!monitoring) return
+        val connected = plugged && isPlugged(context)
+        wirelessDebugging.reconcile(connected)
+        if (preferences.enabled) return
+        if ((preferences.chargingEnabled || ChargingWirelessDebugging.requested(context)) && connected) {
             DebugStayAwakeService.restoreIfEnabled(context)
         } else {
             context.stopService(Intent(context, DebugStayAwakeService::class.java))

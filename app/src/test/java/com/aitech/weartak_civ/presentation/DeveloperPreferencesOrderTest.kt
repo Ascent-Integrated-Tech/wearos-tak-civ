@@ -7,13 +7,15 @@ import java.util.Locale
 class DeveloperPreferencesOrderTest {
     @Test fun chargingAlwaysFollowsManualRegardlessOfLocalizedLabel() {
         val entries = listOf(
+            DeveloperEntry(DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING, "0"),
             DeveloperEntry(DeveloperEntryId.STAY_AWAKE_CHARGING, "A"),
             DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, "Logging"),
             DeveloperEntry(DeveloperEntryId.STAY_AWAKE, "Z"),
             DeveloperEntry(DeveloperEntryId.BUILD, "Build")
         )
         assertEquals(listOf(DeveloperEntryId.DIAGNOSTICS, DeveloperEntryId.STAY_AWAKE,
-            DeveloperEntryId.STAY_AWAKE_CHARGING, DeveloperEntryId.BUILD),
+            DeveloperEntryId.STAY_AWAKE_CHARGING, DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING,
+            DeveloperEntryId.BUILD),
             sortedDeveloperEntries(entries, Locale.GERMAN).map { it.id })
     }
 

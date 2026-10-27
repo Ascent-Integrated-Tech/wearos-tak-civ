@@ -1,6 +1,8 @@
 package com.aitech.weartak_civ.service
 
 import android.app.Application
+import android.Manifest
+import android.provider.Settings
 import android.app.Service
 import android.content.ComponentName
 import android.content.ContextWrapper
@@ -82,6 +84,104 @@ class ChargingStayAwakeTest {
         assertFalse(DebugStayAwakeService.active.value)
         assertEquals(0, starts)
         assertTrue(connectivity.requests.isEmpty())
+    }
+
+    @Test
+    fun wirelessSavedOptInWithoutPermissionDoesNotWriteOrRequestWifi() {
+        shadowOf(application).denyPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        Settings.Global.putString(application.contentResolver, "adb_enabled", "0")
+        Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
+        preferences.setWirelessDebuggingEnabled(true)
+        battery(BatteryManager.BATTERY_PLUGGED_USB)
+        awake.start()
+        idle()
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_enabled"))
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+        assertFalse(DebugStayAwakeService.active.value)
+        assertEquals(0, starts)
+        assertTrue(connectivity.requests.isEmpty())
+    }
+
+    @Test
+    fun wirelessDebuggingAloneHoldsChargingWifiDemandAndUnplugRestores() {
+        shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        Settings.Global.putString(application.contentResolver, "adb_enabled", "0")
+        Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
+        preferences.setWirelessDebuggingEnabled(true)
+        battery(BatteryManager.BATTERY_PLUGGED_USB)
+        awake.start()
+        idle()
+        assertFalse(preferences.chargingEnabled)
+        assertFalse(preferences.enabled)
+        assertAllHeld()
+        assertEquals(1, connectivity.networkCallbacks.size)
+        assertEquals("1", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+        battery(0)
+        idle()
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(connectivity.networkCallbacks.isEmpty())
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_enabled"))
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+        assertTrue(preferences.wirelessDebuggingEnabled)
+    }
+
+    @Test
+    fun wirelessToggleOffRestoresButDoesNotStopIndependentManualDemand() {
+        shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
+        battery(BatteryManager.BATTERY_PLUGGED_USB)
+        awake.start()
+        preferences.setWirelessDebuggingEnabled(true)
+        idle()
+        assertAllHeld()
+        DebugStayAwakeService.setEnabled(context, true)
+        preferences.setWirelessDebuggingEnabled(false)
+        idle()
+        assertAllHeld()
+        assertTrue(preferences.enabled)
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+    }
+
+    @Test
+    fun wirelessUnknownPowerAndManagerStopRestoreAndReleaseWifi() {
+        shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
+        preferences.setWirelessDebuggingEnabled(true)
+        battery(BatteryManager.BATTERY_PLUGGED_USB)
+        awake.start()
+        idle()
+        application.sendStickyBroadcast(Intent(Intent.ACTION_BATTERY_CHANGED))
+        idle()
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(connectivity.networkCallbacks.isEmpty())
+        battery(BatteryManager.BATTERY_PLUGGED_USB)
+        idle()
+        assertAllHeld()
+        awake.stop()
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+        assertFalse(DebugStayAwakeService.active.value)
+        assertTrue(connectivity.networkCallbacks.isEmpty())
+        assertTrue(preferences.wirelessDebuggingEnabled)
+    }
+
+    @Test
+    fun notificationStopDisablesWirelessAndRestoresWithoutRestartingOnPower() {
+        shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
+        Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
+        preferences.setWirelessDebuggingEnabled(true)
+        battery(BatteryManager.BATTERY_PLUGGED_USB)
+        awake.start()
+        idle()
+        service.onStartCommand(Intent().setAction(DebugStayAwakeService.ACTION_STOP), 0, 2)
+        idle()
+        assertFalse(preferences.wirelessDebuggingEnabled)
+        assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+        assertFalse(DebugStayAwakeService.active.value)
+        application.sendBroadcast(Intent(Intent.ACTION_POWER_CONNECTED))
+        idle()
+        assertEquals(1, starts)
+        assertTrue(connectivity.networkCallbacks.isEmpty())
     }
 
     @Test

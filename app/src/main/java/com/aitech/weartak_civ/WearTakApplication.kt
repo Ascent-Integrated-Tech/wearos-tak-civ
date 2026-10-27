@@ -53,6 +53,7 @@ import com.aitech.weartak_civ.service.BondedLocationDiagnostics
 import com.aitech.weartak_civ.service.AppDiagnostics
 import com.aitech.weartak_civ.service.BatteryPowerObserver
 import com.aitech.weartak_civ.service.ChargingStayAwake
+import com.aitech.weartak_civ.service.ChargingWirelessDebugging
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -116,6 +117,7 @@ class WearTakApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        ChargingWirelessDebugging.restorePending(this)
         com.aitech.weartak_civ.command.SensitiveEnrollment.purgeNotifications(this)
         com.aitech.weartak_civ.service.RoutineServiceNotification.reconcileProcessStart(this)
         diagnostics = AppDiagnostics.initialize(this)
