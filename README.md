@@ -48,8 +48,31 @@ the main-screen TAK artwork: green/check means at least one TAK server connected
 yellow/signal means configured but switched off or not connected, and red/X means
 no server configured, even when the master is on. Its text and accessibility label
 describe the state independently of color; the server count and switch remain.
-The main-screen aggregate transport indicator and watchface complications are
-unchanged.
+Watchface complication strings and artwork are unchanged.
+
+### Main-screen connection checklist
+
+The top status strip shows separate icons for enabled Ditto Edge Sync, WearTAK
+Companion, TAK servers, multicast and SITX. Disabled routes are hidden; TAK is
+also hidden when no individual servers are enabled. Multiple TAK servers share
+one icon, with the connected/total count in its accessibility description.
+Ditto and Companion reuse their plugin artwork; SITX has an S/x glyph.
+
+A white icon with a green dot means connected, amber with a hollow badge means
+connecting, and a white TAK icon with an amber badge means only some enabled
+servers are connected. Gray with a dash means not connected; gray with a slash
+means paused for Companion (including the existing disconnect grace period).
+Ditto's connected state means local sync is active, not that a remote peer or
+cloud server has been verified. Multicast connected means its publisher is
+running, not that another device has acknowledged traffic.
+
+Wi-Fi and cellular are shown independently when both are available. Bluetooth
+shows the Companion BLE link separately from Companion's ready-to-relay state.
+Location/reporting and battery indicators remain alongside the checklist.
+Tap the connection icons to open Network Preferences, or location to open
+Reporting. The compact strip fits the top chord of a 192dp round watch without
+moving the dashboard controls. It observes existing state streams, with no
+new polling, network requests or animations.
 
 ### Received CoT marker symbols
 
