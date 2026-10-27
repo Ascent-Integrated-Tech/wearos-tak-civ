@@ -593,6 +593,14 @@ these settings messages do not make it watch-source PLI or supply watch `takv`.
 Companion observation/conversion requires a separate phone-side update. Passing
 local tests does not establish phone consumption or server/ATAK receipt.
 
+### Map rotary bezel zoom
+
+On the map, rotate the bezel clockwise to zoom in and counterclockwise to zoom
+out. Rotary input falls through to normal handling while Layers, Channels,
+own-location details, the overlapping-target picker, route details, or route-point
+details are open, and while navigating to the selected-user menu. Zoom resumes
+when the unobstructed map is active again.
+
 ### Map layer visibility
 
 The Layers menu preserves saved visibility choices without reloading the native

@@ -347,6 +347,17 @@ fun MapCivApp(
     }
 }
 
+internal fun zoomMapWithBezel(
+    scroll: Float,
+    overlayOpen: Boolean,
+    lifecycleState: Lifecycle.State,
+    changeZoom: (Double) -> Unit
+): Boolean {
+    if (overlayOpen || lifecycleState != Lifecycle.State.RESUMED) return false
+    changeZoom(-scroll.toDouble())
+    return true
+}
+
 @Composable
 internal fun MapUserNavigation(
     users: List<DataRepository.ReceivedUser>,
@@ -1983,25 +1994,6 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
 
     var showChannelToggle by remember {mutableStateOf(false)}
 
-    val activity = LocalContext.current as? MapActivity
-
-    val layersMenuOpen by rememberUpdatedState(showLayerToggle)
-
-    DisposableEffect(activity) {
-        activity?.setBezelZoomHandler { scroll ->
-            if (layersMenuOpen) {
-                false
-            } else {
-                changeZoom(-scroll.toDouble())
-                true
-            }
-        }
-
-        onDispose {
-            activity?.setBezelZoomHandler(null)
-        }
-    }
-
     LaunchedEffect(networkSettingsLocked) {
         if (networkSettingsLocked) showChannelToggle = false
     }
@@ -2502,6 +2494,22 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
         }
     }
     var selectedMapTargetKeys by remember { mutableStateOf<Set<String>?>(null) }
+
+    val activity = context as? MapActivity
+    val mapOverlayOpen by rememberUpdatedState(
+        showLayerToggle || showChannelToggle || showPopup ||
+            selectedMapTargetKeys != null || selectedRoute != null || selectedRoutePoint != null
+    )
+    DisposableEffect(activity, lifecycleOwner) {
+        activity?.setBezelZoomHandler { scroll ->
+            // A retained map destination must not consume input on the selected-user screen.
+            zoomMapWithBezel(scroll, mapOverlayOpen, lifecycleOwner.lifecycle.currentState, ::changeZoom)
+        }
+        onDispose {
+            activity?.setBezelZoomHandler(null)
+        }
+    }
+
     fun openMapTarget(target: MapSelectionTarget) {
         if (target.kind == MapTargetKind.CONTACT) {
             onUserClick(target.uid)
