@@ -601,6 +601,7 @@ class CotDispatchService : Service() {
         if (pendingManualAlertQueue.any {
                 it.alert.uuid == manualAlertWithState.alert.uuid && it.alert.alertState == manualAlertWithState.alert.alertState
             }) return
+        resumeWatchTransportsForPendingOutbound()
         val pendingManualAlert = manualAlertWithState.alert.copy(enqueuedToBeSent = true)
         val pendingManualAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = manualAlertWithState.smsSent, alert = pendingManualAlert)
         Log.i(TAG, "===> adding to pendingManualAlertQueue=$pendingManualAlert...")
@@ -749,6 +750,7 @@ class CotDispatchService : Service() {
         if (pendingPhysioAndAutoGenAlertQueue.any {
                 it.alert.uuid == alertWithState.alert.uuid && it.alert.alertState == alertWithState.alert.alertState
             }) return
+        resumeWatchTransportsForPendingOutbound()
         val pendingAlert = alertWithState.alert.copy(enqueuedToBeSent = true)
         val pendingAlertWithState = CustomEmergencyAlertWithAddedState(smsSent = alertWithState.smsSent, alert = pendingAlert)
         Log.i(TAG, "===> adding to pendingPhysioAndAutoGenAlertQueue=$pendingAlert...")
@@ -824,6 +826,7 @@ class CotDispatchService : Service() {
                 if (hasConnectedEndpoint()) {
                     sendAllChatMessages(req)
                 } else {
+                    resumeWatchTransportsForPendingOutbound()
                     pendingChatMsgQueue.addLast(req)
                     Log.i(TAG, "pendingChatMsgQueue=${pendingChatMsgQueue.size}")
                 }
@@ -1247,6 +1250,8 @@ class CotDispatchService : Service() {
             Log.w(TAG, "Sensitive enrollment command excluded from outbound CoT")
             return false
         }
+        // Routine self PLI waits out the grace window; only active traffic forces direct transports back.
+        resumeWatchTransportsForDispatch(message.kind)
         val started = android.os.SystemClock.elapsedRealtime()
         var accepted: Boolean? = null
         if (message.kind == CotMessageKind.PLI) AppDiagnostics.record(DiagnosticEvent.PLI_ATTEMPT)
@@ -1255,6 +1260,11 @@ class CotDispatchService : Service() {
             if (message.kind == CotMessageKind.PLI && position?.provider != null &&
                 !dataRepository.isCurrentLocationSnapshot(position)) {
                 Log.i(TAG, "Skipping PLI built before a location input change")
+                accepted = false
+                return false
+            }
+            if (shouldDeferPliForTransportGrace(message.kind)) {
+                Log.i(TAG, "Deferring self PLI while direct transports are in Companion grace")
                 accepted = false
                 return false
             }
@@ -1280,6 +1290,46 @@ class CotDispatchService : Service() {
             ))
         }
     }
+
+    private suspend fun prepareForCompanionHandoff() {
+        val now = System.currentTimeMillis()
+        val system = dataRepository.snapshotSystem()
+        val snapshot = dataRepository.snapshotPli()
+        val message = CotOutboundMessage(
+            CotMessageBuilder.expiredSelfPli(system.deviceId, system.callsign, now, snapshot.loc),
+            CotMessageKind.PLI,
+            CotCompanionPayload.Pli(snapshot),
+        )
+        val available = endpointAvailability()
+        val accepted = endpointDispatcher.dispatchFinalSelfPliExpiry(
+            message,
+            available,
+            sendTakExpiry = { TAKConnectService.sendFinalExpiredSelfPli(it) },
+            sendMulticastExpiry = { NetworkUtils.MulticastPublisher.sendFinalExpiredSelfPli(it) },
+        )
+        if (accepted) {
+            Log.i(TAG, "Published final expired self PLI before Companion handoff")
+            kotlinx.coroutines.delay(COMPANION_HANDOFF_PLI_FLUSH_WAIT_MS)
+        } else {
+            Log.d(TAG, "No ready direct route for final self PLI expiry")
+        }
+    }
+
+    private fun resumeWatchTransportsForPendingOutbound() {
+        if (!dataRepository.isCompanionConnected.value &&
+            dataRepository.resumeWatchTransportsImmediately()) {
+            Log.i(TAG, "Resuming direct transports immediately for pending outbound CoT")
+        }
+    }
+
+    internal fun resumeWatchTransportsForDispatch(kind: CotMessageKind) {
+        if (kind != CotMessageKind.PLI) resumeWatchTransportsForPendingOutbound()
+    }
+
+    internal fun shouldDeferPliForTransportGrace(kind: CotMessageKind): Boolean =
+        kind == CotMessageKind.PLI &&
+            !dataRepository.isCompanionConnected.value &&
+            dataRepository.shouldSuppressWatchTransportNow()
 
     private suspend fun handleClearMarkerUid(uid: String) = markerDispatchMutex.withLock {
         handleClearMarkerUidLocked(uid)
@@ -1542,15 +1592,21 @@ class CotDispatchService : Service() {
         buildAndSendPhysioLocationCotMsg(periodic = true)
     }
 
-    private suspend fun enqueueMarkerDrop(marker: DataRepository.DroppedMarker) = markerDispatchMutex.withLock {
-        Log.i(TAG, "===> Adding to marker cot list: Marker Drop for uid=${marker.uid}")
-        pendingMarkerCotList.add(marker.copy(cotType = DataRepository.MarkerCotType.DROP))
+    private suspend fun enqueueMarkerDrop(marker: DataRepository.DroppedMarker) {
+        resumeWatchTransportsForPendingOutbound()
+        markerDispatchMutex.withLock {
+            Log.i(TAG, "===> Adding to marker cot list: Marker Drop for uid=${marker.uid}")
+            pendingMarkerCotList.add(marker.copy(cotType = DataRepository.MarkerCotType.DROP))
+        }
     }
 
-    private suspend fun enqueueMarkerEdit(req: DataRepository.DroppedMarker) = markerDispatchMutex.withLock {
-        Log.i(TAG, "===> Adding to marker cot list: Marker Edit for uid=${req.uid}")
-        pendingMarkerCotList.removeAll { it.uid == req.uid }
-        pendingMarkerCotList.add(req)
+    private suspend fun enqueueMarkerEdit(req: DataRepository.DroppedMarker) {
+        resumeWatchTransportsForPendingOutbound()
+        markerDispatchMutex.withLock {
+            Log.i(TAG, "===> Adding to marker cot list: Marker Edit for uid=${req.uid}")
+            pendingMarkerCotList.removeAll { it.uid == req.uid }
+            pendingMarkerCotList.add(req)
+        }
     }
 
     private suspend fun sendPendingMarkerCots(): Boolean = markerDispatchMutex.withLock {
@@ -1709,6 +1765,7 @@ class CotDispatchService : Service() {
     companion object {
         private val TAG = "WearTAK-" + CotDispatchService::class.java.simpleName
         private const val DISPATCH_INTERVAL = 2_000L // 2 seconds
+        private const val COMPANION_HANDOFF_PLI_FLUSH_WAIT_MS = 500L
         // Marker queue freshness; emergencies retain the best known fix with aged uncertainty.
         private const val FRESH_GPS_INTERVAL_MILLIS = 3_000L
         private const val COT_DISPATCH_SERVICE_NOTIFICATION_ID = 100
@@ -1757,6 +1814,10 @@ class CotDispatchService : Service() {
         var desiredLocationObservationIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
 
         lateinit var instance: CotDispatchService
+
+        internal suspend fun prepareForCompanionHandoffIfRunning() {
+            if (isRunning.get() && ::instance.isInitialized) instance.prepareForCompanionHandoff()
+        }
         val dateTimeFormatter: SimpleDateFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'")
         var esriGeojsonMsg = ""
         var tabletCommandJsonMsg = ""

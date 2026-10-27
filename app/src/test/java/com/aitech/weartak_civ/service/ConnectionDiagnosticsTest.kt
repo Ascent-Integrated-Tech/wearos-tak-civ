@@ -50,6 +50,7 @@ class ConnectionDiagnosticsTest {
         MainActivity.mainActivity = activity
         val repository = mockk<DataRepository>(relaxed = true)
         every { repository.isCompanionConnected } returns companionConnected
+        every { repository.shouldSuppressWatchTransportNow() } answers { companionConnected.value }
         MainActivity.dataRepository = repository
         app.getSharedPreferences("app_diagnostics", Application.MODE_PRIVATE).edit().clear().commit()
         app.getExternalFilesDir("diagnostics")!!.let { root ->

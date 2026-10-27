@@ -53,6 +53,7 @@ class TakTransientRecoveryTest {
         }
         MainActivity.dataRepository = mockk<DataRepository>(relaxed = true) {
             every { isCompanionConnected } returns companion
+            every { shouldSuppressWatchTransportNow() } answers { companion.value }
         }
         oldScope = scopeField.get(null)
         oldStopping = TAKConnectService.serviceStopping

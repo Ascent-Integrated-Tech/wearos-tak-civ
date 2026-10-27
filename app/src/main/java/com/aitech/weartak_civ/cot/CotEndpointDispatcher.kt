@@ -58,6 +58,25 @@ class CotEndpointDispatcher(
     suspend fun dispatchGateway(message: CotOutboundMessage, send: suspend () -> Boolean): Boolean =
         deliver(message, CotRoute.COMPANION, send)
 
+    suspend fun dispatchFinalSelfPliExpiry(
+        message: CotOutboundMessage,
+        availability: CotEndpointAvailability,
+        sendTakExpiry: (String) -> Boolean,
+        sendMulticastExpiry: (String) -> Boolean,
+    ): Boolean {
+        require(message.kind == CotMessageKind.PLI) { "Final self-expiry must be a PLI" }
+        var accepted = false
+        if (availability.tak) {
+            accepted = deliver(message, CotRoute.TAK) { sendTakExpiry(message.xml) } || accepted
+        }
+        if (availability.multicast) {
+            accepted = deliver(message, CotRoute.MULTICAST) {
+                sendMulticastExpiry(message.xml)
+            } || accepted
+        }
+        return accepted
+    }
+
     suspend fun dispatch(
         message: CotOutboundMessage,
         availability: CotEndpointAvailability,

@@ -7,6 +7,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
@@ -31,6 +32,7 @@ class DittoIdentityApplyTest {
     private val replacement = mockk<Ditto>(relaxed = true)
     private val enabled = MutableStateFlow(false)
     private val companion = MutableStateFlow(false)
+    private val companionGrace = MutableStateFlow(false)
     private var initializeOk = true
 
     @Before fun setup() {
@@ -45,6 +47,11 @@ class DittoIdentityApplyTest {
         every { repo.getNetworkPreferencesLocked } returns flowOf(false)
         coEvery { repo.storeEnableDittoService(any()) } answers { enabled.value = firstArg() }
         every { repo.isCompanionConnected } returns companion
+        every { repo.companionDisconnectGraceActive } returns companionGrace
+        every { repo.watchTransportSuppressed } returns combine(companion, companionGrace) {
+            connected, grace -> connected || grace
+        }
+        every { repo.shouldSuppressWatchTransportNow() } answers { companion.value }
         set("dittoInstance", old)
         mockkObject(DittoService.Companion, recordPrivateCalls = true)
         every { DittoService.Companion["initializeDitto"](context, repo) } answers {

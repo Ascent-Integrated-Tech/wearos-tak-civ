@@ -10,6 +10,7 @@ import com.aitech.weartak_civ.data.DataRepository
 import io.mockk.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -116,6 +117,7 @@ class CompanionForeignLinkTest {
         connect()
         callback.onMtuChanged(peer, 187)
         subscribe()
+        runCurrent()
 
         assertSame(peer, get("connectedDevice"))
         assertEquals(187, get("negotiatedMtu"))
@@ -133,6 +135,7 @@ class CompanionForeignLinkTest {
         connect()
         connect(other)
         subscribe(other)
+        runCurrent()
         callback.onMtuChanged(other, 517)
         callback.onConnectionStateChange(other, 133, BluetoothProfile.STATE_DISCONNECTED)
 

@@ -49,6 +49,7 @@ class CommandReplyWriteTest {
         MainActivity.enableMulticastOnWifi = true
         MainActivity.dataRepository = mockk<DataRepository> {
             every { isCompanionConnected } returns MutableStateFlow(false)
+            every { shouldSuppressWatchTransportNow() } returns false
         }
         socket = mockk {
             every { isConnected } returns true

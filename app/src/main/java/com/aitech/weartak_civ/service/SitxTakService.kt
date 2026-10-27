@@ -199,7 +199,7 @@ class SitxTakService : Service() {
 
                     is SitxServiceCommand.SendCot -> {
                         if (cmd.flowTag == null) sendCotToAll(cmd.xml)
-                        else if (!dataRepo.isCompanionConnected.value &&
+                        else if (!dataRepo.shouldSuppressWatchTransportNow() &&
                             sockets[cmd.flowTag]?.send(cmd.xml) != true) {
                             Log.w(TAG, "Command acknowledgement SITX route unavailable")
                         }
@@ -955,7 +955,7 @@ class SitxTakService : Service() {
     }
 
     private fun sendCotToAll(xml: String) {
-        if (dataRepo.isCompanionConnected.value) return
+        if (dataRepo.shouldSuppressWatchTransportNow()) return
         sockets.values.forEach { it.send(xml) }
     }
 

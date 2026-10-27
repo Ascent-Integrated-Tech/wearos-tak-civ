@@ -9,6 +9,7 @@ import io.mockk.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import live.ditto.Ditto
 import live.ditto.DittoSyncSubscription
 import org.junit.After
@@ -28,8 +29,14 @@ import java.time.Duration
 @LooperMode(LooperMode.Mode.PAUSED)
 class DittoCompanionLifecycleTest {
     private val connected = MutableStateFlow(false)
+    private val graceActive = MutableStateFlow(false)
     private val repo = mockk<DataRepository>(relaxed = true) {
         every { isCompanionConnected } returns connected
+        every { companionDisconnectGraceActive } returns graceActive
+        every { watchTransportSuppressed } returns combine(connected, graceActive) { ready, grace ->
+            ready || grace
+        }
+        every { shouldSuppressWatchTransportNow() } answers { connected.value || graceActive.value }
     }
     private val native = mockk<Ditto>(relaxed = true)
     private val services = mutableListOf<DittoService>()
@@ -64,6 +71,20 @@ class DittoCompanionLifecycleTest {
         field("dittoInstance").set(null, native)
         service.onCreate()
         verify(exactly = 0) { native.startSync(); native.sync; native.presence }
+    }
+
+    @Test fun bondedCompanionPendingAtColdStartCannotStartAnyNativePeer() {
+        graceActive.value = true
+        val app = mockk<WearTakApplication>(relaxed = true)
+        every { app.repo } returns repo
+        val service = spyk(service())
+        every { service.applicationContext } returns app
+        field("dittoInstance").set(null, native)
+
+        service.onCreate()
+
+        verify(exactly = 0) { native.startSync(); native.sync; native.presence }
+        assertFalse(DittoService.syncActive.value)
     }
 
     @Test fun readinessStopsNativeSyncSubscriptionsAndPendingCyclesWithoutManagerOrDestroy() {

@@ -17,6 +17,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -121,10 +123,12 @@ class ReactiveServiceStartOrderTest {
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test fun linkChangesStartAndStopOnlyDittoWhileCompanionKeepsReconnecting() = runTest {
         val connected = MutableStateFlow(true)
+        val directTransportSuppressed = MutableStateFlow(true)
         val enabled = MutableStateFlow(true)
         val companionEnabled = MutableStateFlow(true)
         val repo = mockk<DataRepository>(relaxed = true)
         every { repo.isCompanionConnected } returns connected
+        every { repo.watchTransportSuppressed } returns directTransportSuppressed
         every { repo.getEnableDittoService } returns enabled
         every { repo.getEnableCompanionAppService } returns companionEnabled
         val config = ServiceConfiguration(app, repo, mockk(relaxed = true))
@@ -143,11 +147,20 @@ class ReactiveServiceStartOrderTest {
         assertEquals(emptyList<String>(), stopped())
         repeat(2) {
             connected.value = false
-            assertEquals(listOf(DittoService::class.java.name), reconcile())
-            assertEquals(emptyList<String>(), stopped())
+            runCurrent()
+            assertEquals("Brief loss keeps direct Ditto suspended", emptyList<String>(), reconcile())
+            directTransportSuppressed.value = false
+            runCurrent()
+            assertTrue(config.getServiceEnabledFlow(ServiceType.DITTO).first())
+            assertEquals(true, desired[ServiceType.DITTO])
+            registry.setServiceRunning(ServiceType.DITTO, true)
             assertTrue(registry.isServiceRunning(ServiceType.COMPANION_APP))
 
             connected.value = true
+            directTransportSuppressed.value = true
+            runCurrent()
+            advanceTimeBy(2_000)
+            runCurrent()
             assertEquals(emptyList<String>(), reconcile())
             assertEquals(listOf(DittoService::class.java.name), stopped())
             assertTrue(registry.isServiceRunning(ServiceType.COMPANION_APP))
@@ -194,6 +207,7 @@ class ReactiveServiceStartOrderTest {
         val enabled = MutableStateFlow(true)
         val repo = mockk<DataRepository>(relaxed = true)
         every { repo.isCompanionConnected } returns connected
+        every { repo.watchTransportSuppressed } returns connected
         every { repo.getEnableDittoService } returns enabled
         every { repo.getEnableSitxService } returns enabled
         val config = ServiceConfiguration(app, repo, mockk(relaxed = true))

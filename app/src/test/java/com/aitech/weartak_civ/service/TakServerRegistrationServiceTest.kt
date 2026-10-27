@@ -53,6 +53,7 @@ class TakServerRegistrationServiceTest {
         MainActivity.dataRepository = repository
         every { repository.takChannels } returns MutableStateFlow(emptyList())
         every { repository.isCompanionConnected } returns companionConnected
+        every { repository.shouldSuppressWatchTransportNow() } answers { companionConnected.value }
         coEvery { repository.tryAwaitTakServerList() } answers { listOf(stored) }
         // Online-path tests mock configuration transport; no test performs network I/O.
         TAKConnectService.isNetworkConnected = false
@@ -161,7 +162,7 @@ class TakServerRegistrationServiceTest {
     }
 
     @Test fun repositoryCompanionGateAlsoTerminatesRegistration() {
-        every { repository.isCompanionConnected } returns MutableStateFlow(true)
+        companionConnected.value = true
         TAKConnectService.isNetworkConnected = true
         register()
         assertEquals(TakServerRegistration.Status.FAILED, TAKConnectService.serverRegistration.state.value.status)

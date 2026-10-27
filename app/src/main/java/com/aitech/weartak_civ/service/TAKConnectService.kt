@@ -170,7 +170,7 @@ class TAKConnectService: Service() {
 
     private fun updateOffBodyPolicy() {
         offBodyScheduler?.update(dataRepository.latestDeviceWornObservation.value,
-            takEndpointEnabled && !dataRepository.isCompanionConnected.value &&
+            takEndpointEnabled && !dataRepository.shouldSuppressWatchTransportNow() &&
                 takNetworkPreference?.network?.value != null &&
                 takServerDetails.any { it.isEnabled && !it.duplicateEndpointSuppressed })
     }
@@ -242,6 +242,7 @@ class TAKConnectService: Service() {
                     EventBus.getDefault().unregister(previous)
                 }
             }
+
             closeTakServerSockets()
             connectionScope.cancel()
             connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -267,7 +268,7 @@ class TAKConnectService: Service() {
             var previousNetwork = takNetworkPreference?.network?.value
             combine(dataRepository.latestDeviceWornObservation,
                 dataRepository.getEnableTakEndpoint,
-                dataRepository.isCompanionConnected,
+                dataRepository.watchTransportSuppressed,
                 requireNotNull(takNetworkPreference).network) { _, enabled, _, network ->
                 enabled to network
             }.collect { (enabled, network) ->
@@ -304,11 +305,11 @@ class TAKConnectService: Service() {
         startMulticastCollector()
 
         scope.launch {
-            dataRepository.isCompanionConnected
-                .collect { connected ->
-                    Log.i(TAG, "Bonded companion transport connected=$connected")
-                    if (connected) {
-                        Log.w(TAG, "closing TAK sockets because companion is ready")
+            dataRepository.watchTransportSuppressed
+                .collect { suppressed ->
+                    Log.i(TAG, "Watch direct transports suppressed=$suppressed")
+                    if (suppressed) {
+                        Log.w(TAG, "Closing TAK sockets while Companion handoff is active")
                         closeTakServerSockets()
                         resetTakServerConnectionDetails()
                         return@collect
@@ -340,7 +341,7 @@ class TAKConnectService: Service() {
         val enable: Boolean?,
         val address: String?,
         val port: Int?,
-        val companionConnected: Boolean = false
+        val watchTransportSuppressed: Boolean = false
     )
 
     private fun startMulticastCollector() {
@@ -351,8 +352,8 @@ class TAKConnectService: Service() {
         multicastWifiRequest = wifiRequest
         scope.launch(Dispatchers.Main.immediate) {
             collectMulticastWifiRequests(combine(dataRepository.multicastEnabled, dataRepository.multicastAddress,
-                dataRepository.multicastPort, dataRepository.isCompanionConnected) {
-                enabled, address, port, connected -> MulticastConfig(null, enabled, address, port, connected)
+                dataRepository.multicastPort, dataRepository.watchTransportSuppressed) {
+                enabled, address, port, suppressed -> MulticastConfig(null, enabled, address, port, suppressed)
             }, wifiRequest)
         }
         scope.launch {
@@ -360,14 +361,14 @@ class TAKConnectService: Service() {
                 dataRepository.multicastEnabled,
                 dataRepository.multicastAddress,
                 dataRepository.multicastPort,
-                dataRepository.isCompanionConnected) { net, enable, address, port, connected ->
-                MulticastConfig(net, enable, address, port, connected)
+                dataRepository.watchTransportSuppressed) { net, enable, address, port, suppressed ->
+                MulticastConfig(net, enable, address, port, suppressed)
             })
         }
     }
 
     private suspend fun multicastEndpointEnabled(cfg: MulticastConfig): Boolean =
-        cfg.enable == true && !cfg.companionConnected && withContext(Dispatchers.IO) {
+        cfg.enable == true && !cfg.watchTransportSuppressed && withContext(Dispatchers.IO) {
             com.aitech.weartak_civ.TakMulticastEndpoints.isValidConfiguredEndpoint(cfg.address, cfg.port)
         }
 
@@ -378,7 +379,7 @@ class TAKConnectService: Service() {
         try {
             configurations.distinctUntilChanged().collectLatest { cfg ->
                 val eligible = multicastEndpointEnabled(cfg)
-                if (cfg.enable == true && !cfg.companionConnected && !eligible) {
+                if (cfg.enable == true && !cfg.watchTransportSuppressed && !eligible) {
                     Log.w(TAG, "Multicast Wi-Fi demand blocked: invalid endpoint")
                 }
                 try {
@@ -603,12 +604,12 @@ class TAKConnectService: Service() {
         )
 
         updateOffBodyPolicy()
-        val companionConnected = dataRepository.isCompanionConnected.value
+        val watchTransportSuppressed = dataRepository.shouldSuppressWatchTransportNow()
         refreshed
             .filter { detail ->
                 detail.serverId != registrationServerId &&
                     (serverRegistration.isPendingRuntime(detail) ||
-                    (!companionConnected && isNetworkConnected && detail.isEnabled &&
+                    (!watchTransportSuppressed && isNetworkConnected && detail.isEnabled &&
                         !detail.duplicateEndpointSuppressed &&
                         detail.connectionStatus.get() == TAK_SERVER_DISCONNECTED))
             }
@@ -925,7 +926,7 @@ class TAKConnectService: Service() {
             recordConnectionCounts()
             return
         }
-        if (dataRepository.isCompanionConnected.value) {
+        if (dataRepository.shouldSuppressWatchTransportNow()) {
             recordConnectionCounts()
             ConnectionDiagnostics.record(DiagnosticEvent.TAK_CONNECTION) {
                 mapOf(DiagnosticMetric.KIND to ConnectionTransition.SKIPPED.code,
@@ -2217,7 +2218,7 @@ class TAKConnectService: Service() {
         ): Boolean =
             takEndpointEnabled && detail.isEnabled &&
                 offBodyAllowsConnection() &&
-                !dataRepository.isCompanionConnected.value &&
+                !dataRepository.shouldSuppressWatchTransportNow() &&
                 detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT &&
                 (attempt == null || isCurrent(detail, attempt))
 
@@ -2568,7 +2569,11 @@ class TAKConnectService: Service() {
             return TAK_CONNECT_SERVICE
         }
 
-        private fun isCurrent(detail: TakServerDetail, attempt: ConnectionAttempt): Boolean {
+        private fun isCurrent(
+            detail: TakServerDetail,
+            attempt: ConnectionAttempt,
+            allowCompanionGraceForFinalExpiry: Boolean = false,
+        ): Boolean {
             synchronized(attemptRuntime(detail).lock) {
                 return detail.runtime.currentAttempt === attempt &&
                         detail.runtime.generation == attempt.generation &&
@@ -2577,7 +2582,7 @@ class TAKConnectService: Service() {
                         offBodyAllowsConnection() &&
                         (activeService?.takNetworkPreference == null ||
                             attempt.httpSession?.network == activeService?.takNetworkPreference?.network?.value) &&
-                        !dataRepository.isCompanionConnected.value
+                        (allowCompanionGraceForFinalExpiry || !dataRepository.shouldSuppressWatchTransportNow())
             }
         }
 
@@ -2721,7 +2726,7 @@ class TAKConnectService: Service() {
         private fun connectionGateReason(
             detail: TakServerDetail, fallback: ConnectionReason = ConnectionReason.NONE
         ): ConnectionReason = when {
-            dataRepository.isCompanionConnected.value -> ConnectionReason.COMPANION
+            dataRepository.shouldSuppressWatchTransportNow() -> ConnectionReason.COMPANION
             serviceStopping || !connectionScope.isActive -> ConnectionReason.SERVICE_STOPPED
             detail.runtime.terminated -> ConnectionReason.TERMINATED
             !takEndpointEnabled || !detail.isEnabled -> ConnectionReason.DISABLED
@@ -3205,7 +3210,7 @@ class TAKConnectService: Service() {
                 )
                 return
             }
-            if (!offBodyAllowsConnection() || dataRepository.isCompanionConnected.value ||
+            if (!offBodyAllowsConnection() || dataRepository.shouldSuppressWatchTransportNow() ||
                 !takEndpointEnabled || serviceStopping || takServerDetail.runtime.terminated || !takServerDetail.isEnabled ||
                 !connectionScope.isActive) {
                 recordConnection(takServerDetail, ConnectionTransition.SKIPPED, connectionGateReason(takServerDetail))
@@ -3472,7 +3477,7 @@ class TAKConnectService: Service() {
             takServerDetail: TakServerDetail,
             attempt: ConnectionAttempt
         ) {
-            if (dataRepository.isCompanionConnected.value) {
+            if (dataRepository.shouldSuppressWatchTransportNow()) {
                 recordConnection(takServerDetail, ConnectionTransition.SKIPPED, ConnectionReason.COMPANION,
                     attempt.generation)
                 Log.w(TAG, "connectTAKServer CompanionAppIsConnected back out early")
@@ -3675,22 +3680,33 @@ class TAKConnectService: Service() {
             recordConnectionCounts()
         }
 
-        fun sendData(takServerDetail: TakServerDetail, msg: String, isNotPli: Boolean, currTime: Long) {
-            if (!offBodyAllowsConnection() || !takEndpointEnabled || dataRepository.isCompanionConnected.value) return
+        fun sendData(
+            takServerDetail: TakServerDetail,
+            msg: String,
+            isNotPli: Boolean,
+            currTime: Long,
+            allowFinalExpiryDuringCompanionGrace: Boolean = false,
+        ): Boolean {
+            if (!offBodyAllowsConnection() || !takEndpointEnabled ||
+                (!allowFinalExpiryDuringCompanionGrace && dataRepository.shouldSuppressWatchTransportNow())) return false
             //Log.d(TAG, "sendData called")
             val socket: SSLSocket
             val attempt: ConnectionAttempt
             synchronized(takServerDetail.runtime.lock) {
-                socket = takServerDetail.secureSocket ?: return
-                attempt = takServerDetail.runtime.currentAttempt ?: return
+                socket = takServerDetail.secureSocket ?: return false
+                attempt = takServerDetail.runtime.currentAttempt ?: return false
                 if (takServerDetail.runtime.generation != attempt.generation ||
-                    socket.isClosed || !socket.isConnected) return
+                    socket.isClosed || !socket.isConnected) return false
             }
             connectionScope.launch {
-                if (writeConnection(takServerDetail, attempt, socket, msg) && !isNotPli) {
+                if (writeConnection(
+                        takServerDetail, attempt, socket, msg,
+                        allowCompanionGraceForFinalExpiry = allowFinalExpiryDuringCompanionGrace,
+                    ) && !isNotPli) {
                     Log.i(TAG, "Outbound PLI write succeeded to ${takServerDetail.address}")
                 }
             }
+            return true
         }
 
         private suspend fun writeConnection(
@@ -3698,13 +3714,17 @@ class TAKConnectService: Service() {
             attempt: ConnectionAttempt,
             socket: SSLSocket,
             xml: String,
-            beforeWrite: () -> Boolean = { true }
+            allowCompanionGraceForFinalExpiry: Boolean = false,
+            beforeWrite: () -> Boolean = { true },
         ): Boolean = attempt.outputMutex.withLock {
             currentCoroutineContext().ensureActive()
             synchronized(detail.runtime.lock) {
-                if (!isCurrent(detail, attempt) || attempt.socket !== socket ||
+                if (!isCurrent(detail, attempt, allowCompanionGraceForFinalExpiry) || attempt.socket !== socket ||
                     detail.secureSocket !== socket || detail.duplicateEndpointSuppressed ||
-                    socket.isClosed || !socket.isConnected) return@withLock false
+                    socket.isClosed || !socket.isConnected ||
+                    (!allowCompanionGraceForFinalExpiry && dataRepository.shouldSuppressWatchTransportNow())) {
+                    return@withLock false
+                }
             }
             if (!beforeWrite()) return@withLock false
             currentCoroutineContext().ensureActive()
@@ -4025,7 +4045,7 @@ class TAKConnectService: Service() {
         }
 
         internal fun sendCommandReply(serverId: String, xml: String): Boolean {
-            if (dataRepository.isCompanionConnected.value || !isLicenseValid()) return false
+            if (dataRepository.shouldSuppressWatchTransportNow() || !isLicenseValid()) return false
             val detail = takServerDetailsById[serverId] ?: return false
             if (!detail.isEnabled || detail.duplicateEndpointSuppressed ||
                 detail.connectionStatus.get() != TAK_SERVER_CONNECTED_COT_PORT) return false
@@ -4035,7 +4055,7 @@ class TAKConnectService: Service() {
 
         internal suspend fun sendCommandReplyWritten(serverId: String, xml: String): Boolean =
             withContext(Dispatchers.IO) {
-                if (dataRepository.isCompanionConnected.value || !isLicenseValid()) return@withContext false
+                if (dataRepository.shouldSuppressWatchTransportNow() || !isLicenseValid()) return@withContext false
                 val detail = takServerDetailsById[serverId] ?: return@withContext false
                 writeCommandReply(detail, xml)
             }
@@ -4087,8 +4107,26 @@ class TAKConnectService: Service() {
             return result ?: false
         }
 
+        fun sendFinalExpiredSelfPli(xml: String): Boolean {
+            if (!isLicenseValid() || !isNetworkConnected || !takEndpointEnabled) return false
+            val now = System.currentTimeMillis()
+            var acceptedByAnyServer = false
+            takServerDetails.forEach { detail ->
+                if (detail.isEnabled && !detail.duplicateEndpointSuppressed &&
+                    detail.connectionStatus.get() == TAK_SERVER_CONNECTED_COT_PORT
+                ) {
+                    val accepted = sendData(
+                        detail, xml, isNotPli = false, currTime = now,
+                        allowFinalExpiryDuringCompanionGrace = true
+                    )
+                    acceptedByAnyServer = accepted || acceptedByAnyServer
+                }
+            }
+            return acceptedByAnyServer
+        }
+
         fun sendDataTAKServers(msg: String, isNotPli: Boolean) {
-            if (dataRepository.isCompanionConnected.value) return
+            if (dataRepository.shouldSuppressWatchTransportNow()) return
             if (isLicenseValid() && isNetworkConnected) {
                 val currTime = System.currentTimeMillis()
                 for (takServerDetail in takServerDetails) {

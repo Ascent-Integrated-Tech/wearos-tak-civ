@@ -15,6 +15,7 @@ import com.aitech.weartak_civ.service.AppDiagnostics
 import com.aitech.weartak_civ.service.ProcessingStage
 
 import android.content.Context
+import android.annotation.SuppressLint
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
@@ -121,6 +122,7 @@ import com.aitech.weartak_civ.DEFAULT_WHILE_ALERTING_REPORTING_INTERVAL
 import com.aitech.weartak_civ.service.ChatService
 import com.aitech.weartak_civ.service.ReactiveServiceManager
 import com.aitech.weartak_civ.service.BatteryPowerObserver.DockType
+import com.aitech.weartak_civ.service.CompanionTransportDebounce
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
@@ -2128,9 +2130,20 @@ class DataRepository(
         )))
     }
 
-    private fun pliStaleOffset(): CotTimeOffset =
-        CotTimeOffset(seconds = com.aitech.weartak_civ.service.StationaryLocationPolicy.staleSeconds(
-            almightyReportingIntervalSecs.value, CotDispatchService.stationaryLocation))
+    internal fun hasCompanionEverBeenReady(): Boolean {
+        return companionEverReady.value == true
+    }
+
+    private fun pliStaleOffset(): CotTimeOffset {
+        val standaloneSeconds = com.aitech.weartak_civ.service.StationaryLocationPolicy.staleSeconds(
+            almightyReportingIntervalSecs.value, CotDispatchService.stationaryLocation)
+        val offsetMillis = com.aitech.weartak_civ.cot.SelfPliStalePolicy.offsetMillis(
+            companionBonded = companionEverReady.value == true,
+            effectiveIntervalSeconds = CotDispatchService.actualReportingIntervalSecs,
+            standaloneOffsetMillis = standaloneSeconds * 1_000L,
+        )
+        return CotTimeOffset(seconds = (offsetMillis / 1_000L).coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+    }
 
     // This is the data class for both physio alerts and manual alerts that the backend adds to and clears.
     // This is a custom TAK emergency (911) alert as we change the description of the 911 alert sent to TAK
@@ -4259,16 +4272,70 @@ class DataRepository(
 
     fun setCompanionAppConnected() {
         _companionAppConnected.value = true
+        _companionEverReady.value = true
+        repoScope.launch {
+            try {
+                context.dataStore.edit { it[COMPANION_EVER_READY] = true }
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                Log.e(TAG, "Could not persist Companion readiness history", error)
+            }
+        }
+        companionTransportDebounce.connected()
         setEndpointConnected(Endpoint.COMPANION_APP)
     }
 
+    suspend fun clearCompanionAppReadinessHistory() {
+        _companionEverReady.value = false
+        context.dataStore.edit { it[COMPANION_EVER_READY] = false }
+    }
+
     fun setCompanionAppDisconnected() {
+        companionTransportDebounce.disconnected(_companionAppConnected.value)
         _companionAppConnected.value = false
         setEndpointDisconnected(Endpoint.COMPANION_APP)
     }
 
+    fun setCompanionTransportPending() {
+        companionTransportDebounce.awaitingInitialConnection()
+    }
+
     private val _companionAppConnected = MutableStateFlow<Boolean>(false)
     val isCompanionConnected: StateFlow<Boolean> = _companionAppConnected.asStateFlow()
+    private val _companionEverReady = MutableStateFlow<Boolean?>(null)
+    val companionEverReady: StateFlow<Boolean?> = _companionEverReady.asStateFlow()
+    private val companionHistoryLoaded = CompletableDeferred<Unit>()
+    init {
+        repoScope.launch {
+            try {
+                val persistedValue = context.dataStore.data.first()[COMPANION_EVER_READY] ?: false
+                _companionEverReady.compareAndSet(null, persistedValue)
+                companionHistoryLoaded.complete(Unit)
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                // Never block service startup on this history; fall back to standalone behavior.
+                Log.e(TAG, "Could not load persisted Companion readiness history", error)
+                _companionEverReady.compareAndSet(null, false)
+                companionHistoryLoaded.complete(Unit)
+            }
+        }
+    }
+
+    suspend fun awaitCompanionHistoryLoaded() {
+        companionHistoryLoaded.await()
+    }
+
+    private val companionTransportDebounce = CompanionTransportDebounce(repoScope)
+    val companionDisconnectGraceActive: StateFlow<Boolean> = companionTransportDebounce.graceActive
+    val watchTransportSuppressed: Flow<Boolean> = combine(
+        isCompanionConnected, companionDisconnectGraceActive
+    ) { connected, graceActive -> connected || graceActive }.distinctUntilChanged()
+
+    fun shouldSuppressWatchTransportNow(): Boolean =
+        isCompanionConnected.value || companionDisconnectGraceActive.value
+
+    fun resumeWatchTransportsImmediately(): Boolean =
+        companionTransportDebounce.resumeImmediately()
 
     enum class SitxServerStatus {
         CONNECTED,
@@ -5933,6 +6000,7 @@ class DataRepository(
 
 
     companion object {
+        private val COMPANION_EVER_READY = booleanPreferencesKey("companion_ever_ready")
         private val LOCATION_INPUT = stringPreferencesKey("location_input")
         private val ENABLE_MOPP = booleanPreferencesKey("enable_mopp")
         private val MOPP_STATUS = stringPreferencesKey("mopp_status")

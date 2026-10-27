@@ -90,6 +90,7 @@ class DittoService : Service() {
     private var ownsDitto = false
     private val peerLock = Any()
     @Volatile private var peerStopped = false
+    @Volatile private var lastSelfTrackDocument: Map<String, Any?>? = null
 
     private val model = Build.MODEL
     private val manufacturer = Build.MANUFACTURER
@@ -106,8 +107,8 @@ class DittoService : Service() {
         val application = applicationContext as WearTakApplication
         dataRepository = application.repo
         activeService.value = this
-        if (reconfiguring.value || dataRepository.isCompanionConnected.value) {
-            Log.i(TAG, "Ditto startup suppressed: identity changing or bonded companion ready")
+        if (reconfiguring.value || dataRepository.shouldSuppressWatchTransportNow()) {
+            Log.i(TAG, "Ditto startup suppressed: identity changing or Companion handoff active")
             stopSelf()
             return
         }
@@ -195,7 +196,7 @@ class DittoService : Service() {
     }
 
     internal fun startPeerSync(): Boolean = synchronized(peerLock) {
-        if (peerStopped || dataRepository.isCompanionConnected.value) return@synchronized false
+        if (peerStopped || dataRepository.shouldSuppressWatchTransportNow()) return@synchronized false
         ditto.startSync()
         syncActiveState.value = true
         true
@@ -211,6 +212,31 @@ class DittoService : Service() {
                 }
             }
         }
+    }
+
+    internal suspend fun prepareForCompanionHandoff() {
+        val expired = try {
+            expireSelfTrackBeforeHandoff()
+        } catch (error: kotlinx.coroutines.CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.e(TAG, "Could not publish final expired Ditto self track", error)
+            false
+        }
+        if (expired) delay(DITTO_TRACK_FLUSH_WAIT_MS)
+    }
+
+    private suspend fun expireSelfTrackBeforeHandoff(): Boolean = withContext(Dispatchers.IO) {
+        val lastTrack = lastSelfTrackDocument ?: return@withContext false
+        synchronized(peerLock) {
+            if (peerStopped) return@withContext false
+            val expiredTrack = DittoTrackExpiry.expire(lastTrack, System.currentTimeMillis())
+            // This single expiry update is the handoff exception to the publication gate.
+            writeFinalExpiredSelfTrack(expiredTrack)
+            lastSelfTrackDocument = expiredTrack
+        }
+        Log.i(TAG, "Published final expired Ditto self track before Companion handoff")
+        true
     }
 
     private fun stopPeer() = synchronized(peerLock) {
@@ -278,7 +304,7 @@ class DittoService : Service() {
 
     private val dittoUpdateRunnable = object : Runnable {
         override fun run() {
-            if (peerStopped || dataRepository.isCompanionConnected.value) return
+            if (peerStopped || dataRepository.shouldSuppressWatchTransportNow()) return
             ioScope.launch {
 
                 val battery = dataRepository.latestBatteryPercentage.value
@@ -468,7 +494,7 @@ class DittoService : Service() {
     }
 
     internal fun retryPointPublications() {
-        if (dataRepository.isCompanionConnected.value) return
+        if (dataRepository.shouldSuppressWatchTransportNow()) return
         dataRepository.dittoPointLedger.retry(
             write = ::writeOwnedPointDocument,
             onError = { Log.e(TAG, "Ditto point publication pending; retrying later", it) }
@@ -490,7 +516,7 @@ class DittoService : Service() {
 
     internal fun publishDocument(collection: String, document: Map<String, Any?>): Boolean {
         if (SensitiveEnrollment.containsSensitiveDocument(document)) return false
-        if (peerStopped || dataRepository.isCompanionConnected.value) {
+        if (peerStopped || dataRepository.shouldSuppressWatchTransportNow()) {
             Log.d(TAG, "Suppressing direct Ditto publication: peer stopped or bonded companion connected")
             return false
         }
@@ -506,14 +532,28 @@ class DittoService : Service() {
         }
     }
 
-    internal fun writeDocument(collection: String, document: Map<String, Any?>) {
+    internal fun writeDocument(
+        collection: String,
+        document: Map<String, Any?>,
+    ) {
         if (SensitiveEnrollment.containsSensitiveDocument(document)) return
         synchronized(peerLock) {
-            check(!peerStopped && !dataRepository.isCompanionConnected.value) {
+            check(!peerStopped && !dataRepository.shouldSuppressWatchTransportNow()) {
                 "Ditto peer stopped or handed off to Companion before document write"
             }
             val properties = if (collection == "chat") document + ("_c" to DittoCounter()) else document
             ditto.store.write { tx -> tx.scoped(collection).upsert(properties) }
+        }
+    }
+
+    private fun writeFinalExpiredSelfTrack(document: Map<String, Any?>) {
+        if (SensitiveEnrollment.containsSensitiveDocument(document)) return
+        synchronized(peerLock) {
+            check(!peerStopped) { "Ditto peer stopped before final self-track expiry" }
+            val activeDitto = checkNotNull(getDittoInstance()) {
+                "Ditto instance unavailable before final self-track expiry"
+            }
+            activeDitto.store.write { tx -> tx.scoped("track").upsert(document) }
         }
     }
 
@@ -532,7 +572,7 @@ class DittoService : Service() {
             dataRepository.isEndpointConnected(DataRepository.Endpoint.DITTO) &&
             dataRepository.getEnableDittoService.first() &&
             dataRepository.getEnableLocationService.first() &&
-            !dataRepository.isCompanionConnected.value &&
+            !dataRepository.shouldSuppressWatchTransportNow() &&
             dataRepository.isCurrentLocationInput(location) &&
             (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
                 android.content.pm.PackageManager.PERMISSION_GRANTED ||
@@ -550,7 +590,12 @@ class DittoService : Service() {
             }
             val freshSnapshot = freshLocation?.let { dataRepository.snapshotOutboundAnnouncement(it) }
             val timeMs = freshLocation?.time ?: System.currentTimeMillis()
-            val staleMsOffset = 3000 * CotDispatchService.actualReportingIntervalSecs
+            val standaloneStaleMsOffset = 3000L * CotDispatchService.actualReportingIntervalSecs
+            val staleMsOffset = com.aitech.weartak_civ.cot.SelfPliStalePolicy.offsetMillis(
+                companionBonded = dataRepository.hasCompanionEverBeenReady(),
+                effectiveIntervalSeconds = CotDispatchService.actualReportingIntervalSecs,
+                standaloneOffsetMillis = standaloneStaleMsOffset,
+            )
             val staleTimeMs = timeMs + staleMsOffset
             val location = if (freshSnapshot != null) freshSnapshot.loc
                 else dataRepository.snapshotPliLocation()
@@ -651,7 +696,7 @@ class DittoService : Service() {
             )
 
             try {
-                if (dataRepository.isCompanionConnected.value) return@launch
+                if (dataRepository.shouldSuppressWatchTransportNow()) return@launch
                 if (location.provider != null && !dataRepository.isCurrentLocationSnapshot(location)) {
                     Log.i(TAG, "Skipping Ditto track built before a location input change")
                     return@launch
@@ -661,6 +706,7 @@ class DittoService : Service() {
                     return@launch
                 }
                 writeDocument("track", trackDocument)
+                lastSelfTrackDocument = trackDocument
                 changeCounterTrackDocument++
                 logVerbose { "Wrote to track: $trackDocument" }
             } catch (t: Throwable) {
@@ -716,6 +762,7 @@ class DittoService : Service() {
         private val syncActiveState = MutableStateFlow(false)
         val syncActive = syncActiveState.asStateFlow()
         private const val DISPATCH_INTERVAL = 3_000L // 3 seconds
+        private const val DITTO_TRACK_FLUSH_WAIT_MS = 1_000L
         lateinit var localPeerKeyString: String
         private var dittoInstance: Ditto? = null
         private val ditto: Ditto get() = requireNotNull(dittoInstance)
@@ -733,8 +780,13 @@ class DittoService : Service() {
 
         internal fun publishCommandReply(xml: String): Boolean {
             val service = activeService.value ?: return false
-            if (!isRunning.get() || service.dataRepository.isCompanionConnected.value) return false
+            if (!isRunning.get() || service.dataRepository.shouldSuppressWatchTransportNow()) return false
             return service.publishDocument("chat", DittoChatDocument.encode(xml, localPeerKeyString))
+        }
+
+        internal suspend fun prepareForCompanionHandoffIfRunning() {
+            val service = activeService.value ?: return
+            if (isRunning.get()) service.prepareForCompanionHandoff()
         }
 
         internal suspend fun applyEnabled(context: Context, repo: DataRepository, enabled: Boolean): Boolean =

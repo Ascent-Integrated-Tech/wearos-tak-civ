@@ -16,6 +16,7 @@ import io.mockk.mockk
 import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -41,6 +42,7 @@ class CompanionTransportRoutingTest {
         }
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     @Test fun onlyBondedSubscribedPeerActivatesPhoneRoutingAndDisconnectImmediatelyRestoresFallback() = runTest {
         val service = Robolectric.buildService(CompanionAppService::class.java).get()
         val connected = MutableStateFlow(false)
@@ -73,11 +75,14 @@ class CompanionTransportRoutingTest {
         val other = BluetoothAdapter.getDefaultAdapter().getRemoteDevice("AA:BB:CC:DD:EE:02")
         val descriptor = BluetoothGattDescriptor(cccd, BluetoothGattDescriptor.PERMISSION_WRITE)
         BluetoothGattCharacteristic(tx, BluetoothGattCharacteristic.PROPERTY_NOTIFY, 0).addDescriptor(descriptor)
-        fun subscribe(enable: Boolean) = callback.onDescriptorWriteRequest(
-            peer, 1, descriptor, false, true, 0,
-            if (enable) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
-        )
+        fun subscribe(enable: Boolean) {
+            callback.onDescriptorWriteRequest(
+                peer, 1, descriptor, false, true, 0,
+                if (enable) BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                else BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+            )
+            if (enable) runCurrent()
+        }
 
         shadowOf(peer).setBondState(BluetoothDevice.BOND_NONE)
         callback.onConnectionStateChange(peer, BluetoothGatt.GATT_SUCCESS, BluetoothProfile.STATE_CONNECTED)
