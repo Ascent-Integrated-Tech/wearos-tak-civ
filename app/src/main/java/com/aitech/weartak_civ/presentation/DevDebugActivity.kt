@@ -105,7 +105,7 @@ private data class DebugRow(
 
 internal enum class DeveloperEntryId {
     BUILD, DIAGNOSTICS, DIAGNOSTICS_LOGS, GIT, IP, LOCATION, PORT, QR, SSID, STAY_AWAKE, TRANSPORT, VERSION, VERSION_CODE,
-    STAY_AWAKE_CHARGING, WIRELESS_DEBUGGING_CHARGING
+    STAY_AWAKE_CHARGING, WIRELESS_DEBUGGING_CHARGING, NETWORK_CHECKLIST
 }
 
 internal data class DeveloperEntry(val id: DeveloperEntryId, val label: String, val value: String = "")
@@ -113,7 +113,8 @@ internal data class DeveloperEntry(val id: DeveloperEntryId, val label: String, 
 internal fun sortedDeveloperEntries(entries: List<DeveloperEntry>, locale: Locale): List<DeveloperEntry> {
     val collator = Collator.getInstance(locale)
     fun group(entry: DeveloperEntry) =
-        if (entry.id == DeveloperEntryId.DIAGNOSTICS || entry.id == DeveloperEntryId.STAY_AWAKE) 0 else 1
+        if (entry.id in setOf(DeveloperEntryId.DIAGNOSTICS, DeveloperEntryId.NETWORK_CHECKLIST,
+                DeveloperEntryId.STAY_AWAKE)) 0 else 1
     val chargingIds = listOf(DeveloperEntryId.STAY_AWAKE_CHARGING, DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING)
     val charging = entries.filter { it.id in chargingIds }.sortedBy { chargingIds.indexOf(it.id) }
     val sorted = entries.filterNot { it.id in chargingIds }.sortedWith { left, right ->
@@ -164,6 +165,7 @@ private fun DebugScreen(
     val appDiagnostics = (context.applicationContext as WearTakApplication).diagnostics
     val appDiagnosticsEnabled by appDiagnostics.enabled.collectAsStateWithLifecycle()
     val appDiagnosticsFailed by appDiagnostics.storageFailed.collectAsStateWithLifecycle()
+    val checklistEnabled by dataRepository.networkPreferencesChecklistEnabled.collectAsStateWithLifecycle(initialValue = false)
     LaunchedEffect(appDiagnosticsFailed) {
         if (appDiagnosticsFailed)
             Toast.makeText(context, R.string.app_diagnostics_failed, Toast.LENGTH_LONG).show()
@@ -266,6 +268,17 @@ private fun DebugScreen(
                     onShowLocationDiagnostics = { showLocationDiagnostics = true },
                     onShowDiagnostics = { showAppDiagnostics = true },
                     diagnosticsEnabled = appDiagnosticsEnabled,
+                    networkChecklistEnabled = checklistEnabled,
+                    onNetworkChecklistEnabledChange = { enabled ->
+                        scope.launch {
+                            try {
+                                dataRepository.storeNetworkPreferencesChecklistEnabled(enabled)
+                            } catch (error: IOException) {
+                                android.util.Log.e("DevDebugActivity", "Could not save network checklist preference", error)
+                                Toast.makeText(context, R.string.network_preferences_checklist_save_failed, Toast.LENGTH_LONG).show()
+                            }
+                        }
+                    },
                     onDiagnosticsEnabledChange = { value ->
                         scope.launch {
                             try {
@@ -291,12 +304,15 @@ internal fun DebugInformationPage(
     onShowLocationDiagnostics: () -> Unit,
     onShowDiagnostics: () -> Unit = {},
     diagnosticsEnabled: Boolean = false,
-    onDiagnosticsEnabledChange: (Boolean) -> Unit = {}
+    onDiagnosticsEnabledChange: (Boolean) -> Unit = {},
+    networkChecklistEnabled: Boolean = false,
+    onNetworkChecklistEnabledChange: (Boolean) -> Unit = {}
 ) {
     val context = LocalContext.current
     val entries = sortedDeveloperEntries(listOf(
         DeveloperEntry(DeveloperEntryId.BUILD, stringResource(R.string.debug_build), debugInfo.buildType),
         DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, stringResource(R.string.app_diagnostics)),
+        DeveloperEntry(DeveloperEntryId.NETWORK_CHECKLIST, stringResource(R.string.network_preferences_checklist)),
         DeveloperEntry(DeveloperEntryId.DIAGNOSTICS_LOGS, stringResource(R.string.app_diagnostics_logs)),
         DeveloperEntry(DeveloperEntryId.GIT, stringResource(R.string.debug_git), "${debugInfo.gitBranch}@${debugInfo.gitCommit}"),
         DeveloperEntry(DeveloperEntryId.IP, stringResource(R.string.debug_ip), debugInfo.ipAddress),
@@ -337,6 +353,11 @@ internal fun DebugInformationPage(
         items(entries, key = { it.id }) { entry ->
             when (entry.id) {
                 DeveloperEntryId.STAY_AWAKE -> DebugStayAwakeSetting()
+                DeveloperEntryId.NETWORK_CHECKLIST -> WearTAKToggleChip(
+                    title = entry.label,
+                    checkedLive = networkChecklistEnabled,
+                    onCheckedChange = onNetworkChecklistEnabledChange
+                )
                 DeveloperEntryId.STAY_AWAKE_CHARGING -> ChargingStayAwakeSetting()
                 DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING -> ChargingWirelessDebuggingSetting()
                 DeveloperEntryId.DIAGNOSTICS -> WearTAKToggleChip(

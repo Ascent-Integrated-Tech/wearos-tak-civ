@@ -1,5 +1,7 @@
 package com.aitech.weartak_civ.presentation
 
+import android.graphics.drawable.Drawable
+import androidx.annotation.DrawableRes
 import androidx.annotation.StringRes
 import com.aitech.weartak_civ.R
 import com.aitech.weartak_civ.data.DittoPdlSource
@@ -13,8 +15,20 @@ internal data class NetworkConnectivityRow(
     val checked: Boolean,
     val toggle: (Boolean) -> Unit,
     val statusDescription: String = subtitle,
-    val settingsRoute: String? = networkSettingsRoute(key)
+    val settingsRoute: String? = networkSettingsRoute(key),
+    @DrawableRes val iconRes: Int? = networkConnectivityIcon(key),
+    val pluginIcon: Drawable? = null
 )
+
+@DrawableRes
+internal fun networkConnectivityIcon(key: String): Int? = when (key) {
+    "tak" -> R.drawable.tak_server_connected
+    "companion" -> R.drawable.weartak_companion_plugin
+    "multicast" -> R.drawable.multicast_connected
+    "sitx" -> R.drawable.ic_connection_sitx
+    "ditto" -> R.drawable.ic_integration_ditto
+    else -> null
+}
 
 internal fun networkSettingsRoute(key: String): String? = when (key) {
     "tak" -> "tak_servers"

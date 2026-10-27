@@ -116,31 +116,27 @@ the main-screen TAK artwork: green/check means at least one TAK server connected
 yellow/signal means configured but switched off or not connected, and red/X means
 no server configured, even when the master is on. Its text and accessibility label
 describe the state independently of color; the server count and switch remain.
-Watchface complication strings and artwork are unchanged.
+The main-screen aggregate transport indicator and watchface complications are
+unchanged.
 
-### Main-screen connection checklist
+**Developer Preferences > Network Preferences Checklist** defaults to off and
+persists independently of transport settings. It appears between Logging and
+Stay awake in English. Turning it on shows the checklist in its original place
+at the top of Network Preferences; turning it off hides only those five route
+rows, loaded-plugin connectivity rows and the divider beneath them. Changes
+take effect live. The TAK Servers detail page retains a master switch, and
+loaded connectivity plugins expose Forward outbound CoT in Plugins, so hiding
+the checklist cannot strand an on/off control. Other route switches remain in
+their transport detail pages or Plugins.
 
-The top status strip shows separate icons for enabled Ditto Edge Sync, WearTAK
-Companion, TAK servers, multicast and SITX. Disabled routes are hidden; TAK is
-also hidden when no individual servers are enabled. Multiple TAK servers share
-one icon, with the connected/total count in its accessibility description.
-Ditto and Companion reuse their plugin artwork; SITX has an S/x glyph.
-
-A white icon with a green dot means connected, amber with a hollow badge means
-connecting, and a white TAK icon with an amber badge means only some enabled
-servers are connected. Gray with a dash means not connected; gray with a slash
-means paused for Companion (including the existing disconnect grace period).
-Ditto's connected state means local sync is active, not that a remote peer or
-cloud server has been verified. Multicast connected means its publisher is
-running, not that another device has acknowledged traffic.
-
-Wi-Fi and cellular are shown independently when both are available. Bluetooth
-shows the Companion BLE link separately from Companion's ready-to-relay state.
-Location/reporting and battery indicators remain alongside the checklist.
-Tap the connection icons to open Network Preferences, or location to open
-Reporting. The compact strip fits the top chord of a 192dp round watch without
-moving the dashboard controls. It observes existing state streams, with no
-new polling, network requests or animations.
+The optional checklist at the top of **Network Preferences** gives each transport its
+own icon: TAK servers, TAK SA multicast, SITX, Ditto Edge Sync and WearTAK
+Companion. Ditto and Companion reuse their plugin artwork; loaded connectivity
+plugins show their supplied icon when available. Icons stay visible alongside
+disabled switches so each checklist entry remains recognizable. Existing TAK
+status artwork, subtitles, switch state, lock handling and settings navigation
+are preserved. This checklist does not add transport polling or change the main
+screen or watchface complication indicators.
 
 ### Received CoT marker symbols
 

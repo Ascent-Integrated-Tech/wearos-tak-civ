@@ -1461,6 +1461,8 @@ fun WearTAKSettingsNav(
 
         //Network Settings vvv
         composable("network_preferences") {
+            val checklistEnabled by dataRepository.networkPreferencesChecklistEnabled
+                .collectAsStateWithLifecycle(initialValue = false)
             val runtimeDetails by settingsVm.takServerRuntimeDetails.collectAsStateWithLifecycle()
             val connected = runtimeDetails.map { detail ->
                 val status by detail.connectionStatusLiveData.observeAsState(TAK_SERVER_DISCONNECTED_STRING)
@@ -1482,7 +1484,8 @@ fun WearTAKSettingsNav(
                     enableTakEndpoint, settingsVm::storeEnableTakEndpoint,
                     statusDescription = stringResource(R.string.tak_status_with_count, stringResource(takIndicator.label),
                         androidx.compose.ui.res.pluralStringResource(R.plurals.network_server_count,
-                            takServerList.size, takConnectedCount, takServerList.size))),
+                            takServerList.size, takConnectedCount, takServerList.size)),
+                    iconRes = takIndicator.drawable),
                 NetworkConnectivityRow("multicast", stringResource(R.string.tak_sa_multicast),
                     "", enableMulticast, settingsVm::storeEnableMulticast),
                 NetworkConnectivityRow("sitx", stringResource(R.string.sitx_tak),
@@ -1503,12 +1506,13 @@ fun WearTAKSettingsNav(
                 if (!plugin.isLoaded) return@mapNotNull null
                 NetworkConnectivityRow("plugin:${plugin.packageName}", plugin.title,
                     if (toggle.enabled) enabledLabel else disabledLabel, toggle.enabled,
-                    { pluginVm.setConnectivityEnabled(plugin.packageName, toggle, it) })
+                    { pluginVm.setConnectivityEnabled(plugin.packageName, toggle, it) },
+                    pluginIcon = plugin.icon)
             }).alphabetizedConnections(context.resources.configuration.locales[0])
             WearTAKPageWithBackArrow(
                 "Network Preferences",
                 columnContent = {
-                    itemsIndexed(rows, key = { _, row -> row.key }) { _, row ->
+                    networkPreferencesChecklist(checklistEnabled, rows) { row ->
                         NetworkConnectivityChip(
                             row = row,
                             networkPreferencesLocked = networkPreferencesLocked,
@@ -1517,19 +1521,9 @@ fun WearTAKSettingsNav(
                             showPhoneManagedNotice = showPhoneManagedNotice,
                             showNetworkLockedNotice = {
                                 Toast.makeText(context, networkLockedNotice, Toast.LENGTH_SHORT).show()
-                            },
-                            appIcon = {
-                                if (row.key == "tak") {
-                                    Image(
-                                        painter = painterResource(takIndicator.drawable),
-                                        contentDescription = null,
-                                        modifier = Modifier.size(25.dp)
-                                    )
-                                }
                             }
                         )
                     }
-                    item { HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp)) }
                     item {
                         if (phoneManagedSettings) {
                             WearTAKLockedTitleChip(
@@ -1639,6 +1633,14 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.tak_servers_title),
                 {
+                    item {
+                        WearTAKToggleChip(
+                            checkedLive = enableTakEndpoint,
+                            onCheckedChange = settingsVm::storeEnableTakEndpoint,
+                            title = stringResource(R.string.tak_servers),
+                            enabled = !networkPreferencesLocked && !phoneManagedSettings
+                        )
+                    }
                     itemsIndexed(
                         takServerList.alphabetizedServerEntries { it.name },
                         key = { _, entry -> entry.value.serverId ?: entry.index }
@@ -3056,6 +3058,7 @@ fun WearTAKSettingsNav(
         }
 
         composable("plugins") {
+            val pluginToggles by pluginVm.connectivityToggles.collectAsStateWithLifecycle()
             val companionStatus = companionPluginStatus(enableCompanionAppService)
             val enableMopp by settingsVm.savedEnableMopp.collectAsState()
             val enableDataSync by settingsVm.savedEnableDataSync.collectAsState()
@@ -3251,6 +3254,22 @@ fun WearTAKSettingsNav(
                                                 }
                                             },
                                         )
+                                        pluginToggles[item.packageName]?.takeIf { item.isLoaded }?.let { toggle ->
+                                            NetworkConnectivityChip(
+                                                row = NetworkConnectivityRow(
+                                                    key = "plugin:${item.packageName}",
+                                                    title = item.title,
+                                                    subtitle = stringResource(R.string.network_plugin_forwarding),
+                                                    checked = toggle.enabled,
+                                                    toggle = { pluginVm.setConnectivityEnabled(item.packageName, toggle, it) },
+                                                    pluginIcon = item.icon
+                                                ),
+                                                networkPreferencesLocked = networkPreferencesLocked,
+                                                phoneManagedSettings = phoneManagedSettings,
+                                                navigate = {}, showPhoneManagedNotice = showPhoneManagedNotice,
+                                                showNetworkLockedNotice = {}
+                                            )
+                                        }
                                     },
                                 )
                             }
