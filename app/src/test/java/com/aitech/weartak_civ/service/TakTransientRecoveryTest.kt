@@ -299,6 +299,7 @@ class TakTransientRecoveryTest {
         assertEquals(0, detail.numConnAttempts)
         assertNull(detail.runtime.retryJob)
         verify(exactly = 2) { socket.startHandshake() }
+        verify { socket.soTimeout = 15_000; socket.soTimeout = 0 }
         verify(exactly = 0) { TAKConnectService.deleteFile(any()) }
     }
 
@@ -313,6 +314,119 @@ class TakTransientRecoveryTest {
         assertNull(detail.runtime.retryJob)
         verify(exactly = 1) { socket.startHandshake() }
         verify(exactly = 0) { TAKConnectService.deleteFile(any()) }
+    }
+
+    @Test fun stalledHandshakeHasReadDeadlineAndRetriesWithoutDeletingCertificate() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        val socket = mockTlsSocket()
+        every { socket.startHandshake() } throws SocketTimeoutException("TLS handshake timed out")
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        runCurrent()
+        verify { socket.soTimeout = 15_000 }
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, detail.connectionStatus.get())
+        assertNotNull(detail.runtime.retryJob)
+        advanceTimeBy(5_000)
+        runCurrent()
+        verify(exactly = 2) { socket.startHandshake() }
+        verify(exactly = 0) { TAKConnectService.deleteFile(any()) }
+        detail.runtime.retryJob!!.cancel()
+    }
+
+    @Test fun staleConnectingStatusCannotBlockAnExplicitReconnect() = runTest {
+        scopeField.set(null, this)
+        val detail = detail().copy(isP12Cert = false, p12Cert = null)
+        val stale = current(detail)
+        val raw = mockk<java.net.Socket>(relaxed = true)
+        stale.rawSocket = raw
+        detail.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTING_COT_PORT)
+        detail.runtime.generation++
+        val socket = mockTlsSocket()
+        TAKConnectService.getClientCertificateAndConnect(detail)
+        runCurrent()
+        assertNotSame(stale, detail.runtime.currentAttempt)
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTED_COT_PORT, detail.connectionStatus.get())
+        verify(exactly = 1) { socket.startHandshake() }
+        verify { raw.close() }
+    }
+
+    @Test fun supersededHandshakeFailureIsFencedAndReplacementOwnsTheRetry() = runTest {
+        scopeField.set(null, this)
+        var stored = DataRepository.TakServerItem(
+            true, "Test", "recovery.invalid", 8089, false, "user", "old-password", "", "",
+            "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        )
+        coEvery { MainActivity.dataRepository.tryAwaitTakServerList() } answers { listOf(stored) }
+        every { MainActivity.dataRepository.takChannels } returns MutableStateFlow(emptyList())
+        val service = TAKConnectService.getInstance()
+        TAKConnectService.isNetworkConnected = false
+        service.registerServer(stored.serverId!!)
+        val obsolete = TAKConnectService.getTakServerDetail(stored.serverId!!)!!
+        val socket = mockTlsSocket()
+        var handshakes = 0
+        every { socket.startHandshake() } answers {
+            if (++handshakes == 1) {
+                stored = stored.copy(password = "new-password")
+                service.onMessageEvent(com.aitech.weartak_civ.events.MessageEvent(
+                    com.aitech.weartak_civ.events.MessageEvent.SERVER_CHANGED, 0))
+                throw SocketException("Socket closed by configuration replacement")
+            }
+            throw ConnectException("Replacement transport failure")
+        }
+        TAKConnectService.isNetworkConnected = true
+        TAKConnectService.getClientCertificateAndConnect(obsolete)
+        runCurrent()
+        val replacement = TAKConnectService.getTakServerDetail(stored.serverId!!)!!
+        assertNotSame(obsolete, replacement)
+        assertTrue(obsolete.runtime.terminated)
+        assertNull(obsolete.runtime.currentAttempt)
+        assertNull(obsolete.runtime.retryJob)
+        assertEquals("new-password", replacement.password)
+        assertEquals(TAKConnectService.TAK_SERVER_CONNECTION_FAILED, replacement.connectionStatus.get())
+        assertNotNull(replacement.runtime.retryJob)
+        advanceTimeBy(5_000)
+        runCurrent()
+        verify(exactly = 3) { socket.startHandshake() }
+        replacement.runtime.retryJob!!.cancel()
+    }
+
+    @Test fun sideloadedCertificateDoesNotTurnUnchangedReloadIntoHandshakeReplacement() = runTest {
+        scopeField.set(null, this)
+        val stored = DataRepository.TakServerItem(
+            true, "Sideload", "sideload-recovery.invalid", 8089, false, "user", "password", "", "",
+            "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        )
+        coEvery { MainActivity.dataRepository.tryAwaitTakServerList() } returns listOf(stored)
+        every { MainActivity.dataRepository.takChannels } returns MutableStateFlow(emptyList())
+        val service = TAKConnectService.getInstance()
+        TAKConnectService.isNetworkConnected = false
+        service.registerServer(stored.serverId!!)
+        val detail = TAKConnectService.getTakServerDetail(stored.serverId!!)!!
+        val certDir = java.io.File(RuntimeEnvironment.getApplication().getExternalFilesDir(null), "certs")
+        certDir.mkdirs()
+        val certificate = java.io.File(certDir, "${stored.address}.p12")
+        try {
+            val keyStore = KeyStore.getInstance("PKCS12").apply { load(null, null) }
+            certificate.outputStream().use { keyStore.store(it, "atakatak".toCharArray()) }
+            mockkObject(TAKConnectService.Companion)
+            every { TAKConnectService.connectTAKServer(any(), any()) } returns Unit
+            TAKConnectService.isNetworkConnected = true
+            TAKConnectService.getClientCertificateAndConnect(detail)
+            runCurrent()
+            val attempt = detail.runtime.currentAttempt
+            assertNotNull(attempt)
+            assertEquals("atakatak", detail.runtime.sideloadedP12Password)
+            assertFalse(detail.isP12Cert)
+            assertEquals("", detail.p12CertPassword)
+            service.onMessageEvent(com.aitech.weartak_civ.events.MessageEvent(
+                com.aitech.weartak_civ.events.MessageEvent.SERVER_CHANGED, 0))
+            assertSame(detail, TAKConnectService.getTakServerDetail(stored.serverId!!))
+            assertSame(attempt, detail.runtime.currentAttempt)
+            assertFalse(detail.runtime.terminated)
+            verify(exactly = 1) { TAKConnectService.connectTAKServer(detail, any()) }
+        } finally {
+            certificate.delete()
+        }
     }
 
     @Test fun selectedNetworkBindsTcpDnsAndTlsToTheSameRoute() = runTest {

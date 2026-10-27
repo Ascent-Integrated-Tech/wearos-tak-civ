@@ -19,6 +19,9 @@ import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
@@ -181,6 +184,93 @@ class TakServerRegistrationServiceTest {
         coEvery { repository.tryAwaitTakServerList() } returns emptyList()
         register()
         assertEquals(TakServerRegistration.Status.FAILED, TAKConnectService.serverRegistration.state.value.status)
+    }
+
+    @Test fun delayedRemovalAndToggleEventsReconcileByIdWithoutTouchingSurvivingAttempt() {
+        val removed = stored.copy(serverId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+            address = "removed.example.invalid")
+        coEvery { repository.tryAwaitTakServerList() } returns listOf(removed, stored)
+        register()
+        val survivor = TAKConnectService.getTakServerDetail(serverId)!!
+        val obsolete = TAKConnectService.getTakServerDetail(removed.serverId!!)!!
+        val attempt = TAKConnectService.ConnectionAttempt(survivor.runtime.generation)
+        survivor.runtime.currentAttempt = attempt
+        survivor.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTING_COT_PORT)
+
+        coEvery { repository.tryAwaitTakServerList() } answers { listOf(stored) }
+        val service = TAKConnectService.getInstance()
+        repeat(2) {
+            service.onMessageEvent(MessageEvent(MessageEvent.SERVER_REMOVED, 0))
+            service.onMessageEvent(MessageEvent(MessageEvent.SERVER_TOGGLED, 1))
+        }
+
+        assertSame(survivor, TAKConnectService.getTakServerDetail(serverId))
+        assertSame(attempt, survivor.runtime.currentAttempt)
+        assertFalse(survivor.runtime.terminated)
+        assertTrue(survivor.isEnabled)
+        assertTrue(obsolete.runtime.terminated)
+        assertNull(TAKConnectService.getTakServerDetail(removed.serverId!!))
+        assertSame(survivor, TAKConnectService.takServerRuntimeDetails.value.single())
+    }
+
+    @Test fun repeatedEnableEventsUseSavedIntentAndRestartFailedOrTerminatedRuntime() {
+        register()
+        val obsolete = TAKConnectService.getTakServerDetail(serverId)!!
+        obsolete.runtime.terminated = true
+        stored = stored.copy(isEnabled = false)
+        val service = TAKConnectService.getInstance()
+        service.onMessageEvent(MessageEvent(MessageEvent.SERVER_TOGGLED, 0))
+        val disabled = TAKConnectService.getTakServerDetail(serverId)!!
+        assertNotSame(obsolete, disabled)
+        assertFalse(disabled.isEnabled)
+
+        mockkObject(TAKConnectService.Companion)
+        every { TAKConnectService.getClientCertificateAndConnect(any()) } returns Unit
+        TAKConnectService.isNetworkConnected = true
+        stored = stored.copy(isEnabled = true)
+        service.onMessageEvent(MessageEvent(MessageEvent.SERVER_TOGGLED, 0))
+        val enabled = TAKConnectService.getTakServerDetail(serverId)!!
+        assertNotSame(disabled, enabled)
+        assertTrue(enabled.isEnabled)
+        assertFalse(enabled.runtime.terminated)
+        enabled.connectionStatus.set(TAKConnectService.TAK_SERVER_CONNECTION_FAILED)
+        // A coalesced off/on pair or duplicate notification must not invert saved intent.
+        service.onMessageEvent(MessageEvent(MessageEvent.SERVER_TOGGLED, 0))
+        assertSame(enabled, TAKConnectService.getTakServerDetail(serverId))
+        assertTrue(enabled.isEnabled)
+        verify(exactly = 2) { TAKConnectService.getClientCertificateAndConnect(enabled) }
+    }
+
+    @Test fun concurrentRefreshReadsAreSerializedAndLatestConfigurationWins() = runBlocking {
+        register()
+        val readStarted = CompletableDeferred<Unit>()
+        val releaseRead = CompletableDeferred<Unit>()
+        var reads = 0
+        coEvery { repository.tryAwaitTakServerList() } coAnswers {
+            reads++
+            val snapshot = listOf(stored)
+            if (reads == 1) {
+                readStarted.complete(Unit)
+                releaseRead.await()
+            }
+            snapshot
+        }
+        val service = TAKConnectService.getInstance()
+        val first = async(start = CoroutineStart.UNDISPATCHED) { service.registerServer(serverId) }
+        readStarted.await()
+        stored = stored.copy(password = "latest-password")
+        val second = async(start = CoroutineStart.UNDISPATCHED) { service.registerServer(serverId) }
+        try {
+            assertEquals("Only one refresh may read/reconcile at a time", 1, reads)
+        } finally {
+            releaseRead.complete(Unit)
+        }
+        withTimeout(5_000) { first.await(); second.await() }
+        assertEquals(2, reads)
+        val detail = TAKConnectService.getTakServerDetail(serverId)!!
+        assertEquals("latest-password", detail.password)
+        assertFalse(detail.runtime.terminated)
+        assertSame(detail, TAKConnectService.takServerRuntimeDetails.value.single())
     }
 
     @Test fun cancelledEnrollmentTerminatesRegistrationAndPreservesCancellation() = runBlocking {
