@@ -2,11 +2,18 @@ package com.aitech.weartak_civ.cot
 
 import android.content.SharedPreferences
 import org.json.JSONObject
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /** Shared-key mission writers are trusted; these records enforce application ownership, not signatures. */
 internal class DittoPointLedger(private val preferences: SharedPreferences) {
     private val records = preferences.all.mapValues { it.value as String }.toMutableMap()
     private var failedKey: String? = null
+    private val mutableChanges = MutableStateFlow(0L)
+    val changes = mutableChanges.asStateFlow()
+
+    @Synchronized
+    fun hasPending(): Boolean = records.values.any { JSONObject(it).optBoolean("pending") }
 
     @Synchronized
     fun owns(uid: String): Boolean = DittoCotDocument.digest(uid) in records
@@ -45,6 +52,7 @@ internal class DittoPointLedger(private val preferences: SharedPreferences) {
         val doc = document + (METADATA to metadata)
         record.put("document", JSONObject(doc)).put("pending", true)
         save(key, record)
+        mutableChanges.value++
         flush(key, record, write)
         return true
     }
@@ -65,6 +73,7 @@ internal class DittoPointLedger(private val preferences: SharedPreferences) {
         }
         record.put("deleted", true)
         save(key, record)
+        mutableChanges.value++
     }
 
     @Synchronized
@@ -83,6 +92,7 @@ internal class DittoPointLedger(private val preferences: SharedPreferences) {
         write(toMap(record.getJSONObject("document")))
         record.put("pending", false)
         save(key, record)
+        mutableChanges.value++
     }
 
     private fun read(key: String): JSONObject? = records[key]?.let(::JSONObject)

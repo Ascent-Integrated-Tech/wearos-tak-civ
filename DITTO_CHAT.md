@@ -109,14 +109,15 @@ Example JSON (the native `_c` CRDT is created by the SDK, so is omitted here):
   documents whose `o` has passed or whose `b` is at least 24 hours old, using
   one combined predicate. A persisted cutoff prevents repeated eviction on
   service restart; failed cleanup is reported and retried the next day.
-  Cancel the overlapping chat subscription before eviction and re-register
+  Cancel the chat subscription before eviction and re-register
   with `(o IS MISSING OR o IS NULL OR o > cutoff) AND b > cutoff - 86400000` afterwards,
-  so the same expired history is not fetched again. Verify no expired matches
+  so the same expired history is not fetched again. Independently refresh that
+  subscription cutoff approximately hourly, cancel-then-replace with no eviction.
+  Verify no expired matches
   remain before reporting cleanup success. Ingest still checks current time
   on every snapshot: cleanup cadence never makes stale data eligible.
   No replicated delete is sent, and existing inbox history is never deleted
-  by mesh expiry. V4 eviction triggers a full mesh resync; it must not run in
-  the 10-second publication retry loop without the daily gate.
+  by mesh expiry.   V4 eviction triggers a full mesh resync; it must never run on publication retries.
   Track, mapitem and alert have no periodic eviction. Their ingestion enforces
   stale timestamps independently of storage cleanup (expired newer revisions
   still remove only their source's prior state; alert cancellations still apply).
@@ -144,6 +145,63 @@ Example JSON (the native `_c` CRDT is created by the SDK, so is omitted here):
   [chat enrollment](ENROLLSERVER.md).
   Other configuration/plugin/package handlers remain unavailable via mesh.
 - Recipient filtering is UI addressing, not encryption or peer access control.
+
+## Watch power and sync policy
+
+- Wi-Fi Aware requires Android's public `FEATURE_WIFI_AWARE`. Ditto Android
+  4.14.6 exposes BLE, LAN and Aware, not a separate Wi-Fi Direct switch; no
+  Wi-Fi Direct transport is enabled, regardless of Samsung's private
+  `sem.hardware.wifi.direct` feature. LAN is enabled only with a connected
+  Wi-Fi network, including local-only Wi-Fi. Network callbacks reconfigure it
+  without polling. Existing configured WebSocket URLs, if any, are enabled only
+  with validated internet; this app's offline SharedKey setup configures none.
+  Transport-set changes are logged without URLs or credentials.
+- BLE still uses MR526's event-driven discovery windows, direct-BLE connection
+  preservation, and five-minute topology cooldown. Network changes never
+  overwrite BLE state. Companion ownership/identity gates still take precedence.
+- Owned-point retry runs only with persistent pending ledger entries and active
+  sync. Backoff is 10, 20, 40, 80, 160, then 300 seconds maximum. New publication
+  intent or a successful flush resets it; no pending work means no retry timer.
+  Local deletion intent also wakes the retry worker. Chat cleanup remains daily,
+  never every few minutes.
+- Track subscriptions include `o > cutoff OR b > cutoff - 600000`. Mapitem and
+  alert use the same predicate with a 24-hour recent window, retaining recent
+  expired cancellations/tombstones as well as still-live long-lived points.
+  Each is closed before its hourly replacement. These are fixed cutoffs, so the
+  sync window can lag by up to one refresh interval; ingestion still rejects
+  stale active data at the current time. No document schemas changed. No
+  geographic/team filter is applied: there is no configured mission boundary,
+  and team is embedded in CoT XML rather than an indexed interoperable field.
+- Self-track writes are gated by movement using TAK's accuracy-aware distance
+  policy (over 15 m and over twice the combined anchor/current accuracy, both
+  accuracies at most 25 m), identity/MOPP/remarks changes, meaningful vitals
+  changes (5 bpm, 0.5 F, exertion 0.05, battery 5 percentage points, or vitals
+  appearing/disappearing), or heartbeat at the effective TAK self-PLI interval.
+  Generated vital sample clocks alone do not trigger a write. MR528/MR535's
+  shared effective interval applies directly, including the 60/120/300-second
+  stationary idle ladder and off-body signal; there is no parallel idle detector.
+  Interval changes refresh the advertised stale
+  before deferring, with the same `2 * interval + 15 seconds` stale policy as
+  TAK. Explicit outbound-route-ready announcements still publish the fresh fix.
+- Sync and BLE discovery pause for confirmed off-wrist, OS deep idle, exposed
+  bedtime mode, battery saver, or battery at/below the existing configured
+  **battery warning percentage**. This uses the app's early warning threshold
+  rather than waiting for its critical alert threshold; null wrist/battery
+  observations do not imply suppression. Charging or active alerting overrides
+  these power gates. Wrist-on, leaving sleep/saver, or battery recovery resumes
+  sync. Bedtime is observed read-only through optional Wear/OEM global keys
+  `bedtime_mode` and `wearable_bedtime_mode`; devices that expose neither cannot
+  report bedtime through this path (deep idle and other gates still apply).
+  Ordinary screen-off/ambient display is not treated as sleep. Local storage,
+  chat history and subscriptions remain intact while paused.
+- Outbound emergencies/alerts resume sync immediately for a renewable 60-second
+  grace period, even at low battery/off-wrist; active manual alerting keeps it
+  resumed beyond that period. This never bypasses Companion ownership, identity
+  reconfiguration or user disablement. The Ditto route icon uses a gray
+  **suppressed** slash while power-gated, not an error indicator. The later
+  Network Preferences checklist merge removed MR532's home route strip; this
+  indication follows its per-route checklist icon instead (visible when the
+  developer's Network Preferences Checklist option is enabled).
 
 ## Mesh identity is a separate prerequisite
 

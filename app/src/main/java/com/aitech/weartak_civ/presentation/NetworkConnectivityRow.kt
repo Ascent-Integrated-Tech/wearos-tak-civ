@@ -17,7 +17,8 @@ internal data class NetworkConnectivityRow(
     val statusDescription: String = subtitle,
     val settingsRoute: String? = networkSettingsRoute(key),
     @DrawableRes val iconRes: Int? = networkConnectivityIcon(key),
-    val pluginIcon: Drawable? = null
+    val pluginIcon: Drawable? = null,
+    val suppressed: Boolean = false,
 )
 
 @DrawableRes

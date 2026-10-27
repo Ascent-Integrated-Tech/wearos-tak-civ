@@ -1477,6 +1477,11 @@ fun WearTAKSettingsNav(
             val takSubtitleOverride = takStatusOverride?.let { stringResource(it) }
             val pluginToggles by pluginVm.connectivityToggles.collectAsStateWithLifecycle()
             val companionStatus = companionPluginStatus(enableCompanionAppService)
+            val dittoPowerSuppressed by com.aitech.weartak_civ.service.DittoService.powerSuppressed
+                .collectAsStateWithLifecycle()
+            val dittoSubtitle = stringResource(dittoPdlSubtitle(dittoPdlSource, dittoCustomPdl.isNotBlank()))
+            val dittoSuppressed = enableDittoService && dittoPowerSuppressed
+            val suppressedLabel = stringResource(R.string.connection_route_suppressed)
             val enabledLabel = stringResource(R.string.enabled)
             val disabledLabel = stringResource(R.string.disabled)
             val takIndicator = TakServerIndicator.resolve(
@@ -1504,8 +1509,10 @@ fun WearTAKSettingsNav(
                         else -> stringResource(R.string.network_no_group)
                     }, enableSitx, settingsVm::storeEnableSitx),
                 NetworkConnectivityRow("ditto", stringResource(R.string.ditto),
-                    stringResource(dittoPdlSubtitle(dittoPdlSource, dittoCustomPdl.isNotBlank())),
-                    enableDittoService, settingsVm::storeEnableDittoService),
+                    if (dittoSuppressed) suppressedLabel else dittoSubtitle,
+                    enableDittoService, settingsVm::storeEnableDittoService,
+                    statusDescription = if (dittoSuppressed) "$dittoSubtitle, $suppressedLabel" else dittoSubtitle,
+                    suppressed = dittoSuppressed),
                 NetworkConnectivityRow("companion", stringResource(R.string.companion_app),
                     "", enableCompanionAppService, settingsVm::storeEnableCompanionAppService,
                     statusDescription = companionStatus)

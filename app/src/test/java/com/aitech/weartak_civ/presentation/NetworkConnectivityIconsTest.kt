@@ -20,6 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.text.TextLayoutResult
@@ -62,6 +63,29 @@ class NetworkConnectivityIconsTest {
     }
 
     @Test fun checklistIconsLabelsAndSwitchesFit192dpRound() = verifyRound(192)
+
+    @Test fun powerSuppressedDittoKeepsItsToggleOnAndRecoversWithoutAnErrorState() {
+        var suppressed by mutableStateOf(true)
+        var enabled by mutableStateOf(true)
+        compose.setContent {
+            WearTAKCIVTheme {
+                NetworkConnectivityChip(
+                    NetworkConnectivityRow("ditto", "Ditto", "Community", enabled,
+                        { enabled = it }, suppressed = suppressed),
+                    false, false, {}, {}, {})
+            }
+        }
+        val icon = compose.onNode(hasContentDescription("Ditto") and !isToggleable(),
+            useUnmergedTree = true)
+        icon.assertIsDisplayed().assert(SemanticsMatcher.expectValue(
+            SemanticsProperties.StateDescription, "Suppressed"))
+        compose.onNode(isToggleable()).assertIsOn()
+        compose.runOnIdle { suppressed = false }
+        icon.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+        compose.runOnIdle { suppressed = true; enabled = false }
+        compose.onNode(isToggleable()).assertIsOff()
+        icon.assert(SemanticsMatcher.keyNotDefined(SemanticsProperties.StateDescription))
+    }
 
     @Test
     @Config(qualifiers = "w227dp-h227dp-round")

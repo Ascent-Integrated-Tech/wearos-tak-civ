@@ -62,4 +62,22 @@ class CotDispatchTransportResumeTest {
         assertFalse(graceActive)
         verify(exactly = 3) { repository.resumeWatchTransportsImmediately() }
     }
+
+    @Test fun emergencyWithoutFixResumesDittoEvenWhenSentAsChatNotice() {
+        io.mockk.mockkObject(DittoService.Companion)
+        every { DittoService.resumeSyncForAlert() } returns Unit
+        val repository = mockk<DataRepository>(relaxed = true)
+        every { repository.isCompanionConnected } returns kotlinx.coroutines.flow.MutableStateFlow(false)
+        val service = CotDispatchService()
+        CotDispatchService::class.java.getDeclaredField("dataRepository").apply {
+            isAccessible = true
+            set(service, repository)
+        }
+        service.resumeWatchTransportsForDispatch(CotMessageKind.PLI)
+        service.resumeWatchTransportsForDispatch(CotMessageKind.CHAT)
+        verify(exactly = 0) { DittoService.resumeSyncForAlert() }
+        service.resumeWatchTransportsForDispatch(CotMessageKind.CHAT, emergencyNotice = true)
+        service.resumeWatchTransportsForDispatch(CotMessageKind.EMERGENCY)
+        verify(exactly = 2) { DittoService.resumeSyncForAlert() }
+    }
 }
