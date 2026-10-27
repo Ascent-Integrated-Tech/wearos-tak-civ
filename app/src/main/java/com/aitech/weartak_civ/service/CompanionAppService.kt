@@ -692,6 +692,8 @@ class CompanionAppService : Service() {
     private val watchdogHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val HANDSHAKE_TIMEOUT_MS = 4_000L
     private val ADVERTISING_START_TIMEOUT_MS = 30_000L
+    private val GATT_SERVICE_ADD_RETRY_MS = 1_000L
+    private val MAX_GATT_SERVICE_ADD_RETRIES = 3
 
     @SuppressLint("MissingPermission")
     private fun armHandshakeWatchdog(reason: String) {
@@ -911,6 +913,7 @@ class CompanionAppService : Service() {
         // 3) Collect state *before* BLE init so transitions are not missed
         collectBleState()
         registerBondReceiver()
+        registerBluetoothStateReceiver()
 
         phoneManagedRestoreNotBefore =
             android.os.SystemClock.elapsedRealtime() + PhoneManagementLease.TIMEOUT_MS
@@ -1142,6 +1145,7 @@ class CompanionAppService : Service() {
         synchronized(advertisingLock) {
             serviceJob.cancel()
             stopAdvertising()
+            advertisingRefreshHandler.removeCallbacks(gattServiceRebuild)
         }
         synchronized(phoneManagementLease) {
             advanceCompanionGeneration()
@@ -1163,6 +1167,7 @@ class CompanionAppService : Service() {
 
         // 3) Stop bond monitoring + close the server + force disconnect
         unregisterBondReceiver()
+        unregisterBluetoothStateReceiver()
         closeGattServer() // should cancel connection + close server
 
         // 4) Finalize state
@@ -1179,8 +1184,11 @@ class CompanionAppService : Service() {
 
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
     private fun initBle() {
-        bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
-        bluetoothAdapter = bluetoothManager?.adapter
+        if (bluetoothManager == null) {
+            bluetoothManager = getSystemService(BLUETOOTH_SERVICE) as? BluetoothManager
+        }
+        if (bluetoothAdapter == null) bluetoothAdapter = bluetoothManager?.adapter
+        gattServiceAdded = false
 
         if (bluetoothAdapter == null || bluetoothAdapter?.isEnabled != true) {
             Log.w(TAG, "Bluetooth not available or disabled")
@@ -1225,15 +1233,111 @@ class CompanionAppService : Service() {
         service.addCharacteristic(txCharacteristic)
         service.addCharacteristic(rxCharacteristic)
 
-        gattServiceAdded = false
         val added = gattServer?.addService(service) ?: false
         if (!added) {
             Log.w(TAG, "Failed to add companion GATT service")
             capRepo.updateBleConnectionState(CompanionAppRepository.BleConnectionState.ERROR)
         } else {
             gattServiceAdded = true
-            Log.d(TAG, "Companion GATT service added")
+            Log.i(TAG, "Companion GATT service ${capRepo.COMPANION_SERVICE_UUID} added")
         }
+    }
+
+    // A Bluetooth stack restart drops every GATT server registration. Advertising A11A without
+    // the server makes the phone connect and then fail with "Companion service A11A missing".
+    @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
+    private fun ensureCompanionGattService(): Boolean {
+        if (gattServer != null && gattServiceAdded) return true
+        Log.w(TAG, "Companion GATT service missing; reopening GATT server")
+        closeGattServer()
+        initBle()
+        return gattServer != null && gattServiceAdded
+    }
+
+    private fun registerBluetoothStateReceiver() {
+        if (bluetoothStateReceiverRegistered) return
+        ContextCompat.registerReceiver(
+            this,
+            bluetoothStateReceiver,
+            IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED),
+            ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        bluetoothStateReceiverRegistered = true
+    }
+
+    private fun unregisterBluetoothStateReceiver() {
+        if (!bluetoothStateReceiverRegistered) return
+        try {
+            unregisterReceiver(bluetoothStateReceiver)
+        } catch (t: Throwable) {
+            Log.w(TAG, "unregisterReceiver(bluetoothStateReceiver) failed", t)
+        } finally {
+            bluetoothStateReceiverRegistered = false
+        }
+    }
+
+    @Volatile private var bluetoothStateReceiverRegistered: Boolean = false
+    @Volatile private var gattServiceAddFailures: Int = 0
+
+    @SuppressLint("MissingPermission")
+    private val gattServiceRebuild = Runnable {
+        if (serviceJob.isActive && connectedDevice == null) ensureCompanionGattService()
+    }
+
+    private val bluetoothStateReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action != BluetoothAdapter.ACTION_STATE_CHANGED) return
+            onBluetoothAdapterStateChanged(
+                intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, BluetoothAdapter.ERROR)
+            )
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    internal fun onBluetoothAdapterStateChanged(state: Int) {
+        if (!serviceJob.isActive) return
+        when (state) {
+            BluetoothAdapter.STATE_TURNING_OFF, BluetoothAdapter.STATE_OFF -> {
+                Log.w(TAG, "Bluetooth adapter state=$state; dropping Companion GATT server")
+                dropBleTransport()
+                capRepo.updateBleConnectionState(NOT_CONNECTED)
+            }
+            BluetoothAdapter.STATE_ON -> {
+                Log.w(TAG, "Bluetooth adapter on; re-exposing Companion GATT service")
+                dropBleTransport()
+                gattServiceAddFailures = 0
+                synchronized(advertisingLock) {
+                    advertiser = null
+                    advertisingFailures = 0
+                    advertisingRetryNotBefore = 0L
+                    advertisingFailedPermanently = false
+                }
+                ensureCompanionGattService()
+                startAdvertising()
+            }
+        }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun dropBleTransport() {
+        synchronized(advertisingLock) {
+            try {
+                stopAdvertising()
+            } catch (t: Throwable) {
+                Log.w(TAG, "stopAdvertising failed while Bluetooth restarted", t)
+            } finally {
+                advertising = false
+                advertisingStartPending = false
+            }
+        }
+        if (activeAddr != null || connectedDevice != null) {
+            repo.setCompanionAppDisconnected()
+            advanceCompanionGeneration()
+        }
+        rxBuf.clear()
+        clearPendingQueue()
+        disarmHandshakeWatchdog()
+        closeGattServer()
     }
 
 
@@ -1244,6 +1348,11 @@ class CompanionAppService : Service() {
         Log.d(TAG, "startAdvertising(): advertising=$advertising pending=$advertisingStartPending connectedDevice=${connectedDevice?.address}")
         if (!serviceJob.isActive || connectedDevice != null) return
         if (advertisingFailedPermanently) return
+        if (bluetoothAdapter?.isEnabled == false) {
+            // ACTION_STATE_CHANGED(STATE_ON) rebuilds the GATT server and restarts advertising.
+            Log.d(TAG, "startAdvertising(): Bluetooth off; waiting for adapter")
+            return
+        }
         val retryDelay = advertisingRetryNotBefore - android.os.SystemClock.elapsedRealtime()
         if (retryDelay > 0) {
             advertisingRefreshHandler.removeCallbacks(advertisingRetry)
@@ -1392,6 +1501,13 @@ class CompanionAppService : Service() {
             advertisingFailedPermanently = true
         }
         handleAdvertisingFailure(AdvertiseCallback.ADVERTISE_FAILED_INTERNAL_ERROR)
+        // A lost start callback is the signature of a Bluetooth stack restart, which also drops
+        // the GATT server registration while our handle stays non-null. Rebuild it before retry.
+        if (gattServer != null) {
+            Log.w(TAG, "Recycling Companion GATT server after lost advertising callback")
+            closeGattServer()
+            initBle()
+        }
     }
 
     private var advertiseCallback: AdvertiseCallback = createAdvertiseCallback()
@@ -1421,6 +1537,25 @@ class CompanionAppService : Service() {
     }
 
     private val gattServerCallback = object : BluetoothGattServerCallback() {
+        @SuppressLint("MissingPermission")
+        override fun onServiceAdded(status: Int, service: BluetoothGattService?) {
+            if (service?.uuid != capRepo.COMPANION_SERVICE_UUID) return
+            if (status == android.bluetooth.BluetoothGatt.GATT_SUCCESS) {
+                gattServiceAddFailures = 0
+                Log.i(TAG, "Companion GATT service registered")
+                return
+            }
+            gattServiceAdded = false
+            gattServiceAddFailures++
+            Log.w(TAG, "Companion GATT service registration failed status=$status attempt=$gattServiceAddFailures")
+            if (gattServiceAddFailures > MAX_GATT_SERVICE_ADD_RETRIES) {
+                capRepo.updateBleConnectionState(ERROR)
+                return
+            }
+            advertisingRefreshHandler.removeCallbacks(gattServiceRebuild)
+            advertisingRefreshHandler.postDelayed(gattServiceRebuild, GATT_SERVICE_ADD_RETRY_MS)
+        }
+
         @SuppressLint("MissingPermission")
         private fun bondStatus(device: BluetoothDevice): Int = try {
             device.bondState
@@ -1704,6 +1839,7 @@ class CompanionAppService : Service() {
             Log.w(TAG, "gattServer.close() failed", t)
         } finally {
             gattServer = null
+            gattServiceAdded = false
         }
     }
 

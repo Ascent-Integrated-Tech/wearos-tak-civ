@@ -41,6 +41,7 @@ class CompanionBluetoothNameTest {
 
     init {
         every { adapter.name } returns "Galaxy Watch"
+        every { adapter.isEnabled } returns true
         inject("bluetoothAdapter", adapter)
     }
 
