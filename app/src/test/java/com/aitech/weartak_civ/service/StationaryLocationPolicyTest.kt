@@ -84,5 +84,63 @@ class StationaryLocationPolicyTest {
                 assertEquals(2 * interval + 15, StationaryLocationPolicy.staleSeconds(configured, stationary))
             }
         }
+
+    }
+
+    @Test fun screenOffStationaryProgressesToTwoThenFiveMinutesWithOneShotDeadlines() {
+        val policy = StationaryLocationPolicy()
+        fun observe(now: Long) = policy.observe(now, true, ActivityRecognized.STILL, 80,
+            true, false, 0, interactive = false, worn = true)
+        assertFalse(observe(start))
+        assertTrue(observe(start + dwell))
+        assertEquals(60, policy.minimumIntervalSeconds)
+        assertEquals(start + dwell + StationaryLocationPolicy.EXTENDED_AFTER_NANOS, policy.nextEvaluationNanos)
+        assertTrue(observe(start + dwell + StationaryLocationPolicy.EXTENDED_AFTER_NANOS))
+        assertEquals(120, policy.minimumIntervalSeconds)
+        assertEquals(start + dwell + StationaryLocationPolicy.IDLE_AFTER_NANOS, policy.nextEvaluationNanos)
+        assertTrue(observe(start + dwell + StationaryLocationPolicy.IDLE_AFTER_NANOS))
+        assertEquals(300, policy.minimumIntervalSeconds)
+        assertNull(policy.nextEvaluationNanos)
+        assertFalse(policy.observe(start + dwell + StationaryLocationPolicy.IDLE_AFTER_NANOS + 1,
+            true, ActivityRecognized.WALKING, 80, true, false, 0, interactive = false, worn = true))
+        assertEquals(60, policy.minimumIntervalSeconds)
+    }
+
+    @Test fun onlyConfirmedOffBodyAndScreenOffCanRelaxWithoutActivityOrGpsEvidence() {
+        val policy = StationaryLocationPolicy()
+        assertTrue(policy.observe(start, false, ActivityRecognized.UNKNOWN, null,
+            true, false, 0, interactive = false, worn = false))
+        assertEquals(300, policy.minimumIntervalSeconds)
+        assertNull(policy.nextEvaluationNanos)
+        listOf<Boolean?>(null, true).forEach { worn ->
+            assertFalse(policy.observe(start, false, ActivityRecognized.UNKNOWN, null,
+                true, false, 0, interactive = false, worn = worn))
+        }
+        assertFalse(policy.observe(start, false, ActivityRecognized.UNKNOWN, null,
+            true, false, 0, interactive = true, worn = false))
+    }
+
+    @Test fun offBodyNeverDelaysAlertsNavigationMovingActivityOrExplicitInteraction() {
+        val policy = StationaryLocationPolicy()
+        assertFalse(policy.observe(start, false, ActivityRecognized.UNKNOWN, null,
+            true, true, 0, interactive = false, worn = false))
+        assertFalse(policy.observe(start, false, ActivityRecognized.UNKNOWN, null,
+            true, false, 0, interactive = false, worn = false, navigating = true))
+        assertFalse(policy.observe(start, false, ActivityRecognized.IN_VEHICLE, 80,
+            true, false, 0, interactive = false, worn = false))
+        assertFalse(policy.observe(start, false, ActivityRecognized.UNKNOWN, null,
+            true, false, start, interactive = false, worn = false))
+        assertEquals(start + dwell, policy.nextEvaluationNanos)
+        assertTrue(policy.observe(start + dwell, false, ActivityRecognized.UNKNOWN, null,
+            true, false, start, interactive = false, worn = false))
+    }
+
+    @Test fun staleAndConfiguredIntervalsCoverEveryProgressiveFloor() {
+        listOf(60, 120, 300).forEach { floor ->
+            assertEquals(floor, StationaryLocationPolicy.intervalSeconds(5, true, floor))
+            assertEquals(2 * floor + 15, StationaryLocationPolicy.staleSeconds(5, true, floor))
+            assertEquals(900, StationaryLocationPolicy.intervalSeconds(900, true, floor))
+            assertEquals(5, StationaryLocationPolicy.intervalSeconds(5, false, floor))
+        }
     }
 }

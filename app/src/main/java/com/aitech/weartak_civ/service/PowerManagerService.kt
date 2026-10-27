@@ -307,6 +307,7 @@ class PowerManagerService : Service() {
                     CotDispatchService.actualReportingIntervalSecs,
                     observationPowerThrottled, observationDockThrottled,
                 ), CotDispatchService.stationaryLocation,
+                CotDispatchService.stationaryIntervalSeconds,
             )
 
         private val TAG = "WearTAK-" + PowerManagerService::class.java.simpleName

@@ -784,6 +784,7 @@ class LocationService : Service() {
     }
 
     private fun restartLocationUpdates() {
+        com.aitech.weartak_civ.Utils.cancelGlobalTimer(this)
         acquisitionPolicy.reset()
         cancelRequests()
         nextObservationDeadlineNanos.value = null
@@ -836,6 +837,7 @@ class LocationService : Service() {
         val deadline = anchorNanos + intervalMillis * 1_000_000L
         setObservationDeadline(deadline)
         if (intervalMillis < MAX_PERIODIC_GPS_UPDATE_INTERVAL * 1_000L) {
+            com.aitech.weartak_civ.Utils.cancelGlobalTimer(this)
             if (!periodic || intervalMillis != acquisitionIntervalMillis) {
                 // Change a subscription only after its observation completed, never on speed expiry.
                 cancelRequest(Acquisition.PERIODIC)
@@ -854,6 +856,7 @@ class LocationService : Service() {
     }
 
     private fun stationary(): Boolean {
+        if (CotDispatchService.stationaryLocation) return true
         if (dataRepository.stationaryMotion.state.value.stationary) return true
         if (dataRepository.stationaryMotion.state.value.movingUntilNanos > SystemClock.elapsedRealtimeNanos()) return false
         val speed = speedObservation.value?.let { observation ->
@@ -951,7 +954,10 @@ class LocationService : Service() {
                     acquisitionIntervalMillis = interval
                     observationBaseIntervalMillis = interval
                     periodic = interval < MAX_PERIODIC_GPS_UPDATE_INTERVAL * 1_000L
-                    if (periodic) requestUpdates(Acquisition.PERIODIC, interval)
+                    if (periodic) {
+                        com.aitech.weartak_civ.Utils.cancelGlobalTimer(this@LocationService)
+                        requestUpdates(Acquisition.PERIODIC, interval)
+                    }
                     else {
                         runTimerJob(interval)
                         if (faster) acquireWakelockAndRequestLocation()
@@ -980,6 +986,7 @@ class LocationService : Service() {
 
     override fun onDestroy() {
         isRunning.set(false)
+        com.aitech.weartak_civ.Utils.cancelGlobalTimer(this)
         cancelRequests()
         scope.cancel()
         if (receiverRegistered) unregisterReceiver(providerChanges)

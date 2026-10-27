@@ -12,8 +12,12 @@ package com.aitech.weartak_civ.service
 import android.Manifest
 import android.app.NotificationManager
 import android.app.Service
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.os.IBinder
+import android.os.PowerManager
 import android.os.SystemClock
 import android.util.Log
 import android.content.pm.PackageManager
@@ -41,6 +45,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.greenrobot.eventbus.EventBus
@@ -66,6 +71,38 @@ class ReportingIntervalStrategyService : Service() {
     private var diagnosticSpeedUsable: Boolean? = null
     private val policyDiagnostics = ReportingPolicyDiagnostics()
     private val stationaryLocationPolicy = StationaryLocationPolicy()
+    private val interactive = MutableStateFlow(true)
+    private val navigating = MutableStateFlow(false)
+    private var screenReceiverRegistered = false
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) = updateInteractive()
+    }
+
+    private fun updateInteractive() {
+        val current = getSystemService(PowerManager::class.java).isInteractive
+        if (current && !interactive.value) dataRepository.noteLocationMotion()
+        interactive.value = current
+    }
+
+    private fun startIdleContextCollector() {
+        ContextCompat.registerReceiver(this, screenReceiver, IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }, ContextCompat.RECEIVER_NOT_EXPORTED)
+        screenReceiverRegistered = true
+        updateInteractive()
+        serviceScope.launch {
+            dataRepository.latestDeviceWornObservation.collect { worn ->
+                if (worn == true) dataRepository.noteLocationMotion()
+            }
+        }
+        val bloodhounds = (application as com.aitech.weartak_civ.WearTakApplication).bhRepo
+        serviceScope.launch {
+            combine(bloodhounds.activeUid, bloodhounds.routeFollow) { target, route ->
+                target != null || route != null
+            }.collect { navigating.value = it }
+        }
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -75,6 +112,7 @@ class ReportingIntervalStrategyService : Service() {
         isRunning.getAndSet(true)
         startForegroundServiceCompat(REPORTING_INTERVAL_STRATEGY_SERVICE_NOTIFICATION_ID, importance = NotificationManager.IMPORTANCE_LOW)
         dataRepository = MainActivity.dataRepository  // single instance of data repository shared by all instances
+        startIdleContextCollector()
         initializeVariables()
         startDiagnosticsCollector()
         startEnableDynamicStrategyCollector()
@@ -99,6 +137,7 @@ class ReportingIntervalStrategyService : Service() {
         stopForegroundServiceCompat()
         // TODO: should we serviceJob.cancel()
         serviceScope.cancel()
+        if (screenReceiverRegistered) unregisterReceiver(screenReceiver)
         CotDispatchService.stationaryLocation = false
     }
 
@@ -320,23 +359,29 @@ class ReportingIntervalStrategyService : Service() {
                 dataRepository.isAlerting, dataRepository.getLocationInput) { enabled, alerting, input ->
                 Triple(enabled, alerting, input)
             }
+            val idleContext = combine(interactive, dataRepository.latestDeviceWornObservation, navigating) {
+                screen, worn, navigation -> Triple(screen, worn, navigation)
+            }
             combine(activity, availability, dataRepository.stationaryMotion.state,
-                dataRepository.locationMotionNanos) { recognized, available, motion, lastMotion ->
+                dataRepository.locationMotionNanos, idleContext) { recognized, available, motion, lastMotion, idle ->
                 { now: Long ->
-                    stationaryLocationPolicy.observe(now, motion.stationary, recognized.first,
+                    val activityPermitted = ContextCompat.checkSelfPermission(this@ReportingIntervalStrategyService,
+                        Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED
+                    stationaryLocationPolicy.observe(now, motion.stationary,
+                        if (activityPermitted) recognized.first else ActivityRecognized.UNKNOWN,
                         recognized.second, available.first &&
-                            ContextCompat.checkSelfPermission(this@ReportingIntervalStrategyService,
-                                Manifest.permission.ACTIVITY_RECOGNITION) == PackageManager.PERMISSION_GRANTED &&
                             (ContextCompat.checkSelfPermission(this@ReportingIntervalStrategyService,
                                 Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                                 (available.third != LocationInput.INTERNAL_GNSS &&
                                     ContextCompat.checkSelfPermission(this@ReportingIntervalStrategyService,
                                         Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED)),
-                        available.second, lastMotion)
+                        available.second, lastMotion, idle.first, idle.second, idle.third)
                 }
             }.collectLatest { evaluate ->
                 do {
-                    CotDispatchService.stationaryLocation = evaluate(SystemClock.elapsedRealtimeNanos())
+                    CotDispatchService.stationaryIntervalSeconds =
+                        if (evaluate(SystemClock.elapsedRealtimeNanos()))
+                            stationaryLocationPolicy.minimumIntervalSeconds else 0
                     val next = stationaryLocationPolicy.nextEvaluationNanos ?: break
                     delay(((next - SystemClock.elapsedRealtimeNanos()) / 1_000_000L).coerceAtLeast(0) + 1)
                 } while (true)

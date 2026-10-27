@@ -11,7 +11,6 @@ package com.aitech.weartak_civ
 
 import android.annotation.SuppressLint
 import android.app.AlarmManager
-import android.app.AlarmManager.AlarmClockInfo
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -26,6 +25,7 @@ import android.graphics.Color
 import android.location.Location
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -141,25 +141,32 @@ object Utils {
 
 
     fun runTimerJob(timeMs: Long) {
-        object : Thread() {
-            override fun run() {
-                super.run()
-                //val logStr="runTimerJob called with timeout: $timeMs ms"
-                //Log.d(TAG, logStr)
-                //writeToLogFileLocation(logFile, logStr)
-                startGlobalTimer(timeMs)
-            }
-        }.start()
+        startGlobalTimer(timeMs)
     }
 
     fun startGlobalTimer(timeMs: Long) {
-        //Log.d(TAG, "startGlobalTimer called with timeout: $timeMs ms")
-        val alarmIntent = Intent(mainActivity, AlarmReceiver::class.java)
-        val pendingIntent = PendingIntent.getBroadcast(mainActivity, GPS_ALARM_REQUEST_CODE, alarmIntent,
+        val context = com.aitech.weartak_civ.service.LocationService.getInstance() ?: mainActivity
+        val alarmIntent = Intent(context, AlarmReceiver::class.java)
+        val pendingIntent = PendingIntent.getBroadcast(context, GPS_ALARM_REQUEST_CODE, alarmIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val alarmManager = mainActivity.getSystemService(ALARM_SERVICE) as AlarmManager
-        val ac = AlarmClockInfo(System.currentTimeMillis() + timeMs - REDUCE_ALARM_TIME_MS, pendingIntent)
-        alarmManager.setAlarmClock(ac, pendingIntent)
+        val alarmManager = context.getSystemService(ALARM_SERVICE) as AlarmManager
+        val deadline = SystemClock.elapsedRealtime() + (timeMs - REDUCE_ALARM_TIME_MS).coerceAtLeast(1L)
+        // Routine GPS is not a user alarm: allow deep doze to defer it.
+        if (com.aitech.weartak_civ.service.CotDispatchService.stationaryLocation) {
+            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, deadline, pendingIntent)
+        } else if (alarmManager.canScheduleExactAlarms()) {
+            alarmManager.setExact(AlarmManager.ELAPSED_REALTIME_WAKEUP, deadline, pendingIntent)
+        } else {
+            Log.w(TAG, "Exact routine location alarm unavailable; using an inexact observation")
+            alarmManager.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, deadline, pendingIntent)
+        }
+    }
+
+    fun cancelGlobalTimer(context: Context) {
+        val pendingIntent = PendingIntent.getBroadcast(context, GPS_ALARM_REQUEST_CODE,
+            Intent(context, AlarmReceiver::class.java),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE) ?: return
+        (context.getSystemService(ALARM_SERVICE) as AlarmManager).cancel(pendingIntent)
     }
 
     fun <T> listEqualsIgnoreOrder(list1: List<T>, list2: List<T>): Boolean {

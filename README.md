@@ -794,7 +794,8 @@ stationary, scheduled fused observations use Balanced accuracy, allow fixes up t
 30 seconds before the request, and do not wait for accurate location. Recognized
 movement overrides stationary speed; unknown state does not imply stationary.
 Moving/unknown and explicit interaction requests use high accuracy and require
-a post-request fix. No stationary observations are skipped. Selected native GNSS
+a post-request fix. Routine observations retain the idle safety-net cadence described
+under Reporting below. Selected native GNSS
 and network inputs retain their provider contracts, without fallback. Cached
 fixes retain their actual timestamps and accuracy (including CoT `ce`) and do not
 renew an old speed's full validity window. These are acquisition-policy changes,
@@ -1228,8 +1229,9 @@ remain required. It does not enable HR, collect passive daily health metrics or
 register fall monitoring while physiological monitoring is off; those retain
 their own monitoring and Body Sensors permission gates.
 
-A separate one-second cached-data send check uses time since the last routine
-emission. Observations do not force extra PLI or timer-driven coordinate redraws.
+A separate cached-data send check sleeps until the next routine reporting deadline,
+with a one-second retry only when a PLI could not be sent. Shorter reporting intervals
+re-arm the check immediately. Observations do not force extra PLI or timer-driven coordinate redraws.
 Speed must be present, finite, nonnegative, from the current input/generation and
 not future-dated. Its validity ends at that observation's expected next acquisition
 deadline plus the existing six-second acquisition timeout. Missing/expired speed
@@ -1244,6 +1246,42 @@ speed validity. Source changes still invalidate old-source requests and fixes.
 Existing explicit map, self-point, alert,
 identity and route-readiness refresh paths retain their own freshness/dispatch rules.
 Phone-managed constant reporting and Companion-exclusive routing remain authoritative.
+
+Routine location observations are not alarm clocks. Moving/unknown observations
+use elapsed-realtime exact alarms when permitted (otherwise a logged inexact
+fallback); idle observations use inexact alarms. Both may be deferred by Android
+deep doze. Reprofiling to a continuous subscription and stopping location cancel
+the pending alarm. SOS, alert delivery and explicit refreshes do not wait for an
+alarm or a reporting deadline.
+
+Independent trusted stationary-location and confident STILL activity evidence
+must agree for 30 seconds before a 60-second minimum acquisition/reporting interval
+applies. With the display off, the minimum increases to two minutes after two
+additional minutes, then five minutes after five additional minutes. An affirmative
+off-body observation with the display off can select five minutes without GPS or
+activity evidence; unknown body state cannot. An active Bloodhound target or route,
+recognized moving activity, alerts, or recent explicit interaction bypass this idle
+policy. Screen-on and on-body transitions reset the idle dwell. No configured
+interval longer than the idle minimum is shortened. The minimum applies to Constant
+and Dynamic modes without rewriting their saved settings; fused routine requests
+use Balanced accuracy while idle, while native inputs retain their selected provider.
+Before slowing PLI, the existing interval bridge announces the corresponding stale
+window (two effective intervals plus 15 seconds, subject to the existing bonded-watch
+stale policy). During deep doze a deferred observation can outlive that window;
+expiry is preferable to claiming that a sleeping watch supplied a fresh fix.
+
+Companion mode does not blindly disable watch location: the legacy PLI envelope,
+self marker, local Bloodhound and route navigation still consume watch fixes.
+Physiological `self_status` itself needs no GPS, but its negotiation alone does
+not prove that all positional consumers have handed ownership to the phone.
+The same bounded idle cadence therefore applies while paired, rather than
+removing the location safety net or changing the Companion protocol.
+
+Screen-off passive-SA deferral reduces local projection work, not incoming
+network bytes. TAK channel selection can already reduce server fan-in, but
+automatically changing channels or installing a subscription filter could hide
+alerts, chat, navigation targets or other operational data. No automatic channel
+changes, new server filter commands or Companion receive drops are introduced here.
 
 When Dynamic reporting has a trusted stationary fix (reported horizontal accuracy
 at most 25 m), WearTAK arms the low-power, one-shot significant-motion sensor when

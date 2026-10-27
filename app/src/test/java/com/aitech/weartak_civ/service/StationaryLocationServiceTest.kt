@@ -47,7 +47,7 @@ class StationaryLocationServiceTest {
         }
     }
 
-    private fun stationaryCollector(assertions: (DataRepository) -> Unit) {
+    private fun stationaryCollector(screenOff: Boolean = false, assertions: (DataRepository) -> Unit) {
         val repo = DataRepository(RuntimeEnvironment.getApplication())
         runBlocking {
             repo.storeEnableLocationService(true)
@@ -61,6 +61,13 @@ class StationaryLocationServiceTest {
         val service = controller.get()
         ReportingIntervalStrategyService::class.java.getDeclaredField("dataRepository").apply {
             isAccessible = true; set(service, repo)
+        }
+        if (screenOff) {
+            @Suppress("UNCHECKED_CAST")
+            val interactive = ReportingIntervalStrategyService::class.java.getDeclaredField("interactive").run {
+                isAccessible = true; get(service) as kotlinx.coroutines.flow.MutableStateFlow<Boolean>
+            }
+            interactive.value = false
         }
         val oldInterval = CotDispatchService.actualReportingIntervalSecs
         val oldObservation = CotDispatchService.desiredLocationObservationIntervalSecs
@@ -116,6 +123,73 @@ class StationaryLocationServiceTest {
             System.currentTimeMillis(), false)) }
         await { !CotDispatchService.stationaryLocation }
         assertEquals(5, CotDispatchService.actualReportingIntervalSecs)
+    }
+
+    @Test fun screenOffProgressionUpdatesAcquisitionReportingAndStaleTogether() = stationaryCollector(screenOff = true) { repo ->
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        await { CotDispatchService.actualReportingIntervalSecs == 120 }
+        assertEquals(120, PowerManagerService.locationObservationIntervalSeconds(true))
+        assertEquals(120, PowerManagerService.locationObservationIntervalSeconds(false))
+        repo.setAlmightyReportingInterval(5)
+        val extended = runBlocking { repo.snapshotPli().time }
+        assertEquals(255_000L, extended.stale - extended.time)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(3))
+        await { CotDispatchService.actualReportingIntervalSecs == 300 }
+        assertEquals(300, PowerManagerService.locationObservationIntervalSeconds(true))
+        val idle = runBlocking { repo.snapshotPli().time }
+        assertEquals(615_000L, idle.stale - idle.time)
+        repo.noteLocationMotion()
+        await { CotDispatchService.actualReportingIntervalSecs == 5 }
+    }
+
+    @Test fun offBodyScreenOffNeedsNoActivityEvidenceAndScreenWristNavigationOrAlertRestoresCadence() {
+        val repo = DataRepository(RuntimeEnvironment.getApplication())
+        runBlocking {
+            repo.storeEnableLocationService(true)
+            repo.storeEnableActivityRecognitionService(false)
+            repo.storeLatestIsDeviceWorn(false)
+        }
+        val service = Robolectric.buildService(ReportingIntervalStrategyService::class.java).get()
+        ReportingIntervalStrategyService::class.java.getDeclaredField("dataRepository").apply {
+            isAccessible = true; set(service, repo)
+        }
+        @Suppress("UNCHECKED_CAST")
+        fun state(name: String) = ReportingIntervalStrategyService::class.java.getDeclaredField(name).run {
+            isAccessible = true; get(service) as kotlinx.coroutines.flow.MutableStateFlow<Boolean>
+        }
+        val interactive = state("interactive")
+        val navigating = state("navigating")
+        val old = CotDispatchService.actualReportingIntervalSecs
+        try {
+            CotDispatchService.actualReportingIntervalSecs = 5
+            interactive.value = false
+            ReportingIntervalStrategyService::class.java.getDeclaredMethod("startStationaryLocationCollector").apply {
+                isAccessible = true; invoke(service)
+            }
+            await { CotDispatchService.actualReportingIntervalSecs == 300 }
+            interactive.value = true
+            await { CotDispatchService.actualReportingIntervalSecs == 5 }
+            interactive.value = false
+            await { CotDispatchService.actualReportingIntervalSecs == 300 }
+            runBlocking { repo.storeLatestIsDeviceWorn(true) }
+            await { CotDispatchService.actualReportingIntervalSecs == 5 }
+            runBlocking { repo.storeLatestIsDeviceWorn(false) }
+            await { CotDispatchService.actualReportingIntervalSecs == 300 }
+            navigating.value = true
+            await { CotDispatchService.actualReportingIntervalSecs == 5 }
+            navigating.value = false
+            await { CotDispatchService.actualReportingIntervalSecs == 300 }
+            runBlocking { repo.appendManualAlert(DataRepository.CustomEmergencyAlert(
+                "idle-sos", DataRepository.AlertState.ALERT, "SOS", "test", 1, false,
+                System.currentTimeMillis(), false)) }
+            await { CotDispatchService.actualReportingIntervalSecs == 5 }
+        } finally {
+            (ReportingIntervalStrategyService::class.java.getDeclaredField("serviceScope").run {
+                isAccessible = true; get(service) as CoroutineScope
+            }).cancel()
+            CotDispatchService.stationaryLocation = false
+            CotDispatchService.actualReportingIntervalSecs = old
+        }
     }
 
     @Test fun intervalBridgeAnnouncesLongerStaleThenAllowsImmediatePliWhenMotionReturns() {

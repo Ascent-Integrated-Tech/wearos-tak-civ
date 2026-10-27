@@ -373,8 +373,8 @@ class CotDispatchService : Service() {
                     dataRepository.setAlmightyReportingInterval(secs)
                     // Advertise the longer stale window before deferring the next stationary fix.
                     if (stationaryLocation && secs > previous) buildAndSendPhysioLocationCotMsg()
-                    if (wasStationary && secs < previous) {
-                        periodicPliMutex.withLock { periodicReportingGate.reset() }
+                    if (secs < previous) {
+                        if (wasStationary) periodicPliMutex.withLock { periodicReportingGate.reset() }
                         cotDispatchHandler?.removeCallbacks(cotDispatchRunnable)
                         cotDispatchHandler?.post(cotDispatchRunnable)
                     }
@@ -1056,12 +1056,19 @@ class CotDispatchService : Service() {
 
     private val cotDispatchRunnable = object : Runnable {
         override fun run() {
+            cotDispatchHandler?.removeCallbacks(this)
             val dynamic = runBlocking { dataRepository.getEnableDynamicReportingStrategy.first() }
             if (dynamic || (System.currentTimeMillis()-lastLocationUpdateRcvd) > actualReportingIntervalSecs * 1000L) {
                 // Fused location can update more slowly indoors, so dispatch when the reporting deadline lapses.
                 buildAndSendPhysioLocationCotMsg(periodic = true)
             }
-            cotDispatchHandler?.postDelayed(this, if (dynamic) 1_000L else actualReportingIntervalSecs * 1000L)
+            val delayMillis = if (dynamic) runBlocking {
+                periodicPliMutex.withLock {
+                    periodicReportingGate.delayMillis(android.os.SystemClock.elapsedRealtimeNanos(),
+                        actualReportingIntervalSecs)
+                }
+            } else actualReportingIntervalSecs * 1000L
+            cotDispatchHandler?.postDelayed(this, delayMillis)
         }
     }
 
@@ -1781,7 +1788,7 @@ class CotDispatchService : Service() {
             _actualReportingIntervalSecsFlow.asStateFlow()
 
         @Volatile
-        internal var stationaryLocation = false
+        internal var stationaryIntervalSeconds = 0
             set(value) {
                 if (field == value) return
                 field = value
@@ -1790,8 +1797,12 @@ class CotDispatchService : Service() {
                     com.aitech.weartak_civ.events.PowerManagerEvent.CHANGED_UPDATE_INTERVAL))
             }
 
+        internal var stationaryLocation: Boolean
+            get() = stationaryIntervalSeconds > 0
+            set(value) { stationaryIntervalSeconds = if (value) StationaryLocationPolicy.INTERVAL_SECONDS else 0 }
+
         var actualReportingIntervalSecs: Int = DEFAULT_CONSTANT_REPORTING_INTERVAL
-            get() = StationaryLocationPolicy.intervalSeconds(field, stationaryLocation)
+            get() = StationaryLocationPolicy.intervalSeconds(field, stationaryLocation, stationaryIntervalSeconds)
             set(value) {
                 if (field == value) return
                 field = value
