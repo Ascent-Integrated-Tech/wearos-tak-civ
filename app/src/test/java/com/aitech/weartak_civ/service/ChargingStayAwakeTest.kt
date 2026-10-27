@@ -87,34 +87,40 @@ class ChargingStayAwakeTest {
     }
 
     @Test
-    fun wirelessSavedOptInWithoutPermissionDoesNotWriteOrRequestWifi() {
+    fun combinedOptInWithoutPermissionKeepsAwakeWithoutSettingsWrites() {
         shadowOf(application).denyPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         Settings.Global.putString(application.contentResolver, "adb_enabled", "0")
         Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         battery(BatteryManager.BATTERY_PLUGGED_USB)
         awake.start()
         idle()
         assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_enabled"))
         assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
+        assertTrue(preferences.chargingEnabled)
+        assertAllHeld()
+        assertEquals(1, starts)
+        assertEquals(1, connectivity.networkCallbacks.size)
+        battery(0)
+        idle()
         assertFalse(DebugStayAwakeService.active.value)
-        assertEquals(0, starts)
-        assertTrue(connectivity.requests.isEmpty())
+        assertTrue(connectivity.networkCallbacks.isEmpty())
     }
 
     @Test
-    fun wirelessDebuggingAloneHoldsChargingWifiDemandAndUnplugRestores() {
+    fun combinedOptInHoldsChargingLocksEnablesDebuggingAndUnplugRestores() {
         shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         Settings.Global.putString(application.contentResolver, "adb_enabled", "0")
         Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         battery(BatteryManager.BATTERY_PLUGGED_USB)
         awake.start()
         idle()
-        assertFalse(preferences.chargingEnabled)
+        assertTrue(preferences.chargingEnabled)
         assertFalse(preferences.enabled)
         assertAllHeld()
         assertEquals(1, connectivity.networkCallbacks.size)
+        assertEquals("1", Settings.Global.getString(application.contentResolver, "adb_enabled"))
         assertEquals("1", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
         battery(0)
         idle()
@@ -122,20 +128,20 @@ class ChargingStayAwakeTest {
         assertTrue(connectivity.networkCallbacks.isEmpty())
         assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_enabled"))
         assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
-        assertTrue(preferences.wirelessDebuggingEnabled)
+        assertTrue(preferences.chargingEnabled)
     }
 
     @Test
-    fun wirelessToggleOffRestoresButDoesNotStopIndependentManualDemand() {
+    fun combinedToggleOffRestoresButDoesNotStopIndependentManualDemand() {
         shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
         battery(BatteryManager.BATTERY_PLUGGED_USB)
         awake.start()
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         idle()
         assertAllHeld()
         DebugStayAwakeService.setEnabled(context, true)
-        preferences.setWirelessDebuggingEnabled(false)
+        ChargingStayAwake.setEnabled(context, false)
         idle()
         assertAllHeld()
         assertTrue(preferences.enabled)
@@ -143,10 +149,10 @@ class ChargingStayAwakeTest {
     }
 
     @Test
-    fun wirelessUnknownPowerAndManagerStopRestoreAndReleaseWifi() {
+    fun combinedUnknownPowerAndManagerStopRestoreAndReleaseWifi() {
         shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         battery(BatteryManager.BATTERY_PLUGGED_USB)
         awake.start()
         idle()
@@ -162,20 +168,20 @@ class ChargingStayAwakeTest {
         assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
         assertFalse(DebugStayAwakeService.active.value)
         assertTrue(connectivity.networkCallbacks.isEmpty())
-        assertTrue(preferences.wirelessDebuggingEnabled)
+        assertTrue(preferences.chargingEnabled)
     }
 
     @Test
-    fun notificationStopDisablesWirelessAndRestoresWithoutRestartingOnPower() {
+    fun notificationStopDisablesCombinedChoiceAndRestoresWithoutRestartingOnPower() {
         shadowOf(application).grantPermissions(Manifest.permission.WRITE_SECURE_SETTINGS)
         Settings.Global.putString(application.contentResolver, "adb_wifi_enabled", "0")
-        preferences.setWirelessDebuggingEnabled(true)
+        preferences.setChargingEnabled(true)
         battery(BatteryManager.BATTERY_PLUGGED_USB)
         awake.start()
         idle()
         service.onStartCommand(Intent().setAction(DebugStayAwakeService.ACTION_STOP), 0, 2)
         idle()
-        assertFalse(preferences.wirelessDebuggingEnabled)
+        assertFalse(preferences.chargingEnabled)
         assertEquals("0", Settings.Global.getString(application.contentResolver, "adb_wifi_enabled"))
         assertFalse(DebugStayAwakeService.active.value)
         application.sendBroadcast(Intent(Intent.ACTION_POWER_CONNECTED))

@@ -16,7 +16,7 @@ class ChargingStayAwake(private val context: Context) {
     private var monitoring = false
     private val wirelessDebugging = ChargingWirelessDebugging(context)
     private val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-        if (key == "when_charging" || key == "wireless_when_charging") reconcile(powerConnected)
+        if (key == DebugStayAwakePreferences.CHARGING_KEY) reconcile(powerConnected)
     }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -60,7 +60,7 @@ class ChargingStayAwake(private val context: Context) {
         val connected = plugged && isPlugged(context)
         wirelessDebugging.reconcile(connected)
         if (preferences.enabled) return
-        if ((preferences.chargingEnabled || ChargingWirelessDebugging.requested(context)) && connected) {
+        if (preferences.chargingEnabled && connected) {
             DebugStayAwakeService.restoreIfEnabled(context)
         } else {
             context.stopService(Intent(context, DebugStayAwakeService::class.java))
@@ -68,6 +68,11 @@ class ChargingStayAwake(private val context: Context) {
     }
 
     companion object {
+        fun setEnabled(context: Context, enabled: Boolean) {
+            DebugStayAwakePreferences(context).setChargingEnabled(enabled)
+            if (!enabled) ChargingWirelessDebugging.restorePending(context)
+        }
+
         internal var powerConnected = false
             private set
 

@@ -1,14 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="debug_stay_awake">Stay awake</string>
-    <string name="debug_stay_awake_charging">Stay awake when charging</string>
-    <string name="debug_wireless_charging">Wireless debugging when charging</string>
+    <string name="debug_while_charging">While charging</string>
+    <string name="debug_while_charging_description">Stay awake and wireless debugging</string>
+    <string name="debug_while_charging_needs_grant">Wireless debugging needs adb grant</string>
     <string name="debug_wireless_grant">One-time setup from a trusted computer:\nadb shell pm grant %1$s android.permission.WRITE_SECURE_SETTINGS\nThen reopen this screen. Firmware may still block wireless debugging.</string>
     <string name="debug_stay_awake_warning">Extra battery use. May heat watch.</string>
     <string name="debug_stay_awake_active">Keeps screen, CPU and Wi-Fi awake while plugged in. Manual Stay awake takes priority over dim charging mode. Unplug stops charging demand; Stop disables all charging choices.</string>
     <string name="debug_stay_awake_running">Running</string>
     <string name="debug_stay_awake_waiting">Enabled, not running</string>
-    <string name="debug_stay_awake_details">Both modes require Wi-Fi and external power. Stay awake uses a bright screen and turns off on unplug. Stay awake when charging uses a dim screen while WearTAK is running; its choice survives unplugging, updates and restart. Manual Stay awake takes priority while plugged in. Switching Wi-Fi off stops the session. Cannot unlock the watch or keep it awake while powered off.</string>
+    <string name="debug_stay_awake_details">Both modes require Wi-Fi and external power. Stay awake uses a bright screen and turns off on unplug. While charging uses a dim screen and enables wireless debugging with a secure settings grant while WearTAK is running; its choice survives unplugging, updates and restart. Manual Stay awake takes priority while plugged in. Switching Wi-Fi off stops the session. Cannot unlock the watch or keep it awake while powered off.</string>
     <string name="debug_stay_awake_channel">Debug stay awake</string>
     <string name="debug_stay_awake_stop">Stop</string>
     <string name="debug_stay_awake_failed">Stay awake is enabled but could not start. Open WearTAK to retry. See debug logs.</string>

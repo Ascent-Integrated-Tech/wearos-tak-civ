@@ -105,7 +105,7 @@ private data class DebugRow(
 
 internal enum class DeveloperEntryId {
     BUILD, DIAGNOSTICS, DIAGNOSTICS_LOGS, GIT, IP, LOCATION, PORT, QR, SSID, STAY_AWAKE, TRANSPORT, VERSION, VERSION_CODE,
-    STAY_AWAKE_CHARGING, WIRELESS_DEBUGGING_CHARGING, NETWORK_CHECKLIST
+    WHILE_CHARGING, NETWORK_CHECKLIST
 }
 
 internal data class DeveloperEntry(val id: DeveloperEntryId, val label: String, val value: String = "")
@@ -115,9 +115,8 @@ internal fun sortedDeveloperEntries(entries: List<DeveloperEntry>, locale: Local
     fun group(entry: DeveloperEntry) =
         if (entry.id in setOf(DeveloperEntryId.DIAGNOSTICS, DeveloperEntryId.NETWORK_CHECKLIST,
                 DeveloperEntryId.STAY_AWAKE)) 0 else 1
-    val chargingIds = listOf(DeveloperEntryId.STAY_AWAKE_CHARGING, DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING)
-    val charging = entries.filter { it.id in chargingIds }.sortedBy { chargingIds.indexOf(it.id) }
-    val sorted = entries.filterNot { it.id in chargingIds }.sortedWith { left, right ->
+    val charging = entries.filter { it.id == DeveloperEntryId.WHILE_CHARGING }
+    val sorted = entries.filterNot { it.id == DeveloperEntryId.WHILE_CHARGING }.sortedWith { left, right ->
         group(left).compareTo(group(right)).takeIf { it != 0 }
             ?: collator.compare(left.label, right.label)
     }.toMutableList()
@@ -322,8 +321,7 @@ internal fun DebugInformationPage(
             if (debugInfo.canShowQrCode) R.string.debug_show_qr else R.string.debug_no_ip)),
         DeveloperEntry(DeveloperEntryId.SSID, stringResource(R.string.debug_ssid), debugInfo.ssid),
         DeveloperEntry(DeveloperEntryId.STAY_AWAKE, stringResource(R.string.debug_stay_awake)),
-        DeveloperEntry(DeveloperEntryId.STAY_AWAKE_CHARGING, stringResource(R.string.debug_stay_awake_charging)),
-        DeveloperEntry(DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING, stringResource(R.string.debug_wireless_charging)),
+        DeveloperEntry(DeveloperEntryId.WHILE_CHARGING, stringResource(R.string.debug_while_charging)),
         DeveloperEntry(DeveloperEntryId.TRANSPORT, stringResource(R.string.debug_transport), debugInfo.transport),
         DeveloperEntry(DeveloperEntryId.VERSION, stringResource(R.string.debug_version), debugInfo.versionName),
         DeveloperEntry(DeveloperEntryId.VERSION_CODE, stringResource(R.string.debug_version_code), debugInfo.versionCode.toString())
@@ -358,8 +356,7 @@ internal fun DebugInformationPage(
                     checkedLive = networkChecklistEnabled,
                     onCheckedChange = onNetworkChecklistEnabledChange
                 )
-                DeveloperEntryId.STAY_AWAKE_CHARGING -> ChargingStayAwakeSetting()
-                DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING -> ChargingWirelessDebuggingSetting()
+                DeveloperEntryId.WHILE_CHARGING -> ChargingDeveloperSetting()
                 DeveloperEntryId.DIAGNOSTICS -> WearTAKToggleChip(
                     title = entry.label,
                     checkedLive = diagnosticsEnabled,

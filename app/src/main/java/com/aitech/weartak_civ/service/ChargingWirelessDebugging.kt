@@ -25,7 +25,7 @@ internal class ChargingWirelessDebugging(private val context: Context) {
             Log.i(TAG, "WRITE_SECURE_SETTINGS missing; no settings writes")
             return
         }
-        if (!plugged || !DebugStayAwakePreferences(context).wirelessDebuggingEnabled) {
+        if (!plugged || !DebugStayAwakePreferences(context).chargingEnabled) {
             restore()
             return
         }
@@ -114,19 +114,6 @@ internal class ChargingWirelessDebugging(private val context: Context) {
         fun hasPermission(context: Context): Boolean =
             context.checkSelfPermission(Manifest.permission.WRITE_SECURE_SETTINGS) ==
                 PackageManager.PERMISSION_GRANTED
-
-        fun requested(context: Context): Boolean =
-            hasPermission(context) &&
-                DebugStayAwakePreferences(context).wirelessDebuggingEnabled
-
-        fun setEnabled(context: Context, enabled: Boolean) {
-            if (enabled && !hasPermission(context)) {
-                Log.w(TAG, "Cannot enable wireless debugging without secure settings grant")
-                return
-            }
-            DebugStayAwakePreferences(context).setWirelessDebuggingEnabled(enabled)
-            if (!enabled) restorePending(context)
-        }
 
         fun restorePending(context: Context) {
             ChargingWirelessDebugging(context).restore()
