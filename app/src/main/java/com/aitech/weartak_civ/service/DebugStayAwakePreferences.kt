@@ -12,6 +12,22 @@ internal class DebugStayAwakePreferences(context: Context) {
     // Reuse the legacy session key so enabled users migrate regardless of the old update opt-in.
     val enabled: Boolean get() = preferences.getBoolean("session_active", false)
     val chargingEnabled: Boolean get() = preferences.getBoolean("when_charging", false)
+    val wirelessDebuggingEnabled: Boolean get() = preferences.getBoolean("wireless_when_charging", false)
+
+    val wirelessDebuggingEnabledFlow get() = callbackFlow {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == "wireless_when_charging") trySend(wirelessDebuggingEnabled)
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        trySend(wirelessDebuggingEnabled)
+        awaitClose { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }.distinctUntilChanged()
+
+    fun setWirelessDebuggingEnabled(enabled: Boolean) {
+        check(preferences.edit().putBoolean("wireless_when_charging", enabled).commit()) {
+            "Unable to save Wireless debugging when charging"
+        }
+    }
 
     val chargingEnabledFlow get() = callbackFlow {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->

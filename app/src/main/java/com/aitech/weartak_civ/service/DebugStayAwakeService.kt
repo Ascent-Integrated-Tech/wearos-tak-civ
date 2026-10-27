@@ -73,6 +73,7 @@ class DebugStayAwakeService : Service() {
         if (intent?.action == ACTION_STOP) {
             preferences.recordSession(false)
             preferences.setChargingEnabled(false)
+            ChargingWirelessDebugging.setEnabled(this, false)
             finishSession()
             return START_NOT_STICKY
         }
@@ -317,7 +318,7 @@ class DebugStayAwakeService : Service() {
         }
 
         internal fun chargingRequested(context: Context): Boolean =
-            DebugStayAwakePreferences(context).chargingEnabled &&
+            (DebugStayAwakePreferences(context).chargingEnabled || ChargingWirelessDebugging.requested(context)) &&
                 ReactiveServiceManager.isRunning.get() && ChargingStayAwake.powerConnected &&
                 ChargingStayAwake.isPlugged(context)
 
@@ -345,6 +346,7 @@ class DebugStayAwakeService : Service() {
         fun stop(context: Context) {
             DebugStayAwakePreferences(context).recordSession(false)
             DebugStayAwakePreferences(context).setChargingEnabled(false)
+            ChargingWirelessDebugging.setEnabled(context, false)
             context.stopService(Intent(context, DebugStayAwakeService::class.java))
         }
     }
