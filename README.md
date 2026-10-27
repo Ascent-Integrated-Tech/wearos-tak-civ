@@ -162,6 +162,11 @@ while bonded so it can turn Companion off and release phone management,
 unlocking the other transports. An independent network-policy lock still blocks
 this action. Companion keeps its normal subtitle, never Bonded.
 
+If the watch's Bluetooth stack restarts or the adapter cycles, the Companion
+service closes its stale GATT server and re-registers the A11A service before it
+advertises again, so the phone never connects to an advertised but missing
+Companion service.
+
 ### Received CoT marker symbols
 
 TAK and Companion marker ingress accept generic `a-<affiliation>-...` atom types,
