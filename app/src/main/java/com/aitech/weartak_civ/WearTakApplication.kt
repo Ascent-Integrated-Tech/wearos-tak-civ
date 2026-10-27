@@ -52,6 +52,7 @@ import com.aitech.weartak_civ.service.crm.CrmSessionCsvLogger
 import com.aitech.weartak_civ.service.BondedLocationDiagnostics
 import com.aitech.weartak_civ.service.AppDiagnostics
 import com.aitech.weartak_civ.service.BatteryPowerObserver
+import com.aitech.weartak_civ.service.ChargingStayAwake
 import live.ditto.Ditto
 import live.ditto.DittoError
 import live.ditto.DittoIdentity
@@ -63,6 +64,7 @@ class WearTakApplication : Application() {
 
     lateinit var repo: DataRepository; private set
     private lateinit var batteryPowerObserver: BatteryPowerObserver
+    val chargingStayAwake by lazy { ChargingStayAwake(this) }
     lateinit var bhRepo: BloodhoundRepository; private set
     lateinit var capRepo: CompanionAppRepository; private set
     lateinit var locationDiagnostics: BondedLocationDiagnostics; private set

@@ -5,6 +5,18 @@ import org.junit.Test
 import java.util.Locale
 
 class DeveloperPreferencesOrderTest {
+    @Test fun chargingAlwaysFollowsManualRegardlessOfLocalizedLabel() {
+        val entries = listOf(
+            DeveloperEntry(DeveloperEntryId.STAY_AWAKE_CHARGING, "A"),
+            DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, "Logging"),
+            DeveloperEntry(DeveloperEntryId.STAY_AWAKE, "Z"),
+            DeveloperEntry(DeveloperEntryId.BUILD, "Build")
+        )
+        assertEquals(listOf(DeveloperEntryId.DIAGNOSTICS, DeveloperEntryId.STAY_AWAKE,
+            DeveloperEntryId.STAY_AWAKE_CHARGING, DeveloperEntryId.BUILD),
+            sortedDeveloperEntries(entries, Locale.GERMAN).map { it.id })
+    }
+
     @Test fun diagnosticsAndActionsSortWithoutLosingTheirAssociations() {
         val entries = listOf(
             DeveloperEntry(DeveloperEntryId.STAY_AWAKE, "Stay awake"),

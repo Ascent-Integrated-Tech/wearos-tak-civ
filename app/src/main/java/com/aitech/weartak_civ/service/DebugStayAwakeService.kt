@@ -52,7 +52,7 @@ class DebugStayAwakeService : Service() {
                 }
                 Intent.ACTION_POWER_DISCONNECTED -> StayAwakeStopReason.UNPLUGGED
                 Intent.ACTION_BATTERY_CHANGED -> if (
-                    intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) == 0
+                    intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1) <= 0
                 ) StayAwakeStopReason.UNPLUGGED else null
                 else -> null
             }
@@ -72,10 +72,11 @@ class DebugStayAwakeService : Service() {
         val preferences = DebugStayAwakePreferences(this)
         if (intent?.action == ACTION_STOP) {
             preferences.recordSession(false)
+            preferences.setChargingEnabled(false)
             finishSession()
             return START_NOT_STICKY
         }
-        if (!preferences.enabled) {
+        if (!preferences.enabled && !chargingRequested(this)) {
             finishSession()
             return START_NOT_STICKY
         }
@@ -95,7 +96,10 @@ class DebugStayAwakeService : Service() {
                 return START_NOT_STICKY
             }
             showNotification()
-            if (running) return START_STICKY
+            if (running) {
+                if (activeManualMode != preferences.enabled) acquireScreenLock()
+                return START_STICKY
+            }
             acquireLocks()
             requestWifi()
             // Conditions may change while acquiring resources or dispatching a queued restore.
@@ -105,7 +109,7 @@ class DebugStayAwakeService : Service() {
                 finishSession()
                 return START_NOT_STICKY
             }
-            if (!monitoring || !preferences.enabled) {
+            if (!monitoring || (!preferences.enabled && !chargingRequested(this))) {
                 finishSession()
                 return START_NOT_STICKY
             }
@@ -124,7 +128,7 @@ class DebugStayAwakeService : Service() {
         AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK,
             mapOf(DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 1L))
         mutableActive.value = true
-        Log.i(TAG, "Debug stay awake running while Wi-Fi is enabled and external power is connected")
+        Log.i(TAG, "Debug stay awake running (${if (preferences.enabled) "manual" else "charging"})")
         return START_STICKY
     }
 
@@ -147,13 +151,25 @@ class DebugStayAwakeService : Service() {
     }
 
     @Suppress("DEPRECATION")
-    private fun acquireLocks() {
+    private fun acquireScreenLock() {
         val power = getSystemService(PowerManager::class.java)
+        screenLock?.let {
+            if (it.isHeld) DiagnosticResources.release(DiagnosticResource.DEBUG_SCREEN, it) { it.release() }
+        }
+        activeManualMode = DebugStayAwakePreferences(this).enabled
         // A window flag cannot keep the display awake after leaving the app UI.
-        screenLock = power.newWakeLock(PowerManager.SCREEN_BRIGHT_WAKE_LOCK, "$TAG:screen").apply {
+        val screenLevel = if (activeManualMode)
+            PowerManager.SCREEN_BRIGHT_WAKE_LOCK else PowerManager.SCREEN_DIM_WAKE_LOCK
+        screenLock = power.newWakeLock(screenLevel, "$TAG:screen").apply {
             setReferenceCounted(false)
             DiagnosticResources.acquire(DiagnosticResource.DEBUG_SCREEN, this) { acquire() }
         }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun acquireLocks() {
+        acquireScreenLock()
+        val power = getSystemService(PowerManager::class.java)
         cpuLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$TAG:cpu").apply {
             setReferenceCounted(false)
             DiagnosticResources.acquire(DiagnosticResource.DEBUG_CPU, this) { acquire() }
@@ -227,6 +243,7 @@ class DebugStayAwakeService : Service() {
         if (hadLocks) AppDiagnostics.record(DiagnosticEvent.WAKE_LOCK,
             mapOf(DiagnosticMetric.KIND to 1L, DiagnosticMetric.ACTIVE to 0L))
         running = false
+        activeManualMode = false
         mutableActive.value = false
     }
 
@@ -249,22 +266,26 @@ class DebugStayAwakeService : Service() {
         private const val CHANNEL_ID = "debug_stay_awake"
         private const val NOTIFICATION_ID = 64_001
         private val mutableActive = MutableStateFlow(false)
+        private var activeManualMode = false
         val active = mutableActive.asStateFlow()
 
         fun setEnabled(context: Context, enabled: Boolean) {
             if (enabled) {
                 startRefusal(context)?.let { reason ->
                     refuseStart(context, reason)
-                    stop(context)
+                    context.stopService(Intent(context, DebugStayAwakeService::class.java))
                     return
                 }
             }
             DebugStayAwakePreferences(context).recordSession(enabled)
-            if (enabled) restoreIfEnabled(context) else stop(context)
+            if (enabled || chargingRequested(context)) restoreIfEnabled(context)
+            else context.stopService(Intent(context, DebugStayAwakeService::class.java))
         }
 
         fun restoreIfEnabled(context: Context) {
-            if (!DebugStayAwakePreferences(context).enabled || active.value) return
+            val manual = DebugStayAwakePreferences(context).enabled
+            if (!manual && !chargingRequested(context)) return
+            if (active.value && activeManualMode == manual) return
             startRefusal(context)?.let { reason ->
                 refuseStart(context, reason)
                 return
@@ -285,13 +306,23 @@ class DebugStayAwakeService : Service() {
             Toast.makeText(context, R.string.debug_stay_awake_failed, Toast.LENGTH_LONG).show()
         }
 
-        private fun startRefusal(context: Context): StayAwakeStopReason? {
+        private fun wifiRefusal(context: Context): StayAwakeStopReason? {
             when (context.applicationContext.getSystemService(WifiManager::class.java).wifiState) {
                 WifiManager.WIFI_STATE_ENABLED -> Unit
                 WifiManager.WIFI_STATE_DISABLING, WifiManager.WIFI_STATE_DISABLED ->
                     return StayAwakeStopReason.WIFI_OFF
                 else -> return StayAwakeStopReason.WIFI_UNAVAILABLE
             }
+            return null
+        }
+
+        internal fun chargingRequested(context: Context): Boolean =
+            DebugStayAwakePreferences(context).chargingEnabled &&
+                ReactiveServiceManager.isRunning.get() && ChargingStayAwake.powerConnected &&
+                ChargingStayAwake.isPlugged(context)
+
+        private fun startRefusal(context: Context): StayAwakeStopReason? {
+            wifiRefusal(context)?.let { return it }
             val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
             return when (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, -1)) {
                 null, -1 -> StayAwakeStopReason.POWER_UNKNOWN
@@ -313,6 +344,7 @@ class DebugStayAwakeService : Service() {
 
         fun stop(context: Context) {
             DebugStayAwakePreferences(context).recordSession(false)
+            DebugStayAwakePreferences(context).setChargingEnabled(false)
             context.stopService(Intent(context, DebugStayAwakeService::class.java))
         }
     }
