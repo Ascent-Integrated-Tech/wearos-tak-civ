@@ -1551,6 +1551,7 @@ fun WearTAKSettingsNav(
                         WearTAKTitleChipWithState(
                             route = "sitx_tak_screen",
                             title = stringResource(R.string.sitx_tak),
+                            icon = { SitxBrandIcon(contentDescription = null) },
                             state = enableSitx,
                             navController = navController,
                             formatState = {

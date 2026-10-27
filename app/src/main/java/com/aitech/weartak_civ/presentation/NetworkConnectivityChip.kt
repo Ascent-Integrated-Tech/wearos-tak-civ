@@ -182,7 +182,20 @@ internal fun NetworkConnectivityIcon(row: NetworkConnectivityRow) {
         )
     } else {
         row.iconRes?.let { resource ->
-            Image(painterResource(resource), contentDescription = row.title, modifier = modifier)
+            if (resource == R.drawable.ic_connection_sitx_logo) {
+                SitxBrandIcon(row.title, Modifier.padding(end = 6.dp))
+            } else {
+                Image(painterResource(resource), contentDescription = row.title, modifier = modifier)
+            }
         }
     }
+}
+
+@Composable
+internal fun SitxBrandIcon(contentDescription: String?, modifier: Modifier = Modifier) {
+    Image(
+        painter = painterResource(R.drawable.ic_connection_sitx_logo),
+        contentDescription = contentDescription,
+        modifier = modifier.size(width = 32.dp, height = 20.dp)
+    )
 }

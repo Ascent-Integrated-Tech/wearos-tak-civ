@@ -133,7 +133,11 @@ The optional checklist at the top of **Network Preferences** gives each transpor
 own icon: TAK servers, TAK SA multicast, SITX, Ditto Edge Sync and WearTAK
 Companion. Ditto and Companion reuse their plugin artwork; loaded connectivity
 plugins show their supplied icon when available. Icons stay visible alongside
-disabled switches so each checklist entry remains recognizable. Existing TAK
+disabled switches so each checklist entry remains recognizable. Sit(x) uses its
+official cyan wordmark in both the checklist and the Sit(x) TAK settings entry,
+fitted without tinting to a 32 x 20dp box. The transparent, cropped asset
+(`ic_connection_sitx_logo.png`) comes from the [Sit(x) website logo](https://sitx.io/assets/sitx-logo-6ec9a693619d7ae533ccd950c26787cc8a98a533293c6ea9f1212f151bc3fd89.png);
+the black background and Booz Allen tagline are removed. Existing TAK
 status artwork, subtitles, switch state, lock handling and settings navigation
 are preserved. This checklist does not add transport polling or change the main
 screen or watchface complication indicators.
