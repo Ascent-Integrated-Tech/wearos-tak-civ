@@ -167,6 +167,16 @@ service closes its stale GATT server and re-registers the A11A service before it
 advertises again, so the phone never connects to an advertised but missing
 Companion service.
 
+On the top-level Plugins screen, the live phone-management bond disables both
+actions and replaces the subtitle with **Bonded** only for these stable
+`BuiltInPlugin` IDs: `DITTO` (Ditto Edge Sync), `EVERYWHERE_COMMS` (Everywhere),
+`GOTENNA` (goTenna), `SOMEWEAR_LABS` (Somewear Labs), and `DATA_SYNC` (Data Sync).
+The mapping does not use display names or match installed plugins by name.
+Every other entry, including Companion and installed plugins, is unchanged.
+Releasing the bond restores each original subtitle and both actions.
+The Tool Preferences entry is labeled **Bloodhound**; its proximity options
+and behavior are unchanged.
+
 ### Received CoT marker symbols
 
 TAK and Companion marker ingress accept generic `a-<affiliation>-...` atom types,

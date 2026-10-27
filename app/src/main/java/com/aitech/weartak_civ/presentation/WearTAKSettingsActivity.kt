@@ -3144,8 +3144,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.DATA_SYNC -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(if (enableDataSync) R.string.enabled else R.string.data_sync_paused),
                                         checked = enableDataSync,
@@ -3154,8 +3155,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.MOPP -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = moppStatus?.let { stringResource(it.label) } ?: "",
                                         checked = enableMopp,
@@ -3164,8 +3166,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.COMMANDS -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableChatCommands,
@@ -3174,8 +3177,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.DITTO -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(dittoPdlSubtitle(dittoPdlSource, dittoCustomPdl.isNotBlank())),
                                         checked = enableDittoService,
@@ -3184,8 +3188,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.SENSOR_MANAGER -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableSensorManager,
@@ -3194,8 +3199,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.DART -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableGunshotDetection,
@@ -3204,8 +3210,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.FALCON -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableUasDetection,
@@ -3214,8 +3221,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.CRM -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = enableCrm,
@@ -3224,8 +3232,9 @@ fun WearTAKSettingsNav(
                                     )
                                 }
                                 BuiltInPlugin.EVERYWHERE_COMMS, BuiltInPlugin.GOTENNA, BuiltInPlugin.SOMEWEAR_LABS -> {
-                                    WearTAKSplitToggleChip(
-                                        appIcon = { BuiltInPluginBrandIcon(entry.kind) },
+                                    BuiltInPluginToggleChip(
+                                        kind = entry.kind,
+                                        phoneManagedSettings = phoneManagedSettings,
                                         title = entry.title,
                                         label = stringResource(R.string.unfunded_request),
                                         checked = false,
@@ -3823,7 +3832,7 @@ fun <T> WearTAKTitleChipWithState(
 }
 
 @Composable
-private fun BuiltInPluginBrandIcon(plugin: BuiltInPlugin) {
+internal fun BuiltInPluginBrandIcon(plugin: BuiltInPlugin) {
     plugin.brandIconRes?.let { resource ->
         Image(
             painter = painterResource(resource),
