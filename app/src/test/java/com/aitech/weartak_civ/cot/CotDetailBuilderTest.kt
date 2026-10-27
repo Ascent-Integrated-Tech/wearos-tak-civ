@@ -19,10 +19,11 @@ class CotDetailBuilderTest {
             dittoIp = "0.0.0.0",
             dittoVersion = "4.10.2",
             dittoDeviceName = "EAGLE Watch",
+            remarks = "MOPP0; HR: 72 bpm @ 12:00:00Z",
         )
 
         assertEquals(
-            "<detail>${CotDetailBuilder.takv()}<contact endpoint='*:-1:stcp' callsign='EAGLE'/><uid Droid='watch-1'/><precisionlocation altsrc='GPS' geopointsrc='GPS'/><__group role='Team Member' name='Cyan'/><status battery='80'/><remarks>HR: 72 bpm; Batt: 80%</remarks><biometrics><device><model>WEAROS</model><uid>watch-1</uid><hr>72</hr><bat>80</bat></device></biometrics><track course='45.0' speed='3.0'/><ditto a='peer-key' ip='0.0.0.0' version='4.10.2' deviceName='EAGLE Watch'/></detail>",
+            "<detail>${CotDetailBuilder.takv()}<contact endpoint='*:-1:stcp' callsign='EAGLE'/><uid Droid='watch-1'/><precisionlocation altsrc='GPS' geopointsrc='GPS'/><__group role='Team Member' name='Cyan'/><status battery='80'/><remarks>MOPP0; HR: 72 bpm @ 12:00:00Z</remarks><biometrics><device><model>WEAROS</model><uid>watch-1</uid><hr>72</hr><bat>80</bat></device></biometrics><track course='45.0' speed='3.0'/><ditto a='peer-key' ip='0.0.0.0' version='4.10.2' deviceName='EAGLE Watch'/></detail>",
             actual,
         )
     }

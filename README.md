@@ -480,7 +480,20 @@ as immediate children of `detail`. `takv` identifies WearTAK using the installed
 app's build version, Android SDK level, and actual watch manufacturer/model, not
 phone or ATAK metadata. Callsign, UID, team, role, and device strings are XML-escaped.
 Structured `status battery` is emitted only for an available percentage in 0..100;
-existing remarks and biometrics are retained.
+biometrics and BATDOK details retain their existing formats.
+
+Standalone TAK/multicast PLI and Ditto track `r` XML use the same remarks line as
+Companion `WatchSelfStatus.Contribution.remarksLine` (canonical Companion develop
+`58fe25f1ef1e8241c02f7a37c43fc962800b0eac`). For example:
+`MOPP0; HR: 79 bpm @ 03:17:19Z; Skin: 91.1F @ 03:17:18Z; Exert: 16% @ 03:17:19Z`.
+MOPP comes from the same enabled saved state as `self_status.ppe.level`; `None`
+and unset/disabled MOPP contribute no token. Physio uses the same monitoring,
+on-wrist, sensor opt-in, plausibility and actual-sample freshness policy as
+Companion self status. Unavailable metrics are omitted, not replaced with `N/A`;
+an empty contribution produces empty remarks. Skin uses one US-locale decimal,
+exertion is rounded to an integer percent, and clocks are actual sample times
+in UTC (not PLI publication times). Ditto no longer adds battery to remarks;
+its structured battery fields are unchanged.
 
 Direct XML routes and the negotiated raw-XML companion gateway preserve those
 fields. The legacy companion PLI JSON envelope is unchanged: it includes battery

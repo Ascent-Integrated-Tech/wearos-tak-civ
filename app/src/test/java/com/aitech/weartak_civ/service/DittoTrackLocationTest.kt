@@ -4,11 +4,16 @@ import android.app.Application
 import android.location.Location
 import android.os.SystemClock
 import com.aitech.weartak_civ.data.DataRepository
+import com.aitech.weartak_civ.data.MoppStatus
+import com.aitech.weartak_civ.data.CompanionSelfStatus
+import com.aitech.weartak_civ.cot.CotMessageBuilder
 import com.aitech.weartak_civ.events.OutboundDittoTrackRefresh
 import com.aitech.weartak_civ.presentation.MainActivity
 import io.mockk.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
+import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -39,6 +44,8 @@ class DittoTrackLocationTest {
         repo.storeRole("Medic")
         repo.storeEnablePhysiologicalServices(false)
         repo.storeLatestHeartRate(180, System.currentTimeMillis())
+        repo.storeEnableMopp(true)
+        repo.storeMoppStatus(MoppStatus.LEVEL_3)
         val service = spyk(Robolectric.buildService(DittoService::class.java).get())
         fun field(name: String) = DittoService::class.java.getDeclaredField(name).apply { isAccessible = true }
         field("dataRepository").set(service, repo)
@@ -77,6 +84,8 @@ class DittoTrackLocationTest {
             assertEquals(41.0, document["j"] as Double, 0.0)
             assertTrue((document["r"] as String).contains("role='Medic'"))
             assertFalse((document["r"] as String).contains("180"))
+            assertTrue((document["r"] as String).contains("<remarks>MOPP3</remarks>"))
+            assertEquals("MOPP3", pairedPli.remarks)
             assertNull(repo.latestLocation.value)
             repo.setCompanionAppConnected()
             refresh()
@@ -134,9 +143,46 @@ class DittoTrackLocationTest {
             assertEquals(-87.642469, documents.single()["l"] as Double, 0.0)
             assertTrue((documents.single()["h"] as Double) > 5.0)
             assertTrue((documents.single()["r"] as String).contains("timeMillis='${fix.time}'"))
+            repo.storeEnableMopp(true)
+            repo.storeEnablePhysiologicalServices(true)
+            repo.storeEnableHeartRateService(true)
+            repo.storeEnableSkinTempService(true)
+            repo.storeLatestIsDeviceWorn(true)
+            repo.storePhysiologicalMetricAge(30)
+            repo.storeRestingHeartRate(60)
+            val measuredAt = System.currentTimeMillis()
+            repo.storeLatestHeartRate(79, measuredAt)
+            repo.storeLatestSkinTemp(91.1f, measuredAt - 1000)
+            for (status in MoppStatus.entries) {
+                repo.storeMoppStatus(status)
+                val sender = CompanionSelfStatus().apply { negotiate(1) }
+                var payload = JSONObject()
+                sender.sendIfDue(1, "test-watch", repo.selfStatusInputs().first(),
+                    System.currentTimeMillis(), 0) {
+                    payload = JSONObject(it).getJSONObject("payload"); true
+                }
+                assertEquals(if (status == MoppStatus.NONE) "None" else "MOPP ${status.key}",
+                    payload.getJSONObject("ppe").getString("level"))
+                assertEquals(79, payload.getJSONObject("physio").getInt("hr"))
+                val snapshot = repo.snapshotPli()
+                assertEquals(status != MoppStatus.NONE, snapshot.remarks.startsWith("MOPP${status.key}; "))
+                assertTrue(snapshot.remarks.contains("HR: 79 bpm @ "))
+                assertTrue(snapshot.remarks.contains("; Skin: 91.1F @ "))
+                assertTrue(snapshot.remarks.contains("; Exert: "))
+                val direct = CotMessageBuilder.pli(snapshot,
+                    CotMessageBuilder.PliOptions("WATCH", "Team Member", "Blue", false, ""))
+                assertTrue(direct.contains("<remarks>${snapshot.remarks}</remarks>"))
+                tick()
+                assertTrue((documents.last()["r"] as String).contains("<remarks>${snapshot.remarks}</remarks>"))
+            }
+            repo.storeEnableMopp(false)
+            repo.storeEnablePhysiologicalServices(false)
+            tick()
+            assertTrue((documents.last()["r"] as String).contains("<remarks></remarks>"))
+            val published = documents.size
             repo.setCompanionAppConnected()
             tick()
-            assertEquals(1, documents.size)
+            assertEquals(published, documents.size)
         } finally {
             scope.cancel()
             scope.coroutineContext[Job]?.join()
