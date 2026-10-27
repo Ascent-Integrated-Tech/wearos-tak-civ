@@ -13,6 +13,8 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.util.Log
+import android.view.MotionEvent
+import android.view.InputDevice
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -274,6 +276,26 @@ open class MapActivity : ComponentActivity() {
         requestedFocus.value = readFocus(intent)
     }
 
+    override fun dispatchGenericMotionEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_SCROLL &&
+            event.isFromSource(InputDevice.SOURCE_ROTARY_ENCODER)
+        ) {
+            val scroll = event.getAxisValue(MotionEvent.AXIS_SCROLL)
+
+            if (scroll != 0f && bezelZoomHandler?.invoke(scroll) == true) {
+                return true
+            }
+        }
+
+        return super.dispatchGenericMotionEvent(event)
+    }
+
+    private var bezelZoomHandler: ((Float) -> Boolean)? = null
+
+    fun setBezelZoomHandler(handler: ((Float) -> Boolean)?) {
+        bezelZoomHandler = handler
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedFocus.value = readFocus(intent)
@@ -323,6 +345,17 @@ fun MapCivApp(
     ) { onUserClick ->
         MapApp(exitActivity, mapVm, selectingChatContact, mapFocus, onUserClick)
     }
+}
+
+internal fun zoomMapWithBezel(
+    scroll: Float,
+    overlayOpen: Boolean,
+    lifecycleState: Lifecycle.State,
+    changeZoom: (Double) -> Unit
+): Boolean {
+    if (overlayOpen || lifecycleState != Lifecycle.State.RESUMED) return false
+    changeZoom(-scroll.toDouble())
+    return true
 }
 
 @Composable
@@ -2461,6 +2494,22 @@ fun MapApp(exitActivity: () -> Unit, mapVm: MapViewModel,
         }
     }
     var selectedMapTargetKeys by remember { mutableStateOf<Set<String>?>(null) }
+
+    val activity = context as? MapActivity
+    val mapOverlayOpen by rememberUpdatedState(
+        showLayerToggle || showChannelToggle || showPopup ||
+            selectedMapTargetKeys != null || selectedRoute != null || selectedRoutePoint != null
+    )
+    DisposableEffect(activity, lifecycleOwner) {
+        activity?.setBezelZoomHandler { scroll ->
+            // A retained map destination must not consume input on the selected-user screen.
+            zoomMapWithBezel(scroll, mapOverlayOpen, lifecycleOwner.lifecycle.currentState, ::changeZoom)
+        }
+        onDispose {
+            activity?.setBezelZoomHandler(null)
+        }
+    }
+
     fun openMapTarget(target: MapSelectionTarget) {
         if (target.kind == MapTargetKind.CONTACT) {
             onUserClick(target.uid)
