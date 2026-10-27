@@ -5072,6 +5072,15 @@ class DataRepository(
             .map { prefs -> prefs[ENABLE_WEARTAK_DEV_MODE] ?: false }
             .distinctUntilChanged()
 
+    val networkPreferencesChecklistEnabled: Flow<Boolean> =
+        context.dataStore.data
+            .map { prefs -> prefs[NETWORK_PREFERENCES_CHECKLIST_ENABLED] ?: false }
+            .distinctUntilChanged()
+
+    suspend fun storeNetworkPreferencesChecklistEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[NETWORK_PREFERENCES_CHECKLIST_ENABLED] = enabled }
+    }
+
     val getBondedLocationDiagnosticsEnabled: Flow<Boolean> =
         context.dataStore.data
             .map { prefs -> prefs[BONDED_LOCATION_DIAGNOSTICS_ENABLED] ?: false }
@@ -6128,6 +6137,7 @@ class DataRepository(
         private val ENABLE_WEARTAK_DEV_MODE = booleanPreferencesKey("enable_weartak_dev_mode")
         private val BONDED_LOCATION_DIAGNOSTICS_ENABLED =
             booleanPreferencesKey("bonded_location_diagnostics_enabled")
+        private val NETWORK_PREFERENCES_CHECKLIST_ENABLED = booleanPreferencesKey("network_preferences_checklist_enabled")
         private val NETWORK_PREFERENCES_LOCKED = booleanPreferencesKey("network_preferences_locked")
         private val SMS_NUMBERS_LIST = stringPreferencesKey("sms_numbers_list")
         private val RESTING_HR_HIGH_ALERT_BPM_THRESHOLD = intPreferencesKey("resting_hr_high_alert_bpm_threshold")

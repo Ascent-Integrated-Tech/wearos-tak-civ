@@ -5,6 +5,19 @@ import org.junit.Test
 import java.util.Locale
 
 class DeveloperPreferencesOrderTest {
+    @Test fun checklistSortsBetweenLoggingAndStayAwakeInTopToggleGroup() {
+        val entries = listOf(
+            DeveloperEntry(DeveloperEntryId.STAY_AWAKE, "Stay awake"),
+            DeveloperEntry(DeveloperEntryId.NETWORK_CHECKLIST, "Network Preferences Checklist"),
+            DeveloperEntry(DeveloperEntryId.BUILD, "Build"),
+            DeveloperEntry(DeveloperEntryId.STAY_AWAKE_CHARGING, "Stay awake when charging"),
+            DeveloperEntry(DeveloperEntryId.DIAGNOSTICS, "Logging")
+        )
+        assertEquals(listOf(DeveloperEntryId.DIAGNOSTICS, DeveloperEntryId.NETWORK_CHECKLIST,
+            DeveloperEntryId.STAY_AWAKE, DeveloperEntryId.STAY_AWAKE_CHARGING, DeveloperEntryId.BUILD),
+            sortedDeveloperEntries(entries, Locale.ENGLISH).map { it.id })
+    }
+
     @Test fun chargingAlwaysFollowsManualRegardlessOfLocalizedLabel() {
         val entries = listOf(
             DeveloperEntry(DeveloperEntryId.WIRELESS_DEBUGGING_CHARGING, "0"),

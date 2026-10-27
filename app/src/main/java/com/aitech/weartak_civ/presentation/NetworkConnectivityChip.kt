@@ -1,5 +1,7 @@
 package com.aitech.weartak_civ.presentation
 
+import android.widget.ImageView
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -19,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -26,10 +29,24 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.ToggleChipDefaults
+import androidx.wear.compose.foundation.lazy.ScalingLazyListScope
+import androidx.wear.compose.foundation.lazy.items
+import androidx.compose.material3.HorizontalDivider
 import com.aitech.weartak_civ.R
+
+internal fun ScalingLazyListScope.networkPreferencesChecklist(
+    enabled: Boolean,
+    rows: List<NetworkConnectivityRow>,
+    content: @Composable (NetworkConnectivityRow) -> Unit
+) {
+    if (!enabled) return
+    items(rows, key = { it.key }) { content(it) }
+    item { HorizontalDivider(modifier = Modifier.padding(vertical = 10.dp)) }
+}
 
 @Composable
 internal fun NetworkConnectivityChip(
@@ -39,7 +56,7 @@ internal fun NetworkConnectivityChip(
     navigate: (String) -> Unit,
     showPhoneManagedNotice: () -> Unit,
     showNetworkLockedNotice: () -> Unit,
-    appIcon: @Composable () -> Unit = {}
+    appIcon: @Composable () -> Unit = { NetworkConnectivityIcon(row) }
 ) {
     val toggleEnabled = !networkPreferencesLocked && !phoneManagedSettings
     val route = row.settingsRoute
@@ -80,7 +97,7 @@ internal fun NetworkConnectivityChip(
             verticalAlignment = Alignment.CenterVertically
         ) {
             appIcon()
-            Column {
+            Column(Modifier.weight(1f)) {
                 Text(row.title, style = MaterialTheme.typography.button,
                     color = colors.contentColor(enabled = true).value,
                     maxLines = 3, overflow = TextOverflow.Ellipsis)
@@ -104,6 +121,26 @@ internal fun NetworkConnectivityChip(
         ) {
             Switch(checked = row.checked, onCheckedChange = null, enabled = toggleEnabled,
                 modifier = Modifier.size(25.dp))
+        }
+    }
+}
+
+@Composable
+internal fun NetworkConnectivityIcon(row: NetworkConnectivityRow) {
+    val modifier = Modifier.padding(end = 6.dp).size(20.dp)
+    val pluginIcon = row.pluginIcon
+    if (pluginIcon != null) {
+        AndroidView(
+            modifier = modifier,
+            factory = { context -> ImageView(context) },
+            update = {
+                it.setImageDrawable(pluginIcon)
+                it.contentDescription = row.title
+            }
+        )
+    } else {
+        row.iconRes?.let { resource ->
+            Image(painterResource(resource), contentDescription = row.title, modifier = modifier)
         }
     }
 }
