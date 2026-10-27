@@ -27,9 +27,9 @@ internal class OffBodyTakScheduler(
     fun allows(): Boolean = !stopped && policy.allows(SystemClock.elapsedRealtime())
 
     @Synchronized
-    fun update(worn: Boolean?, directEligible: Boolean) {
+    fun update(worn: Boolean?, directEligible: Boolean, chargingOrDocked: Boolean = false) {
         if (stopped) return
-        val changed = policy.observe(worn)
+        val changed = policy.observe(worn, chargingOrDocked)
         if (!changed && eligible == directEligible) return
         eligible = directEligible
         cancel()

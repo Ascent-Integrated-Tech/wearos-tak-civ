@@ -4,6 +4,33 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OffBodyTakPolicyTest {
+    @Test fun chargingOffWristIsContinuousAndUnpluggingStartsClosedBatching() {
+        val policy = OffBodyTakPolicy()
+        policy.observe(false)
+        policy.open(0)
+        assertTrue(policy.observe(false, chargingOrDocked = true))
+        assertFalse(policy.batching)
+        assertTrue(policy.allows(Long.MAX_VALUE))
+        assertFalse(policy.observe(false, chargingOrDocked = true))
+        assertTrue(policy.observe(false, chargingOrDocked = false))
+        assertTrue(policy.batching)
+        assertFalse(policy.allows(1))
+        policy.open(180_000)
+        assertTrue(policy.allows(209_999))
+        assertFalse(policy.allows(210_000))
+    }
+
+    @Test fun powerChangesDoNotBatchWornOrUnknownState() {
+        val policy = OffBodyTakPolicy()
+        for (worn in listOf(true, null)) {
+            for (powered in listOf(false, true, false)) {
+                assertFalse(policy.observe(worn, powered))
+                assertFalse(policy.batching)
+                assertTrue(policy.allows(Long.MAX_VALUE))
+            }
+        }
+    }
+
     @Test fun unknownAndWornNeverBatch() {
         val policy = OffBodyTakPolicy()
         assertTrue(policy.allows(0))

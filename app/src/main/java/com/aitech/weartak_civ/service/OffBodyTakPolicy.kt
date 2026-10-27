@@ -6,8 +6,8 @@ internal class OffBodyTakPolicy {
         private set
     @Volatile private var deadlineMs: Long? = null
 
-    fun observe(worn: Boolean?): Boolean {
-        val next = worn == false
+    fun observe(worn: Boolean?, chargingOrDocked: Boolean = false): Boolean {
+        val next = worn == false && !chargingOrDocked
         if (next == batching) return false
         batching = next
         deadlineMs = null

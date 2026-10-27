@@ -75,6 +75,53 @@ class OffBodyTakSchedulerTest {
         assertTrue(alarms.scheduledAlarms.isEmpty())
     }
 
+    @Test fun chargingReconnectsImmediatelyAndUnpluggingResumesOffWristBatching() {
+        scheduler.update(false, true)
+        val stale = alarms.nextScheduledAlarm
+        scheduler.update(false, true, chargingOrDocked = true)
+        assertTrue(scheduler.allows())
+        assertEquals(1, connects)
+        assertTrue(alarms.scheduledAlarms.isEmpty())
+        stale.onAlarmListener.onAlarm()
+        scheduler.update(false, true, chargingOrDocked = true)
+        assertEquals(1, connects)
+
+        val unpluggedAt = SystemClock.elapsedRealtime()
+        scheduler.update(false, true, chargingOrDocked = false)
+        assertFalse(scheduler.allows())
+        assertEquals(2, closes)
+        val next = alarms.nextScheduledAlarm
+        assertEquals(unpluggedAt + 180_000L, next.triggerAtTime)
+        next.onAlarmListener.onAlarm()
+        assertTrue(scheduler.allows())
+        assertEquals(2, connects)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30))
+        assertFalse(scheduler.allows())
+        assertEquals(3, closes)
+    }
+
+    @Test fun chargingDuringOpenWindowCancelsItsCloseWithoutExtendingAWakeLock() {
+        scheduler.update(false, true)
+        alarms.nextScheduledAlarm.onAlarmListener.onAlarm()
+        scheduler.update(false, true, chargingOrDocked = true)
+        val before = closes
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(4))
+        assertTrue(scheduler.allows())
+        assertEquals(before, closes)
+        assertTrue(alarms.scheduledAlarms.isEmpty())
+    }
+
+    @Test fun onWristPowerChangesDoNotDisconnectOrScheduleWindows() {
+        scheduler.update(true, true)
+        val before = connects
+        scheduler.update(true, true, chargingOrDocked = true)
+        scheduler.update(true, true, chargingOrDocked = false)
+        assertEquals(before, connects)
+        assertEquals(0, closes)
+        assertTrue(scheduler.allows())
+        assertTrue(alarms.scheduledAlarms.isEmpty())
+    }
+
     @Test fun wristOnCancelsAlarmsAndIgnoresStaleDelivery() {
         scheduler.update(false, true)
         val stale = alarms.nextScheduledAlarm

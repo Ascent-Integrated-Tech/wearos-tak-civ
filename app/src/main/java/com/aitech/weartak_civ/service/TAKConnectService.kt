@@ -172,7 +172,9 @@ class TAKConnectService: Service() {
         offBodyScheduler?.update(dataRepository.latestDeviceWornObservation.value,
             takEndpointEnabled && !dataRepository.shouldSuppressWatchTransportNow() &&
                 takNetworkPreference?.network?.value != null &&
-                takServerDetails.any { it.isEnabled && !it.duplicateEndpointSuppressed })
+                takServerDetails.any { it.isEnabled && !it.duplicateEndpointSuppressed },
+            chargingOrDocked = dataRepository.chargingState.value ||
+                dataRepository.dockType.value != BatteryPowerObserver.DockType.NONE)
     }
 
     class ConnectionAttempt(val generation: Long) {
@@ -268,7 +270,8 @@ class TAKConnectService: Service() {
         scope.launch(Dispatchers.Main.immediate) {
             var previousNetwork: android.net.Network? = null
             var routeInitialized = false
-            combine(dataRepository.latestDeviceWornObservation,
+            combine(combine(dataRepository.latestDeviceWornObservation,
+                    dataRepository.chargingState, dataRepository.dockType) { _, _, _ -> Unit },
                 dataRepository.getEnableTakEndpoint,
                 dataRepository.watchTransportSuppressed,
                 requireNotNull(takNetworkPreference).network) { _, enabled, _, network ->
