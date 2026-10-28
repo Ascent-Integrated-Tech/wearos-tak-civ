@@ -461,6 +461,16 @@ documents, missing aliases, malformed XML, DTDs/entities, and invalid timestamps
 are rejected with diagnostics; there is no fallback parser. Compatibility with
 other producers is limited to this shape, not a claim of general ATAK Ditto support.
 
+Ditto connectivity/presence alone does not provide a map position: a peer must
+publish a supported, current PLI document. Received users still obey **Layers >
+Users**, team-color and role filters. Standard and LEO role selections are saved
+independently, so editing one section no longer hides the other after reopening
+the map. For the old shared role preference, a nonempty selection containing only
+one section's roles is retained for that section; the overwritten other section
+uses its defaults. Old empty, mixed or unrecognized selections are preserved
+conservatively. New saved selections, including an empty section, take precedence.
+Missing or unrecognized team/role metadata remains subject to the existing filters.
+
 Maximum reconstructed CoT is **256 KiB UTF-8**; maximum snapshot is **4,096
 documents** and **2,097,152 detail characters** per collection. An oversized
 snapshot is rejected as a whole. SDK next-snapshot signalling supplies
