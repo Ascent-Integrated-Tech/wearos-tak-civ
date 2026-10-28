@@ -1,6 +1,8 @@
 package com.aitech.weartak_civ.presentation
 
 import android.app.Application
+import android.net.Uri
+import androidx.compose.foundation.layout.Column
 import androidx.compose.ui.test.*
 import androidx.activity.ComponentActivity
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -34,7 +36,7 @@ class CommandCallsignEntryUiTest {
                         title = "Add", route = "add", navController = nav
                     )
                 }
-                composable("add") { CommandCallsignEntryPage(nav, listOf("ZULU"), onAdd = writes::add) }
+                composable("add") { CommandCallsignEntryPage(nav, listOf("ZULU"), onSave = writes::add) }
             }
         }
         compose.onNodeWithText("Add").performClick()
@@ -90,5 +92,90 @@ class CommandCallsignEntryUiTest {
         compose.waitForIdle()
         assertTrue(writes.isEmpty())
         assertEquals("That callsign is already allowed", ShadowToast.getTextOfLatestToast())
+    }
+
+    private fun showEditableEntry(callsign: String = "Alpha One") {
+        compose.setContent {
+            nav = rememberNavController()
+            val callsigns = listOf(callsign, "ZULU")
+            NavHost(nav, startDestination = "allowed") {
+                composable("allowed") {
+                    Column {
+                        CommandCallsignRow(
+                            callsign,
+                            onEdit = { nav.navigate("edit/${Uri.encode(callsign)}") },
+                            onRemove = { writes.add(listOf("ZULU")) }
+                        )
+                    }
+                }
+                composable("edit/{callsign}") { entry ->
+                    CommandCallsignEntryPage(
+                        nav, callsigns,
+                        originalCallsign = requireNotNull(entry.arguments?.getString("callsign")),
+                        onSave = writes::add
+                    )
+                }
+            }
+        }
+    }
+
+    @Test fun tappingExistingCallsignFocusesPrefilledEditorAndDoneReplacesOnlyThatEntry() {
+        showEditableEntry()
+        compose.onNodeWithText("Alpha One").performClick()
+        assertTrue(compose.platformField().hasFocus())
+        assertEquals("Alpha One", compose.platformText())
+        compose.replacePlatformText(" bravo-2 ")
+        compose.pressPlatformImeDone()
+        compose.onNodeWithText("Alpha One").assertIsDisplayed()
+        assertEquals(listOf(listOf("BRAVO-2", "ZULU")), writes)
+    }
+
+    @Test
+    @Config(qualifiers = "w227dp-h227dp-round")
+    fun editingRejectsInvalidAndOtherDuplicateButAcceptsOwnNameWithoutChangingStoredCase() {
+        showEditableEntry()
+        compose.onNodeWithText("Alpha One").performClick()
+        for (value in listOf("", "BAD!", "A".repeat(33), " zulu ")) {
+            compose.replacePlatformText(value)
+            compose.pressPlatformImeDone()
+            compose.waitForIdle()
+            assertTrue(writes.isEmpty())
+            assertEquals("edit/{callsign}", nav.currentDestination?.route)
+        }
+        assertEquals("That callsign is already allowed", ShadowToast.getTextOfLatestToast())
+        compose.replacePlatformText(" alpha one ")
+        compose.onNodeWithContentDescription("Confirm icon").performClick()
+        assertEquals(listOf(listOf("Alpha One", "ZULU")), writes)
+    }
+
+    @Test fun cancelAndBackDiscardEditsAndReopeningRestoresOriginalValue() {
+        showEditableEntry()
+        compose.onNodeWithText("Alpha One").performClick()
+        compose.replacePlatformText("BRAVO")
+        compose.onNodeWithContentDescription("Close icon").performClick()
+        assertTrue(writes.isEmpty())
+        compose.onNodeWithText("Alpha One").performClick()
+        assertEquals("Alpha One", compose.platformText())
+        compose.replacePlatformText("CHARLIE")
+        compose.runOnIdle { nav.popBackStack() }
+        compose.onNodeWithText("Alpha One").assertIsDisplayed()
+        assertTrue(writes.isEmpty())
+    }
+
+    @Test fun deleteControlRemovesWithoutOpeningEditor() {
+        showEditableEntry()
+        compose.onNodeWithContentDescription("Remove Alpha One").performClick()
+        assertEquals(listOf(listOf("ZULU")), writes)
+        assertEquals("allowed", nav.currentDestination?.route)
+        compose.onNode(hasSetTextAction()).assertDoesNotExist()
+    }
+
+    @Test fun legacyCallsignWithRouteCharactersOpensWithoutChangingItsValue() {
+        val legacy = "ALPHA/ONE%?#"
+        showEditableEntry(legacy)
+        compose.onNodeWithText(legacy).performClick()
+        assertEquals(legacy, compose.platformText())
+        compose.onNodeWithContentDescription("Close icon").performClick()
+        assertTrue(writes.isEmpty())
     }
 }

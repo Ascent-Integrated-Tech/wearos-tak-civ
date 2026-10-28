@@ -2461,7 +2461,7 @@ with WearTAK's service manager and known external power.
 
 ### WEARTAK-130: chat commands
 
-Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change watch settings by sending chat commands. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time or remove an entry. Existing comma-separated allow lists remain supported. All commands accept direct messages, All Chat Rooms broadcasts, and groups containing the watch UID. Only messages from allowed callsigns are acted on. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
+Tool Preferences > Plugins > **Commands** (off by default) lets another TAK user change watch settings by sending chat commands. **Allowed Callsigns** is a case-insensitive list shown alphabetically; add one callsign at a time, tap an entry to edit it, or use its right-side trash icon to remove it. Existing comma-separated allow lists remain supported. All commands accept direct messages, All Chat Rooms broadcasts, and groups containing the watch UID. Only messages from allowed callsigns are acted on. Messages from other senders, stale messages (older than 5 minutes) and replays are dropped silently.
 
 TAK servers, Wi-Fi multicast, Ditto GeoChat, SIT(x), and the paired phone's raw-CoT
 gateway and legacy `chat_received` bridge share one command runtime. Replies use
@@ -2608,11 +2608,13 @@ Profile commands take the same values as the settings screens (case-insensitive)
 The callsign, team and role fields (including in `setprofile`) are refused when settings are managed by the phone.
 
 Allowed Callsigns uses the same full-screen text-entry page as other settings
-when adding an entry, with the standard confirm/cancel controls instead of a
-dialog. Keyboard **Done** also validates and adds the callsign, so saving does
+when adding or editing an entry, with the standard confirm/cancel controls instead of a
+dialog. Tapping an existing entry opens the keyboard with its current value.
+Keyboard **Done** also validates and saves the callsign, so saving does
 not depend on a button behind the keyboard. Invalid (outside the existing
 1-32-character callsign format) or case-insensitive duplicate entries stay on the
-entry page with an error. Cancel/back does not save.
+entry page with an error. An edited callsign can retain its own name, but cannot
+duplicate another entry. Cancel/back does not save. Removal is immediate.
 
 `#weartakcommandloadprofile name=odin-weartak` applies a preset saved on the watch as `Android/data/<package>/files/presets/<name>.json`. Presets are provisioned with adb and are never part of this repository, because they can hold server credentials:
 

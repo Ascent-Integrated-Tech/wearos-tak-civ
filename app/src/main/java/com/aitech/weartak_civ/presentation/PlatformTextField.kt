@@ -47,7 +47,8 @@ internal fun PlatformTextField(
     string: String,
     label: String,
     keyboardType: KeyboardType,
-    keyboardActions: KeyboardActions
+    keyboardActions: KeyboardActions,
+    autoFocus: Boolean = false
 ): TextFieldValue {
     var value by rememberSaveable(stateSaver = TextFieldValue.Saver) {
         mutableStateOf(TextFieldValue(string, TextRange(string.length)))
@@ -97,6 +98,13 @@ internal fun PlatformTextField(
                         true
                     }
                     holder[0] = this
+                    if (autoFocus) {
+                        post {
+                            requestFocus()
+                            val imm = context.getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager
+                            imm?.showSoftInput(this, InputMethodManager.SHOW_IMPLICIT)
+                        }
+                    }
                 }
             },
             modifier = Modifier

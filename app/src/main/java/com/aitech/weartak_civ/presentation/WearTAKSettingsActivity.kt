@@ -4,6 +4,7 @@ import kotlin.math.roundToInt
 import com.aitech.weartak_civ.ui.formatter.UnitFormatter
 import com.aitech.weartak_civ.ui.formatter.UnitPrefs
 import android.content.Context
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -2333,37 +2334,22 @@ fun WearTAKSettingsNav(
                             key = { index -> sortedCallsigns[index] }
                         ) { index ->
                             val callsign = sortedCallsigns[index]
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .background(Color.DarkGray, RoundedCornerShape(24.dp))
-                                    .padding(start = 16.dp, end = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = callsign,
-                                    modifier = Modifier.weight(1f),
-                                    maxLines = 2,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                IconButton(
-                                    onClick = {
-                                        settingsVm.storeChatCommandCallsigns(
-                                            ChatCommandAuthorizer.sortedAllowList(
-                                                chatCommandCallsigns.filterNot {
-                                                    ChatCommandAuthorizer.normalize(it) ==
-                                                        ChatCommandAuthorizer.normalize(callsign)
-                                                }
-                                            )
+                            CommandCallsignRow(
+                                callsign = callsign,
+                                onEdit = {
+                                    navController.navigate("chat_command_callsign_edit/${Uri.encode(callsign)}")
+                                },
+                                onRemove = {
+                                    settingsVm.storeChatCommandCallsigns(
+                                        ChatCommandAuthorizer.sortedAllowList(
+                                            chatCommandCallsigns.filterNot {
+                                                ChatCommandAuthorizer.normalize(it) ==
+                                                    ChatCommandAuthorizer.normalize(callsign)
+                                            }
                                         )
-                                    }
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = stringResource(R.string.remove)
                                     )
                                 }
-                            }
+                            )
                         }
                     }
                     item {
@@ -2385,6 +2371,15 @@ fun WearTAKSettingsNav(
         }
         composable("chat_command_callsign_add") {
             CommandCallsignEntryPage(navController, chatCommandCallsigns) {
+                settingsVm.storeChatCommandCallsigns(it)
+            }
+        }
+        composable("chat_command_callsign_edit/{callsign}") { entry ->
+            CommandCallsignEntryPage(
+                navController,
+                chatCommandCallsigns,
+                originalCallsign = requireNotNull(entry.arguments?.getString("callsign"))
+            ) {
                 settingsVm.storeChatCommandCallsigns(it)
             }
         }
@@ -4077,8 +4072,9 @@ fun WearTAKOutlinedTextField(
     string: String, //Textfield text
     label: String, //What the textfield title is
     keyboardType: KeyboardType = KeyboardType.Unspecified, //Optional keyboard type, necessary for non-string text
-    keyboardActions: KeyboardActions = KeyboardActions.Default //Optional action when textfield is confirmed, for example if you'd like to run a Toast
-): TextFieldValue = PlatformTextField(string, label, keyboardType, keyboardActions)
+    keyboardActions: KeyboardActions = KeyboardActions.Default, //Optional action when textfield is confirmed, for example if you'd like to run a Toast
+    autoFocus: Boolean = false
+): TextFieldValue = PlatformTextField(string, label, keyboardType, keyboardActions, autoFocus)
 
 //Used when the user should have the ability to cancel whatever they entered
 @Composable
@@ -4395,7 +4391,8 @@ fun WearTAKStringEntryPage(
     confirmFunction: (String) -> Unit, //What happens when string is confirmed,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
     validate: (String) -> String? = { null },
-    confirmOnImeDone: Boolean = false
+    confirmOnImeDone: Boolean = false,
+    autoFocus: Boolean = false
 ) {
     val context = LocalContext.current
     val focusManager = LocalFocusManager.current
@@ -4423,7 +4420,8 @@ fun WearTAKStringEntryPage(
         textField = WearTAKOutlinedTextField(
             item,
             label,
-            keyboardActions = if (confirmOnImeDone) KeyboardActions(onDone = { confirm() }) else keyboardActions
+            keyboardActions = if (confirmOnImeDone) KeyboardActions(onDone = { confirm() }) else keyboardActions,
+            autoFocus = autoFocus
         )
         Row(modifier = Modifier.align(Alignment.BottomCenter)) {
             WearTAKConfirmCancelButtons(
