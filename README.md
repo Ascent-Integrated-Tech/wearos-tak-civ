@@ -891,12 +891,12 @@ samples or a measured energy saving.
 
 ## GitHub pipeline release
 
-Protected `develop` push pipelines can publish the signed WearOS APK to the rolling
+Protected `main` push pipelines can publish the signed WearOS APK to the rolling
 **TAK.gov Forge CI/CD Pipeline Release** in the GitHub mirror. Project policy treats these
 as stable builds, not prereleases. See [CI release setup and retention](ci/README.md)
 for both the company mirror and the additional public
 [`aegorsuch/weartak-wearos`](https://github.com/aegorsuch/weartak-wearos) mirror.
-The personal publisher first fast-forwards its `develop` to the exact canonical
+The personal publisher first fast-forwards its `main` to the exact canonical
 pipeline source, then publishes the same verified signed APK using a separate
 repository-scoped CI credential. It does not build or sign independently. The CI
 documentation covers required administrator configuration, provenance and verified replacement behavior.
@@ -936,7 +936,7 @@ provisioning, explicit ongoing management opt-in, chat, marker deletion, or watc
 management retention, unrelated-peer isolation, and stale/unbonded write rejection.
 Paired-hardware missing-key recovery, repeated watch restart, and system unpair
 acceptance remain pending. Do not install a feature APK before this change lands
-in canonical `gov/develop`.
+in canonical `gov/main`.
 
 Validation (2026-10-12, base `702ee4a`): offline `:app:testDebugUnitTest`
 with `*Companion*`, `*PhoneManagedSettings*`, `*CompanionChat*`, and
