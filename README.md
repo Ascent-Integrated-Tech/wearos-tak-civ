@@ -6,6 +6,18 @@ The app can connect directly to a TAK server and can optionally use SITX, Ditto 
 
 ### Physiological telemetry
 
+The home metric picker is titled **Metric Shown**. Its Environmental Alerts and
+Physiological Alerts split chips open their settings from the label and toggle
+alerting independently from the switch. Physiological Monitoring uses the same
+split-chip styling; either target changes monitoring. Both alert settings screens
+put their master switch first. The Environmental Alerts switches share one saved
+setting, which defaults off for a fresh install and preserves existing enabled
+subtype preferences on upgrade. Turning it off gates
+immersion and atmospheric-pressure alerts without changing the saved individual
+switches or thresholds. Nested switches show off and are disabled while the
+master is off; turning it back on restores those choices. Other alert defaults
+remain off, while saved choices and physiological monitoring are unchanged.
+
 Standalone PLI (TAK servers, multicast and direct CoT) and Ditto track `r` details
 share the same `<biometrics>` device block with heart rate (`hr`), skin temperature
 in Fahrenheit (`skt`) and exertion (`exert`). These readings require physiological
