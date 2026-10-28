@@ -421,6 +421,7 @@ fun WearTAKSettingsNav(
 
     val enableBatteryAlerts by settingsVm.savedEnableBatteryAlerts.collectAsState()
     val enablePhysioAlerts by settingsVm.savedEnablePhysiologicalAlerts.collectAsState()
+    val enableEnvironmentalAlerts by settingsVm.savedEnableEnvironmentalAlerts.collectAsState()
     val highHrThreshold by settingsVm.savedRestingHrHighAlertBpmThreshold.collectAsState()
     val highHrWarningLength by settingsVm.savedHighRestingHrWarningThresholdLength.collectAsState()
     val highHrAlertLength by settingsVm.savedHighRestingHrAlertThresholdLength.collectAsState()
@@ -2539,18 +2540,17 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.physiological_alerts),
                 columnContent = {
+                    item {
+                        WearTAKToggleChip(
+                            checkedLive = enablePhysioAlerts,
+                            onCheckedChange = settingsVm::storeEnablePhysiologicalAlerts,
+                            title = stringResource(R.string.physiological_alerts),
+                            description = stringResource(R.string.on_off)
+                        )
+                    }
                     items(entries.size) { index ->
                         val (route, label) = entries[index]
-                        if (route == "physiological_master") {
-                            WearTAKToggleChip(
-                                checkedLive = enablePhysioAlerts,
-                                onCheckedChange = { settingsVm.storeEnablePhysiologicalAlerts(it) },
-                                title = label,
-                                description = stringResource(R.string.on_off)
-                            )
-                        } else {
-                            WearTAKTitleChip(route = route, title = label, navController = navController)
-                        }
+                        WearTAKTitleChip(route = route, title = label, navController = navController)
                     }
                 },
                 navController,
@@ -2809,6 +2809,14 @@ fun WearTAKSettingsNav(
             WearTAKPageWithBackArrow(
                 stringResource(R.string.environmental_alerts),
                 columnContent = {
+                    item {
+                        WearTAKToggleChip(
+                            checkedLive = enableEnvironmentalAlerts,
+                            onCheckedChange = settingsVm::storeEnableEnvironmentalAlerts,
+                            title = stringResource(R.string.environmental_alerts),
+                            description = stringResource(R.string.on_off)
+                        )
+                    }
                     items(entries.size) { index ->
                         val (route, label) = entries[index]
                         WearTAKTitleChip(route = route, title = label, navController = navController)
@@ -2823,7 +2831,8 @@ fun WearTAKSettingsNav(
                 columnContent = {
                     item {
                         WearTAKToggleChip(
-                            checkedLive = enableImmersionAlerts,
+                            checkedLive = enableEnvironmentalAlerts && enableImmersionAlerts,
+                            enabled = enableEnvironmentalAlerts,
                             onCheckedChange = { settingsVm.storeEnableImmersionAlerts(it) },
                             title = stringResource(R.string.immersion_alerts),
                             description = stringResource(R.string.service_on_off)
@@ -2839,7 +2848,8 @@ fun WearTAKSettingsNav(
                 columnContent = {
                     item {
                         WearTAKToggleChip(
-                            checkedLive = enableLowAtmPressureAlert,
+                            checkedLive = enableEnvironmentalAlerts && enableLowAtmPressureAlert,
+                            enabled = enableEnvironmentalAlerts,
                             onCheckedChange = { settingsVm.storeEnableLowAtmPressureAlert(it) },
                             title = stringResource(R.string.low_atm_pressure_alert),
                             description = stringResource(R.string.on_off)
@@ -2858,7 +2868,8 @@ fun WearTAKSettingsNav(
                     Spacer(Modifier.height(10.dp))}
                     item {
                         WearTAKToggleChip(
-                            checkedLive = enableHighAtmPressureAlert,
+                            checkedLive = enableEnvironmentalAlerts && enableHighAtmPressureAlert,
+                            enabled = enableEnvironmentalAlerts,
                             onCheckedChange = { settingsVm.storeEnableHighAtmPressureAlert(it) },
                             title = stringResource(R.string.high_atm_pressure_alert),
                             description = stringResource(R.string.on_off)
@@ -4067,24 +4078,7 @@ fun WearTAKOutlinedTextField(
     label: String, //What the textfield title is
     keyboardType: KeyboardType = KeyboardType.Unspecified, //Optional keyboard type, necessary for non-string text
     keyboardActions: KeyboardActions = KeyboardActions.Default //Optional action when textfield is confirmed, for example if you'd like to run a Toast
-): TextFieldValue {
-    var textFieldValue by rememberSaveable(stateSaver = TextFieldValue.Saver) {
-        mutableStateOf(TextFieldValue(string ?: "null"))
-    }
-    OutlinedTextField(
-        value = textFieldValue,
-        onValueChange = {
-            textFieldValue = it
-        },
-        singleLine = true,
-        keyboardOptions = KeyboardOptions(keyboardType = keyboardType, imeAction = ImeAction.Done),
-        label = { Text(text = label, color = colors.primary) },
-        placeholder = { Text(text = label, color = colors.primary) },
-        textStyle = TextStyle(color = colors.primary),
-        keyboardActions = keyboardActions
-    )
-    return textFieldValue
-}
+): TextFieldValue = PlatformTextField(string, label, keyboardType, keyboardActions)
 
 //Used when the user should have the ability to cancel whatever they entered
 @Composable
